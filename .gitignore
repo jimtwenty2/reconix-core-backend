@@ -1,0 +1,17 @@
+# secrets
+.env
+
+# local only: your tasks and rehearsal notes
+/plan.md
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# node
+node_modules/
+.next/
+out/

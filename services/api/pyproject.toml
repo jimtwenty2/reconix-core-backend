@@ -1,0 +1,6 @@
+[project]
+name = "reconix-api"
+version = "0.0.0"
+description = "Reconix backend API"
+requires-python = ">=3.12,<3.13"
+dependencies = []
