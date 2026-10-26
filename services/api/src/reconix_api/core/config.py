@@ -1,0 +1,31 @@
+"""Settings, read from the environment or .env (prefix RECONIX_)."""
+
+import ipaddress
+from functools import lru_cache
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="RECONIX_", env_file=".env", extra="ignore")
+
+    # The API only ever listens on this computer.
+    host: str = "127.0.0.1"
+    port: int = 8000
+    allowed_hosts: list[str] = ["127.0.0.1", "localhost"]
+    web_origins: list[str] = ["http://127.0.0.1:3000", "http://localhost:3000"]
+
+    database_url: str = "postgresql+psycopg://reconix:reconix@127.0.0.1:5432/reconix"
+
+    @field_validator("host")
+    @classmethod
+    def host_must_be_loopback(cls, value: str) -> str:
+        if value != "localhost" and not ipaddress.ip_address(value).is_loopback:
+            raise ValueError("RECONIX_HOST must be a loopback address")
+        return value
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
