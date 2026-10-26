@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(uv sync*)",
+      "Bash(uv lock*)",
+      "Bash(uv run pytest*)",
+      "Bash(uv run --package * pytest*)",
+      "Bash(uv run ruff*)",
+      "Bash(uvx ruff*)",
+      "Bash(uv run alembic*)",
+      "Bash(uv run --package * alembic*)",
+      "Bash(uv run python apps/sample-data/make_sample_data.py*)",
+      "Bash(docker compose -f deploy/docker-compose.yml ps*)",
+      "Bash(docker compose -f deploy/docker-compose.yml logs*)",
+      "Bash(docker compose -f deploy/docker-compose.yml config*)",
+      "Bash(npm ci*)",
+      "Bash(npm run lint*)",
+      "Bash(npm run test*)",
+      "Bash(npm run build*)",
+      "Bash(npm run gen-api-types*)",
+      "Bash(npx playwright test*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(gh pr view*)",
+      "Bash(gh pr list*)",
+      "Bash(gh pr checks*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./**/.env)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/secrets/**)",
+      "Bash(cat .env*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push origin main*)",
+      "Bash(git push origin Main*)",
+      "Bash(git push origin Develop*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-openapi.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/scan-staged-secrets.sh",
+            "timeout": 30,
+            "statusMessage": "Scanning staged changes for secrets"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *.py) uvx ruff format --quiet \"$f\" && uvx ruff check --fix --quiet \"$f\";; esac; } 2>&1 || true",
+            "timeout": 60,
+            "statusMessage": "ruff format + check"
+          }
+        ]
+      }
+    ]
+  }
+}
