@@ -3,7 +3,7 @@
 import ipaddress
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,18 @@ class Settings(BaseSettings):
     web_origins: list[str] = ["http://127.0.0.1:3000", "http://localhost:3000"]
 
     database_url: str = "postgresql+psycopg://reconix:reconix@127.0.0.1:5432/reconix"
+
+    # Kali MCP container
+    mcp_url: str = "http://127.0.0.1:8765/mcp"
+    mcp_access_key: SecretStr = SecretStr("")
+    job_token_secret: SecretStr = SecretStr("")
+    job_token_ttl_seconds: int = 300
+
+    # Encrypts AI provider API keys
+    fernet_key: SecretStr = SecretStr("")
+
+    # Approvals
+    approval_ttl_minutes: int = 30
 
     @field_validator("host")
     @classmethod
