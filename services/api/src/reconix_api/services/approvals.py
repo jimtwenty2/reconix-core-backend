@@ -1,23 +1,15 @@
 """Approval rules: 30-minute expiry, single use, typed target for HIGH risk.
 
 Pure functions, so they are easy to test. The database layer stores the fields below.
-Status names must match ERD V3; check them when the models land.
 """
 
 from datetime import datetime, timedelta
-from enum import StrEnum
 
 from pydantic import BaseModel
 
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import RiskLevel
-
-
-class ApprovalStatus(StrEnum):
-    PENDING = "PENDING"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    EXPIRED = "EXPIRED"
+from reconix_api.models.enums import ApprovalStatus
 
 
 class ApprovalState(BaseModel):
