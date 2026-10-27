@@ -48,7 +48,8 @@ def create_app(
 
 _session_tokens = SessionTokens()
 app = create_app(
-    build_interfaces(_session_tokens, get_session_factory()), session_tokens=_session_tokens
+    build_interfaces(_session_tokens, get_session_factory(), get_settings().audit_log_path),
+    session_tokens=_session_tokens,
 )
 
 

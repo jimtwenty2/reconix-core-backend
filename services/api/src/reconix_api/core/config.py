@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Encrypts AI provider API keys
     fernet_key: SecretStr = SecretStr("")
 
+    # Audit log (JSON lines), written by the harness
+    audit_log_path: str = "data/audit/audit.jsonl"
+
     # Approvals
     approval_ttl_minutes: int = 30
 
