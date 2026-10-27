@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse (Write|Edit|NotebookEdit): keep edits inside apps/, never hand-edit generated files,
-# never write a .env or a key file.
+# PreToolUse (Write|Edit|NotebookEdit): never hand-edit generated files, never write a .env or a
+# key file. (Staying inside apps/ is stay-in-apps.py's job.)
 f=$(jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
 [[ -z "$f" ]] && exit 0
 
@@ -11,7 +11,6 @@ deny() {
 }
 
 apps="${CLAUDE_PROJECT_DIR:-$PWD}"
-repo=$(git -C "$apps" rev-parse --show-toplevel 2>/dev/null || dirname "$apps")
 case "$f" in /*) abs="$f" ;; *) abs="$PWD/$f" ;; esac
 
 # Secrets: only .env.example is committed; keys live in ~/.reconix and are never written by hand.
@@ -20,11 +19,6 @@ case "$abs" in
   */.env|*/.env.*) deny "Never write a .env file. Only .env.example is committed." ;;
   *.key|*.pem) deny "Never write a key file. Keys are created by the app (0600) and never edited." ;;
 esac
-
-# Inside the repo but outside apps/: another team member's part.
-if [[ "$abs" == "$repo"/* && "$abs" != "$apps"/* ]]; then
-  deny "Outside apps/ (${abs#"$repo"/}) belongs to another team member (see AGENTS.md). Stay in apps/ and call out the change instead."
-fi
 
 # Generated files: rerun their script (see the sync-generated skill).
 rel="${abs#"$apps"/}"

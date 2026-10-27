@@ -8,8 +8,13 @@ writing Next.js code (this Next.js version differs from older ones: check
 
 ## Scope
 
-- Work only in `apps/tui/` and `apps/web/`. `services/`, `deploy/` and `docs/` belong to other
-  team members: the `guard-paths` hook refuses edits there. Call out anything that needs them.
+- **Claude stays inside `apps/`.** It may read, search, change and run things in `apps/` only;
+  the `stay-in-apps` hook refuses everything else, for every tool and every subagent: other
+  members' parts (`services/`, `deploy/`, `docs/`), the home folder, the system, and `cd ..`,
+  `../`, `~` or absolute paths that lead out. Outside it, only these are open: the repo's
+  `AGENTS.md`, `CLAUDE.md`, `docs/openapi.json` and `docs/project-context.md` (read-only, with the
+  Read tool), and Claude's own plans, memory and scratchpad. Call out anything that needs more,
+  and the person does it.
 - The TUI does not import the backend. Agent mode (`/assess`) imports the `harness` package
   lazily; without it the scripted demo runs.
 - Never run real scanners (nmap, nuclei, nikto, sqlmap, …) from here: the `guard-bash` hook
@@ -94,8 +99,8 @@ npm run lint && npx next typegen && npm run typecheck && npm test
 Skills: `add-screen`, `add-widget`, `theme-tokens`, `write-tui-test`, `write-web-test`,
 `wire-backend`, `sync-generated`.
 
-Guardrail hooks (`.claude/hooks/`): `guard-paths` (no edits outside `apps/`, no hand edits of
-generated files, no `.env`), `guard-bash` (no real scanners, no push to `main`/`Develop`, no
+Guardrail hooks (`.claude/hooks/`): `stay-in-apps` (Claude never leaves `apps/`, see Scope),
+`guard-paths` (no hand edits of generated files, no `.env` or key files), `guard-bash` (no real scanners, no push to `main`/`Develop`, no
 force push, no `--no-verify`, no reading key files), `scan-staged-secrets` (on `git commit`),
 `post-edit-check` (ruff + compile on Python edits, a security-review reminder on safety files).
 

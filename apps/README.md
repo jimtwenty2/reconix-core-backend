@@ -88,3 +88,5 @@ tests skip (`needs_harness` in `tui/tests/support.py`) until it is installed.
 
 Start Claude Code **from this folder** (`cd apps && claude`) so it loads `apps/CLAUDE.md` and
 `apps/.claude/`: the subagents, skills, guardrail hooks and permissions for the TUI and the web.
+Started there, Claude stays inside `apps/`: it cannot read, change or run anything outside it
+(the `stay-in-apps` hook; only the team rules and `docs/openapi.json` are open, read-only).

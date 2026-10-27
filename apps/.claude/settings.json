@@ -49,6 +49,16 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Read|Grep|Glob|Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stay-in-apps.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Write|Edit|NotebookEdit",
         "hooks": [
           {
