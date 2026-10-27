@@ -15,7 +15,7 @@ from reconix.store import agent_run, replies
 from reconix.store.snapshot import uid_for
 from reconix.widgets import PromptBox
 
-from .support import SIZE, run_ui_to, settle, type_request, wait_until
+from .support import SIZE, needs_harness, run_ui_to, settle, type_request, wait_until
 
 
 def _uid() -> str:
@@ -188,6 +188,7 @@ async def test_c_on_finding_detail_drafts_about_the_finding(app):
 
 
 # --- agent mode ------------------------------------------------------------------------------
+@needs_harness
 async def test_agent_chat_continues_with_the_same_agent_after_finish(
         app, model_active, monkeypatch):
     seen = []

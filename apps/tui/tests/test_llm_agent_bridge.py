@@ -13,6 +13,8 @@ import pytest
 from reconix import store
 from reconix.store import agent_run
 
+from .support import needs_harness
+
 
 @pytest.fixture
 def two_providers(monkeypatch):
@@ -48,6 +50,7 @@ async def _say(text):
     return events
 
 
+@needs_harness
 async def test_switch_model_mid_assessment_preserves_context(two_providers, record_llm):
     store.activate("openai", "gpt-4o-mini")
     await _say("recon the target staging.example.com, I am authorized")
@@ -70,11 +73,13 @@ async def test_run_without_active_model_raises(two_providers, record_llm):
         await _say("do something")
 
 
+@needs_harness
 async def test_switch_without_agent_is_noop(two_providers):
     store.activate("openai", "gpt-4o-mini")
     assert agent_run.switch_model() is False           # no agent created yet
 
 
+@needs_harness
 def test_ingest_scan_findings_maps_harness_to_store():
     from types import SimpleNamespace
 

@@ -72,8 +72,8 @@ npm test                                      # vitest
 npm run build && npm run e2e                  # Playwright on sample-data (needs Chromium)
 ```
 
-The agent-mode tests import the backend `harness` package. It is not part of `apps/`, so those
-tests fail until it is installed.
+The agent-mode tests need the backend `harness` package. It is not part of `apps/`, so those
+tests skip (`needs_harness` in `tui/tests/support.py`) until it is installed.
 
 ## Generated files (never edit by hand)
 

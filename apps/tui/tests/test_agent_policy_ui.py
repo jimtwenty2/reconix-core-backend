@@ -5,7 +5,7 @@ from reconix.store import agent_run
 
 from reconix.widgets import RunLog
 
-from .support import SIZE, wait_until
+from .support import SIZE, needs_harness, wait_until
 
 
 def _log_text(app) -> str:
@@ -14,6 +14,7 @@ def _log_text(app) -> str:
     return "\n".join(strip.text for log in logs for strip in log.lines)
 
 
+@needs_harness
 async def test_refused_tool_call_shows_a_policy_line(app, model_active, monkeypatch):
     async def fake_run(text, on_event, on_ask=None):
         await on_event({"type": "policy", "tool": "http_poc",

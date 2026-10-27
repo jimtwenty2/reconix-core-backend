@@ -8,7 +8,7 @@ from reconix import store
 from reconix.screens import ChoiceScreen
 from reconix.store import agent_run
 
-from .support import SIZE, settle, wait_until
+from .support import SIZE, needs_harness, settle, wait_until
 
 TARGET = "http://target.example"
 
@@ -43,6 +43,7 @@ async def _start_running(app, pilot):
     await wait_until(pilot, lambda: app._agent_handle is not None, what="the worker to run")
 
 
+@needs_harness
 async def test_assess_during_a_hung_turn_cancels_it(app, model_active, hung_agent):
     async with app.run_test(size=SIZE) as pilot:
         await _start_running(app, pilot)
@@ -62,6 +63,7 @@ async def test_assess_during_a_hung_turn_cancels_it(app, model_active, hung_agen
         assert old.status == "Stopped"              # not "Completed"
 
 
+@needs_harness
 async def test_new_assessment_command_cancels_the_turn_too(app, model_active, hung_agent):
     async with app.run_test(size=SIZE) as pilot:
         await _start_running(app, pilot)
@@ -72,6 +74,7 @@ async def test_new_assessment_command_cancels_the_turn_too(app, model_active, hu
         await settle(pilot)
 
 
+@needs_harness
 async def test_cancel_closes_an_open_question_dialog(app, model_active, monkeypatch):
     got = {}
 
@@ -93,6 +96,7 @@ async def test_cancel_closes_an_open_question_dialog(app, model_active, monkeypa
         await settle(pilot)
 
 
+@needs_harness
 async def test_cancel_drops_the_cached_agent_and_marks_the_run_stopped(
         app, model_active, hung_agent):
     from reconix.store.snapshot import uid_for
@@ -115,6 +119,7 @@ async def test_cancel_twice_and_when_idle_is_harmless(app, model_active):
         await settle(pilot)
 
 
+@needs_harness
 async def test_quit_cancel_leaves_the_run_unmarked(app, model_active, hung_agent):
     async with app.run_test(size=SIZE) as pilot:
         await _start_running(app, pilot)
@@ -123,6 +128,7 @@ async def test_quit_cancel_leaves_the_run_unmarked(app, model_active, hung_agent
         await wait_until(pilot, lambda: hung_agent["late_posted"], what="the late event")
 
 
+@needs_harness
 async def test_a_failed_turn_leaves_a_note_and_frees_the_chat(app, model_active, monkeypatch):
     async def failing_run(text, on_event, on_ask=None):
         raise RuntimeError("boom")

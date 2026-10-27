@@ -10,7 +10,7 @@ import pytest
 from reconix import store
 from reconix.store import agent_run
 
-from .support import SIZE, settle, wait_until
+from .support import SIZE, needs_harness, settle, wait_until
 
 
 @pytest.fixture
@@ -33,6 +33,7 @@ def _chat_texts():
     return [c.text for c in store.list_chat()]
 
 
+@needs_harness
 async def test_assess_enters_template_then_runs_on_scope_approval(app, model_active, fake_agent):
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line("/assess http://target.example")
@@ -53,6 +54,7 @@ async def test_assess_enters_template_then_runs_on_scope_approval(app, model_act
         assert "recon" in labels and "test SQLi" in labels
 
 
+@needs_harness
 async def test_natural_language_chats_with_the_agent(app, model_active, fake_agent):
     # A non-target sentence is a chat turn with the agent, not a scan target rejection.
     async with app.run_test(size=SIZE) as pilot:
@@ -65,6 +67,7 @@ async def test_natural_language_chats_with_the_agent(app, model_active, fake_age
         assert any("done with what vulnerabilities" in t for t in _chat_texts())
 
 
+@needs_harness
 async def test_typed_target_routes_to_agent_when_model_active(app, model_active, fake_agent):
     async with app.run_test(size=SIZE) as pilot:
         app.submit_request("scan http://host.example")

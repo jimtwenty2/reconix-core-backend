@@ -13,7 +13,7 @@ from reconix import store
 from reconix.store import agent_guard, agent_run, lists
 from reconix.store.snapshot import uid_for
 
-from .support import run_to
+from .support import needs_harness, run_to
 
 
 def _guard(kind="web", tools=("whatweb", "nuclei", "nikto")):
@@ -243,6 +243,7 @@ def test_network_targets_are_registered_unless_a_range(tmp_path, target_url, exp
         [(v, True) for v in expected]
 
 
+@needs_harness
 def test_an_existing_unauthorized_target_is_authorized(tmp_path):
     from harness.models import Target, TargetType
     from reconix.models.base import utc_now

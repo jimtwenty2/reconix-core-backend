@@ -10,7 +10,7 @@ from reconix.screens import ChoiceScreen
 from reconix.screens.forms import CredentialForm
 from reconix.store import agent_run
 
-from .support import SIZE, settle, wait_until
+from .support import SIZE, needs_harness, settle, wait_until
 
 
 @pytest.fixture
@@ -29,6 +29,7 @@ def asking_agent(monkeypatch):
     return got
 
 
+@needs_harness
 async def test_credential_modal_returns_values(app, model_active, asking_agent):
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line("/assess http://target.example")
@@ -62,6 +63,7 @@ def confirming_agent(monkeypatch):
     return got
 
 
+@needs_harness
 async def test_confirmation_pops_a_dialog_not_chat(app, model_active, confirming_agent):
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line("/assess http://target.example")
@@ -76,6 +78,7 @@ async def test_confirmation_pops_a_dialog_not_chat(app, model_active, confirming
         assert confirming_agent["answer"] == {"answer": "yes"}
 
 
+@needs_harness
 async def test_credential_modal_cancel_returns_none(app, model_active, asking_agent):
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line("/assess http://target.example")

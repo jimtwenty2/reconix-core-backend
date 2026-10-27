@@ -1,8 +1,11 @@
 """Helpers shared by the tests: driving the store's run, and driving the UI."""
 
+import importlib.util
 import io
 import time
 from typing import Callable, List, Optional
+
+import pytest
 
 from reconix import store
 
@@ -13,6 +16,11 @@ TEST_PASSWORD = "s3cret-Pa55-for-tests"   # must never appear anywhere it is sho
 # A bare hostname could be a site, an API or a network host, so the run asks for the
 # template. The demo request (a URL) and IPv4/repo/path targets pick theirs themselves.
 ASK_REQUEST = "Assess staging.example.com"
+
+# Agent mode drives the backend `harness` package. It lives with the backend, not in apps/,
+# so the tests that need it skip when it isn't installed (the scripted demo needs no harness).
+needs_harness = pytest.mark.skipif(importlib.util.find_spec("harness") is None,
+                                   reason="needs the backend harness package")
 
 
 def event_kinds() -> List[str]:
