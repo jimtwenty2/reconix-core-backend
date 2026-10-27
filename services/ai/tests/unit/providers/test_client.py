@@ -1,11 +1,13 @@
 import os
 
-import litellm
 import pytest
 
 from reconix_ai.providers import client
 from reconix_ai.providers.client import Message, ProviderError, complete
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, reconix_provider
+
+# Through the client, never a direct import: litellm must load after its settings.
+litellm = client.litellm
 
 QUESTION = [Message(role="user", content="Which ports are open on 172.20.0.5?")]
 
@@ -128,6 +130,53 @@ async def test_error_message_never_shows_the_key(model: FakeModel) -> None:
 
     assert "sk-live-1234567890abcdefghij" not in raised.value.message
     assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+async def test_error_message_hides_the_exact_key_of_any_shape(model: FakeModel) -> None:
+    config = ProviderConfig(
+        provider_type=ProviderType.OLLAMA,
+        model_name="llama3.1:8b",
+        base_url="https://models.example.com",
+        api_key="Zq9plainlookingvalue",
+    )
+    model.answer = litellm.exceptions.AuthenticationError(
+        message="invalid key Zq9plainlookingvalue", llm_provider="ollama_chat", model="x"
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, config)
+
+    assert raised.value.code == "PROVIDER_AUTH_FAILED"
+    assert "Zq9plainlookingvalue" not in raised.value.message
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://10.0.0.5:11434",
+        "http://127.0.0.1:11434/admin?",
+        "https://169.254.169.254",
+        "file:///etc/passwd",
+    ],
+)
+async def test_unsafe_base_url_is_refused_before_any_call(model: FakeModel, base_url: str) -> None:
+    config = ProviderConfig(
+        provider_type=ProviderType.OLLAMA, model_name="llama3.1:8b", base_url=base_url
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, config)
+
+    assert raised.value.code == "PROVIDER_URL_NOT_ALLOWED"
+    assert model.calls == []
+
+
+def test_litellm_settings_are_pinned() -> None:
+    for name, value in client.LITELLM_ENV.items():
+        assert os.environ[name] == value
+    assert os.environ["LITELLM_MODE"] == "PRODUCTION"  # never loads .env
+    assert litellm.turn_off_message_logging is True
 
 
 async def test_empty_answer_raises(model: FakeModel) -> None:

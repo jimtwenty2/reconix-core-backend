@@ -5,19 +5,35 @@ comes back, so no secret reaches a model, a log or the database from here.
 """
 
 import os
+import sys
 from dataclasses import dataclass
 
-# Use LiteLLM's bundled price list instead of downloading it at import time.
-# Reconix runs on the tester's computer and must not call out on its own.
-os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+# LiteLLM reads these once, when it is imported, so they are forced here and
+# litellm must not be imported anywhere before this module.
+LITELLM_ENV = {
+    # In its default DEV mode LiteLLM loads the nearest .env into os.environ,
+    # which would hand the API's master secrets to this process.
+    "LITELLM_MODE": "PRODUCTION",
+    # Use the bundled price list and headers: Reconix must not call out on its own.
+    "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+    "LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS": "True",
+    # Debug logs would print the model's raw answer before it is masked.
+    "LITELLM_LOG": "ERROR",
+}
+if "litellm" in sys.modules:
+    raise RuntimeError("Import reconix_ai.providers before litellm, so its settings apply.")
+os.environ.update(LITELLM_ENV)
 
 import litellm  # noqa: E402
-import openai  # noqa: E402  (installed with LiteLLM; all LiteLLM errors extend openai.OpenAIError)
+import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
 from reconix_ai.harness import mask_secrets  # noqa: E402
+from reconix_ai.harness.masking import label  # noqa: E402
+from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
 litellm.suppress_debug_info = True  # no "Give Feedback" banner on every error
+litellm.turn_off_message_logging = True
 
 # How LiteLLM names each provider type. The other 4 types come with task 5.
 LITELLM_PREFIX = {
@@ -53,28 +69,37 @@ class ProviderError(Exception):
 
 async def complete(messages: list[Message], config: ProviderConfig) -> Completion:
     """Send masked messages to the configured model and return its masked answer."""
+    model = litellm_model(config)
+    base_url = checked_base_url(config)
     masked_messages, masked_count = mask_messages(messages)
+    failure = None
     try:
         response = await litellm.acompletion(
-            model=litellm_model(config),
+            model=model,
             messages=masked_messages,
-            api_base=config.base_url or default_base_url(config),
+            api_base=base_url,
             api_key=config.api_key,
             timeout=config.timeout_seconds,
         )
     except openai.OpenAIError as error:
-        # from None: the original error may carry the request, with its key.
-        raise provider_error(error) from None
+        failure = provider_error(error, config)
+    if failure is not None:
+        # Raised outside the except block, so the original error (which may
+        # carry the request and its key) is not attached to it at all.
+        raise failure
 
+    if not response.choices:
+        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
     text, answer_count = mask_secrets(response.choices[0].message.content or "")
     if not text.strip():
         raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+    usage = getattr(response, "usage", None)
     return Completion(
         text=text,
         provider_type=config.provider_type,
         model_name=config.model_name,
-        prompt_tokens=response.usage.prompt_tokens,
-        completion_tokens=response.usage.completion_tokens,
+        prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+        completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
         masked_count=masked_count + answer_count,
     )
 
@@ -98,15 +123,22 @@ def litellm_model(config: ProviderConfig) -> str:
     return f"{prefix}/{config.model_name}"
 
 
-def default_base_url(config: ProviderConfig) -> str | None:
-    if config.provider_type in (ProviderType.RECONIX, ProviderType.OLLAMA):
-        return ollama_url()
-    return None
+def checked_base_url(config: ProviderConfig) -> str:
+    base_url = config.base_url or ollama_url()
+    try:
+        check_base_url(base_url)
+    except BaseUrlError as error:
+        raise ProviderError("PROVIDER_URL_NOT_ALLOWED", str(error)) from None
+    return base_url
 
 
-def provider_error(error: Exception) -> ProviderError:
+def provider_error(error: Exception, config: ProviderConfig) -> ProviderError:
     """A clear, masked error for the API to show."""
-    reason, _ = mask_secrets(str(error))
+    reason = str(error)
+    if config.api_key:
+        # The exact key first: a provider may echo back a key of any shape.
+        reason = reason.replace(config.api_key, label("api_key"))
+    reason, _ = mask_secrets(reason)
     if isinstance(error, litellm.exceptions.NotFoundError):
         return ProviderError("MODEL_NOT_FOUND", f"The model was not found: {reason}")
     if isinstance(error, litellm.exceptions.AuthenticationError):

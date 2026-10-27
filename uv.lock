@@ -1061,6 +1061,7 @@ version = "0.0.0"
 source = { editable = "services/ai" }
 dependencies = [
     { name = "litellm" },
+    { name = "openai" },
 ]
 
 [package.dev-dependencies]
@@ -1070,7 +1071,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "litellm", specifier = ">=1.106.4" }]
+requires-dist = [
+    { name = "litellm", specifier = ">=1.106.4" },
+    { name = "openai", specifier = ">=2.54.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [
