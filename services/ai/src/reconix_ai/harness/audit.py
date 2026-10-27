@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
-from reconix_ai.harness.masking import mask_value
+from reconix_ai.harness.masking import mask_secrets, mask_value
 
 
 class AuditRecord(Protocol):
@@ -49,7 +49,10 @@ def make_audit_writer(path: str | Path) -> Callable[[AuditRecord], None]:
         line = audit_line(event)
         with lock:
             # 0o600: only the user running Reconix can read the audit log.
-            descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            # O_NOFOLLOW: never write through a symlink planted at the log path.
+            flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW
+            descriptor = os.open(path, flags, 0o600)
+            os.fchmod(descriptor, 0o600)  # also fixes a file made earlier with other rights
             with os.fdopen(descriptor, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
 
@@ -57,17 +60,20 @@ def make_audit_writer(path: str | Path) -> Callable[[AuditRecord], None]:
 
 
 def audit_line(event: AuditRecord) -> str:
-    """One JSON object on one line. Details are masked again, in case a caller forgot."""
+    """One JSON object on one line. Actor and details are masked again, in case a caller forgot."""
     details, _ = mask_value(dict(event.details))
+    actor, _ = mask_secrets(str(event.actor))
     record = {
         "event_type": str(event.event_type),
         "assessment_id": str(event.assessment_id) if event.assessment_id else None,
         "session_id": str(event.session_id),
         "role": str(event.role),
-        "actor": str(event.actor),
+        "actor": actor,
         "at": event.at.isoformat(),
         "details": details,
     }
     # ensure_ascii keeps Khmer and other text as \u escapes, and json never
     # writes a raw newline, so a record can never break into two lines.
-    return json.dumps(record, default=str, ensure_ascii=True)
+    # mask_value already turned every value into plain JSON, so no default=str
+    # is needed; an unknown type fails loudly instead of being written unmasked.
+    return json.dumps(record, ensure_ascii=True)

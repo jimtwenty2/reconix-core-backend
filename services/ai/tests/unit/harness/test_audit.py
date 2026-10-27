@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import pytest
+
 from reconix_ai.harness.audit import audit_line, make_audit_writer
 
 ASSESSMENT_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -73,7 +75,19 @@ def test_non_json_values_are_written_as_text() -> None:
     details = {"finding_id": UUID(int=5), "when": AT, "path": Path("/lab/repo")}
     record = json.loads(audit_line(Event(details=details)))
     assert record["details"]["finding_id"] == str(UUID(int=5))
+    assert record["details"]["when"] == "2026-10-26T14:00:00+00:00"
     assert record["details"]["path"] == "/lab/repo"
+
+
+def test_secret_key_names_in_details_are_masked() -> None:
+    line = audit_line(Event(details={"password": "hunter22", "raw": b"token=abcdefgh"}))
+    assert "hunter22" not in line
+    assert "abcdefgh" not in line
+
+
+def test_secret_in_actor_is_masked() -> None:
+    record = json.loads(audit_line(Event(actor="password=hunter22")))
+    assert record["actor"] == "password=[MASKED:password]"
 
 
 def test_writer_appends_one_line_per_event(tmp_path: Path) -> None:
@@ -96,6 +110,24 @@ def test_writer_keeps_earlier_lines(tmp_path: Path) -> None:
 
 def test_only_the_owner_can_read_the_log(tmp_path: Path) -> None:
     path = tmp_path / "audit.jsonl"
+    make_audit_writer(path)(Event())
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_writer_refuses_a_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("")
+    path = tmp_path / "audit.jsonl"
+    path.symlink_to(target)
+    with pytest.raises(OSError):
+        make_audit_writer(path)(Event())
+    assert target.read_text() == ""
+
+
+def test_writer_tightens_rights_on_an_existing_file(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    path.write_text("")
+    path.chmod(0o644)
     make_audit_writer(path)(Event())
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 

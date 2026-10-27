@@ -116,8 +116,132 @@ def test_mask_value_masks_nested_details() -> None:
     assert masked == {
         "target": "172.20.0.5",
         "arguments": ["-p", "80", "--auth", "password=[MASKED:password]"],
-        "headers": {"Authorization": "Bearer [MASKED:token]"},
+        "headers": {"Authorization": "[MASKED:token]"},
         "count": 3,
         "pair": ("token=[MASKED:token]", None),
     }
     assert count == 3
+
+
+# --- shapes the first version missed ---------------------------------------
+
+STRIPE_KEY = "sk_" + "live_" + "Z" * 24
+AWS_TEMP_KEY = "ASIA" + "ABCDEFGHIJKLMNOP"
+GITLAB_TOKEN = "glpat-" + "x1Y2" * 5
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # a prefix before the key name
+        ("DB_PASSWORD=hunter2", "DB_PASSWORD=[MASKED:password]"),
+        ("PGPASSWORD=hunter2", "PGPASSWORD=[MASKED:password]"),
+        ("MYSQL_ROOT_PASSWORD: hunter2", "MYSQL_ROOT_PASSWORD: [MASKED:password]"),
+        ("AWS_SECRET_ACCESS_KEY=wJalrXUtnF", "AWS_SECRET_ACCESS_KEY=[MASKED:api_key]"),
+        ("GITHUB_TOKEN=abcd1234efgh5678", "GITHUB_TOKEN=[MASKED:token]"),
+        ("JSESSIONID=9f8e7d6c5b", "JSESSIONID=[MASKED:token]"),
+        ("PHPSESSID=9f8e7d6c5b", "PHPSESSID=[MASKED:token]"),
+        # the other quote inside a quoted value
+        ("""password="hun'ter2\"""", """password="[MASKED:password]\""""),
+        ("""passwd: 'x"y'""", """passwd: '[MASKED:password]'"""),
+        # "@" inside a URL password
+        (
+            "http://admin:p@ss@word@juice-shop.lab/",
+            "http://admin:[MASKED:password]@juice-shop.lab/",
+        ),
+        # XML tags
+        ("<password>hunter2</password>", "<password>[MASKED:password]</password>"),
+        ("<apiKey>abcd1234</apiKey>", "<apiKey>[MASKED:token]</apiKey>"),
+        # key formats
+        (f"key {STRIPE_KEY}", "key [MASKED:api_key]"),
+        (f"key {AWS_TEMP_KEY}", "key [MASKED:api_key]"),
+        (f"key {GITLAB_TOKEN}", "key [MASKED:token]"),
+        # cookie headers
+        ("Cookie: session=abc; theme=dark", "Cookie: [MASKED:token]"),
+        ("set-cookie: sid=abc123; HttpOnly", "set-cookie: [MASKED:token]"),
+    ],
+)
+def test_more_secret_shapes_are_masked(text: str, expected: str) -> None:
+    assert mask_secrets(text) == (expected, 1)
+
+
+def test_cut_off_private_key_is_masked_to_the_end() -> None:
+    text = "found:\n-----BEGIN RSA " + "PRIVATE KEY-----\nMIIEow\nIBAAK"
+    assert mask_secrets(text) == ("found:\n[MASKED:private_key]", 1)
+
+
+def test_pgp_private_key_block_is_masked() -> None:
+    text = (
+        "-----BEGIN PGP "
+        + "PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP "
+        + "PRIVATE KEY BLOCK-----"
+    )
+    assert mask_secrets(text) == ("[MASKED:private_key]", 1)
+
+
+def test_normal_words_with_pass_are_unchanged() -> None:
+    text = "Scan passed: 3 hosts, compass heading north"
+    assert mask_secrets(text) == (text, 0)
+
+
+# --- mask_value: key names and other types ---------------------------------
+
+
+def test_secret_key_names_mask_the_whole_value() -> None:
+    details = {"password": "hunter2", "api_key": "abcd1234", "token": "tok123", "DB_PASS": "x"}
+    masked, count = mask_value(details)
+    assert masked == {
+        "password": "[MASKED:password]",
+        "api_key": "[MASKED:api_key]",
+        "token": "[MASKED:token]",
+        "DB_PASS": "[MASKED:password]",
+    }
+    assert count == 4
+
+
+def test_secret_key_with_a_non_text_value_keeps_it() -> None:
+    assert mask_value({"tokens_used": 120, "token": None}) == (
+        {"tokens_used": 120, "token": None},
+        0,
+    )
+
+
+def test_secret_inside_a_key_is_masked() -> None:
+    # The key names a password, so its value is masked too.
+    masked, count = mask_value({"password=hunter2": "x"})
+    assert masked == {"password=[MASKED:password]": "[MASKED:password]"}
+    assert count == 2
+
+
+def test_bytes_and_sets_are_masked() -> None:
+    masked, count = mask_value({"raw": b"token=abcdefgh", "tags": {"password=hunter2"}})
+    assert masked == {"raw": "token=[MASKED:token]", "tags": ["password=[MASKED:password]"]}
+    assert count == 2
+
+
+def test_dataclasses_and_models_are_masked() -> None:
+    from dataclasses import dataclass
+
+    @dataclass
+    class Command:
+        cmd: str
+
+    class Model:
+        def model_dump(self, mode: str) -> dict:
+            return {"cmd": "password=hunter2"}
+
+    masked, count = mask_value({"a": Command("password=hunter2"), "b": Model()})
+    assert masked == {
+        "a": {"cmd": "password=[MASKED:password]"},
+        "b": {"cmd": "password=[MASKED:password]"},
+    }
+    assert count == 2
+
+
+def test_other_objects_become_masked_text() -> None:
+    class Thing:
+        def __str__(self) -> str:
+            return "Thing(password=hunter2)"
+
+    # A value with no quotes runs to the next space, so the ")" is masked too.
+    assert mask_value(Thing()) == ("Thing(password=[MASKED:password]", 1)
