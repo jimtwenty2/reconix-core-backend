@@ -3,11 +3,14 @@ name = "reconix-ai"
 version = "0.0.0"
 description = "Reconix AI Service"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "litellm>=1.106.4",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
+    "pytest-asyncio>=0.25",
 ]
 
 [build-system]
@@ -20,3 +23,4 @@ packages = ["src/reconix_ai"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
+asyncio_mode = "auto"

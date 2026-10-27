@@ -1059,16 +1059,24 @@ wheels = [
 name = "reconix-ai"
 version = "0.0.0"
 source = { editable = "services/ai" }
+dependencies = [
+    { name = "litellm" },
+]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
+requires-dist = [{ name = "litellm", specifier = ">=1.106.4" }]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3" }]
+dev = [
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.25" },
+]
 
 [[package]]
 name = "reconix-api"
