@@ -14,7 +14,7 @@ The agent runs it on every step it suggests, and the API runs it again right
 before any tool runs.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -28,7 +28,7 @@ from reconix_ai.harness.checks.loop import (
     PastRun,
     check_loop,
 )
-from reconix_ai.harness.checks.result import CheckOutcome, Decision, RiskLevel
+from reconix_ai.harness.checks.result import CheckOutcome, Decision, RiskLevel, blocked
 from reconix_ai.harness.checks.risk import check_risk
 from reconix_ai.harness.checks.scope import ScopeRules, check_scope
 
@@ -87,39 +87,52 @@ class PipelineResult:
 def check(
     action: ActionLike, context: ContextLike, limits: LoopLimits = DEFAULT_LIMITS
 ) -> PipelineResult:
-    tool = str(action.tool)
-    arguments = action.arguments
+    # A check that breaks (bad input, a bug) blocks; it never lets an action through.
+    try:
+        steps = check_steps(action, context, limits)
+    except Exception:
+        return blocked_result(CheckName.INPUT, blocked("CHECK_ERROR"))
 
-    outcome = check_input(context.input_text)
-    if outcome.decision == Decision.BLOCKED:
-        return blocked_result(CheckName.INPUT, outcome)
-
-    outcome = check_scope(tool, action.target, context.scope, context.now)
-    if outcome.decision == Decision.BLOCKED:
-        return blocked_result(CheckName.SCOPE, outcome)
-
-    outcome = check_command(tool, action.target, arguments)
-    if outcome.decision == Decision.BLOCKED:
-        return blocked_result(CheckName.COMMAND, outcome)
-
-    risk_outcome = check_risk(tool, arguments, action.is_validation, context.scope.max_risk)
-    if risk_outcome.decision == Decision.BLOCKED:
-        return blocked_result(CheckName.RISK, risk_outcome)
-    risk = risk_outcome.risk
-
-    outcome = check_loop(
-        tool,
-        action.target,
-        arguments,
-        context.recent_runs,
-        context.runs_in_assessment,
-        context.now,
-        limits,
-    )
-    if outcome.decision == Decision.BLOCKED:
-        return blocked_result(CheckName.LOOP, outcome, risk)
-
+    risk = None
+    for check_name, run in steps:
+        try:
+            outcome = run()
+        except Exception:
+            outcome = blocked("CHECK_ERROR")
+        if outcome.decision == Decision.BLOCKED:
+            return blocked_result(check_name, outcome, risk)
+        if check_name == CheckName.RISK:
+            risk = outcome.risk
     return PipelineResult(decision=Decision.ALLOW, risk=risk)
+
+
+Step = tuple[CheckName, Callable[[], CheckOutcome]]
+
+
+def check_steps(action: ActionLike, context: ContextLike, limits: LoopLimits) -> list[Step]:
+    """The 5 checks in their fixed order. Each runs only when the one before allowed."""
+    tool = str(action.tool)
+    target = action.target
+    arguments = action.arguments
+    scope = context.scope
+    return [
+        (CheckName.INPUT, lambda: check_input(context.input_text)),
+        (CheckName.SCOPE, lambda: check_scope(tool, target, scope, context.now)),
+        (CheckName.COMMAND, lambda: check_command(tool, target, arguments)),
+        (CheckName.RISK, lambda: check_risk(tool, arguments, action.is_validation, scope.max_risk)),
+        (
+            CheckName.LOOP,
+            lambda: check_loop(
+                tool,
+                target,
+                arguments,
+                context.recent_runs,
+                context.runs_in_assessment,
+                context.now,
+                limits,
+            ),
+        ),
+    ]
 
 
 def blocked_result(

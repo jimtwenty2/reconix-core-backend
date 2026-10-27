@@ -171,3 +171,49 @@ def test_loop_block_keeps_the_real_risk() -> None:
 def test_loop_limits_can_be_passed_in() -> None:
     result = check(Action(), Context(runs_in_assessment=5), LoopLimits(max_runs_per_assessment=5))
     assert blocked(result) == (CheckName.LOOP, "RUN_LIMIT_REACHED")
+
+
+# --- a broken check blocks -------------------------------------------------
+
+
+def test_time_window_without_timezone_blocks_instead_of_crashing() -> None:
+    scope = replace(Scope(), window_start=datetime(2026, 10, 26, 9, 0))
+    result = check(Action(), Context(scope=scope))
+    assert blocked(result) == (CheckName.SCOPE, "CHECK_ERROR")
+    assert result.risk == RiskLevel.HIGH
+
+
+def test_bad_max_risk_blocks_instead_of_crashing() -> None:
+    scope = replace(Scope(), max_risk="low")
+    assert blocked(check(Action(), Context(scope=scope))) == (CheckName.RISK, "CHECK_ERROR")
+
+
+def test_missing_field_blocks_instead_of_crashing() -> None:
+    @dataclass(frozen=True)
+    class NoArguments:
+        tool: str = "NMAP"
+        target: str = "172.20.0.5"
+
+    result = check(NoArguments(), Context())
+    assert result.decision == Decision.BLOCKED
+    assert result.reason == "CHECK_ERROR"
+
+
+# --- the loop check cannot be dodged by rewriting the target ---------------
+
+
+@pytest.mark.parametrize("target", ["juice-shop.lab:1", "juice-shop.lab.", "JUICE-SHOP.lab"])
+def test_rewritten_targets_are_blocked_before_the_loop_check(target: str) -> None:
+    scope = replace(Scope(), domains=["juice-shop.lab"])
+    result = check(Action(target=target), Context(scope=scope))
+    assert blocked(result) == (CheckName.SCOPE, "TARGET_NOT_NORMALIZED")
+
+
+# --- hidden characters in arguments ----------------------------------------
+
+
+@pytest.mark.parametrize("arguments", [["-p", "80‮"], ["-p", "8​0"], ["-s​V"]])
+def test_hidden_characters_in_arguments_are_blocked(arguments: list[str]) -> None:
+    result = check(Action(arguments=arguments), Context())
+    assert result.decision == Decision.BLOCKED
+    assert result.blocked_by == CheckName.COMMAND

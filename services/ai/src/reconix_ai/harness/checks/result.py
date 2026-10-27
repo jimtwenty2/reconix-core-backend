@@ -1,7 +1,8 @@
 """The result every check returns.
 
 The harness does not import reconix_api, so it keeps its own small result.
-The pipeline turns it into the shared CheckResult from core/interfaces.py.
+The pipeline turns it into a PipelineResult, which has the same fields as the
+shared CheckResult in core/interfaces.py.
 """
 
 from dataclasses import dataclass

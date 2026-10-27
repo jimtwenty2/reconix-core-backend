@@ -96,12 +96,17 @@ def test_network_that_contains_an_excluded_ip_is_blocked() -> None:
 # --- domains ---------------------------------------------------------------
 
 
+def test_exact_domain_is_allowed() -> None:
+    assert_allowed("juice-shop.lab")
+
+
 @pytest.mark.parametrize(
     "target",
-    ["juice-shop.lab", "JUICE-SHOP.LAB", "juice-shop.lab.", "juice-shop.lab:3000"],
+    ["JUICE-SHOP.LAB", "juice-shop.lab.", "juice-shop.lab:3000", "juice-shop.lab:1"],
 )
-def test_exact_domain_is_allowed(target: str) -> None:
-    assert_allowed(target)
+def test_domain_not_in_plain_form_is_blocked(target: str) -> None:
+    # The tool runs the target as written, so it must be the form the check reads.
+    assert_blocked(target, "TARGET_NOT_NORMALIZED")
 
 
 @pytest.mark.parametrize("target", ["app.reconix.lab", "a.b.reconix.lab"])
@@ -127,16 +132,27 @@ def test_excluded_subdomain_is_blocked() -> None:
     assert_blocked("admin.reconix.lab", "TARGET_EXCLUDED")
 
 
-def test_punycode_and_unicode_names_are_the_same_domain() -> None:
+def test_international_names_must_be_written_in_punycode() -> None:
     scope = replace(SCOPE, domains=["bücher.lab"])
     assert_allowed("xn--bcher-kva.lab", scope=scope)
-    assert_allowed("BÜCHER.lab", scope=scope)
+    assert_blocked("bücher.lab", "TARGET_NOT_NORMALIZED", scope=scope)
+    assert_blocked("BÜCHER.lab", "TARGET_NOT_NORMALIZED", scope=scope)
 
 
 def test_look_alike_domain_is_blocked() -> None:
     # Cyrillic "а" instead of Latin "a" is a different domain.
-    assert_blocked("аpp.reconix.lab.evil.com", "TARGET_OUT_OF_SCOPE")
-    assert_blocked("juice-shop.lаb", "TARGET_OUT_OF_SCOPE")
+    assert_blocked("аpp.reconix.lab.evil.com", "TARGET_NOT_NORMALIZED")
+    assert_blocked("juice-shop.lаb", "TARGET_NOT_NORMALIZED")
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["app\u200b.reconix.lab", "ａｐｐ.reconix.lab", "app.reconix.lab\u202e"],
+)
+def test_hidden_and_full_width_characters_are_blocked(target: str) -> None:
+    # IDNA would quietly turn these into "app.reconix.lab", but the tool gets the raw text.
+    outcome = check_scope("NMAP", target, SCOPE, NOW)
+    assert outcome.decision == Decision.BLOCKED
 
 
 # --- URLs ------------------------------------------------------------------
@@ -275,3 +291,94 @@ def test_empty_scope_allows_nothing() -> None:
     empty = Scope(ip_ranges=[], domains=[], url_prefixes=[], repo_paths=[], excluded_targets=[])
     assert_blocked("172.20.0.5", "TARGET_OUT_OF_SCOPE", scope=empty)
     assert_blocked("juice-shop.lab", "TARGET_OUT_OF_SCOPE", scope=empty)
+
+
+# --- plain form, tool kinds and wider exclusions ---------------------------
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://juice-shop.lab:3000//admin",
+        "http://juice-shop.lab:3000/x//admin",
+        "http://juice-shop.lab:3000/admin;x",
+        "http://juice-shop.lab:3000/admin%3bx",
+        "http://juice-shop.lab:3000/%2fadmin",
+        "http://juice-shop.lab:3000/%252e",
+        "http://juice-shop.lab:3000/./admin",
+    ],
+)
+def test_url_path_tricks_are_blocked(target: str) -> None:
+    assert_blocked(target, "TARGET_NOT_NORMALIZED", tool="ZAP")
+
+
+def test_excluded_url_path_ignores_case() -> None:
+    assert_blocked("http://juice-shop.lab:3000/Admin", "TARGET_EXCLUDED", tool="ZAP")
+    assert_blocked("http://juice-shop.lab:3000/ADMIN/users", "TARGET_EXCLUDED", tool="ZAP")
+
+
+def test_normal_url_paths_still_pass() -> None:
+    assert_allowed("http://juice-shop.lab:3000/rest/products/search?q=a%20b", tool="ZAP")
+    assert_allowed("http://juice-shop.lab:3000/rest/", tool="NUCLEI")
+
+
+@pytest.mark.parametrize(
+    ("tool", "target"),
+    [
+        ("NMAP", "/lab/vuln-repo"),
+        ("NMAP", "http://juice-shop.lab:3000/"),
+        ("NUCLEI", "172.20.0.5"),
+        ("ZAP", "juice-shop.lab"),
+        ("SEMGREP", "172.20.0.5"),
+        ("GITLEAKS", "http://juice-shop.lab:3000/"),
+    ],
+)
+def test_each_tool_takes_only_its_own_target_kinds(tool: str, target: str) -> None:
+    assert_blocked(target, "TARGET_KIND_NOT_ALLOWED", tool=tool)
+
+
+@pytest.mark.parametrize(
+    ("tool", "target"),
+    [
+        ("NMAP", "172.20.0.5"),
+        ("NMAP", "172.20.0.16/28"),
+        ("NMAP", "juice-shop.lab"),
+        ("NUCLEI", "juice-shop.lab"),
+        ("NUCLEI", "http://juice-shop.lab:3000/"),
+        ("ZAP", "http://juice-shop.lab:3000/"),
+        ("SEMGREP", "/lab/vuln-repo"),
+        ("GITLEAKS", "/lab/vuln-repo/src"),
+    ],
+)
+def test_each_tool_takes_its_own_target_kinds(tool: str, target: str) -> None:
+    assert_allowed(target, tool=tool)
+
+
+def test_repo_path_not_in_plain_form_is_blocked() -> None:
+    assert_blocked("/lab/vuln-repo//src", "TARGET_NOT_NORMALIZED", tool="SEMGREP")
+    assert_blocked("/lab/vuln-repo/./src", "TARGET_NOT_NORMALIZED", tool="SEMGREP")
+    assert_allowed("/lab/vuln-repo/src/", tool="SEMGREP")
+
+
+def test_wildcard_exclusion_also_excludes_the_bare_domain() -> None:
+    scope = replace(SCOPE, domains=["*.reconix.lab", "admin.lab"], excluded_targets=["*.admin.lab"])
+    assert_blocked("admin.lab", "TARGET_EXCLUDED", scope=scope)
+
+
+def test_excluded_whole_site_also_excludes_its_host() -> None:
+    scope = replace(
+        SCOPE,
+        url_prefixes=["http://juice-shop.lab:3000/"],
+        excluded_targets=["http://juice-shop.lab:3000/"],
+    )
+    assert_blocked("juice-shop.lab", "TARGET_EXCLUDED", scope=scope)
+    assert_blocked("juice-shop.lab", "TARGET_EXCLUDED", tool="NUCLEI", scope=scope)
+
+
+def test_excluded_path_does_not_exclude_the_whole_host() -> None:
+    # SCOPE excludes only "http://juice-shop.lab:3000/admin".
+    assert_allowed("juice-shop.lab")
+
+
+def test_port_zero_is_not_the_default_port() -> None:
+    assert_blocked("http://juice-shop.lab:0/", "TARGET_OUT_OF_SCOPE", tool="ZAP")

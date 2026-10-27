@@ -2,6 +2,10 @@
 
 Blocks chat text that is too long, has hidden control characters, or tries to
 trick the AI (prompt injection).
+
+The prompt-injection patterns are best-effort: a reworded attack can get past
+them. They are not the real defence. The scope, command and risk checks are,
+because they judge the action itself, whatever the chat said.
 """
 
 import re

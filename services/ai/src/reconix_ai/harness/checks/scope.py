@@ -7,8 +7,18 @@ A target is allowed only if it is inside the approved scope:
 - a path inside an allowed repo folder.
 
 Excluded targets are always blocked, any ".." is blocked, and the tool and the
-time window must be allowed too. The check never reads the database or the
-network; it only looks at the strings it is given.
+time window must be allowed too. Each tool only takes its own kinds of target
+(nmap never gets a repo path).
+
+The tool runs the target string exactly as given, so a target must already be
+in its plain form: ASCII only (punycode for international names), lower case,
+no trailing dot, no port on a domain, and no URL path tricks like "//",
+"%2f" or ";". Anything else is blocked instead of being cleaned up, so what was
+checked is always what runs.
+
+The check never reads the database or the network; it only looks at the
+strings it is given. So an excluded IP does not exclude a domain that resolves
+to it: the API must resolve domains first if that matters.
 """
 
 import ipaddress
@@ -30,6 +40,8 @@ IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 URL_SCHEMES = {"http": 80, "https": 443}
 HOST_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$")
 BAD_TARGET_CHARACTERS = re.compile(r"[\s\\\x00-\x1f\x7f]")
+# Path parts some web servers read differently from this check.
+TRICKY_URL_PATH = re.compile(r"//|;|%(2f|5c|2e|3b|25|00)|(^|/)\.(/|$)", re.IGNORECASE)
 
 
 class ScopeRules(Protocol):
@@ -65,6 +77,15 @@ class TargetKind(StrEnum):
     PATH = "PATH"
 
 
+TOOL_TARGET_KINDS = {
+    "NMAP": {TargetKind.IP, TargetKind.NETWORK, TargetKind.DOMAIN},
+    "NUCLEI": {TargetKind.URL, TargetKind.DOMAIN},
+    "ZAP": {TargetKind.URL},
+    "SEMGREP": {TargetKind.PATH},
+    "GITLEAKS": {TargetKind.PATH},
+}
+
+
 @dataclass(frozen=True)
 class Url:
     scheme: str
@@ -96,7 +117,11 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
     parsed = parse_target(target)
     if parsed is None:
         return blocked("INVALID_TARGET")
-    if any(matches_entry(parsed, entry) for entry in scope.excluded_targets):
+    if not is_plain_form(target, parsed):
+        return blocked("TARGET_NOT_NORMALIZED")
+    if parsed.kind not in TOOL_TARGET_KINDS.get(tool.upper(), set()):
+        return blocked("TARGET_KIND_NOT_ALLOWED")
+    if any(is_excluded(parsed, entry) for entry in scope.excluded_targets):
         return blocked("TARGET_EXCLUDED")
     if not is_in_scope(parsed, scope):
         return blocked("TARGET_OUT_OF_SCOPE")
@@ -106,6 +131,20 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
 def has_path_traversal(target: str) -> bool:
     # Decode twice so "%2e%2e" and "%252e%252e" are caught too.
     return ".." in unquote(unquote(target))
+
+
+def is_plain_form(text: str, target: Target) -> bool:
+    """True if the target is written exactly as the check reads it."""
+    if not text.isascii():
+        return False
+    match target.kind:
+        case TargetKind.DOMAIN:
+            return text == target.host
+        case TargetKind.PATH:
+            return text.rstrip("/") == str(target.path).rstrip("/")
+        case TargetKind.URL:
+            return TRICKY_URL_PATH.search(urlsplit(text).path) is None
+    return True
 
 
 # --- reading a target ------------------------------------------------------
@@ -182,7 +221,7 @@ def parse_url(text: str) -> Url | None:
     return Url(
         scheme=scheme,
         host=host,
-        port=port or URL_SCHEMES[scheme],
+        port=port if port is not None else URL_SCHEMES[scheme],
         path=posixpath.normpath(unquote(parts.path) or "/"),
     )
 
@@ -224,6 +263,32 @@ def matches_entry(target: Target, entry: str) -> bool:
             return url_matches(target.url, rule, wildcard)
         case TargetKind.PATH:
             return rule.kind == TargetKind.PATH and target.path.is_relative_to(rule.path)
+    return False
+
+
+def is_excluded(target: Target, entry: str) -> bool:
+    """Like matches_entry, but wider: an exclusion should rather block too much."""
+    if matches_entry(target, entry):
+        return True
+    # "*.admin.lab" also excludes "admin.lab" itself.
+    if entry.startswith("*.") and matches_entry(target, entry.removeprefix("*.")):
+        return True
+    rule = parse_target(entry)
+    if rule is None or rule.kind != TargetKind.URL:
+        return False
+    # An excluded whole site ("http://admin.lab/") also excludes its host as a
+    # plain domain or IP. An excluded path only excludes URLs under it.
+    if target.kind == TargetKind.DOMAIN and rule.url.path == "/":
+        return target.host == rule.url.host
+    if target.kind == TargetKind.IP and rule.url.path == "/":
+        return str(target.ip) == rule.url.host
+    # Some servers ignore case in paths, so "/Admin" is excluded like "/admin".
+    if target.kind == TargetKind.URL:
+        return (
+            target.url.host == rule.url.host
+            and target.url.port == rule.url.port
+            and path_starts_with(target.url.path.lower(), rule.url.path.lower())
+        )
     return False
 
 
