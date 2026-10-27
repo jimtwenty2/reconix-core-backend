@@ -37,3 +37,11 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--durations=10"
 pythonpath = ["."]
+
+# The TUI's own lint settings (it supports Python 3.9, unlike the workspace's 3.12 default)
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]

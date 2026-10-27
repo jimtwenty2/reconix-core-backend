@@ -181,8 +181,8 @@ def main(argv=None) -> int:
         if on_disk == expected:
             print(f"{OUT.relative_to(ROOT.parent)} is up to date")
             return 0
-        print(f"{OUT.relative_to(ROOT.parent)} is stale: run python scripts/make_knowledge_vectors.py",
-              file=sys.stderr)
+        print(f"{OUT.relative_to(ROOT.parent)} is stale: "
+              "run python scripts/make_knowledge_vectors.py", file=sys.stderr)
         return 1
     if args:
         print("usage: python scripts/make_knowledge_vectors.py [--check]", file=sys.stderr)
