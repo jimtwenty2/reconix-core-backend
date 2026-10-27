@@ -9,6 +9,7 @@ from tests.fakes.fake_core import (
     FakeOperators,
     FakeScopes,
     fake_check,
+    fake_mask_secrets,
 )
 from tests.fakes.fake_mcp import FakeMcp
 
@@ -42,4 +43,5 @@ __all__ = [
     "FakeScopes",
     "build_fake_interfaces",
     "fake_check",
+    "fake_mask_secrets",
 ]

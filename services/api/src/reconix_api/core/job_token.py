@@ -40,12 +40,18 @@ def _signature(payload: str, secret: str) -> str:
 
 
 def sign_job_token(
-    tool_run_id: UUID, action_hash: str, secret: str, now: datetime, ttl_seconds: int
+    tool_run_id: UUID,
+    action_hash: str,
+    secret: str,
+    now: datetime,
+    ttl_seconds: int,
+    jti: str | None = None,
 ) -> str:
+    """jti defaults to a random id; the backend passes tool_runs.job_token_id."""
     if not secret:
         raise ValueError("RECONIX_JOB_TOKEN_SECRET is not set")
     claims = JobClaims(
-        jti=secrets.token_urlsafe(16),
+        jti=jti or secrets.token_urlsafe(16),
         tool_run_id=tool_run_id,
         action_hash=action_hash,
         expires_at=now + timedelta(seconds=ttl_seconds),

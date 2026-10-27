@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from reconix_api.main import create_app
-from tests.fakes import OPERATOR_TOKEN, VIEWER_TOKEN, build_fake_interfaces
+from tests.fakes import OPERATOR_TOKEN, VIEWER_TOKEN, build_fake_interfaces, fake_mask_secrets
 
 
 @pytest.fixture
@@ -14,7 +14,7 @@ def fakes():
 @pytest.fixture
 def app(fakes):
     interfaces, _ = fakes
-    return create_app(interfaces)
+    return create_app(interfaces, mask_secrets=fake_mask_secrets)
 
 
 @pytest.fixture

@@ -19,17 +19,18 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from reconix_api.core.config import get_settings
+from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_db
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.main import create_app
 from reconix_api.models import Base
 from reconix_api.services.scopes import make_get_approved_scope
-from tests.fakes import build_fake_interfaces
+from tests.fakes import build_fake_interfaces, fake_mask_secrets
 
 TEST_DATABASE_URL = os.environ.get("RECONIX_TEST_DATABASE_URL")
 ALEMBIC_INI = Path(__file__).parents[2] / "alembic.ini"
 KEEP_TABLES = {"llm_providers"}  # seed data from the migration
+JOB_TOKEN_SECRET = "integration-test-secret"  # noqa: S105
 
 
 @pytest.fixture(scope="session")
@@ -64,13 +65,16 @@ def db_app(session_factory):
         get_operator=tokens.get_operator,
         get_approved_scope=make_get_approved_scope(session_factory),
     )
-    app = create_app(interfaces, session_tokens=tokens)
+    app = create_app(interfaces, session_tokens=tokens, mask_secrets=fake_mask_secrets)
+    settings = Settings(database_url=TEST_DATABASE_URL, job_token_secret=JOB_TOKEN_SECRET)
+    parts["mcp"].secret = JOB_TOKEN_SECRET  # checks tokens the way the Kali side does
 
     def test_db():
         with session_factory() as db:
             yield db
 
     app.dependency_overrides[get_db] = test_db
+    app.dependency_overrides[get_settings] = lambda: settings
     app.state.parts = parts
     return app
 

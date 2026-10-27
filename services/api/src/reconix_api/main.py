@@ -4,25 +4,28 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from reconix_api.api import approvals, assessments, scopes, sessions, system
+from reconix_api.api import actions, approvals, assessments, scopes, sessions, system
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_session_factory
 from reconix_api.core.errors import add_error_handlers
 from reconix_api.core.interfaces import Interfaces
+from reconix_api.core.masking import MaskSecrets
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
-from reconix_api.core.wiring import build_interfaces
+from reconix_api.core.wiring import build_interfaces, build_mask_secrets
 
 
 def create_app(
     interfaces: Interfaces,
     settings: Settings | None = None,
     session_tokens: SessionTokens | None = None,
+    mask_secrets: MaskSecrets | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="Reconix API", version="0.0.0")
     app.state.interfaces = interfaces
     app.state.session_tokens = session_tokens or SessionTokens()
+    app.state.mask_secrets = mask_secrets or build_mask_secrets()
 
     # Added last = runs first: the Host check wraps everything, CORS included.
     app.add_middleware(
@@ -39,12 +42,14 @@ def create_app(
     app.include_router(scopes.router)
     app.include_router(assessments.router)
     app.include_router(approvals.router)
+    app.include_router(actions.router)
     return app
 
 
 _session_tokens = SessionTokens()
 app = create_app(
-    build_interfaces(_session_tokens, get_session_factory()), session_tokens=_session_tokens
+    build_interfaces(_session_tokens, get_session_factory(), get_settings().audit_log_path),
+    session_tokens=_session_tokens,
 )
 
 

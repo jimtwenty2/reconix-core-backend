@@ -1,6 +1,7 @@
 """Fakes for get_operator, check, get_approved_scope and write_audit."""
 
 import ipaddress
+import re
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from reconix_api.core.interfaces import (
@@ -104,3 +105,11 @@ def fake_check(action: Action, context: CheckContext) -> CheckResult:
     if RISK_ORDER[risk] > RISK_ORDER[context.scope.max_risk]:
         return _blocked(CheckName.RISK, "RISK_ABOVE_SCOPE_MAX", risk)
     return CheckResult(decision=Decision.ALLOW, risk=risk)
+
+
+SECRET_SHAPE = re.compile(r"(?i)((?:password|token|api[_-]?key)\s*[:=]\s*)(\S+)")
+
+
+def fake_mask_secrets(text: str) -> tuple[str, int]:
+    """A small version of the real masking: only key=value secrets."""
+    return SECRET_SHAPE.subn(r"\1[MASKED:secret]", text)

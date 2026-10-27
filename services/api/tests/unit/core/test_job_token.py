@@ -28,6 +28,10 @@ def test_every_token_has_its_own_id():
     assert first.jti != second.jti
 
 
+def test_the_backend_can_pin_the_token_id():
+    assert verify_job_token(make_token(jti="run-token-1"), SECRET, NOW).jti == "run-token-1"
+
+
 def test_expired_token_is_refused():
     with pytest.raises(InvalidJobToken, match="EXPIRED"):
         verify_job_token(make_token(), SECRET, NOW + timedelta(seconds=301))
