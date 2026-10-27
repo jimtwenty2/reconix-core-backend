@@ -6,8 +6,12 @@ Swap each stub for the real function on merge day.
 
 from typing import NoReturn
 
+from sqlalchemy.orm import Session, sessionmaker
+
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Interfaces
+from reconix_api.core.session_tokens import SessionTokens
+from reconix_api.services.scopes import make_get_approved_scope
 
 
 def _not_ready(part: str):
@@ -20,10 +24,18 @@ def _not_ready(part: str):
     return stub, async_stub
 
 
-def build_interfaces() -> Interfaces:
+def build_interfaces(
+    session_tokens: SessionTokens | None = None,
+    session_factory: sessionmaker[Session] | None = None,
+) -> Interfaces:
+    """The API's own two parts are real when their inputs are given."""
     get_operator, _ = _not_ready("get_operator")
-    check, _ = _not_ready("check")
+    if session_tokens is not None:
+        get_operator = session_tokens.get_operator
     get_approved_scope, _ = _not_ready("get_approved_scope")
+    if session_factory is not None:
+        get_approved_scope = make_get_approved_scope(session_factory)
+    check, _ = _not_ready("check")
     write_audit, _ = _not_ready("write_audit")
     _, ask_agent = _not_ready("ask_agent")
     _, call_tool = _not_ready("call_tool")

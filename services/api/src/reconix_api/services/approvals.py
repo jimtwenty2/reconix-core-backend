@@ -3,7 +3,10 @@
 Pure functions, so they are easy to test. The database layer stores the fields below.
 """
 
+import hashlib
+import json
 from datetime import datetime, timedelta
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -13,12 +16,20 @@ from reconix_api.models.enums import ApprovalStatus
 
 
 class ApprovalState(BaseModel):
+    """risk and target are only set for action approvals."""
+
     status: ApprovalStatus
-    risk: RiskLevel
-    target: str
+    risk: RiskLevel | None = None
+    target: str | None = None
     created_at: datetime
     expires_at: datetime
     used_at: datetime | None = None
+
+
+def snapshot_hash(snapshot: dict[str, Any]) -> str:
+    """SHA-256 of a snapshot in a fixed form, stored as approvals.subject_hash."""
+    canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def expires_at(created_at: datetime, ttl_minutes: int) -> datetime:

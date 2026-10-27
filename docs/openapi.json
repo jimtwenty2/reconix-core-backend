@@ -1,6 +1,263 @@
 {
   "components": {
     "schemas": {
+      "ApprovalDecision": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "typed_target": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typed Target"
+          }
+        },
+        "title": "ApprovalDecision",
+        "type": "object"
+      },
+      "ApprovalOut": {
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "approval_id": {
+            "format": "uuid",
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "approval_status": {
+            "$ref": "#/components/schemas/ApprovalStatus"
+          },
+          "confirmation_verified": {
+            "title": "Confirmation Verified",
+            "type": "boolean"
+          },
+          "consumed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumed At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "manifest_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subject_hash": {
+            "title": "Subject Hash",
+            "type": "string"
+          },
+          "subject_snapshot": {
+            "additionalProperties": true,
+            "title": "Subject Snapshot",
+            "type": "object"
+          }
+        },
+        "required": [
+          "approval_id",
+          "kind",
+          "subject_snapshot",
+          "subject_hash",
+          "risk_level",
+          "approval_status",
+          "confirmation_verified",
+          "reason",
+          "decided_by",
+          "requested_at",
+          "decided_at",
+          "consumed_at",
+          "expires_at",
+          "action_id",
+          "manifest_id"
+        ],
+        "title": "ApprovalOut",
+        "type": "object"
+      },
+      "ApprovalStatus": {
+        "enum": [
+          "PENDING",
+          "APPROVED",
+          "REJECTED",
+          "EXPIRED"
+        ],
+        "title": "ApprovalStatus",
+        "type": "string"
+      },
+      "AssessmentOut": {
+        "properties": {
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "assessment_status": {
+            "$ref": "#/components/schemas/AssessmentStatus"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "engagement_code": {
+            "title": "Engagement Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assessment_id",
+          "engagement_code",
+          "name",
+          "type",
+          "assessment_status",
+          "created_by",
+          "created_at",
+          "updated_at",
+          "session_id"
+        ],
+        "title": "AssessmentOut",
+        "type": "object"
+      },
+      "AssessmentStatus": {
+        "enum": [
+          "DRAFT",
+          "ACTIVE",
+          "COMPLETED",
+          "CANCELLED"
+        ],
+        "title": "AssessmentStatus",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
       "Health": {
         "properties": {
           "status": {
@@ -13,6 +270,15 @@
         ],
         "title": "Health",
         "type": "object"
+      },
+      "ManifestStatus": {
+        "enum": [
+          "DRAFT",
+          "APPROVED",
+          "REJECTED"
+        ],
+        "title": "ManifestStatus",
+        "type": "string"
       },
       "Operator": {
         "description": "Who is calling. A VIEWER may only read.",
@@ -38,6 +304,15 @@
         "title": "Operator",
         "type": "object"
       },
+      "RiskLevel": {
+        "enum": [
+          "LOW",
+          "MEDIUM",
+          "HIGH"
+        ],
+        "title": "RiskLevel",
+        "type": "string"
+      },
       "Role": {
         "enum": [
           "OPERATOR",
@@ -45,6 +320,483 @@
         ],
         "title": "Role",
         "type": "string"
+      },
+      "ScopeDraft": {
+        "description": "A new or edited draft. Editing replaces every field and every target.",
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "enum": [
+                "discovery",
+                "scan",
+                "validation"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "allowed_methods": {
+            "items": {
+              "enum": [
+                "GET",
+                "HEAD",
+                "OPTIONS",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Methods",
+            "type": "array"
+          },
+          "allowed_tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolName"
+            },
+            "minItems": 1,
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "limitations": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limitations"
+          },
+          "max_risk": {
+            "$ref": "#/components/schemas/RiskLevel",
+            "default": "LOW"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeTargetIn"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "allowed_tools",
+          "targets"
+        ],
+        "title": "ScopeDraft",
+        "type": "object"
+      },
+      "ScopeOut": {
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "allowed_methods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Methods",
+            "type": "array"
+          },
+          "allowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Tools",
+            "type": "array"
+          },
+          "assessment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Id"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "limitations": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limitations"
+          },
+          "manifest_id": {
+            "format": "uuid",
+            "title": "Manifest Id",
+            "type": "string"
+          },
+          "manifests_status": {
+            "$ref": "#/components/schemas/ManifestStatus"
+          },
+          "max_risk": {
+            "$ref": "#/components/schemas/RiskLevel"
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeTargetOut"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "manifest_id",
+          "version",
+          "manifests_status",
+          "max_risk",
+          "allowed_tools",
+          "allowed_actions",
+          "allowed_methods",
+          "starts_at",
+          "ends_at",
+          "limitations",
+          "decided_by",
+          "decided_at",
+          "reject_reason",
+          "session_id",
+          "assessment_id",
+          "targets"
+        ],
+        "title": "ScopeOut",
+        "type": "object"
+      },
+      "ScopeSubmit": {
+        "description": "Submitting creates the DRAFT assessment, so it carries the assessment's name and type.",
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ScopeSubmit",
+        "type": "object"
+      },
+      "ScopeSubmitted": {
+        "properties": {
+          "approval_id": {
+            "format": "uuid",
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "assessment": {
+            "$ref": "#/components/schemas/AssessmentOut"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ScopeOut"
+          }
+        },
+        "required": [
+          "scope",
+          "assessment",
+          "approval_id"
+        ],
+        "title": "ScopeSubmitted",
+        "type": "object"
+      },
+      "ScopeTargetIn": {
+        "properties": {
+          "excluded": {
+            "default": false,
+            "title": "Excluded",
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "domain",
+              "ip",
+              "cidr",
+              "url"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "value"
+        ],
+        "title": "ScopeTargetIn",
+        "type": "object"
+      },
+      "ScopeTargetOut": {
+        "properties": {
+          "excluded": {
+            "default": false,
+            "title": "Excluded",
+            "type": "boolean"
+          },
+          "scope_target_id": {
+            "format": "uuid",
+            "title": "Scope Target Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "domain",
+              "ip",
+              "cidr",
+              "url"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "value",
+          "scope_target_id"
+        ],
+        "title": "ScopeTargetOut",
+        "type": "object"
+      },
+      "SessionCreate": {
+        "properties": {
+          "interface": {
+            "enum": [
+              "web",
+              "cli"
+            ],
+            "title": "Interface",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interface"
+        ],
+        "title": "SessionCreate",
+        "type": "object"
+      },
+      "SessionCreated": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "interface": {
+            "title": "Interface",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "interface",
+          "role",
+          "session_status",
+          "created_at",
+          "token"
+        ],
+        "title": "SessionCreated",
+        "type": "object"
+      },
+      "SessionStatus": {
+        "enum": [
+          "ACTIVE",
+          "CLOSED"
+        ],
+        "title": "SessionStatus",
+        "type": "string"
+      },
+      "ToolName": {
+        "description": "The only 5 tools. The MCP client maps these to the Kali tool names.",
+        "enum": [
+          "NMAP",
+          "NUCLEI",
+          "ZAP",
+          "SEMGREP",
+          "GITLEAKS"
+        ],
+        "title": "ToolName",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
       }
     }
   },
@@ -54,6 +806,223 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/approvals": {
+      "get": {
+        "operationId": "list_pending_approvals_approvals_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApprovalOut"
+                  },
+                  "title": "Response List Pending Approvals Approvals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Pending Approvals",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/approvals/{approval_id}": {
+      "get": {
+        "operationId": "read_approval_approvals__approval_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Approval",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/approvals/{approval_id}/approve": {
+      "post": {
+        "operationId": "approve_approvals__approval_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Approve",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/approvals/{approval_id}/reject": {
+      "post": {
+        "operationId": "reject_approvals__approval_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject",
+        "tags": [
+          "approvals"
+        ]
+      }
+    },
+    "/assessments/{assessment_id}": {
+      "get": {
+        "operationId": "read_assessment_assessments__assessment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Assessment",
+        "tags": [
+          "assessments"
+        ]
+      }
+    },
     "/health": {
       "get": {
         "operationId": "health_health_get",
@@ -93,6 +1062,237 @@
         "summary": "Me",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/scopes": {
+      "post": {
+        "operationId": "create_scope_scopes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Scope",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/scopes/{manifest_id}": {
+      "get": {
+        "operationId": "read_scope_scopes__manifest_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "manifest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Manifest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Scope",
+        "tags": [
+          "scopes"
+        ]
+      },
+      "put": {
+        "operationId": "update_scope_scopes__manifest_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "manifest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Manifest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Scope",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/scopes/{manifest_id}/submit": {
+      "post": {
+        "description": "Creates the DRAFT assessment and a scope approval.",
+        "operationId": "submit_scope_scopes__manifest_id__submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "manifest_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Manifest Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeSubmit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeSubmitted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Scope",
+        "tags": [
+          "scopes"
+        ]
+      }
+    },
+    "/sessions": {
+      "post": {
+        "description": "Opens an OPERATOR session. Only reachable from this computer (Host check + CORS).",
+        "operationId": "open_session_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Session",
+        "tags": [
+          "sessions"
         ]
       }
     }
