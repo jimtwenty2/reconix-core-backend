@@ -21,6 +21,24 @@ writing Next.js code (this Next.js version differs from older ones: check
 - Never run real scanners (nmap, nuclei, nikto, sqlmap, …) from here: the `guard-bash` hook
   refuses them. Execution belongs to the backend, behind scope checks and human approval.
 
+## Data: static only (no API calls yet)
+
+The apps don't call the Core API yet. All data is static: the TUI's in-memory store
+(`tui/reconix/store/`), the web's saved runs (`web/sample-data/`, `~/.reconix/assessments`) and
+JSON files in `sample-data/api/`.
+
+- **Read the backend to learn the shape, never call it.** The contract is `docs/openapi.json`;
+  the models are in `services/api/src/reconix_api/schemas/`, the routes in `…/api/`, the enums in
+  `…/models/enums.py`. Never run the backend or send it a request.
+- **Make the data as JSON** in the exact response shape: one file per endpoint in
+  `sample-data/api/<resource>/<operation>.json` (the `make-static-data` skill). Every required
+  field, UPPERCASE ERD V3 enums, consistent ids, reserved domains and masked secrets only.
+- **Screens and views still go through their seam**: the TUI's store, the web's server-side
+  `lib/data/`. They never read the files directly.
+- **No API client code**: no `httpx`/`requests`, `RECONIX_API_URL` or `localhost:8000` in
+  `tui/reconix/` or `web/src/` (the `post-edit-check` hook refuses them). `backend-integrator`
+  and `wire-backend` are for later, only when the person asks to wire the API.
+
 ## TUI (`tui/`)
 
 Flow: **Start → Template → Plan → Approval → Execution → Findings → Finding Detail → Report.**
@@ -92,18 +110,20 @@ npm run lint && npx next typegen && npm run typecheck && npm test
 |---|---|
 | `tui-engineer` | TUI screens, widgets, bindings, TCSS |
 | `web-engineer` | Web views, components, routes, styles |
-| `backend-integrator` | Moving one TUI/web data source onto the Core API |
+| `backend-integrator` | Later only: moving a data source onto the Core API (when asked) |
 | `qa-tester` | Pilot tests (TUI), vitest / Playwright (web) |
 | `security-reviewer` | Scope, approval gate, secrets, auth, anything risky (read-only) |
 | `code-reviewer` | Final review against these rules (read-only) |
 
-Skills: `add-screen`, `add-widget`, `theme-tokens`, `write-tui-test`, `write-web-test`,
-`wire-backend`, `sync-generated`.
+Skills: `make-static-data` (static JSON in the API's shape), `add-screen`, `add-widget`,
+`theme-tokens`, `write-tui-test`, `write-web-test`, `sync-generated`, and `wire-backend` (later
+only, when asked).
 
 Guardrail hooks (`.claude/hooks/`): `stay-in-apps` (read the project, change `apps/` only, see Scope),
 `guard-paths` (no hand edits of generated files, no `.env` or key files), `guard-bash` (no real scanners, no push to `main`/`Develop`, no
 force push, no `--no-verify`, no reading key files), `scan-staged-secrets` (on `git commit`),
-`post-edit-check` (ruff + compile on Python edits, a security-review reminder on safety files).
+`post-edit-check` (ruff + compile on Python edits, no Core API calls, a security-review
+reminder on safety files).
 
 ## Git
 

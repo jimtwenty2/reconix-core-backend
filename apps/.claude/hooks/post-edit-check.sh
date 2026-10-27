@@ -18,6 +18,20 @@ case "$f" in
     out=$(grep -nE '#[0-9A-Fa-f]{6}\b' "$f") && problems+="Hex colors in TCSS (use \$tokens from theme.CSS_TOKENS):"$'\n'"$out"$'\n'
     ;;
 esac
+
+# Static data only for now: the apps don't call the Core API (port 8000) yet. Make the data
+# with the make-static-data skill. (`:8000/v1` is an LLM server address, not the Core API.)
+no_api="Static data only: the apps don't call the Core API yet. Read the backend for the response shape and add a JSON file under sample-data/api/ (make-static-data skill):"
+case "$f" in
+  */tui/reconix/*.py)
+    out=$(grep -nE '^\s*(import|from) (httpx|requests|aiohttp|urllib3)\b|RECONIX_API_URL|(localhost|127\.0\.0\.1):8000' "$f" \
+      | grep -v ':8000/v1') && problems+="$no_api"$'\n'"$out"$'\n'
+    ;;
+  */web/src/*.ts|*/web/src/*.tsx)
+    out=$(grep -nE 'RECONIX_API_URL|(localhost|127\.0\.0\.1):8000' "$f" | grep -v ':8000/v1') \
+      && problems+="$no_api"$'\n'"$out"$'\n'
+    ;;
+esac
 if [[ -n "$problems" ]]; then
   jq -n --arg r "Fix before going on (${f#"$apps"/}):
 ${problems:0:1500}" '{decision: "block", reason: $r}'

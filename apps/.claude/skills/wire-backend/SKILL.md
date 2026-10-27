@@ -1,9 +1,13 @@
 ---
 name: wire-backend
-description: Procedure for moving one data source of the Reconix TUI (tui/reconix/store/) or local web (web/src/lib/data/) onto the local Core API described by docs/openapi.json, with a layered client, workers, backend validation and an offline fallback. Use when connecting any screen or view to the backend.
+description: LATER ONLY, when the person explicitly asks to wire the API (today the apps use static data only: use make-static-data instead). Procedure for moving one data source of the Reconix TUI (tui/reconix/store/) or local web (web/src/lib/data/) onto the local Core API described by docs/openapi.json, with a layered client, workers, backend validation and an offline fallback. Use when connecting any screen or view to the backend.
 ---
 
 # Wire one data source to the Core API
+
+> **Not now.** The apps use static data only today (`make-static-data`). Follow this only when
+> the person explicitly asks to wire the API; it also needs the no-API check removed from
+> `.claude/hooks/post-edit-check.sh`, which the person decides.
 
 One resource at a time (scope, plan, approval, execution, findings, report). The contract is
 `docs/openapi.json` at the repo root: read it, never edit it. If the API lacks something, tell

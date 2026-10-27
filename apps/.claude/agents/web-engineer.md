@@ -22,6 +22,8 @@ changes: read the relevant guide in `web/node_modules/next/dist/docs/` before wr
   (`python -m reconix.knowledge`, fixed arguments, no shell).
 - Every page and route except sign-in needs a session: `src/proxy.ts` checks, and handlers
   check again (`src/lib/auth/`). Every change checks its Origin.
+- **Static data only**: no Core API calls. Data the UI lacks is made as JSON in the API's shape
+  (`make-static-data` skill) and read through the server-side `src/lib/data/`.
 - Data comes from the saved files through `src/lib/data/` (zod schema). Every number on screen
   comes from the derived cards, never from the model.
 - Masking: `src/lib/assistant/redact.ts` mirrors the TUI's `store/redact.py`; change both and

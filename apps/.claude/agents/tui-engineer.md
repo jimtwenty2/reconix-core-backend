@@ -23,6 +23,8 @@ Reconix TUI in `tui/`. Read `CLAUDE.md` and `tui/README.md` first and follow the
   `compose_body()`.
 - Navigation only through `self.app.go_next() / go_prev() / goto(name)`. Flow order lives only
   in `FLOW` (`shell/navigation.py`). Dialogs the app opens use `app.open_dialog(dialog, cb)`.
+- **Static data only**: no Core API calls. Data the UI lacks is made as JSON in the API's shape
+  (`make-static-data` skill) and read through the store.
 - No data literals in screens. Read through `reconix.store` functions (never `store.lists`).
   If a field is missing, add it to the store.
 - Never put user, tool or scope text into markup: build `rich.text.Text` (also for

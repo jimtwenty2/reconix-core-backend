@@ -7,7 +7,9 @@
 | `sample-data/` | Shared fake data (team scaffold). |
 
 The TUI saves each run (secrets removed) to `~/.reconix/assessments/`; the web reads those files.
-Nothing here needs the backend services: without them the TUI plays a realistic demo run.
+Nothing here needs the backend services: the apps use **static data only** for now (the TUI's
+in-memory demo, `web/sample-data/`, and API-shaped JSON in `sample-data/api/`, see
+`sample-data/README.md`). They don't call the Core API yet.
 
 ## Run after cloning
 
