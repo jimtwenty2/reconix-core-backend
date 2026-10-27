@@ -19,3 +19,6 @@ out/
 
 # Runtime data (audit log)
 data/
+# ...except the AI Service's committed data: tool guides and the knowledge sample.
+# The full knowledge download stays out through services/ai/data/knowledge/.gitignore.
+!services/ai/data/
