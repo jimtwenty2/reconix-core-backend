@@ -67,8 +67,13 @@ class ProviderError(Exception):
         self.message = message
 
 
-async def complete(messages: list[Message], config: ProviderConfig) -> Completion:
-    """Send masked messages to the configured model and return its masked answer."""
+async def complete(
+    messages: list[Message], config: ProviderConfig, json_answer: bool = False
+) -> Completion:
+    """Send masked messages to the configured model and return its masked answer.
+
+    json_answer asks the model for one JSON object. The caller still parses it.
+    """
     model = litellm_model(config)
     base_url = checked_base_url(config)
     masked_messages, masked_count = mask_messages(messages)
@@ -80,6 +85,7 @@ async def complete(messages: list[Message], config: ProviderConfig) -> Completio
             api_base=base_url,
             api_key=config.api_key,
             timeout=config.timeout_seconds,
+            response_format={"type": "json_object"} if json_answer else None,
         )
     except openai.OpenAIError as error:
         failure = provider_error(error, config)

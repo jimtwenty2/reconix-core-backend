@@ -45,6 +45,14 @@ async def test_reconix_calls_the_local_ollama_model(model: FakeModel) -> None:
     assert model.calls[0]["api_base"] == "http://127.0.0.1:11434"
 
 
+async def test_json_answer_asks_for_a_json_object(model: FakeModel) -> None:
+    await complete([Message("user", "plan")], reconix_provider())
+    await complete([Message("user", "plan")], reconix_provider(), json_answer=True)
+
+    assert model.calls[0]["response_format"] is None
+    assert model.calls[1]["response_format"] == {"type": "json_object"}
+
+
 async def test_ollama_url_comes_from_the_environment(
     model: FakeModel, monkeypatch: pytest.MonkeyPatch
 ) -> None:
