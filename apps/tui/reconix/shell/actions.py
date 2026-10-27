@@ -31,8 +31,8 @@ class ActionsMixin:
     def submit_request(self, text: str) -> bool:
         """A line typed at the Start prompt. True when it was accepted (the prompt clears).
 
-        Before a run, a target starts the run (an empty line uses the demo request) and
-        anything else gets a short answer. During a run the line goes to the assistant;
+        Before a run, a target starts the run, anything else gets a short answer and an
+        empty line does nothing (returns False). During a run the line goes to the assistant;
         an empty line reopens what the run waits for. After the run has finished
         (completed or stopped) every line is still a chat turn about that same assessment,
         with its history and context; an empty line opens Findings (or Report when there are
@@ -77,14 +77,15 @@ class ActionsMixin:
                 store.llm_answer(answer)                 # built-in reply, instant / offline
                 self.refresh_view()
             return True
+        if not text:
+            return False                 # nothing typed: no run starts, nothing changes
         self.agent_mode = False          # scripted path from here on
         try:
-            result = store.submit_prompt(text or store.DEMO_REQUEST)
+            result = store.submit_prompt(text)
         except store.StoreValidationError as exc:
             self._warn(exc)
             return False
-        if text:
-            self._remember(text)
+        self._remember(text)
         self.refresh_view()
         if result == "started":
             self.controller.resume()

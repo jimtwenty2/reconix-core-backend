@@ -130,9 +130,8 @@ async def show(app, pilot, name: str) -> None:
 
 
 async def start_demo(pilot) -> None:
-    """Enter on the empty Start prompt runs the demo request; it stops at the scope."""
-    await pilot.press("enter")
-    await settle(pilot)
+    """Type the demo request at the Start prompt; the run stops at the scope."""
+    await type_request(pilot, store.DEMO_REQUEST)
 
 
 async def type_request(pilot, text: str) -> None:

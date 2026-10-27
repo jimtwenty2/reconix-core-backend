@@ -16,7 +16,7 @@ from textual.app import App
 from textual.binding import Binding
 
 from . import store, theme
-from .commands import COMMANDS, Command, find, parse
+from .commands import COMMANDS, Command, CommandCheck, check_command_line, parse
 from .screens import ChoiceScreen, CommandBarScreen, HelpScreen, StartScreen
 from .shell import (
     ActionsMixin, AgentMixin, DialogsMixin, KnowledgeMixin, LlmMixin, NavigationMixin,
@@ -99,18 +99,25 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
             self.run_command_line(line)
 
     # --- slash commands ------------------------------------------------------------------------
+    def check_command(self, text: str) -> CommandCheck:
+        """Is `/name [arg]` a command that can run, with a fitting argument? Runs nothing."""
+        return check_command_line(COMMANDS, text, self)
+
+    @staticmethod
+    def is_path_line(text: str) -> bool:
+        """`/home/me/app` is a local path, not a command (its "name" holds a slash)."""
+        return "/" in parse(text)[0]
+
     def run_command_line(self, text: str) -> bool:
-        """Run `/name [arg]`. Returns False (and warns) for an unknown command."""
-        name, arg = parse(text)
-        command = find(COMMANDS, name)
-        if command is None and "/" in name:
-            return self.submit_request(text)   # a local path (/home/me/app), not a command
-        if command is None:
-            self.notify(f"Unknown command /{name}. Type / to see the list.",
-                        severity="warning", markup=False)
+        """Run `/name [arg]`. Returns False (and warns) when the line can't run."""
+        if self.is_path_line(text):
+            return self.submit_request(text)
+        check = self.check_command(text)
+        if not check.ok:
+            self.notify(check.error, severity="warning", markup=False)
             return False
         self._remember(text)
-        self.run_command(command, arg)
+        self.run_command(check.command, check.arg)
         return True
 
     def run_command(self, command: Command, arg: Optional[str] = None) -> None:

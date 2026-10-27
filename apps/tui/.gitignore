@@ -14,3 +14,6 @@ htmlcov/
 .reconix/
 *.db
 *.key
+
+# evidence screenshots from scripts/capture_start_input_evidence.py
+/test-results/
