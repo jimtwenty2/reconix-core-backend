@@ -10,6 +10,7 @@ CHANGES = [
     ("POST", f"/scopes/{ANY_ID}/submit"),
     ("POST", f"/approvals/{ANY_ID}/approve"),
     ("POST", f"/approvals/{ANY_ID}/reject"),
+    ("POST", f"/assessments/{ANY_ID}/actions"),
 ]
 
 

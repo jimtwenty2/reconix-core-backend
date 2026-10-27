@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Interfaces
+from reconix_api.core.masking import MaskSecrets
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.services.scopes import make_get_approved_scope
 
@@ -47,3 +48,9 @@ def build_interfaces(
         ask_agent=ask_agent,
         call_tool=call_tool,
     )
+
+
+def build_mask_secrets() -> MaskSecrets:
+    """Swap for reconix_ai.harness.mask_secrets on merge day. Never fall back to no masking."""
+    mask_secrets, _ = _not_ready("mask_secrets")
+    return mask_secrets

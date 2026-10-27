@@ -6,28 +6,37 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import Operator, WriteAudit
+from reconix_api.core.interfaces import Interfaces, Operator, WriteAudit
+from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import Approval
 from reconix_api.models.enums import ApprovalStatus
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.schemas.approvals import ApprovalDecision, ApprovalOut
-from reconix_api.services import scopes
-from reconix_api.services.approvals import ApprovalState, ensure_can_decide, expires_at
+from reconix_api.services import actions, scopes
+from reconix_api.services.approvals import approval_state, ensure_can_decide, expires_at
 
 
-def approve(
+async def approve(
     db: Db,
-    write_audit: WriteAudit,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    settings: Settings,
     operator: Operator,
-    ttl_minutes: int,
     approval_id: UUID,
     decision: ApprovalDecision,
 ) -> ApprovalOut:
+    """An approved action runs right away, inside this request."""
+    ttl_minutes = settings.approval_ttl_minutes
     approval = _get_pending(db, approval_id, ttl_minutes)
-    ensure_can_decide(_state(approval, ttl_minutes), datetime.now(UTC), decision.typed_target)
+    ensure_can_decide(
+        approval_state(approval, ttl_minutes), datetime.now(UTC), decision.typed_target
+    )
     if approval.kind == "scope":
-        scopes.approve_scope(db, write_audit, operator, approval)
+        scopes.approve_scope(db, interfaces.write_audit, operator, approval)
+    elif approval.kind == "action":
+        await actions.approve_action(db, interfaces, mask, settings, operator, approval)
     else:
         _not_supported(approval)
     return approval_out(approval, ttl_minutes)
@@ -44,6 +53,8 @@ def reject(
     approval = _get_pending(db, approval_id, ttl_minutes)
     if approval.kind == "scope":
         scopes.reject_scope(db, write_audit, operator, approval, decision.reason)
+    elif approval.kind == "action":
+        actions.reject_action(db, write_audit, operator, approval, decision.reason)
     else:
         _not_supported(approval)
     return approval_out(approval, ttl_minutes)
@@ -98,17 +109,6 @@ def _get_pending(db: Db, approval_id: UUID, ttl_minutes: int) -> Approval:
         db.commit()
         raise ApiError(409, "APPROVAL_EXPIRED", "This approval expired. Submit it again.")
     return approval
-
-
-def _state(approval: Approval, ttl_minutes: int) -> ApprovalState:
-    return ApprovalState(
-        status=approval.approval_status,
-        risk=approval.risk_level,
-        target=approval.subject_snapshot.get("target"),
-        created_at=approval.requested_at,
-        expires_at=expires_at(approval.requested_at, ttl_minutes),
-        used_at=approval.consumed_at,
-    )
 
 
 def _not_supported(approval: Approval) -> None:

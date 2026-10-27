@@ -1,6 +1,157 @@
 {
   "components": {
     "schemas": {
+      "ActionIn": {
+        "description": "One tool run. Arguments are a list, never one shell string.",
+        "properties": {
+          "arguments": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Arguments",
+            "type": "array"
+          },
+          "purpose": {
+            "default": "scan",
+            "enum": [
+              "discovery",
+              "scan",
+              "validation"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "target": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/ToolName"
+          }
+        },
+        "required": [
+          "tool",
+          "target"
+        ],
+        "title": "ActionIn",
+        "type": "object"
+      },
+      "ActionOut": {
+        "properties": {
+          "action_id": {
+            "format": "uuid",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "action_status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          },
+          "approval_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Args",
+            "type": "array"
+          },
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "guardrail_report": {
+            "additionalProperties": true,
+            "title": "Guardrail Report",
+            "type": "object"
+          },
+          "manifest_id": {
+            "format": "uuid",
+            "title": "Manifest Id",
+            "type": "string"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "tool_runs": {
+            "items": {
+              "$ref": "#/components/schemas/ToolRunOut"
+            },
+            "title": "Tool Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "action_id",
+          "tool",
+          "args",
+          "target",
+          "purpose",
+          "risk_level",
+          "action_status",
+          "guardrail_report",
+          "source",
+          "created_at",
+          "assessment_id",
+          "manifest_id"
+        ],
+        "title": "ActionOut",
+        "type": "object"
+      },
+      "ActionStatus": {
+        "enum": [
+          "PENDING",
+          "APPROVED",
+          "REJECTED",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED",
+          "BLOCKED"
+        ],
+        "title": "ActionStatus",
+        "type": "string"
+      },
       "ApprovalDecision": {
         "properties": {
           "reason": {
@@ -758,6 +909,127 @@
         "title": "ToolName",
         "type": "string"
       },
+      "ToolRunOut": {
+        "properties": {
+          "approval_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Id"
+          },
+          "attempt_no": {
+            "title": "Attempt No",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "masked_count": {
+            "title": "Masked Count",
+            "type": "integer"
+          },
+          "output_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Masked"
+          },
+          "request_count": {
+            "title": "Request Count",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "tool_run_id": {
+            "format": "uuid",
+            "title": "Tool Run Id",
+            "type": "string"
+          },
+          "tool_run_status": {
+            "$ref": "#/components/schemas/ToolRunStatus"
+          }
+        },
+        "required": [
+          "tool_run_id",
+          "attempt_no",
+          "tool_run_status",
+          "exit_code",
+          "error",
+          "masked_count",
+          "request_count",
+          "output_masked",
+          "started_at",
+          "finished_at",
+          "approval_id"
+        ],
+        "title": "ToolRunOut",
+        "type": "object"
+      },
+      "ToolRunStatus": {
+        "description": "Status of a tool_runs row. core.interfaces.ToolRunStatus is only the final result.",
+        "enum": [
+          "PENDING",
+          "RUNNING",
+          "COMPLETED",
+          "FAILED",
+          "TIMED_OUT",
+          "CANCELLED"
+        ],
+        "title": "ToolRunStatus",
+        "type": "string"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -806,6 +1078,49 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/actions/{action_id}": {
+      "get": {
+        "operationId": "read_action_actions__action_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Action Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Action",
+        "tags": [
+          "actions"
+        ]
+      }
+    },
     "/approvals": {
       "get": {
         "operationId": "list_pending_approvals_approvals_get",
@@ -876,6 +1191,7 @@
     },
     "/approvals/{approval_id}/approve": {
       "post": {
+        "description": "Approving an action also runs it; read the action afterwards for its tool run.",
         "operationId": "approve_approvals__approval_id__approve_post",
         "parameters": [
           {
@@ -1020,6 +1336,105 @@
         "summary": "Read Assessment",
         "tags": [
           "assessments"
+        ]
+      }
+    },
+    "/assessments/{assessment_id}/actions": {
+      "get": {
+        "operationId": "list_actions_assessments__assessment_id__actions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActionOut"
+                  },
+                  "title": "Response List Actions Assessments  Assessment Id  Actions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Actions",
+        "tags": [
+          "actions"
+        ]
+      },
+      "post": {
+        "description": "BLOCKED -> 422. LOW runs now. MEDIUM and HIGH return an approval_id to approve.",
+        "operationId": "send_action_assessments__assessment_id__actions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Action",
+        "tags": [
+          "actions"
         ]
       }
     },
