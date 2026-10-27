@@ -1,0 +1,16 @@
+# Python packaging
+*.egg-info/
+.eggs/
+
+# Test / tooling caches
+.mypy_cache/
+.coverage
+htmlcov/
+
+# generated reports (the TUI's exports)
+/reports/
+
+# local runtime data (encrypted keys, databases, logs)
+.reconix/
+*.db
+*.key
