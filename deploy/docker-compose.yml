@@ -48,10 +48,16 @@ services:
     image: ${RECONIX_KALI_IMAGE:-ghcr.io/14th-generation-advanced-course/reconix-kali-mcp:dev}
     restart: unless-stopped
     environment:
-      MCP_ACCESS_KEY: ${RECONIX_MCP_ACCESS_KEY:?set RECONIX_MCP_ACCESS_KEY in .env}
+      # Streamable HTTP at http://kali-mcp:8000/mcp. Without these it starts in stdio mode.
+      KALI_MCP_TRANSPORT: http
+      KALI_MCP_HOST: 0.0.0.0
+      KALI_MCP_PORT: "8000"
+      KALI_MCP_AUTH_TOKEN: ${RECONIX_MCP_ACCESS_KEY:?set RECONIX_MCP_ACCESS_KEY in .env}
       JOB_TOKEN_SECRET: ${RECONIX_JOB_TOKEN_SECRET:?set RECONIX_JOB_TOKEN_SECRET in .env}
     cap_drop: [ALL]
-    cap_add: [NET_RAW]  # the only extra permission nmap needs
+    # The nmap binary carries all three as file capabilities; without any one of
+    # them Linux refuses to start it ("Operation not permitted").
+    cap_add: [NET_RAW, NET_ADMIN, NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
     networks: [tools, lab]
 

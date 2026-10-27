@@ -47,8 +47,15 @@ def create_app(
 
 
 _session_tokens = SessionTokens()
+_settings = get_settings()
 app = create_app(
-    build_interfaces(_session_tokens, get_session_factory(), get_settings().audit_log_path),
+    build_interfaces(
+        _session_tokens,
+        get_session_factory(),
+        _settings.audit_log_path,
+        _settings.mcp_url,
+        _settings.mcp_access_key.get_secret_value(),
+    ),
     session_tokens=_session_tokens,
 )
 
