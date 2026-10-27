@@ -21,15 +21,14 @@ depends_on: str | Sequence[str] | None = None
 # Created by the tables in upgrade(); dropped by hand in downgrade().
 ENUM_TYPES = [
     "action_status",
-    "agent_run_status",
+    "agent_runs_status",
     "approval_status",
     "assessment_status",
     "finding_status",
-    "manifest_status",
+    "manifests_status",
     "provider_type",
     "report_status",
     "risk_level",
-    "session_role",
     "session_status",
     "severity_status",
     "tool_run_status",
@@ -95,7 +94,6 @@ def upgrade() -> None:
             "session_id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
         ),
         sa.Column("interface", sa.String(length=20), nullable=False),
-        sa.Column("role", sa.Enum("OPERATOR", "VIEWER", name="session_role"), nullable=False),
         sa.Column(
             "session_status",
             sa.Enum("ACTIVE", "CLOSED", name="session_status"),
@@ -193,7 +191,7 @@ def upgrade() -> None:
                 "COMPLETED",
                 "FAILED",
                 "CANCELLED",
-                name="agent_run_status",
+                name="agent_runs_status",
             ),
             server_default="RUNNING",
             nullable=False,
@@ -309,7 +307,7 @@ def upgrade() -> None:
         sa.Column("version", sa.Integer(), server_default="1", nullable=False),
         sa.Column(
             "manifests_status",
-            sa.Enum("DRAFT", "APPROVED", "REJECTED", name="manifest_status"),
+            sa.Enum("DRAFT", "APPROVED", "REJECTED", name="manifests_status"),
             server_default="DRAFT",
             nullable=False,
         ),

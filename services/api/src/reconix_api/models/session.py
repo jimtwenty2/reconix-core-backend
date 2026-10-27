@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from reconix_api.models.base import Base, created_at, json_default, pg_enum, uuid_pk
-from reconix_api.models.enums import Role, SessionStatus
+from reconix_api.models.enums import SessionStatus
 
 
 class Session(Base):
@@ -17,8 +17,6 @@ class Session(Base):
 
     session_id: Mapped[uuid.UUID] = uuid_pk()
     interface: Mapped[str] = mapped_column(String(20))  # web or cli
-    # Not in ERD V3; agreed on day one. No default, so a caller must choose.
-    role: Mapped[Role] = mapped_column(pg_enum(Role, "session_role"))
     session_status: Mapped[SessionStatus] = mapped_column(
         pg_enum(SessionStatus, "session_status"), server_default=SessionStatus.ACTIVE
     )

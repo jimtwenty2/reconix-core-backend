@@ -25,11 +25,13 @@ def open_session(
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
 ) -> SessionCreated:
     """Opens an OPERATOR session. Only reachable from this computer (Host check + CORS)."""
-    session, token = sessions.open_session(db, tokens, interfaces.write_audit, body.interface)
+    session, operator, token = sessions.open_session(
+        db, tokens, interfaces.write_audit, body.interface
+    )
     return SessionCreated(
         session_id=session.session_id,
         interface=session.interface,
-        role=session.role,
+        role=operator.role,
         session_status=session.session_status,
         created_at=session.created_at,
         token=token,
