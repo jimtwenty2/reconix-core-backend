@@ -25,6 +25,8 @@ from reconix_ai.agent.state import (
     scope_to_dict,
 )
 from reconix_ai.contracts import AgentAnswer, BlockedStep, PlanStep, ProposedAction
+from reconix_ai.harness.checks.input import check_input
+from reconix_ai.harness.checks.result import Decision
 from reconix_ai.providers import ProviderError
 
 SUPPORTED_TASKS = {"PLAN", "SUGGEST"}  # ANALYZE, REPORT and CHAT come with tasks 4 and 6
@@ -67,8 +69,10 @@ async def ask_agent(
     if task not in SUPPORTED_TASKS:
         raise AgentError("TASK_NOT_SUPPORTED", f"The agent cannot do {task} yet.")
     config = thread_config(run_id)
-    if (await graph.aget_state(config)).next:
+    # A run that failed half way may be asked again; only a waiting run may not.
+    if "wait" in (await graph.aget_state(config)).next:
         raise AgentError("RUN_IS_WAITING", "This run is waiting for a person to decide.")
+    check_chat(list(request.messages)[-MAX_MESSAGES:])
 
     messages, masked_in_messages = masked_texts(list(request.messages), MAX_MESSAGES)
     results, masked_in_results = masked_texts(list(request.tool_results), MAX_TOOL_RESULTS)
@@ -82,16 +86,37 @@ async def ask_agent(
         "risk": None,
         "blocked": [],
         "decision": None,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
         "masked_count": masked_in_messages + masked_in_results,
     }
     await run_graph(graph, start, config, deps)
     return await answer_for(graph, run_id)
 
 
+def check_chat(messages: list[str]) -> None:
+    """The harness input check on each chat message the model will see, on the raw
+    text before it is cut, so a long message or a buried injection is caught."""
+    for message in messages:
+        outcome = check_input(message)
+        if outcome.decision == Decision.BLOCKED:
+            raise AgentError("INPUT_BLOCKED", f"The chat was blocked: {outcome.reason}.")
+
+
 async def resume_agent(
     graph: CompiledStateGraph, run_id: str, approved: bool, deps: AgentDeps
 ) -> AgentAnswer:
-    """Give a waiting run the person's decision."""
+    """Give a waiting run the person's decision.
+
+    approved is True only for an APPROVED approval. REJECTED and EXPIRED both
+    pass False, and the run records REJECTED.
+
+    This only tells the agent what happened. It is not the approval: the API
+    keeps its own approval row (action hash, 30-minute expiry, single use) and
+    runs check() again with the current scope right before the tool runs. Two
+    resumes at the same moment are not locked here; the single-use approval is
+    what stops a tool running twice.
+    """
     config = thread_config(run_id)
     if "wait" not in (await graph.aget_state(config)).next:
         raise AgentError("RUN_NOT_WAITING", "This run is not waiting for a decision.")
@@ -106,8 +131,13 @@ async def run_graph(
     failure = None
     try:
         await graph.ainvoke(value, config, context=deps)
+    except AgentError as error:
+        failure = AgentError(error.code, error.message)
     except ProviderError as error:
         failure = AgentError(error.code, error.message)
+    except Exception:
+        # The original may carry a URL, a request or a secret; none of it is passed on.
+        failure = AgentError("AGENT_FAILED", "The agent stopped on an unexpected error.")
     if failure is not None:
         raise failure
 

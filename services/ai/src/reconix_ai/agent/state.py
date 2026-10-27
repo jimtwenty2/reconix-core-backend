@@ -5,10 +5,9 @@ nothing secret: messages and tool results are masked when they come in, and the
 provider settings (with the API key) are passed beside the state, never in it.
 """
 
-import operator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Annotated, Any, Protocol, TypedDict
+from typing import Any, Protocol, TypedDict
 
 from reconix_ai.harness import mask_secrets
 
@@ -35,9 +34,10 @@ class AgentState(TypedDict, total=False):
     risk: str | None
     blocked: list[dict[str, Any]]  # see contracts.BlockedStep
     decision: str | None  # APPROVED or REJECTED
-    prompt_tokens: Annotated[int, operator.add]
-    completion_tokens: Annotated[int, operator.add]
-    masked_count: Annotated[int, operator.add]
+    # Totals for the current ask; ask_agent() starts them again.
+    prompt_tokens: int
+    completion_tokens: int
+    masked_count: int
 
 
 class ScopeLike(Protocol):

@@ -14,13 +14,20 @@ from typing import Any
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
 
-from reconix_ai.agent.answers import BadAnswer, json_object, read_plan, read_understanding
+from reconix_ai.agent.answers import (
+    MAX_GOAL_CHARS,
+    MAX_QUERY_CHARS,
+    BadAnswer,
+    json_object,
+    read_plan,
+    read_understanding,
+)
 from reconix_ai.agent.prompts import plan_messages, understand_messages
 from reconix_ai.agent.state import AgentScope, AgentState, scope_from_dict
 from reconix_ai.contracts import ProposedAction
 from reconix_ai.harness import check
 from reconix_ai.harness.checks.result import Decision
-from reconix_ai.knowledge import KnowledgeError, KnowledgeHit, search_knowledge
+from reconix_ai.knowledge import KnowledgeHit, search_knowledge
 from reconix_ai.providers import (
     Completion,
     Message,
@@ -76,10 +83,10 @@ async def understand(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str
     answer, usage = await ask_json(runtime.context, understand_messages(state), read_understanding)
     if answer is None:
         messages = state.get("messages", [])
-        goal = messages[-1] if messages else DEFAULT_GOAL
-        answer = (goal, [goal[:200]])
+        goal = messages[-1][:MAX_GOAL_CHARS] if messages else DEFAULT_GOAL
+        answer = (goal, [goal[:MAX_QUERY_CHARS]])
     goal, queries = answer
-    return {"goal": goal, "queries": queries, **usage}
+    return {"goal": goal, "queries": queries, **added(state, usage)}
 
 
 async def find(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
@@ -92,7 +99,7 @@ async def find(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]
                 if (hit.ref_id, hit.section) not in seen:
                     seen.add((hit.ref_id, hit.section))
                     hits.append(hit_dict(hit))
-    except (KnowledgeError, ProviderError):
+    except Exception:  # KnowledgeError, ProviderError or anything else: plan without it
         return {"knowledge": hits[:MAX_HITS], "knowledge_unavailable": True}
     return {"knowledge": hits[:MAX_HITS], "knowledge_unavailable": False}
 
@@ -102,7 +109,7 @@ async def plan(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]
     if answer is None:
         raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable plan.")
     summary, steps = answer
-    return {"summary": summary, "steps": steps, **usage}
+    return {"summary": summary, "steps": steps, **added(state, usage)}
 
 
 def suggest(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
@@ -143,7 +150,7 @@ async def ask_json(
     """Ask for a JSON answer and read it with `read`. None after ATTEMPTS bad answers."""
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "masked_count": 0}
     for _ in range(ATTEMPTS):
-        completion = await deps.complete(messages, deps.provider, json_answer=True)
+        completion = await safe_complete(deps, messages)
         usage["prompt_tokens"] += completion.prompt_tokens
         usage["completion_tokens"] += completion.completion_tokens
         usage["masked_count"] += completion.masked_count
@@ -152,6 +159,27 @@ async def ask_json(
         except BadAnswer:
             continue
     return None, usage
+
+
+async def safe_complete(deps: AgentDeps, messages: list[Message]) -> Completion:
+    """A model call whose errors carry only a code and a masked message.
+
+    LangGraph saves a failing step's exception in the checkpoint, so nothing raw
+    may be raised from a node.
+    """
+    failure = None
+    try:
+        return await deps.complete(messages, deps.provider, json_answer=True)
+    except ProviderError as error:
+        failure = AgentError(error.code, error.message)  # already masked
+    except Exception:
+        failure = AgentError("MODEL_UNAVAILABLE", "The model could not answer.")
+    raise failure
+
+
+def added(state: AgentState, usage: dict[str, int]) -> dict[str, int]:
+    """This step's usage added to the totals of the current ask."""
+    return {name: state.get(name, 0) + count for name, count in usage.items()}
 
 
 def hit_dict(hit: KnowledgeHit) -> dict[str, str]:

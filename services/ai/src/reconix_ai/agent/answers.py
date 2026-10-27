@@ -8,6 +8,8 @@ command from a string.
 import json
 from typing import Any
 
+from reconix_ai.contracts import TOOL_NAMES
+
 MAX_GOAL_CHARS = 500
 MAX_QUERIES = 3
 MAX_QUERY_CHARS = 200
@@ -85,7 +87,9 @@ def read_step(raw: Any) -> dict[str, Any] | None:
 
 
 def read_action(tool: Any, target: Any, arguments: Any) -> dict[str, Any] | None:
-    if not isinstance(tool, str) or not isinstance(target, str) or not target.strip():
+    if not isinstance(tool, str) or tool.strip().upper() not in TOOL_NAMES:
+        return None
+    if not isinstance(target, str) or not target.strip():
         return None
     if not isinstance(arguments, list) or len(arguments) > MAX_ARGUMENTS:
         return None

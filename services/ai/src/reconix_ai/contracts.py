@@ -8,6 +8,10 @@ for the agent_runs row and are ignored by the shared shapes.
 
 from dataclasses import dataclass, field
 
+# The shared ToolName values. A step with any other tool is dropped, so the API
+# can always build its own Action from a ProposedAction.
+TOOL_NAMES = frozenset({"NMAP", "NUCLEI", "ZAP", "SEMGREP", "GITLEAKS"})
+
 
 @dataclass(frozen=True)
 class ProposedAction:
@@ -37,6 +41,14 @@ class BlockedStep:
 
 @dataclass(frozen=True)
 class AgentAnswer:
+    """The agent's answer. It only suggests.
+
+    risk and decision are for information. The API never runs a tool because of
+    them: it keeps its own approval (action hash, expiry, single use) and runs
+    check() again right before the tool runs. Only proposed_action may be
+    approved, never another step of the plan.
+    """
+
     text: str
     plan: list[PlanStep] = field(default_factory=list)
     proposed_action: ProposedAction | None = None

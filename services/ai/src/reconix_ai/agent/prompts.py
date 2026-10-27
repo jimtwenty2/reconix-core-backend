@@ -5,7 +5,7 @@ changed by PR and never hidden in code. Knowledge hits and tool output are put
 inside tags and marked as data, because an attacker may have written them.
 """
 
-import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -17,9 +17,6 @@ from reconix_ai.providers import Message
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
 PROMPTS_DIR = PACKAGE_DIR / "prompts"
 POLICIES_DIR = PACKAGE_DIR / "policies"
-
-# Any opening or closing data tag, in any case, e.g. "</Reference_Data".
-DATA_TAG = re.compile(r"<\s*/?\s*(reference_data|tool_results)", re.IGNORECASE)
 
 
 def read_markdown(path: Path) -> str:
@@ -45,7 +42,7 @@ def plan_messages(state: AgentState) -> list[Message]:
         read_markdown(PROMPTS_DIR / "plan.md"),
         scope_text(state["scope"]),
         tools_text(state["scope"]["allowed_tools"]),
-        f"## Goal\n{state.get('goal', '')}",
+        "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
     ]
     if state.get("tool_results"):
@@ -86,7 +83,7 @@ def tools_text(allowed_tools: list[str]) -> str:
 def chat_text(messages: list[str]) -> str:
     if not messages:
         return "## Chat\n(empty)"
-    return "## Chat\n" + "\n".join(f"- {message}" for message in messages)
+    return "## Chat\n" + fenced("chat", "\n".join(f"- {message}" for message in messages))
 
 
 def knowledge_text(hits: list[dict[str, str]]) -> str:
@@ -101,6 +98,13 @@ def tool_results_text(results: list[str]) -> str:
 
 
 def fenced(tag: str, text: str) -> str:
-    """Wrap data in a tag it cannot close or reopen itself."""
-    text = DATA_TAG.sub("", text)
+    """Wrap data in a tag it cannot close or reopen itself.
+
+    Look-alike characters (a full-width "<") are folded first and invisible
+    format characters dropped, then every < and > is escaped, so no tag in the
+    data survives, however it is nested or spelled.
+    """
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(char for char in text if unicodedata.category(char) != "Cf")
+    text = text.replace("<", "&lt;").replace(">", "&gt;")
     return f"<{tag}>\n{text}\n</{tag}>"

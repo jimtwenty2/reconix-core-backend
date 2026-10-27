@@ -63,7 +63,15 @@ def test_arguments_as_one_string_are_dropped_not_split() -> None:
 
 
 @pytest.mark.parametrize(
-    "bad", [step(target=""), step(arguments=["-p", 80]), step(title=""), "scan it", step(tool=5)]
+    "bad",
+    [
+        step(target=""),
+        step(arguments=["-p", 80]),
+        step(title=""),
+        "scan it",
+        step(tool=5),
+        step(tool="nikto"),  # not one of the 5 tools
+    ],
 )
 def test_malformed_steps_are_dropped(bad: object) -> None:
     _, steps = read_plan({"steps": [bad, step()]})
