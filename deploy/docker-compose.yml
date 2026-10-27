@@ -1,1 +1,71 @@
-# Placeholder: PostgreSQL 16, Qdrant, Ollama, api, kali-mcp image (internal network only).
+# Reconix-Core local stack. Start it with:
+#   docker compose -f deploy/docker-compose.yml --env-file .env up -d
+#
+# Every port is bound to 127.0.0.1 only. The Kali tool container has no published
+# port and no internet: it sits only on internal networks.
+
+name: reconix
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${RECONIX_DB_NAME:-reconix}
+      POSTGRES_USER: ${RECONIX_DB_USER:-reconix}
+      POSTGRES_PASSWORD: ${RECONIX_DB_PASSWORD:?set RECONIX_DB_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks: [backend]
+
+  ollama:
+    image: ollama/ollama:0.5.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks: [backend]
+
+  kali-mcp:
+    # The test image from Reconix-Kali-MCP until the first release, then a numbered tag.
+    image: ${RECONIX_KALI_IMAGE:-ghcr.io/14th-generation-advanced-course/reconix-kali-mcp:dev}
+    restart: unless-stopped
+    environment:
+      MCP_ACCESS_KEY: ${RECONIX_MCP_ACCESS_KEY:?set RECONIX_MCP_ACCESS_KEY in .env}
+      JOB_TOKEN_SECRET: ${RECONIX_JOB_TOKEN_SECRET:?set RECONIX_JOB_TOKEN_SECRET in .env}
+    cap_drop: [ALL]
+    cap_add: [NET_RAW]  # the only extra permission nmap needs
+    security_opt: ["no-new-privileges:true"]
+    networks: [tools, lab]
+
+networks:
+  backend: {}
+  # API <-> Kali MCP. internal: no route to the internet.
+  tools:
+    internal: true
+  # Kali MCP <-> lab targets (Juice Shop, test repo). internal: no internet.
+  lab:
+    name: reconix-lab
+    internal: true
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  ollama-data:

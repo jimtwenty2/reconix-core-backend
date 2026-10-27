@@ -1,0 +1,60 @@
+"""Request protections and who-is-calling dependencies."""
+
+from typing import Annotated
+
+from fastapi import Depends, Request
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
+
+from reconix_api.core.errors import ApiError, error_response
+from reconix_api.core.interfaces import Interfaces, Operator, Role
+
+
+class HostCheckMiddleware(BaseHTTPMiddleware):
+    """Rejects a request whose Host header is not this computer (stops DNS rebinding)."""
+
+    def __init__(self, app, allowed_hosts: list[str]) -> None:
+        super().__init__(app)
+        self.allowed_hosts = set(allowed_hosts)
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        host = request.headers.get("host", "")
+        if _host_name(host) not in self.allowed_hosts:
+            return error_response(400, "INVALID_HOST", "The Host header is not allowed.")
+        return await call_next(request)
+
+
+def _host_name(host: str) -> str:
+    """'127.0.0.1:8000' -> '127.0.0.1', '[::1]:8000' -> '::1'."""
+    if host.startswith("["):
+        return host[1 : host.find("]")]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def get_interfaces(request: Request) -> Interfaces:
+    return request.app.state.interfaces
+
+
+def current_operator(
+    request: Request, interfaces: Annotated[Interfaces, Depends(get_interfaces)]
+) -> Operator:
+    header = request.headers.get("authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise ApiError(401, "UNAUTHORIZED", "Send the session token as a Bearer token.")
+    try:
+        return interfaces.get_operator(token)
+    except PermissionError as error:
+        raise ApiError(401, "UNAUTHORIZED", "The session token is not valid.") from error
+
+
+def require_operator(operator: Annotated[Operator, Depends(current_operator)]) -> Operator:
+    """Use on every endpoint that changes data. A viewer can only look."""
+    if operator.role != Role.OPERATOR:
+        raise ApiError(403, "VIEWER_READ_ONLY", "A viewer cannot change data.")
+    return operator
+
+
+CurrentOperator = Annotated[Operator, Depends(current_operator)]
+RequireOperator = Annotated[Operator, Depends(require_operator)]
+CurrentInterfaces = Annotated[Interfaces, Depends(get_interfaces)]
