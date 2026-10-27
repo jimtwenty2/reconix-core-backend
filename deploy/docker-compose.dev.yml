@@ -1,0 +1,9 @@
+# Dev only: while the API runs on the host with `uv run`, it cannot join the internal
+# `tools` network, so publish the Kali MCP port on 127.0.0.1 only. Use it with:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env up -d
+# Once the API runs in Compose (week 2), drop this file.
+
+services:
+  kali-mcp:
+    ports:
+      - "127.0.0.1:${RECONIX_MCP_PORT:-8765}:${RECONIX_MCP_CONTAINER_PORT:-8000}"
