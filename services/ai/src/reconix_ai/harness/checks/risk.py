@@ -28,8 +28,8 @@ class ToolRisk:
 
 
 # Base levels follow the "risk" in tool_specs.json from Reconix-Kali-MCP.
-# Draft: the option rows will be tuned once tool_specs.json lists the allowed
-# options, and again with real runs on the lab (week 2).
+# The option rows match ALLOWED_OPTIONS in command.py, which blocks any other
+# option first. Draft: tuned again with real runs on the lab (week 2).
 RISK_RULES: dict[str, ToolRisk] = {
     "NMAP": ToolRisk(
         base=MEDIUM,
@@ -53,7 +53,6 @@ RISK_RULES: dict[str, ToolRisk] = {
             "-T4": MEDIUM,
             "-T5": HIGH,
             "--script": HIGH,
-            "--script-args": HIGH,
         },
     ),
     "NUCLEI": ToolRisk(

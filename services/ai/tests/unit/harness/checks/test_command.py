@@ -1,7 +1,8 @@
 import pytest
 
-from reconix_ai.harness.checks.command import check_command
+from reconix_ai.harness.checks.command import ALLOWED_OPTIONS, check_command
 from reconix_ai.harness.checks.result import Decision
+from reconix_ai.harness.checks.risk import RISK_RULES
 
 
 def reason(tool: str, target: str = "172.20.0.5", arguments: list[str] | None = None) -> str | None:
@@ -11,7 +12,7 @@ def reason(tool: str, target: str = "172.20.0.5", arguments: list[str] | None = 
 
 @pytest.mark.parametrize("tool", ["NMAP", "NUCLEI", "ZAP", "SEMGREP", "GITLEAKS", "nmap"])
 def test_the_five_tools_are_allowed(tool: str) -> None:
-    assert reason(tool, arguments=["-sV", "-p", "80,443"]) is None
+    assert reason(tool) is None
 
 
 @pytest.mark.parametrize("tool", ["METASPLOIT", "RUN_COMMAND", "BASH", "", "nmap2"])
@@ -35,5 +36,87 @@ def test_one_string_instead_of_a_list_is_blocked() -> None:
 
 
 def test_normal_values_are_allowed() -> None:
-    arguments = ["-severity", "medium,high", "-tags", "cve", "--config", "p/default"]
+    arguments = ["-severity", "medium,high", "-tags", "cve"]
     assert reason("NUCLEI", target="http://juice-shop.lab:3000/?a=1", arguments=arguments) is None
+
+
+# --- option allowlist ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("NMAP", []),
+        ("NMAP", ["-sV", "-Pn", "-T3", "-p", "22,80,443,8000-8100"]),
+        ("NMAP", ["--top-ports", "100", "--script", "vuln,http-title"]),
+        ("NMAP", ["--script=default"]),
+        ("NUCLEI", ["-severity", "critical", "-rate-limit", "50", "-exclude-tags", "dos"]),
+        ("ZAP", []),
+        ("SEMGREP", ["--config", "p/owasp-top-ten"]),
+        ("SEMGREP", ["--config=auto"]),
+        ("GITLEAKS", ["--log-opts", "main..HEAD"]),
+    ],
+)
+def test_allowed_options_and_values_pass(tool: str, arguments: list[str]) -> None:
+    assert reason(tool, arguments=arguments) is None
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        # an extra target hidden in the arguments
+        ("NMAP", ["-sV", "10.0.0.5"]),
+        ("NMAP", ["169.254.169.254"]),
+        ("SEMGREP", ["--config", "auto", "/etc"]),
+        # options that read targets, write files or resume from a file
+        ("NMAP", ["-iL", "/etc/passwd"]),
+        ("NMAP", ["-iR", "100"]),
+        ("NMAP", ["-oN", "/etc/cron.d/x"]),
+        ("NMAP", ["-oN/etc/cron.d/x"]),
+        ("NMAP", ["--resume", "/var/evil/x"]),
+        ("NMAP", ["--script-args", "newtargets"]),
+        ("NUCLEI", ["-u", "http://evil.com"]),
+        ("NUCLEI", ["-l", "/var/evil/targets"]),
+        ("NUCLEI", ["-t", "/var/evil/evil.yaml"]),
+        ("SEMGREP", ["--output", "/root/x"]),
+        ("GITLEAKS", ["--report-path", "/root/x"]),
+        ("ZAP", ["-cmd"]),
+        # a look-alike dash or a joined value
+        ("NMAP", ["\u2010p", "80"]),
+        ("NMAP", ["-p80"]),
+        # another tool's option
+        ("NMAP", ["-severity", "high"]),
+    ],
+)
+def test_options_outside_the_allowlist_are_blocked(tool: str, arguments: list[str]) -> None:
+    assert reason(tool, arguments=arguments) == "OPTION_NOT_ALLOWED"
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("NMAP", ["-p"]),
+        ("NMAP", ["-p", "80,abc"]),
+        ("NMAP", ["-p", "-sV"]),
+        ("NMAP", ["-sV=1"]),
+        ("NMAP", ["--top-ports", "1e9"]),
+        # scripts load by name only: no path, no broadcast or target-adding scripts
+        ("NMAP", ["--script", "/var/evil/evil.nse"]),
+        ("NMAP", ["--script=../../var/evil"]),
+        ("NMAP", ["--script", "broadcast-dhcp-discover"]),
+        ("NMAP", ["--script", "vuln,targets-asn"]),
+        ("NMAP", ["--script", "all"]),
+        ("NUCLEI", ["-severity", "everything"]),
+        ("SEMGREP", ["--config", "https://evil.example/r.yml"]),
+        ("SEMGREP", ["--config", "/repos/app/rules.yml"]),
+        ("GITLEAKS", ["--log-opts=--all --output=/root/.bashrc"]),
+        ("GITLEAKS", ["--log-opts", "--ext-diff"]),
+    ],
+)
+def test_bad_option_values_are_blocked(tool: str, arguments: list[str]) -> None:
+    assert reason(tool, arguments=arguments) == "OPTION_VALUE_NOT_ALLOWED"
+
+
+def test_allowlist_and_risk_table_list_the_same_options() -> None:
+    for tool, options in ALLOWED_OPTIONS.items():
+        assert set(options) == set(RISK_RULES[tool].options), tool
