@@ -1,4 +1,18 @@
-from reconix_ai.knowledge.download import first_heading, parse_attack, parse_cwe, parse_kev
+import io
+import zipfile
+
+import httpx
+import pytest
+
+from reconix_ai.knowledge import download
+from reconix_ai.knowledge.download import (
+    fetch,
+    first_heading,
+    parse_attack,
+    parse_cwe,
+    parse_kev,
+    unzip_one_xml,
+)
 from reconix_ai.knowledge.items import Source, TextFormat
 
 
@@ -99,3 +113,47 @@ def test_first_heading_drops_icons_and_attributes() -> None:
     markdown = '# A03:2021 – Injection    ![icon](assets/x.png){: style="height:80px"}\n\nbody'
 
     assert first_heading(markdown) == "A03:2021 – Injection"
+
+
+def make_zip(files: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, data in files.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def test_unzip_reads_the_one_xml_file() -> None:
+    assert unzip_one_xml(make_zip({"cwec_v4.20.xml": b"<x/>"})) == "<x/>"
+
+
+@pytest.mark.parametrize("files", [{"a.xml": b"<x/>", "b.xml": b"<y/>"}, {"run.sh": b"echo"}, {}])
+def test_unzip_refuses_unexpected_contents(files: dict[str, bytes]) -> None:
+    with pytest.raises(ValueError):
+        unzip_one_xml(make_zip(files))
+
+
+def test_unzip_refuses_a_zip_bomb(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(download, "MAX_UNZIPPED_BYTES", 1000)
+
+    with pytest.raises(ValueError):
+        unzip_one_xml(make_zip({"cwec.xml": b"<x>" + b"a" * 5000 + b"</x>"}))
+
+
+def test_fetch_refuses_plain_http() -> None:
+    with httpx.Client() as http, pytest.raises(ValueError):
+        fetch(http, "http://cwe.mitre.org/data/xml/cwec_latest.xml.zip")
+
+
+def test_fetch_does_not_follow_redirects() -> None:
+    def answer(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(302, headers={"Location": "http://evil.example/x"})
+
+    with httpx.Client(transport=httpx.MockTransport(answer), follow_redirects=False) as http:
+        with pytest.raises(httpx.HTTPStatusError):
+            fetch(http, "https://www.cisa.gov/kev.json")
+
+
+def test_github_sources_are_pinned_to_a_commit() -> None:
+    for url in (download.ATTACK_URL, download.OWASP_TOP10_URL, download.OWASP_API_URL):
+        assert "/master/" not in url

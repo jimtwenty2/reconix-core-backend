@@ -30,10 +30,16 @@ async def ingest(
     chunks = make_chunks(load_items(data_dir, guides_dir))
     if not chunks:
         raise ValueError(f"No knowledge found in {data_dir}.")
-    client = client or store.connect()
+    client = client or store.shared_client()
     vectors = await embed([chunk.title + "\n" + chunk.text for chunk in chunks])
-    await store.create_collection(client)
-    await store.save_chunks(client, chunks, vectors)
+    failure = None
+    try:
+        await store.create_collection(client)
+        await store.save_chunks(client, chunks, vectors)
+    except store.QDRANT_ERRORS as error:
+        failure = store.knowledge_error(error)
+    if failure is not None:
+        raise failure
     return len(chunks)
 
 

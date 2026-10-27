@@ -1,10 +1,13 @@
+import os
 from pathlib import Path
 
 import pytest
 
-from reconix_ai.knowledge import KnowledgeFilters, Source, search_knowledge
+from reconix_ai.knowledge import KnowledgeFilters, Source, search_knowledge, store
 from reconix_ai.knowledge.ingest import ingest
 from reconix_ai.knowledge.paths import SAMPLE_DATA_DIR
+from reconix_ai.knowledge.search import MAX_HIT_CHARS
+from reconix_ai.knowledge.store import KnowledgeError
 
 
 @pytest.fixture
@@ -87,6 +90,57 @@ async def test_empty_query_returns_nothing(loaded, embedder) -> None:
 async def test_limit_is_kept_in_bounds(loaded, embedder) -> None:
     assert len(await search(loaded, embedder, "remote code execution", limit=1)) == 1
     assert len(await search(loaded, embedder, "remote code execution", limit=500)) <= 20
+
+
+async def test_long_hits_are_cut(loaded, embedder) -> None:
+    hits = await search(loaded, embedder, "injection", sources=[Source.OWASP_TOP10], limit=5)
+
+    assert all(len(hit.text) <= MAX_HIT_CHARS for hit in hits)
+
+
+async def test_search_before_any_ingest_gives_a_clear_error(client, embedder) -> None:
+    with pytest.raises(KnowledgeError) as raised:
+        await search(client, embedder, "CVE-2021-44228")
+
+    assert raised.value.code == "KNOWLEDGE_UNAVAILABLE"
+    assert raised.value.__context__ is None
+
+
+async def test_qdrant_down_gives_a_clear_error(embedder) -> None:
+    down = store.connect("http://127.0.0.1:1")  # nothing listens on port 1
+
+    with pytest.raises(KnowledgeError) as raised:
+        await search(down, embedder, "sql injection")
+
+    assert raised.value.code == "KNOWLEDGE_UNAVAILABLE"
+
+
+@pytest.mark.parametrize(
+    "url", ["http://10.0.0.5:6333", "https://user:pw@qdrant.example.com", "http://169.254.169.254"]
+)
+def test_unsafe_qdrant_address_is_refused(url: str) -> None:
+    with pytest.raises(KnowledgeError) as raised:
+        store.connect(url)
+
+    assert raised.value.code == "KNOWLEDGE_URL_NOT_ALLOWED"
+    assert "pw@" not in raised.value.message
+
+
+def test_compose_qdrant_address_is_allowed() -> None:
+    store.connect("http://qdrant:6333")
+
+
+@pytest.mark.skipif(
+    os.environ.get("RECONIX_QDRANT_SMOKE") != "1",
+    reason="Set RECONIX_QDRANT_SMOKE=1 with Qdrant and Ollama (bge-m3) running.",
+)
+async def test_smoke_real_qdrant_and_bge_m3(tmp_path: Path) -> None:
+    real = store.connect()
+    count = await ingest(SAMPLE_DATA_DIR, guides_dir=tmp_path, client=real)
+    hits = await search_knowledge("CVE-2021-44228", client=real)
+
+    assert count > 0
+    assert hits[0].ref_id == "CVE-2021-44228"
 
 
 async def test_ingest_without_any_data_fails_loudly(client, embedder, tmp_path: Path) -> None:

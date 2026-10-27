@@ -13,5 +13,11 @@ which is never committed.
 | `owasp_top10.jsonl` | OWASP Top 10 2021, https://owasp.org/Top10/ | CC BY-SA 4.0, © OWASP Foundation |
 | `owasp_api_top10.jsonl` | OWASP API Security Top 10 2023, https://owasp.org/API-Security/ | CC BY-SA 4.0, © OWASP Foundation |
 
+The ATT&CK and OWASP files are downloaded from GitHub at a pinned commit
+(`ATTACK_COMMIT`, `OWASP_TOP10_COMMIT`, `OWASP_API_COMMIT` in
+`src/reconix_ai/knowledge/download.py`), so upstream changes never reach the
+agent unreviewed. Move a pin by PR. CISA KEV and CWE have no fixed versions and
+are taken as they are on the day of the download.
+
 The text is changed only to fit one shape (see `src/reconix_ai/knowledge/items.py`):
 ATT&CK citation markers are removed, and broken apostrophes in the CISA file are fixed.

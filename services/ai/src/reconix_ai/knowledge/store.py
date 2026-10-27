@@ -9,12 +9,16 @@ import uuid
 import warnings
 from dataclasses import asdict
 
+import httpx
 from qdrant_client import AsyncQdrantClient, models
+from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
+from reconix_ai.harness import mask_secrets
 from reconix_ai.knowledge import keywords
 from reconix_ai.knowledge.chunks import Chunk
 from reconix_ai.knowledge.items import Source
 from reconix_ai.providers import EMBEDDING_SIZE
+from reconix_ai.providers.base_url import BaseUrlError, check_base_url
 
 COLLECTION = "knowledge"
 DENSE = "dense"
@@ -26,13 +30,51 @@ UPSERT_BATCH = 256
 POINT_NAMESPACE = uuid.UUID("6f1d3c52-2b8e-4f0a-9d7e-5c4b3a291807")
 
 
+IN_PROCESS = ":memory:"  # Qdrant inside this process, for tests
+# What a Qdrant call can raise: the server answered badly, could not be
+# reached, or (in-process) the collection is not there yet.
+QDRANT_ERRORS = (UnexpectedResponse, ResponseHandlingException, httpx.HTTPError, ValueError)
+
+_shared_client: AsyncQdrantClient | None = None
+
+
+class KnowledgeError(Exception):
+    """The knowledge store failed. code is UPPERCASE, e.g. KNOWLEDGE_UNAVAILABLE."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 def qdrant_url() -> str:
-    """RECONIX_QDRANT_URL, or the local default. ":memory:" runs Qdrant in this process."""
+    """RECONIX_QDRANT_URL, or the local default."""
     return os.environ.get("RECONIX_QDRANT_URL") or DEFAULT_QDRANT_URL
 
 
 def connect(url: str | None = None) -> AsyncQdrantClient:
-    return AsyncQdrantClient(location=url or qdrant_url())
+    """A new client. Same address rule as a model: plain http only to this computer."""
+    url = url or qdrant_url()
+    if url != IN_PROCESS:
+        try:
+            check_base_url(url)
+        except BaseUrlError as error:
+            raise KnowledgeError("KNOWLEDGE_URL_NOT_ALLOWED", str(error)) from None
+    return AsyncQdrantClient(location=url)
+
+
+def shared_client() -> AsyncQdrantClient:
+    """One client for the whole process, so searches reuse its connections."""
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = connect()
+    return _shared_client
+
+
+def knowledge_error(error: Exception) -> KnowledgeError:
+    """A clear, masked error the agent can report ("knowledge not loaded") and move on."""
+    reason, _ = mask_secrets(str(error))
+    return KnowledgeError("KNOWLEDGE_UNAVAILABLE", f"The knowledge search failed: {reason}")
 
 
 async def create_collection(client: AsyncQdrantClient) -> None:
@@ -51,6 +93,7 @@ async def create_collection(client: AsyncQdrantClient) -> None:
         warnings.simplefilter("ignore", UserWarning)
         for name in ("source", "ref_id"):
             await client.create_payload_index(COLLECTION, name, models.PayloadSchemaType.KEYWORD)
+        await client.create_payload_index(COLLECTION, "index", models.PayloadSchemaType.INTEGER)
 
 
 async def save_chunks(

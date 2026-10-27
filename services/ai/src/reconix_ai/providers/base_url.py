@@ -9,8 +9,8 @@ to another path: no user:password, no path, no query, no fragment.
 import ipaddress
 from urllib.parse import urlsplit
 
-# The Ollama service name inside deploy/docker-compose.yml.
-LOCAL_HOST_NAMES = {"localhost", "ollama"}
+# Service names inside deploy/docker-compose.yml, on the private backend network.
+LOCAL_HOST_NAMES = {"localhost", "ollama", "qdrant"}
 METADATA_HOST_NAMES = {"metadata.google.internal", "metadata"}
 
 

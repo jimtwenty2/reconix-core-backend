@@ -23,7 +23,7 @@ class Chunk:
     source: Source
     ref_id: str
     title: str
-    text: str  # masked
+    text: str  # every text field here is masked
     url: str
     section: str  # the headings above this piece, e.g. "/A03:2021 – Injection/"
     index: int  # 0, 1, 2 ... within one item
@@ -72,14 +72,18 @@ def item_chunks(item: KnowledgeItem) -> list[Chunk]:
 
 
 def chunk(item: KnowledgeItem, text: str, section: str, index: int) -> Chunk:
-    masked_text, _ = mask_secrets(text.strip())
-    masked_title, _ = mask_secrets(item.title)
+    """Every text field is masked: a secret can sit in a heading (section), a
+    tool guide's file name (ref_id) or a link (url), not only in the text."""
     return Chunk(
         source=item.source,
-        ref_id=item.ref_id,
-        title=masked_title,
-        text=masked_text,
-        url=item.url,
-        section=section,
+        ref_id=masked(item.ref_id),
+        title=masked(item.title),
+        text=masked(text.strip()),
+        url=masked(item.url),
+        section=masked(section),
         index=index,
     )
+
+
+def masked(text: str) -> str:
+    return mask_secrets(text)[0]

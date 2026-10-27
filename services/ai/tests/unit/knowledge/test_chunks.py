@@ -46,6 +46,30 @@ def test_secrets_are_masked_before_saving() -> None:
     assert "[MASKED:api_key]" in chunk.text
 
 
+def test_secrets_in_headings_links_and_names_are_masked_too() -> None:
+    guide = (
+        "# Start with api_key=abc123secretvalue\n\n"
+        "## Usage\nRun the scan against the lab target and read the JSON result file.\n"
+    )
+    item = KnowledgeItem(
+        Source.TOOL_GUIDE,
+        "zap-token=zzsecret99",
+        "zap",
+        guide,
+        url="https://user:hunter2@example.com/zap",
+        text_format=TextFormat.MARKDOWN,
+    )
+
+    chunks = make_chunks([item])
+
+    assert chunks
+    for chunk in chunks:
+        saved = " ".join([chunk.ref_id, chunk.title, chunk.text, chunk.url, chunk.section])
+        assert "abc123secretvalue" not in saved
+        assert "zzsecret99" not in saved
+        assert "hunter2" not in saved
+
+
 def test_load_items_reads_every_file_and_the_guides(tmp_path: Path) -> None:
     (tmp_path / "gitleaks.md").write_text("# gitleaks\nFinds secrets in git history.", "utf-8")
 

@@ -26,10 +26,20 @@ from reconix_ai.knowledge.paths import FULL_DATA_DIR
 CVE_LIMIT = 1000
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 CWE_URL = "https://cwe.mitre.org/data/xml/cwec_latest.xml.zip"
+# The GitHub sources are pinned to one commit, so a later change upstream cannot
+# slip new text into the agent's knowledge. Move a pin on purpose, by PR.
+ATTACK_COMMIT = "50be388e93819a5d20e71cbaaeccfda157abc846"
+OWASP_TOP10_COMMIT = "3a31f35346c3f4e90f350395124382fa53af2afe"
+OWASP_API_COMMIT = "33cea37b2ffde3e2e62f6b5d79a029a22a846633"
 ATTACK_URL = (
-    "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
+    f"https://raw.githubusercontent.com/mitre/cti/{ATTACK_COMMIT}"
+    "/enterprise-attack/enterprise-attack.json"
 )
-OWASP_TOP10_URL = "https://raw.githubusercontent.com/OWASP/Top10/master/2021/docs/en/{name}.md"
+OWASP_TOP10_URL = (
+    f"https://raw.githubusercontent.com/OWASP/Top10/{OWASP_TOP10_COMMIT}/2021/docs/en/{{name}}.md"
+)
+# The page a person reads, shown with each hit.
+OWASP_TOP10_PAGE_URL = "https://top10.owasp.org/{name}/"
 OWASP_TOP10_PAGES = [
     ("A01:2021", "A01_2021-Broken_Access_Control"),
     ("A02:2021", "A02_2021-Cryptographic_Failures"),
@@ -43,8 +53,10 @@ OWASP_TOP10_PAGES = [
     ("A10:2021", "A10_2021-Server-Side_Request_Forgery_(SSRF)"),
 ]
 OWASP_API_URL = (
-    "https://raw.githubusercontent.com/OWASP/API-Security/master/editions/2023/en/{name}.md"
+    f"https://raw.githubusercontent.com/OWASP/API-Security/{OWASP_API_COMMIT}"
+    "/editions/2023/en/{name}.md"
 )
+OWASP_API_PAGE_URL = "https://api-security.owasp.org/editions/2023/en/{name}/"
 OWASP_API_PAGES = [
     ("API1:2023", "0xa1-broken-object-level-authorization"),
     ("API2:2023", "0xa2-broken-authentication"),
@@ -58,6 +70,8 @@ OWASP_API_PAGES = [
     ("API10:2023", "0xaa-unsafe-consumption-of-apis"),
 ]
 CWE_NS = {"cwe": "http://cwe.mitre.org/cwe-7"}
+# The CWE XML is about 20 MB unzipped; refuse anything far bigger (a zip bomb).
+MAX_UNZIPPED_BYTES = 200 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +107,8 @@ def kev_item(entry: dict) -> KnowledgeItem:
 
 
 def parse_cwe(xml_text: str) -> list[KnowledgeItem]:
-    # MITRE's own file over HTTPS; Python's parser does not load external entities.
+    # MITRE's own file over HTTPS. ElementTree never loads external entities, and
+    # expat (2.4+) stops "billion laughs" entity expansion.
     root = ElementTree.fromstring(xml_text)  # noqa: S314
     items = []
     for weakness in root.iterfind("cwe:Weaknesses/cwe:Weakness", CWE_NS):
@@ -189,40 +204,61 @@ def first_heading(markdown: str) -> str:
 
 
 def download_all(out_dir: Path = FULL_DATA_DIR) -> dict[Source, int]:
-    """Download every source into out_dir and return how many items each has."""
-    counts = {}
-    with httpx.Client(timeout=120, follow_redirects=True) as http:
-        sources = {
-            Source.CVE: lambda: parse_kev(http.get(KEV_URL).raise_for_status().json()),
-            Source.CWE: lambda: parse_cwe(unzip_first(http.get(CWE_URL).raise_for_status())),
-            Source.ATTACK: lambda: parse_attack(http.get(ATTACK_URL).raise_for_status().json()),
-            Source.OWASP_TOP10: lambda: owasp_pages(
-                http, Source.OWASP_TOP10, OWASP_TOP10_URL, OWASP_TOP10_PAGES
+    """Download every source, then save them all, and return how many items each has.
+
+    Nothing is written until every source has downloaded, so a failure halfway
+    never leaves a partial set for the ingest to pick up.
+    """
+    # No redirects: every address is HTTPS and final, so a redirect is a surprise.
+    with httpx.Client(timeout=120, follow_redirects=False) as http:
+        downloaded = {
+            Source.CVE: parse_kev(fetch(http, KEV_URL).json()),
+            Source.CWE: parse_cwe(unzip_one_xml(fetch(http, CWE_URL).content)),
+            Source.ATTACK: parse_attack(fetch(http, ATTACK_URL).json()),
+            Source.OWASP_TOP10: owasp_pages(
+                http, Source.OWASP_TOP10, OWASP_TOP10_URL, OWASP_TOP10_PAGE_URL, OWASP_TOP10_PAGES
             ),
-            Source.OWASP_API_TOP10: lambda: owasp_pages(
-                http, Source.OWASP_API_TOP10, OWASP_API_URL, OWASP_API_PAGES
+            Source.OWASP_API_TOP10: owasp_pages(
+                http, Source.OWASP_API_TOP10, OWASP_API_URL, OWASP_API_PAGE_URL, OWASP_API_PAGES
             ),
         }
-        for source, fetch in sources.items():
-            items = fetch()
-            write_items(out_dir / f"{source.lower()}.jsonl", items)
-            counts[source] = len(items)
-            print(f"{source}: {len(items)} items")
-    return counts
+    for source, items in downloaded.items():
+        write_items(out_dir / f"{source.lower()}.jsonl", items)
+        print(f"{source}: {len(items)} items")
+    return {source: len(items) for source, items in downloaded.items()}
 
 
-def unzip_first(response: httpx.Response) -> str:
-    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-        return archive.read(archive.namelist()[0]).decode("utf-8")
+def fetch(http: httpx.Client, url: str) -> httpx.Response:
+    if not url.startswith("https://"):
+        raise ValueError(f"Only HTTPS sources are allowed: {url}")
+    return http.get(url).raise_for_status()
+
+
+def unzip_one_xml(content: bytes) -> str:
+    """The single XML file in the zip, refusing anything that unpacks too big."""
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        members = archive.infolist()
+        if len(members) != 1 or not members[0].filename.endswith(".xml"):
+            raise ValueError("The CWE zip should hold exactly one .xml file.")
+        with archive.open(members[0]) as file:
+            # Read one byte past the limit: the size in the zip header can lie.
+            data = file.read(MAX_UNZIPPED_BYTES + 1)
+    if len(data) > MAX_UNZIPPED_BYTES:
+        raise ValueError("The CWE file is far bigger than expected.")
+    return data.decode("utf-8")
 
 
 def owasp_pages(
-    http: httpx.Client, source: Source, url_template: str, pages: list[tuple[str, str]]
+    http: httpx.Client,
+    source: Source,
+    url_template: str,
+    page_url_template: str,
+    pages: list[tuple[str, str]],
 ) -> list[KnowledgeItem]:
     items = []
     for ref_id, name in pages:
-        url = url_template.format(name=name)
-        items.append(owasp_item(source, ref_id, http.get(url).raise_for_status().text, url))
+        markdown = fetch(http, url_template.format(name=name)).text
+        items.append(owasp_item(source, ref_id, markdown, page_url_template.format(name=name)))
     return items
 
 
