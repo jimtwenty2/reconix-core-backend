@@ -13,6 +13,7 @@ Rules for AI coding agents (Claude Code, Codex, Cursor) and the people who revie
 | AI Service and harness | [`services/ai/AGENTS.md`](services/ai/AGENTS.md) |
 | Terminal app | [`apps/tui/AGENTS.md`](apps/tui/AGENTS.md) |
 | Local web | [`apps/web/AGENTS.md`](apps/web/AGENTS.md) |
+| Deploy (Compose, lab, installer) | [`deploy/AGENTS.md`](deploy/AGENTS.md) |
 
 A part's file adds to this one. If the two disagree, this file wins; flag the conflict to the lead.
 
@@ -31,8 +32,9 @@ findings, analysis and a report.
 actions; the backend checks them, asks a person when needed, and only then calls the Kali
 container.
 
-Background: [`docs/project-context.md`](docs/project-context.md) (the 4 repos, owners, day-one
-decisions) and [`docs/erd/reconix-erd-v3-final.md`](docs/erd/reconix-erd-v3-final.md) (the data model).
+Background: [`docs/reconix-plan-v2.md`](docs/reconix-plan-v2.md) (the 4 repos, team rules, owners,
+weekly tasks per member, deadlines and the project structure) and
+[`docs/erd/reconix-erd-v3-final.md`](docs/erd/reconix-erd-v3-final.md) (the data model).
 
 ---
 
@@ -77,7 +79,7 @@ One uv workspace (Python 3.12) plus one npm app.
 | `apps/web/` | Local web: Next.js, xterm.js | Sokpiseth |
 | `apps/sample-data/` | Fake data for the TUI and web, built from `deploy/seed.sql` | shared |
 | `deploy/` | Docker Compose (`docker-compose.yml`, `docker-compose.dev.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
-| `docs/` | `project-context.md`, `openapi.json` (generated), `erd/` | Pojim |
+| `docs/` | `reconix-plan-v2.md`, `openapi.json` (generated), `erd/` | Pojim |
 | `.claude/`, `AGENTS.md` files | Agent rules, skills, subagents, hooks (section 9) | Pojim |
 
 Inside `reconix_api`: `api/` (routes, one file per resource) → `services/` (rules) →
@@ -304,6 +306,9 @@ Keep this list true; remove an item in the PR that closes it.
 ---
 
 ## 12. Key dates
+
+The full schedule, weekly tasks and what to cut first if we fall behind are in
+[`docs/reconix-plan-v2.md`](docs/reconix-plan-v2.md). If a date here and the plan disagree, the plan wins.
 
 | Date | Milestone |
 |---|---|
