@@ -67,6 +67,17 @@ ALLOWED_OPTIONS: dict[str, dict[str, str | None]] = {
 # nmap scripts that reach hosts outside the target or are meant to break things.
 BLOCKED_SCRIPTS = {"all", "broadcast", "dos", "external"}
 BLOCKED_SCRIPT_PREFIXES = ("broadcast-", "targets-")
+# nuclei templates that try to knock a service over or flood it with fuzzing requests.
+BLOCKED_NUCLEI_TAGS = {"dos", "fuzz", "fuzzing"}
+MAX_PORT = 65535
+# Lowest and highest number an option may take. nuclei reads a rate limit of 0
+# as "no limit"; 150 is its own default.
+NUMBER_RANGES = {
+    "-rate-limit": (1, 150),
+    "-retries": (0, 5),
+    "-timeout": (1, 60),
+    "--top-ports": (1, MAX_PORT),
+}
 
 
 def check_command(tool: str, target: str, arguments: Sequence[str]) -> CheckOutcome:
@@ -111,6 +122,13 @@ def is_allowed_value(option: str, pattern: str, value: str) -> bool:
         return False
     if option == "--script":
         return not any(is_blocked_script(name) for name in value.split(","))
+    if option == "-tags":
+        return BLOCKED_NUCLEI_TAGS.isdisjoint(value.split(","))
+    if option == "-p":
+        return all(int(port) <= MAX_PORT for port in re.findall(r"[0-9]+", value))
+    if option in NUMBER_RANGES:
+        low, high = NUMBER_RANGES[option]
+        return low <= int(value) <= high
     return True
 
 
