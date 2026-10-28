@@ -5,8 +5,11 @@ Three formats: PDF (printed from the styled HTML report, report_html.py), JSON (
 Evidence is already masked in the findings.
 """
 
+import contextlib
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -148,19 +151,48 @@ def _render_json(data: Dict[str, Any]) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 
+def _write(fmt: ReportFormat, data: Dict[str, Any], path: Path) -> None:
+    """Write the report to a temp file beside `path`, then rename it onto `path`.
+
+    A failed export never leaves a partial file and never breaks a report already saved
+    there. The message names the format only: no path, no internal error text.
+    """
+    failed = f"Couldn't save the {fmt.name} report."
+    try:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        handle, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-",
+                                        suffix=f".tmp.{fmt.extension}")
+        os.close(handle)
+    except OSError as exc:
+        raise StoreValidationError(failed) from exc
+    temp = Path(name)
+    try:
+        if fmt.id in BINARY_FORMATS:
+            (write_pdf if fmt.id == "pdf" else write_docx)(data, temp)
+        else:
+            temp.write_text(_render_json(data), encoding="utf-8")
+        os.replace(temp, path)
+    except StoreValidationError:
+        raise
+    except Exception as exc:
+        raise StoreValidationError(failed) from exc
+    finally:
+        with contextlib.suppress(OSError):  # gone after the rename; removed after a failure
+            temp.unlink(missing_ok=True)
+
+
 def generate_report(format_id: str) -> str:
-    """Write the report and return its path as shown to the operator."""
+    """Write the report and return its path as shown to the operator.
+
+    Checked here, right before writing, whatever asked for it (a key, a button, /export).
+    """
     run = lists.current().run
     if not run.completed:
         raise StoreValidationError("The report is available once the assessment is complete.")
     fmt = _format(format_id)
     data = report_data()
     path = _report_path(data["assessment_id"], fmt.extension)
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    if fmt.id in BINARY_FORMATS:
-        (write_pdf if fmt.id == "pdf" else write_docx)(data, path)
-    else:
-        path.write_text(_render_json(data), encoding="utf-8")
+    _write(fmt, data, path)
     shown = _display_path(path)
     run.report_path = shown
     run.progress["report"] = 100
