@@ -18,6 +18,15 @@ def get(db: Db, assessment_id: UUID) -> Assessment | None:
     return db.get(Assessment, assessment_id)
 
 
+def lock(db: Db, assessment_id: UUID) -> None:
+    """Hold the assessment row until commit, so other runs wait to add findings to it."""
+    db.execute(
+        select(Assessment.assessment_id)
+        .where(Assessment.assessment_id == assessment_id)
+        .with_for_update()
+    )
+
+
 def get_by_session(db: Db, session_id: UUID) -> Assessment | None:
     return db.scalar(select(Assessment).where(Assessment.session_id == session_id))
 
