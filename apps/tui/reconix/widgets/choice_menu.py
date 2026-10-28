@@ -4,6 +4,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 from rich.text import Text
 from textual import events
+from textual._time import get_time   # the clock Textual stamps every event with
 from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import OptionList
@@ -38,6 +39,10 @@ class ChoiceMenu(OptionList):
     COMPACT = False                 # one line per choice (used by the slash menu)
     NUMBERED = True                 # show numbers and let 1-9 pick
     ACTIVE_WITHOUT_FOCUS = False    # bright pointer even without focus (slash menu)
+    # A pick pressed before this many seconds after the menu appeared (or its choices
+    # changed) is ignored: a repeated or held Enter meant for the screen before must not
+    # decide a gate. Keys are judged by when they were pressed, not when they are handled.
+    ARM_DELAY = 0.5
 
     BINDINGS = [Binding(str(n), f"pick({n})", show=False) for n in range(1, 10)]
 
@@ -71,6 +76,7 @@ class ChoiceMenu(OptionList):
         self._numbered = self.NUMBERED if numbered is None else numbered
         self._pointer: Optional[int] = None
         self._draft = ""                # text typed into the input row
+        self._armed_at = 0.0            # when picks start to count (see ARM_DELAY)
         super().__init__(*self._build_options(), id=id, classes=classes)
 
     # --- public API -----------------------------------------------------------------
@@ -78,6 +84,7 @@ class ChoiceMenu(OptionList):
         self._choices = list(choices)
         self._pointer = None
         self._draft = ""
+        self._arm()
         self.set_options(self._build_options())   # resets `highlighted` to None
         first = self._first_enabled(0)
         if first is not None:
@@ -108,7 +115,12 @@ class ChoiceMenu(OptionList):
                 return index
         return None
 
+    def _arm(self) -> None:
+        self._armed_at = get_time() + self.ARM_DELAY
+
     def _activate(self, index: int) -> None:
+        if get_time() < self._armed_at:
+            return                   # a click or Enter before the person could read the choices
         choice = self._choices[index]
         if choice.disabled:          # also guards the screen's Enter fallback
             return
@@ -194,6 +206,7 @@ class ChoiceMenu(OptionList):
 
     # --- events -----------------------------------------------------------------------
     def on_mount(self) -> None:
+        self._arm()
         if self._choices:
             first = self._first_enabled(min(self._default, len(self._choices) - 1))
             if first is not None:
@@ -208,6 +221,10 @@ class ChoiceMenu(OptionList):
         self.call_later(self._move_pointer, self.highlighted)
 
     def _on_key(self, event: events.Key) -> None:
+        if event.time < self._armed_at and (event.key == "enter" or event.key.isdigit()):
+            event.stop()             # pressed before the menu was armed: typed ahead
+            event.prevent_default()
+            return
         # On the input row, keys type text instead of reaching menu or screen shortcuts.
         choice = self._highlighted_choice()
         if choice is None or choice.kind != "input":
@@ -238,4 +255,5 @@ class SuggestionMenu(ChoiceMenu, can_focus=False):
 
     COMPACT = True
     NUMBERED = False
+    ARM_DELAY = 0.0                 # driven by typing: a click on a suggestion counts at once
     ACTIVE_WITHOUT_FOCUS = True
