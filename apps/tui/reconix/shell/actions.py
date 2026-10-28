@@ -210,6 +210,7 @@ class ActionsMixin:
         except store.StoreValidationError as exc:
             self._warn(exc)
             return
+        self.cancel_agent(mark_stopped=False)   # an agent turn stops too (already marked)
         self.controller.stop()
         self.refresh_view()
 
