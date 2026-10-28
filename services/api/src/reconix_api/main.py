@@ -4,7 +4,16 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from reconix_api.api import actions, approvals, assessments, findings, scopes, sessions, system
+from reconix_api.api import (
+    actions,
+    approvals,
+    assessments,
+    findings,
+    messages,
+    scopes,
+    sessions,
+    system,
+)
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_session_factory
 from reconix_api.core.errors import add_error_handlers
@@ -44,6 +53,7 @@ def create_app(
     app.include_router(approvals.router)
     app.include_router(actions.router)
     app.include_router(findings.router)
+    app.include_router(messages.router)
     return app
 
 
