@@ -28,20 +28,15 @@ PROMPT_INJECTION_PATTERNS = [
             r"\b(ignore|disregard|forget|override)\b.{0,40}\b(previous|prior|above|earlier|all|your)\b"
             r".{0,20}\b(instructions?|rules?|prompts?|guardrails?|polic(y|ies))\b"
         ),
-        (
-            r"\b(ignore|disregard|forget|override) (the|these|those|any) "
-            r"(instructions?|rules?|guardrails?)\b"
-        ),
         r"\b(reveal|show|print|repeat|leak)\b.{0,30}\bsystem prompt\b",
         r"\byou are no longer\b",
+        # No admin or root: "...and you are now root" is a normal privilege-escalation write-up.
+        r"\byou are now (an? )?(developer|god|unrestricted|jailbroken)\b",
+        # Only at the start of a sentence or line, and with no article: "can a user act as
+        # admin?" and "next step: act as the admin" are normal pentest steps.
         (
-            r"\byou are now (an? |the )?"
-            r"(admin|administrator|root|developer|god|unrestricted|jailbroken)\b"
-        ),
-        # Only at the start of a sentence: "can a user act as admin?" is a normal pentest question.
-        (
-            r"(^|[.!?:;] )(please |from now on,? |now |then )?"
-            r"(act|behave|pretend) (as|like|to be|you are) (an? |the )?"
+            r"(^|[.!?] )(please |from now on,? |now |then )?"
+            r"(act|behave|pretend) (as|like|to be|you are) "
             r"(admin|administrator|root|developer|system|unrestricted|jailbroken)\b"
         ),
         r"\b(developer|god|jailbreak|dan) mode\b",
@@ -74,27 +69,44 @@ def check_input(text: str | None) -> CheckOutcome:
 
 
 def has_hidden_characters(text: str) -> bool:
-    return any(
+    return any(is_hidden(character) for character in text)
+
+
+def is_hidden(character: str) -> bool:
+    return (
         unicodedata.category(character) in HIDDEN_CATEGORIES
         and character not in ALLOWED_CONTROL_CHARACTERS
-        for character in text
     )
 
 
 def looks_like_prompt_injection(text: str) -> bool:
+    # Hidden characters are dropped so "ig​nore" in decoded text still matches.
+    text = "".join(character for character in text if not is_hidden(character))
     # NFKC turns look-alike letters (e.g. full-width) into plain ones before matching.
-    normalized = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
-    return any(pattern.search(normalized) for pattern in PROMPT_INJECTION_PATTERNS)
+    text = unicodedata.normalize("NFKC", text).casefold()
+    # Each line is also checked on its own, so the start of a line counts as a sentence start.
+    pieces = [text, *text.splitlines()]
+    return any(
+        pattern.search(" ".join(piece.split()))
+        for piece in pieces
+        for pattern in PROMPT_INJECTION_PATTERNS
+    )
 
 
-def decoded_texts(text: str) -> list[str]:
-    """The readable text hidden in base64 or hex runs, e.g. "aWdub3Jl..." -> "ignore..."."""
+def decoded_texts(text: str, levels: int = 2) -> list[str]:
+    """The text hidden in base64 or hex runs, e.g. "aWdub3Jl..." -> "ignore...".
+
+    Runs inside the decoded text are decoded too, up to `levels` deep.
+    """
     decoded = []
     for run in ENCODED_TEXT.findall(text):
         for decode in (decode_base64, decode_hex):
             result = decode(run)
-            if result is not None:
-                decoded.append(result)
+            if result is None:
+                continue
+            decoded.append(result)
+            if levels > 1:
+                decoded.extend(decoded_texts(result, levels - 1))
     return decoded
 
 
@@ -103,13 +115,14 @@ def decode_base64(run: str) -> str | None:
     try:
         # altchars also accepts the URL-safe form ("-" and "_").
         data = base64.b64decode(run + "=" * (-len(run) % 4), altchars=b"-_", validate=True)
-        return data.decode("utf-8")
     except ValueError:
         return None
+    # Bad bytes are dropped, so one stray byte cannot hide the readable text.
+    return data.decode("utf-8", errors="ignore")
 
 
 def decode_hex(run: str) -> str | None:
     try:
-        return bytes.fromhex(run).decode("utf-8")
+        return bytes.fromhex(run).decode("utf-8", errors="ignore")
     except ValueError:
         return None
