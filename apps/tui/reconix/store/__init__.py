@@ -61,6 +61,7 @@ from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
 from .targets import TargetCheck, check_target, looks_like_target, validate_target
 from .templates import get_template, list_templates, select_template, selected_template
+from .thinking import block_seconds, group_stream, stream
 from .transcript import last_exchange, list_activity, list_chat
 from .tools import tool_login, tools_login
 from .vault import (
@@ -107,6 +108,7 @@ __all__ = [
     "retest", "severity_trend", "compare_findings", "previous_assessment",
     # transcript, audit, history
     "list_chat", "last_exchange", "list_activity",
+    "stream", "group_stream", "block_seconds",
     "current_operator", "log_event", "list_events", "add_feedback", "list_feedback",
     "add_history", "list_history",
     # flexible LLM: providers and the active model

@@ -3,7 +3,7 @@
 A local dashboard for what the Reconix terminal app did, opened from the TUI with `/web`. It
 reads the assessments the TUI saves to `~/.reconix/assessments/` and shows them as the
 **Assessment Operations Center** (the globe UI from the reconix-web-ui site), with Assessments,
-Findings, Reports, AI Assistant and Security knowledge views, all
+Findings, Run log (one run's messages, its work folded into thinking blocks), Reports, AI Assistant and Security knowledge views, all
 switched in-page (`?view=`; each view's
 own address keys and every run link live in `components/dashboard/view-url.ts`). By default the
 Overview totals **every saved run** (`derive-overall.ts`) and Findings lists them all, each
@@ -313,7 +313,8 @@ src/
 │                            #   Security knowledge page)
 ├── lib/
 │   ├── data/                # schema.ts (zod), store.ts (server-only reader), stats.ts (pure),
-│   │                        #   adapt.ts (a saved run → the viewer's terms), view-types.ts, format.ts
+│   │                        #   adapt.ts (a saved run → the viewer's terms), view-types.ts, format.ts,
+│   │                        #   thinking.ts (the timeline as messages + thinking blocks; port of store/thinking.py)
 │   ├── report/              # formats.ts (the export registry), html.ts (report), pdf.ts (Chrome), render.ts,
 │   │                        #   combined/ (query.ts validates ?uids=&format=&evidence=&low=&appendix=,
 │   │                        #   select.ts merges the runs, html.ts renders, options.ts names the file),
@@ -355,7 +356,8 @@ src/
 │   │                        #   Reports (reports-view.tsx, report-selection/-runs/-preview/-downloads/-file.tsx,
 │   │                        #   use-file-download.ts: fetch then save, with a status line; derive-report.ts),
 │   │                        #   run-cells.tsx (the one run row of Assessments and Reports), view-header.tsx,
-│   │                        #   view-link.tsx and run-link.tsx (drill-downs), docs-search.tsx
+│   │                        #   view-link.tsx and run-link.tsx (drill-downs), docs-search.tsx;
+│   │                        #   the Run log (run-log-view.tsx, thinking-block.tsx, derive-run-log.ts)
 │   ├── assistant/           # AssistantProvider (+ use-* hooks: open, asking, history, tab memory),
 │   │                        #   AssistantStage + motion*.ts + use-globe*.ts (the transition and the globe),
 │   │                        #   AssistantView, header, welcome, prompt cards, messages, cards/, composer,

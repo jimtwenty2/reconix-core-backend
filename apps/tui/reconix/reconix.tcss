@@ -319,7 +319,7 @@ DataTable > .datatable--even-row {
 }
 
 /* --------------------------------------------------------------- log */
-RichLog {
+RichLog, RunLog {
     background: $surface2;
     border: round $border;
     border-title-color: $muted;
@@ -333,6 +333,43 @@ RichLog {
 #live-log {
     height: 1fr;
     min-height: 6;
+}
+
+/* The live output reads like a conversation: messages, with the steps between folded. */
+.message-line {
+    height: auto;
+}
+
+.thinking {
+    height: auto;
+}
+
+.thinking-title {
+    height: 1;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
+.thinking-title:hover {
+    background: $raised;
+}
+
+.thinking-title:focus {
+    background: $cyan-bg;
+}
+
+.thinking-latest {
+    height: 1;
+    padding-left: 2;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
+.thinking-body {
+    height: auto;
+    padding-left: 2;
+    border-left: vkey $border-strong;
+    margin-left: 1;
 }
 
 /* ------------------------------------------------------- start screen */

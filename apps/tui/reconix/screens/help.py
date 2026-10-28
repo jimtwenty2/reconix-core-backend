@@ -19,7 +19,7 @@ GLOBAL_ROWS: List[Row] = [
     ("1 … 8", "jump to a screen (when no menu has focus)"),
     ("/", "command suggestions (any screen)"),
     ("?", "toggle this help"),
-    ("^O", "expand / collapse the steps Reconix finished"),
+    ("^O", "expand / collapse the steps Reconix finished (click one to open it)"),
     ("^Q", "quit"),
 ]
 

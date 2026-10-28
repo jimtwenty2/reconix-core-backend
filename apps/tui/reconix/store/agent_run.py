@@ -292,9 +292,9 @@ def record_event(ev: Dict[str, Any]) -> None:
     if kind == "assistant":
         add_chat("text", "reconix", redact(ev.get("text") or ""))
     elif kind == "reasoning":
-        # The model's chain-of-thought, shown muted so it reads as "thinking".
-        thought = redact(f"thinking… {ev.get('text') or ''}")[:2000]
-        add_chat("text", "reconix", thought, tone="muted")
+        # The model's chain-of-thought: a "thought" step, folded into the thinking block.
+        thought = redact(ev.get("text") or "")[:2000]
+        add_chat("thought", "reconix", thought, tone="muted")
     elif kind == "plan":
         steps = ev.get("steps") or []
         set_plan(steps)             # drives the Execution task rows + spinner

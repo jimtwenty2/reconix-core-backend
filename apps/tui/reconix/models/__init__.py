@@ -17,7 +17,7 @@ from .run import (
 )
 from .scope import PolicyVerdict, ScopeManifest, ScopeSummary
 from .template import Template
-from .transcript import ActivityEntry, ChatEntry
+from .transcript import ActivityEntry, ChatEntry, Entry, MessageItem, StreamItem, ThinkingItem
 from .vault import Secret, TestAccount, VaultEntry
 
 __all__ = [
@@ -27,7 +27,7 @@ __all__ = [
     "Finding", "AuditEvent", "HistoryEntry", "Choice", "Feedback", "Template",
     "ProviderView", "ActiveModel",
     "ScopeManifest", "ScopeSummary", "PolicyVerdict", "TestAccount", "VaultEntry", "Secret",
-    "ChatEntry", "ActivityEntry",
+    "ChatEntry", "ActivityEntry", "Entry", "MessageItem", "ThinkingItem", "StreamItem",
     "RunStep", "RunState", "PlanTask", "PlanRow", "PROGRESS_BARS",
     "ReportFormat", "AssessmentSummary",
     "GATE_TEMPLATE", "GATE_SCOPE", "GATE_PLAN", "GATE_ACCOUNT", "GATE_CODE",
