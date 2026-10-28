@@ -26,7 +26,7 @@ def harness_app(db_app, tmp_path):
 
 @pytest.fixture
 def harness_client(harness_app):
-    return TestClient(harness_app, base_url="http://127.0.0.1")
+    return TestClient(harness_app, base_url="http://127.0.0.1/api/v1")
 
 
 def audit_lines(app) -> list[dict]:

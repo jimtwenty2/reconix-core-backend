@@ -81,4 +81,4 @@ def db_app(session_factory):
 
 @pytest.fixture
 def db_client(db_app):
-    return TestClient(db_app, base_url="http://127.0.0.1")
+    return TestClient(db_app, base_url="http://127.0.0.1/api/v1")

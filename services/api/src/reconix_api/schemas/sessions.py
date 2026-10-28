@@ -23,3 +23,13 @@ class SessionOut(BaseModel):
 
 class SessionCreated(SessionOut):
     token: str  # send as "Authorization: Bearer <token>"; shown only once
+
+
+class SessionRead(BaseModel):
+    """A session as stored. The role lives with the token, so it is not shown here."""
+
+    session_id: UUID
+    interface: str
+    session_status: SessionStatus
+    created_at: datetime
+    closed_at: datetime | None

@@ -51,3 +51,15 @@ def source_run_ids(db: Db, finding_id: UUID) -> list[UUID]:
 def list_evidence(db: Db, finding_id: UUID) -> list[Evidence]:
     query = select(Evidence).where(Evidence.finding_id == finding_id).order_by(Evidence.created_at)
     return list(db.scalars(query))
+
+
+def get(db: Db, finding_id: UUID, lock: bool = False) -> Finding | None:
+    return db.get(Finding, finding_id, with_for_update=lock)
+
+
+def list_all(db: Db) -> list[Finding]:
+    return list(db.scalars(select(Finding).order_by(Finding.created_at.desc(), Finding.code)))
+
+
+def get_evidence(db: Db, evidence_id: UUID) -> Evidence | None:
+    return db.get(Evidence, evidence_id)

@@ -27,9 +27,17 @@ def open_session(client) -> dict:
     return {"Authorization": f"Bearer {body['token']}"}
 
 
+def scopes_path(client, headers) -> str:
+    """Scopes are drafted in the caller's own session."""
+    session_id = client.get("/operator", headers=headers).json()["session_id"]
+    return f"/sessions/{session_id}/scope-manifests"
+
+
 def draft_and_submit(client, headers) -> dict:
-    scope = client.post("/scopes", json=DRAFT, headers=headers).json()
-    response = client.post(f"/scopes/{scope['manifest_id']}/submit", json=SUBMIT, headers=headers)
+    scope = client.post(scopes_path(client, headers), json=DRAFT, headers=headers).json()
+    response = client.post(
+        f"/scope-manifests/{scope['manifest_id']}/submit", json=SUBMIT, headers=headers
+    )
     assert response.status_code == 201, response.json()
     return response.json()
 
@@ -37,7 +45,7 @@ def draft_and_submit(client, headers) -> dict:
 def test_full_scope_flow(db_client, db_app):
     headers = open_session(db_client)
 
-    created = db_client.post("/scopes", json=DRAFT, headers=headers)
+    created = db_client.post(scopes_path(db_client, headers), json=DRAFT, headers=headers)
     assert created.status_code == 201
     scope = created.json()
     assert scope["manifests_status"] == "DRAFT"
@@ -45,12 +53,14 @@ def test_full_scope_flow(db_client, db_app):
     assert scope["assessment_id"] is None
 
     edited = {**DRAFT, "targets": DRAFT["targets"][:2]}
-    response = db_client.put(f"/scopes/{scope['manifest_id']}", json=edited, headers=headers)
+    response = db_client.patch(
+        f"/scope-manifests/{scope['manifest_id']}", json=edited, headers=headers
+    )
     assert response.status_code == 200
     assert len(response.json()["targets"]) == 2
 
     submitted = db_client.post(
-        f"/scopes/{scope['manifest_id']}/submit", json=SUBMIT, headers=headers
+        f"/scope-manifests/{scope['manifest_id']}/submit", json=SUBMIT, headers=headers
     ).json()
     assessment = submitted["assessment"]
     assert assessment["assessment_status"] == "DRAFT"
@@ -71,7 +81,7 @@ def test_full_scope_flow(db_client, db_app):
         f"/assessments/{assessment['assessment_id']}", headers=headers
     ).json()
     assert assessment["assessment_status"] == "ACTIVE"
-    scope = db_client.get(f"/scopes/{scope['manifest_id']}", headers=headers).json()
+    scope = db_client.get(f"/scope-manifests/{scope['manifest_id']}", headers=headers).json()
     assert scope["manifests_status"] == "APPROVED"
 
     approved_scope = db_app.state.interfaces.get_approved_scope(assessment["assessment_id"])
@@ -91,8 +101,8 @@ def test_full_scope_flow(db_client, db_app):
 def test_submitted_scope_cannot_be_edited(db_client):
     headers = open_session(db_client)
     submitted = draft_and_submit(db_client, headers)
-    response = db_client.put(
-        f"/scopes/{submitted['scope']['manifest_id']}", json=DRAFT, headers=headers
+    response = db_client.patch(
+        f"/scope-manifests/{submitted['scope']['manifest_id']}", json=DRAFT, headers=headers
     )
     assert response.status_code == 409
     assert response.json()["code"] == "SCOPE_NOT_EDITABLE"
@@ -114,7 +124,9 @@ def test_rejected_scope_frees_the_assessment_for_a_new_version(db_client):
         f"/approvals/{first['approval_id']}/reject", json={"reason": "too wide"}, headers=headers
     )
     assert rejected.json()["approval_status"] == "REJECTED"
-    scope = db_client.get(f"/scopes/{first['scope']['manifest_id']}", headers=headers).json()
+    scope = db_client.get(
+        f"/scope-manifests/{first['scope']['manifest_id']}", headers=headers
+    ).json()
     assert scope["manifests_status"] == "REJECTED"
     assert scope["reject_reason"] == "too wide"
 
@@ -145,9 +157,11 @@ def test_expired_approval_is_refused_and_marked(db_client, session_factory):
 def test_scope_without_a_real_target_cannot_be_submitted(db_client):
     headers = open_session(db_client)
     only_excluded = {**DRAFT, "targets": [{"type": "ip", "value": "10.0.0.1", "excluded": True}]}
-    scope = db_client.post("/scopes", json=only_excluded, headers=headers).json()
+    scope = db_client.post(
+        scopes_path(db_client, headers), json=only_excluded, headers=headers
+    ).json()
     response = db_client.post(
-        f"/scopes/{scope['manifest_id']}/submit", json=SUBMIT, headers=headers
+        f"/scope-manifests/{scope['manifest_id']}/submit", json=SUBMIT, headers=headers
     )
     assert response.status_code == 422
     assert response.json()["code"] == "SCOPE_HAS_NO_TARGETS"
@@ -156,5 +170,8 @@ def test_scope_without_a_real_target_cannot_be_submitted(db_client):
 def test_unknown_ids_answer_404(db_client):
     headers = open_session(db_client)
     missing = "00000000-0000-0000-0000-000000000001"
-    assert db_client.get(f"/scopes/{missing}", headers=headers).json()["code"] == "SCOPE_NOT_FOUND"
+    assert (
+        db_client.get(f"/scope-manifests/{missing}", headers=headers).json()["code"]
+        == "SCOPE_NOT_FOUND"
+    )
     assert db_client.get(f"/approvals/{missing}", headers=headers).status_code == 404
