@@ -396,6 +396,203 @@
         "title": "AssessmentStatus",
         "type": "string"
       },
+      "EvidenceOut": {
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "tool_run_id": {
+            "format": "uuid",
+            "title": "Tool Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "kind",
+          "content",
+          "location",
+          "created_at",
+          "tool_run_id"
+        ],
+        "title": "EvidenceOut",
+        "type": "object"
+      },
+      "FindingOut": {
+        "properties": {
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cve_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cve Ids",
+            "type": "array"
+          },
+          "cvss_score": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Score"
+          },
+          "cwe_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cwe Ids",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceOut"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "finding_id": {
+            "format": "uuid",
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "finding_status": {
+            "$ref": "#/components/schemas/FindingStatus"
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact"
+          },
+          "owasp_id": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owasp Id",
+            "type": "array"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation"
+          },
+          "severity_status": {
+            "$ref": "#/components/schemas/SeverityStatus"
+          },
+          "source_tool_run_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Source Tool Run Ids",
+            "type": "array"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "validation_status": {
+            "$ref": "#/components/schemas/ValidationStatus"
+          }
+        },
+        "required": [
+          "finding_id",
+          "code",
+          "title",
+          "target",
+          "description",
+          "severity_status",
+          "cvss_score",
+          "cwe_ids",
+          "owasp_id",
+          "cve_ids",
+          "impact",
+          "remediation",
+          "validation_status",
+          "finding_status",
+          "created_at",
+          "assessment_id"
+        ],
+        "title": "FindingOut",
+        "type": "object"
+      },
+      "FindingStatus": {
+        "enum": [
+          "OPEN",
+          "FALSE_POSITIVE",
+          "FIXED"
+        ],
+        "title": "FindingStatus",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -897,6 +1094,18 @@
         "title": "SessionStatus",
         "type": "string"
       },
+      "SeverityStatus": {
+        "enum": [
+          "CRITICAL",
+          "HIGH",
+          "MEDIUM",
+          "LOW",
+          "UNKNOWN",
+          "NONE"
+        ],
+        "title": "SeverityStatus",
+        "type": "string"
+      },
       "ToolName": {
         "description": "The only 5 tools. The MCP client maps these to the Kali tool names.",
         "enum": [
@@ -1069,6 +1278,15 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "ValidationStatus": {
+        "enum": [
+          "CONFIRMED",
+          "UNCONFIRMED",
+          "INCONCLUSIVE"
+        ],
+        "title": "ValidationStatus",
+        "type": "string"
       }
     }
   },
@@ -1435,6 +1653,53 @@
         "summary": "Send Action",
         "tags": [
           "actions"
+        ]
+      }
+    },
+    "/assessments/{assessment_id}/findings": {
+      "get": {
+        "operationId": "list_findings_assessments__assessment_id__findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FindingOut"
+                  },
+                  "title": "Response List Findings Assessments  Assessment Id  Findings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Findings",
+        "tags": [
+          "findings"
         ]
       }
     },

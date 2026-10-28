@@ -17,8 +17,8 @@ SCOPE = {
 }
 
 
-def active_assessment(client, headers) -> str:
-    scope = client.post("/scopes", json=SCOPE, headers=headers).json()
+def active_assessment(client, headers, scope_draft: dict = SCOPE) -> str:
+    scope = client.post("/scopes", json=scope_draft, headers=headers).json()
     submitted = client.post(
         f"/scopes/{scope['manifest_id']}/submit",
         json={"name": "Juice Shop", "type": "web_url"},
