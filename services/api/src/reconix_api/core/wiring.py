@@ -10,6 +10,7 @@ from typing import NoReturn
 from sqlalchemy.orm import Session, sessionmaker
 
 from reconix_ai import harness
+from reconix_api.clients.mcp import make_call_tool
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Action, CheckContext, CheckResult, Interfaces, WriteAudit
 from reconix_api.core.masking import MaskSecrets
@@ -36,8 +37,10 @@ def build_interfaces(
     session_tokens: SessionTokens | None = None,
     session_factory: sessionmaker[Session] | None = None,
     audit_log_path: str | None = None,
+    mcp_url: str | None = None,
+    mcp_access_key: str = "",
 ) -> Interfaces:
-    """The API's own parts and the audit log are real when their inputs are given."""
+    """Each part is real when its inputs are given; otherwise it answers NOT_READY."""
     get_operator, _ = _not_ready("get_operator")
     if session_tokens is not None:
         get_operator = session_tokens.get_operator
@@ -50,6 +53,8 @@ def build_interfaces(
         write_audit = harness.make_audit_writer(audit_log_path)
     _, ask_agent = _not_ready("ask_agent")
     _, call_tool = _not_ready("call_tool")
+    if mcp_url and mcp_access_key:
+        call_tool = make_call_tool(mcp_url, mcp_access_key)
     return Interfaces(
         get_operator=get_operator,
         check=check,
