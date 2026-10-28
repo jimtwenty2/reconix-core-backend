@@ -3,11 +3,21 @@ name = "reconix-ai"
 version = "0.0.0"
 description = "Reconix AI Service"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+    "langgraph>=1.2.18",
+    "langgraph-checkpoint-postgres>=3.2.0",
+    "litellm>=1.106.4",
+    "llama-index-core>=0.14.25",
+    "openai>=2.54.0",
+    "psycopg[binary]>=3.2",
+    "qdrant-client>=1.20.0",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
+    "pytest-asyncio>=0.25",
 ]
 
 [build-system]
@@ -19,4 +29,6 @@ packages = ["src/reconix_ai"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = ["--import-mode=importlib"]
+asyncio_mode = "auto"

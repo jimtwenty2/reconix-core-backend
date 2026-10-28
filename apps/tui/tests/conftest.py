@@ -11,6 +11,7 @@ from reconix.app import ReconixApp
 from reconix.flow import RunController
 from reconix.llm import config as llm_config
 from reconix.store import persist, report
+from reconix.widgets import ChoiceMenu
 
 # Test the harness that ships in this checkout (backend/), not any editable install elsewhere,
 # so local backend/harness changes are exercised. Done at conftest import, before any test
@@ -30,8 +31,10 @@ def fresh_store():
 
 @pytest.fixture(autouse=True)
 def instant_ui(monkeypatch, tmp_path):
-    """Steps play at once; reports, saved assessments and the web link live in temp."""
+    """Steps play at once, menus take a pick at once (tests press keys on purpose); reports,
+    saved assessments and the web link live in temp."""
     monkeypatch.setattr(RunController, "SPEED", 0)
+    monkeypatch.setattr(ChoiceMenu, "ARM_DELAY", 0)
     monkeypatch.setattr(report, "REPORTS_DIR", tmp_path / "reports")
     monkeypatch.setattr(persist, "DATA_DIR", tmp_path / "assessments")
     monkeypatch.setattr(persist, "WEB_URL_FILE", tmp_path / "web.url")

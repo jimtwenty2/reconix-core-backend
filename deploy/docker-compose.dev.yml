@@ -6,4 +6,4 @@
 services:
   kali-mcp:
     ports:
-      - "127.0.0.1:${RECONIX_MCP_PORT:-8765}:${RECONIX_MCP_CONTAINER_PORT:-8000}"
+      - "127.0.0.1:${RECONIX_MCP_PORT:-8765}:8000"

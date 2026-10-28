@@ -1,0 +1,178 @@
+"""Send action -> check -> (approve) -> tool run, through the API and a real database."""
+
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import update
+
+from reconix_api.models import Approval
+from tests.integration.test_scope_flow import draft_and_submit, open_session
+
+SCOPE = {
+    "max_risk": "HIGH",
+    "allowed_tools": ["NMAP", "NUCLEI", "ZAP"],
+    "targets": [
+        {"type": "ip", "value": "172.20.0.5"},
+        {"type": "url", "value": "http://juice-shop:3000/"},
+    ],
+}
+
+
+def active_assessment(client, headers, scope_draft: dict = SCOPE) -> str:
+    scope = client.post("/scopes", json=scope_draft, headers=headers).json()
+    submitted = client.post(
+        f"/scopes/{scope['manifest_id']}/submit",
+        json={"name": "Juice Shop", "type": "web_url"},
+        headers=headers,
+    ).json()
+    client.post(f"/approvals/{submitted['approval_id']}/approve", json={}, headers=headers)
+    return submitted["assessment"]["assessment_id"]
+
+
+def send(client, headers, assessment_id, **action):
+    return client.post(f"/assessments/{assessment_id}/actions", json=action, headers=headers)
+
+
+def event_types(db_app) -> list[str]:
+    return [event.event_type for event in db_app.state.parts["audit"].events]
+
+
+def test_low_action_runs_right_away(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+
+    response = send(
+        db_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+    )
+    assert response.status_code == 201, response.json()
+    action = response.json()
+    assert action["risk_level"] == "LOW"
+    assert action["action_status"] == "COMPLETED"
+    assert action["approval_id"] is None
+    [run] = action["tool_runs"]
+    assert run["tool_run_status"] == "COMPLETED"
+    assert run["approval_id"] is None
+    assert 'portid="22"' in run["output_masked"]
+
+    [job] = db_app.state.parts["mcp"].jobs
+    assert job.tool_run_id.hex == run["tool_run_id"].replace("-", "")
+    assert job.arguments == ["-sV"]
+    assert "TOOL_RUN_FINISHED" in event_types(db_app)
+
+    listed = db_client.get(f"/assessments/{assessment_id}/actions", headers=headers).json()
+    assert [a["action_id"] for a in listed] == [action["action_id"]]
+
+
+def test_blocked_action_is_422_and_saved(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+
+    response = send(db_client, headers, assessment_id, tool="NMAP", target="10.0.0.1")
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "ACTION_BLOCKED"
+    assert body["details"]["reason"] == "TARGET_OUT_OF_SCOPE"
+
+    action = db_client.get(f"/actions/{body['details']['action_id']}", headers=headers).json()
+    assert action["action_status"] == "BLOCKED"
+    assert action["tool_runs"] == []
+    assert "ACTION_BLOCKED" in event_types(db_app)
+    assert db_app.state.parts["mcp"].jobs == []
+
+
+def test_medium_action_waits_then_runs_once_approved(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    assert action["risk_level"] == "MEDIUM"
+    assert action["action_status"] == "PENDING"
+    assert action["tool_runs"] == []
+    approval_id = action["approval_id"]
+
+    approved = db_client.post(f"/approvals/{approval_id}/approve", json={}, headers=headers)
+    assert approved.status_code == 200, approved.json()
+    assert approved.json()["consumed_at"] is not None
+
+    action = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert action["action_status"] == "COMPLETED"
+    [run] = action["tool_runs"]
+    assert run["approval_id"] == approval_id
+
+    again = db_client.post(f"/approvals/{approval_id}/approve", json={}, headers=headers)
+    assert again.json()["code"] == "APPROVAL_ALREADY_DECIDED"
+
+
+def test_high_action_needs_the_typed_target(db_client):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    target = "http://juice-shop:3000/"
+    action = send(db_client, headers, assessment_id, tool="ZAP", target=target).json()
+    assert action["risk_level"] == "HIGH"
+    path = f"/approvals/{action['approval_id']}/approve"
+
+    wrong = db_client.post(path, json={"typed_target": "juice-shop"}, headers=headers)
+    assert wrong.json()["code"] == "TARGET_CONFIRMATION_MISMATCH"
+
+    right = db_client.post(path, json={"typed_target": target}, headers=headers)
+    assert right.status_code == 200
+    assert right.json()["confirmation_verified"] is True
+
+
+def test_rejected_action_never_runs(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+
+    rejected = db_client.post(
+        f"/approvals/{action['approval_id']}/reject", json={"reason": "not now"}, headers=headers
+    )
+    assert rejected.status_code == 200
+    action = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert action["action_status"] == "REJECTED"
+    assert db_app.state.parts["mcp"].jobs == []
+
+
+def test_expired_action_approval_is_refused(db_client, session_factory):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    with session_factory() as db:
+        db.execute(
+            update(Approval)
+            .where(Approval.approval_id == action["approval_id"])
+            .values(requested_at=datetime.now(UTC) - timedelta(minutes=31))
+        )
+        db.commit()
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+    assert response.json()["code"] == "APPROVAL_EXPIRED"
+
+
+def test_action_needs_an_active_assessment(db_client):
+    headers = open_session(db_client)
+    submitted = draft_and_submit(db_client, headers)
+    assessment_id = submitted["assessment"]["assessment_id"]
+
+    response = send(db_client, headers, assessment_id, tool="NMAP", target="172.20.0.5")
+    assert response.status_code == 409
+    assert response.json()["code"] == "ASSESSMENT_NOT_ACTIVE"
+
+
+def test_unreachable_kali_saves_a_failed_run(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    db_app.state.parts["mcp"].down = True
+
+    action = send(db_client, headers, assessment_id, tool="NMAP", target="172.20.0.5").json()
+    assert action["action_status"] == "FAILED"
+    [run] = action["tool_runs"]
+    assert run["tool_run_status"] == "FAILED"
+    assert "KALI_UNREACHABLE" in run["error"]

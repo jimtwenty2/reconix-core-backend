@@ -16,3 +16,12 @@ node_modules/
 .next/
 out/
 .idea
+
+# Runtime data (audit log)
+data/
+# ...except two AI Service folders that are meant to be committed. Everything else
+# under services/ai/data/ (the full knowledge download, an audit log) stays out.
+!services/ai/data/
+services/ai/data/*
+!services/ai/data/knowledge-sample/
+!services/ai/data/tool-guides/

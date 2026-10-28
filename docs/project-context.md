@@ -47,7 +47,7 @@ GitHub org: `14th-Generation-Advanced-Course`.
 
 - **The 6 shared functions** live in `services/api/src/reconix_api/core/interfaces.py`, each with a fake so nobody waits on anyone: who the operator is, the safety check, reading the approved scope, writing to the audit log, asking the AI agent, and calling a tool.
 - **Names come from ERD V3** (`docs/erd/`) and Data Dictionary V3. Enum values are UPPERCASE everywhere.
-- ERD gaps closed: add `sessions.role` (`OPERATOR` or `VIEWER`); severity uses `NONE`, not `INFO`; use `UNKNOWN` wherever workflow v5 says `NEEDS_REVIEW`.
+- ERD gaps closed: no `sessions.role` column in the final ERD V3, so the role (`OPERATOR` or `VIEWER`) is kept with the session token; severity uses `NONE`, not `INFO`; use `UNKNOWN` wherever workflow v5 says `NEEDS_REVIEW`.
 - Imported findings and finding categories: decision pending.
 - **The API contract** is `docs/openapi.json`, exported from the FastAPI app after every merge. The other repos copy it from here.
 - **Tool options** come from `tool_specs.json` in Reconix-Kali-MCP. The command check and the AI tool list both copy it from there.

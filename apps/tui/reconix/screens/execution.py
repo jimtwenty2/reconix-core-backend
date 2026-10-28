@@ -7,7 +7,7 @@ paused or done, and one spinner line says what Reconix is on and for how long.
 """
 
 from datetime import timedelta
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -20,6 +20,8 @@ from .choice import ChoiceScreen
 from .. import store, theme
 from ..models import GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, Choice, PlanTask
 from ..widgets import RunLog, Spinner
+
+LABEL_WIDTH = 30          # a task label's column; a longer label is cut
 
 
 def run_state() -> str:
@@ -57,9 +59,12 @@ def task_line(task: PlanTask, state: str) -> Text:
     if task.status == "active":
         detail = ACTIVE_DETAIL.get(state, "paused · waiting for you")
     if task.key == "report" and task.status == "active":
-        detail = "ready · export it from the Report screen"
+        detail = "ready · export it on Report (8)"     # fits 80 columns
     text_color = theme.TEXT if task.status == "active" else theme.MUTED
-    return Text.assemble((f"{glyph} ", color), (f"{task.label:<30}", f"bold {text_color}"),
+    label = task.label                       # cut, so the status after it still shows
+    if len(label) > LABEL_WIDTH - 1:
+        label = label[:LABEL_WIDTH - 2] + "…"
+    return Text.assemble((f"{glyph} ", color), (f"{label:<{LABEL_WIDTH}}", f"bold {text_color}"),
                          (detail, theme.CYAN if task.status == "active" else theme.DIM))
 
 
@@ -107,6 +112,10 @@ class ExecutionScreen(ReconixScreen):
         Binding("escape", "detach", "back to plan", show=False),
         Binding("end", "follow", "follow the live output", show=False),
     ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._paused: Optional[Tuple[str, Optional[timedelta]]] = None   # (gate, time then)
 
     def view_state(self) -> object:
         # The task rows are built per plan key; rebuild if the plan's task set changes
@@ -162,11 +171,30 @@ class ExecutionScreen(ReconixScreen):
                                      f"{counters['requests']} requests · "
                                      f"{counters['blocked']} blocked · "
                                      f"{counters['findings']} finding"
-                                     f"{'' if counters['findings'] == 1 else 's'}")
+                                     f"{'' if counters['findings'] == 1 else 's'}"
+                                     f"{self._time_note(state)}")
         log = self.query_one("#live-log", RunLog)
         log.sync()
         log.set_status(self._log_status(state))
         self.query_one("#exec-hint", Static).update(hint_line(state))
+
+    def _time_note(self, state: str) -> str:
+        """The testing time while the spinner is hidden: frozen at a pause, final at the end.
+
+        The store's clock keeps counting through a pause, so the screen keeps the time it
+        first saw the run waiting at this gate.
+        """
+        if state in ("approval", "login"):
+            gate = store.waiting_gate()
+            if self._paused is None or self._paused[0] != gate:
+                self._paused = (gate, store.elapsed())
+            elapsed, words = self._paused[1], "paused at {}"
+        else:
+            self._paused = None
+            if state == "running":
+                return ""                        # the spinner line shows it
+            elapsed, words = store.elapsed(), "{} in total"   # the run's finish time
+        return f" · {words.format(duration_text(elapsed))}" if elapsed is not None else ""
 
     @staticmethod
     def _log_status(state: str) -> str:

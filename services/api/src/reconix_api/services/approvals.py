@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import RiskLevel
+from reconix_api.models import Approval
 from reconix_api.models.enums import ApprovalStatus
 
 
@@ -56,3 +57,15 @@ def ensure_can_use(approval: ApprovalState, now: datetime) -> None:
         raise ApiError(409, "APPROVAL_ALREADY_USED", "This approval was already used.")
     if now >= approval.expires_at:
         raise ApiError(409, "APPROVAL_EXPIRED", "This approval expired. Send the action again.")
+
+
+def approval_state(approval: Approval, ttl_minutes: int) -> ApprovalState:
+    """The fields the rules above need, from a saved approval."""
+    return ApprovalState(
+        status=approval.approval_status,
+        risk=approval.risk_level,
+        target=approval.subject_snapshot.get("target"),
+        created_at=approval.requested_at,
+        expires_at=expires_at(approval.requested_at, ttl_minutes),
+        used_at=approval.consumed_at,
+    )

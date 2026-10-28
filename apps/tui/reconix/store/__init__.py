@@ -13,8 +13,8 @@ from .approvals import (
     request_confirmation,
 )
 from .assessment import (
-    AssessmentCard, add_request, assessment_label, assessment_status, get_assessment,
-    list_assessments, list_requests, switch_assessment,
+    MAX_REQUEST_LENGTH, AssessmentCard, add_request, assessment_label, assessment_status,
+    get_assessment, list_assessments, list_requests, switch_assessment,
 )
 from .errors import StoreValidationError
 from .findings import (
@@ -59,7 +59,7 @@ from .scope import (
 )
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
-from .targets import check_target
+from .targets import TargetCheck, check_target, looks_like_target, validate_target
 from .templates import get_template, list_templates, select_template, selected_template
 from .transcript import last_exchange, list_activity, list_chat
 from .tools import tool_login, tools_login
@@ -73,12 +73,13 @@ load_demo_data()
 reset = load_demo_data   # tests: restore the demo rows between runs
 
 __all__ = [
-    "StoreValidationError", "reset", "DEMO_REQUEST",
+    "StoreValidationError", "reset", "DEMO_REQUEST", "MAX_REQUEST_LENGTH",
     # assessment and requests
     "get_assessment", "assessment_label", "list_requests", "add_request",
     "list_assessments", "switch_assessment", "assessment_status", "AssessmentCard",
     # the run
     "submit_prompt", "start_run", "check_target", "say_to_assistant", "say_operator_line",
+    "TargetCheck", "looks_like_target", "validate_target",
     "llm_answer", "new_assessment",
     "advance", "peek", "gate_state", "stop_run",
     "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
+from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
 from reconix_api.schemas.approvals import ApprovalDecision, ApprovalOut
 from reconix_api.services import decisions
@@ -31,17 +32,17 @@ def read_approval(
 
 
 @router.post("/{approval_id}/approve")
-def approve(
+async def approve(
     approval_id: UUID,
     body: ApprovalDecision,
     db: Db,
     operator: RequireOperator,
     interfaces: CurrentInterfaces,
+    mask: CurrentMask,
     settings: CurrentSettings,
 ) -> ApprovalOut:
-    return decisions.approve(
-        db, interfaces.write_audit, operator, settings.approval_ttl_minutes, approval_id, body
-    )
+    """Approving an action also runs it; read the action afterwards for its tool run."""
+    return await decisions.approve(db, interfaces, mask, settings, operator, approval_id, body)
 
 
 @router.post("/{approval_id}/reject")

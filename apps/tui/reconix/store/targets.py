@@ -2,13 +2,19 @@
 
 Two callers: `/template` (the operator chose the template, so the target must fit it) and
 the free-text parser (it picks the template from the target's shape, then reads the value
-here). Rule-based and offline: nothing here touches the network or the disk. A malformed
-value (an IPv4 octet over 255, a range wider than /16, a URL without a host) raises
+here). Rule-based and offline: nothing here touches the network. A malformed value (an
+IPv4 octet over 255, a range wider than /16, a URL without a host) raises
 `StoreValidationError`; a text that holds no target of the kind returns None.
+
+`validate_target()` checks one typed value for the Start prompt's feedback and never
+raises; it is the only function here that reads the disk (does a local folder exist).
+The backend's scope check stays the authority.
 """
 
 import ipaddress
+import os
 import re
+from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Union
 from urllib.parse import urlsplit
 
@@ -214,8 +220,174 @@ def check_target(template_id: str, text: str) -> ParsedTarget:
     return found
 
 
+# --- one typed value, for the Start prompt's feedback ----------------------------------------
+TARGET_KINDS = ("URL", "IPV4", "IPV4_RANGE", "GIT_REPO", "LOCAL_PATH", "INVALID")
+MAX_RANGE_ADDRESSES = 2 ** (32 - WIDEST_RANGE)     # 65,536 addresses: a /16
+SUPPORTED_FORMATS = (
+    "Supported: a URL (https://app.example.com), an IPv4 address (192.0.2.10), "
+    "a CIDR range (10.0.0.0/24), a git repo (git@github.com:acme/app.git) "
+    "or a folder (~/code/app)."
+)
+
+_SCHEME = re.compile(r"^([a-z][a-z0-9+.-]*):", re.IGNORECASE)
+_NO_SLASH_SCHEMES = ("javascript", "file", "data", "mailto", "vbscript", "about")
+_GIT_HOSTS = ("github.com", "gitlab.com", "bitbucket.org")
+_IPV4_TOKEN = re.compile(r"\d+(?:\.\d+)+(?:/\d+)?")
+_DASH_RANGE = re.compile(r"(\d+(?:\.\d+){3})-(\d+(?:\.\d+){3}|\d+)")
+_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+@dataclass(frozen=True)
+class TargetCheck:
+    """A typed value read as a target: a kind from TARGET_KINDS, its value, or an error."""
+
+    kind: str
+    value: str = ""
+    error: str = ""
+
+    @property
+    def valid(self) -> bool:
+        return self.kind != "INVALID"
+
+
+def _invalid(error: str) -> TargetCheck:
+    return TargetCheck("INVALID", error=error)
+
+
+def _shown(text: str) -> str:
+    """The typed value, shortened to fit a one-line message."""
+    return text if len(text) <= 40 else text[:39] + "…"
+
+
+def _path_like(value: str) -> bool:
+    return (value[0] in "/~\\" or bool(_DRIVE.match(value)) or value in (".", "..")
+            or value.startswith(("./", "../", ".\\", "..\\")))
+
+
+def looks_like_target(text: str) -> bool:
+    """True when `text` is one value shaped like a target, not a question or a chat line."""
+    value = text.strip()
+    if not value or any(ch.isspace() for ch in value):
+        return False
+    if "://" in value or value.lower().startswith(("git@",) + _GIT_HOSTS) or _path_like(value):
+        return True
+    scheme = _SCHEME.match(value)
+    if scheme and scheme.group(1).lower() in _NO_SLASH_SCHEMES:
+        return True
+    return bool(re.fullmatch(r"[\d./-]+", value)) and value.count(".") >= 2
+
+
+def validate_target(text: str) -> TargetCheck:
+    """What kind of target `text` is, normalized; or INVALID with a one-line reason.
+
+    Format checks only, nothing touches the network; a local path must be an existing
+    folder. This is feedback for the person typing: the backend's scope check decides.
+    """
+    value = text.strip()
+    if not value:
+        return _invalid(f"Type a target. {SUPPORTED_FORMATS}")
+    if any(ch.isspace() for ch in value):
+        return _invalid(f"A target is one value without spaces. {SUPPORTED_FORMATS}")
+    for check in (_check_git, _check_url, _check_ipv4, _check_path):
+        found = check(value)
+        if found is not None:
+            return found
+    return _invalid(f'"{_shown(value)}" isn\'t a target. {SUPPORTED_FORMATS}')
+
+
+def _check_git(value: str) -> Optional[TargetCheck]:
+    """git@host:owner/repo, ssh:// or git:// URLs, and https URLs of a repository."""
+    lower = value.lower()
+    if lower.startswith("git@") or lower.startswith(_GIT_HOSTS):
+        try:
+            return TargetCheck("GIT_REPO", _git_ref(value))
+        except StoreValidationError as exc:
+            return _invalid(str(exc))
+    if lower.startswith(("ssh://", "git://")):
+        repo = _repo_url(value, 1)
+    elif lower.startswith(("http://", "https://")):
+        parts = urlsplit(value)
+        on_git_host = (parts.hostname or "").lower() in _GIT_HOSTS
+        if not on_git_host and not parts.path.rstrip("/").endswith(".git"):
+            return None                                    # an ordinary web URL
+        repo = _repo_url(value, 2)
+    else:
+        return None
+    if repo is None:
+        return _invalid(f"{_shown(value)} isn't a repository — e.g. "
+                        "https://github.com/acme/app or git@github.com:acme/app.git")
+    return TargetCheck("GIT_REPO", repo)
+
+
+def _check_url(value: str) -> Optional[TargetCheck]:
+    """http(s) URLs with a host; every other scheme is refused."""
+    scheme = _SCHEME.match(value)
+    if scheme is None or _DRIVE.match(value):
+        return None
+    name = scheme.group(1).lower()
+    if "://" not in value and name not in _NO_SLASH_SCHEMES:
+        return None                                        # e.g. "host:8080", no scheme
+    if name not in ("http", "https"):
+        return _invalid(f"{name}: links aren't supported — use http:// or https://, "
+                        "e.g. https://app.example.com")
+    try:
+        base = url_target(value, "web_url").target_url
+    except StoreValidationError as exc:
+        return _invalid(f"{exc} Use a full URL, e.g. https://app.example.com")
+    parts = urlsplit(_clean(value))
+    rest = parts.path + (f"?{parts.query}" if parts.query else "")
+    return TargetCheck("URL", base + rest)
+
+
+def _check_ipv4(value: str) -> Optional[TargetCheck]:
+    """An address, a CIDR range or a dash range."""
+    dash = _DASH_RANGE.fullmatch(value)
+    if dash:
+        return _dash_range(dash.group(1), dash.group(2))
+    if not _IPV4_TOKEN.fullmatch(value):
+        return None
+    try:
+        normalized = ipv4(value)
+    except StoreValidationError as exc:
+        return _invalid(str(exc))
+    return TargetCheck("IPV4_RANGE" if "/" in normalized else "IPV4", normalized)
+
+
+def _dash_range(start_text: str, end_text: str) -> TargetCheck:
+    """10.0.0.1-10.0.0.20, or 10.0.0.1-20 (the end replaces the last number)."""
+    if "." not in end_text:
+        end_text = start_text.rsplit(".", 1)[0] + "." + end_text
+    try:
+        start = ipaddress.IPv4Address(ipv4(start_text))
+        end = ipaddress.IPv4Address(ipv4(end_text))
+    except StoreValidationError as exc:
+        return _invalid(str(exc))
+    if start > end:
+        return _invalid(f"{start}-{end} runs backwards — put the lower address first, "
+                        "e.g. 10.0.0.1-10.0.0.20")
+    count = int(end) - int(start) + 1
+    if count > MAX_RANGE_ADDRESSES:
+        return _invalid(f"{start}-{end} has {count:,} addresses — the limit is "
+                        f"{MAX_RANGE_ADDRESSES:,} (a /{WIDEST_RANGE}).")
+    return TargetCheck("IPV4_RANGE", f"{start}-{end}")
+
+
+def _check_path(value: str) -> Optional[TargetCheck]:
+    """A local folder that exists (`~` is expanded)."""
+    if not _path_like(value):
+        return None
+    path = os.path.abspath(os.path.expanduser(value))
+    if not os.path.exists(path):
+        return _invalid(f"{_shown(value)} doesn't exist — type a folder that does, "
+                        "e.g. ~/code/app")
+    if not os.path.isdir(path):
+        return _invalid(f"{_shown(value)} is a file — type its folder instead, e.g. ~/code/app")
+    return TargetCheck("LOCAL_PATH", path)
+
+
 __all__ = [
     "URL", "GIT_URL", "GIT_REF", "HOST", "IPV4_LIKE", "LOCAL_PATH", "ipv4", "host_value",
     "looks_api", "url_target", "network_target", "web_target", "api_target", "source_target",
-    "FINDERS", "needs", "check_target",
+    "FINDERS", "needs", "check_target", "TARGET_KINDS", "MAX_RANGE_ADDRESSES",
+    "SUPPORTED_FORMATS", "TargetCheck", "looks_like_target", "validate_target",
 ]

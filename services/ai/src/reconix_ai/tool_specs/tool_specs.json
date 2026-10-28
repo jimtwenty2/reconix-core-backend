@@ -1,0 +1,2438 @@
+{
+  "server": "kali-mcp",
+  "tool_count": 74,
+  "implemented_count": 74,
+  "_note": "Catalog of record for the 74-tool target. status=implemented tools run today; status=planned tools are documented and not yet built. Keep in sync with TOOLS.md.",
+  "tools": [
+    {
+      "name": "nmap",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Primary network scanner for host discovery, port scanning, service/version detection, and OS fingerprinting. Use this FIRST on a network host. `target` is a bare host, IP, or CIDR \u2014 NOT a URL (no http://, no port in the host). Returns nmap XML. Wide scans (CIDR ranges, full -p-) can be slow \u2014 raise `timeout` accordingly.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Bare host, IP, or CIDR \u2014 e.g. 'metasploitable', '10.0.0.5', '192.168.1.0/24'. No scheme or port."
+          },
+          "ports": {
+            "type": "string",
+            "description": "Ports to scan (e.g. '22,80,443' or '1-1000'). Omit for the top 1000 ports."
+          },
+          "opts": {
+            "type": "string",
+            "description": "nmap options; REPLACES the default '-sV -sC' when set, so include what you need. Add '-Pn' for hosts that drop pings (common for lab VMs) or nmap may report them down."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "masscan",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Ultra-fast asynchronous TCP port scanner. Use when you need to scan large IP ranges (entire subnets or the internet) for open ports. Much faster than nmap for bulk scanning but does NOT provide service/version detection. Typical workflow: masscan to find open ports, then nmap on those ports for details. Output: list of open ports with optional banner grab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target IP or CIDR range (e.g. 10.0.0.0/8, 192.168.1.0/24)"
+          },
+          "ports": {
+            "type": "string",
+            "description": "Ports to scan (default: 1-65535). Top ports: '80,443,22,21,25,3389,8080'"
+          },
+          "rate": {
+            "type": "integer",
+            "description": "Packets per second. Default 1000. Increase for faster scans, decrease to avoid network disruption."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "netcat",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "TCP/UDP connection utility \u2014 connect to services, create listeners, transfer files, or spawn shells. Use for quick service banner grabs, port connectivity tests, or setting up reverse/bind shells. For structured service enumeration, prefer nmap. For raw packet analysis, use tcpdump/tshark.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "Target host IP or hostname to connect to"
+          },
+          "port": {
+            "type": "string",
+            "description": "Port number (e.g. '80', '4444')"
+          },
+          "connect": {
+            "type": "boolean",
+            "description": "true = connect to host:port (default), false = listen on port for incoming connections"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "host",
+          "port"
+        ]
+      }
+    },
+    {
+      "name": "tcpdump",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Real-time packet capture on a network interface. Use for live traffic monitoring, debugging connectivity, or capturing evidence of network activity. For deeper protocol analysis and display filtering, use tshark. Output: raw packet headers (IP, TCP/UDP, payload snippets). Requires root/privileged access.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "interface": {
+            "type": "string",
+            "description": "Network interface to capture on (default: eth0). Use 'any' for all interfaces."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of packets to capture before exiting (default: 50)"
+          },
+          "filt": {
+            "type": "string",
+            "description": "BPF filter expression (e.g. 'tcp port 80', 'host 192.168.1.1', 'icmp')"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "arp_scan",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "ARP-based host discovery on a local network segment. Sends ARP requests and identifies live hosts by MAC address and vendor. Use for initial reconnaissance of a local subnet \u2014 faster and more reliable than nmap ping scans on the same LAN. Output: IP address, MAC address, and OUI vendor name for each responding host.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target IP range or CIDR (e.g. 192.168.1.0/24, 10.0.0.1-254)"
+          },
+          "iface": {
+            "type": "string",
+            "description": "Network interface to use (auto-detected if omitted)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional arp-scan options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "onesixtyone",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Fast SNMP scanner \u2014 discovers SNMP-enabled devices and tests community strings. Use when you suspect SNMP is running (port 161 UDP) and want to find readable community strings (public, private, or custom). Much faster than snmpwalk for initial discovery. Output: list of IPs with their valid community strings and system descriptions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target IP or hostname"
+          },
+          "community": {
+            "type": "string",
+            "description": "Community string to test (default: 'public'). Use a file path for multiple strings."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional onesixtyone options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "dnsrecon",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "DNS enumeration tool \u2014 performs zone transfers, brute-force subdomain discovery, reverse lookups, and DNS record enumeration (A, AAAA, MX, NS, SOA, TXT, SRV). Use when you have a domain and need to map its DNS footprint. For passive subdomain discovery across many sources, prefer subfinder. Output: DNS records organized by type with associated IPs and hostnames.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Target domain (e.g. example.com)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "DNS record types to enumerate (default: '-t std'). Use '-t axfr' for zone transfer attempt."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      }
+    },
+    {
+      "name": "tshark",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Command-line Wireshark \u2014 captures and deeply analyzes network traffic with full protocol dissection. Use for detailed traffic analysis, extracting specific protocol fields, or analyzing pcap files. Superior to tcpdump for protocol decoding and display filters. Can read pcap files or capture live. Output: detailed packet summaries with protocol-specific fields.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "iface": {
+            "type": "string",
+            "description": "Network interface for live capture (default: eth0)"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of packets to capture (default: 50)"
+          },
+          "read_file": {
+            "type": "string",
+            "description": "Read from pcap file instead of live capture (e.g. capture.pcap)"
+          },
+          "filt": {
+            "type": "string",
+            "description": "Capture filter (e.g. 'tcp port 80', 'host 10.0.0.1')"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional tshark options or display filters (e.g. '-Y http.request')"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "naabu",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Discover open TCP ports with Naabu. Defaults to TCP connect scanning. Returns JSON lines; requires an authorized target.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Host, IP, or CIDR"
+          },
+          "ports": {
+            "type": "string",
+            "description": "Optional ports or range (e.g. 80,443 or 1-1024)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Naabu options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "nuclei",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Modern template-based vulnerability scanner with thousands of community-maintained YAML templates. Detects CVEs, misconfigurations, exposed panels, default credentials, and more. Use as your primary web/service vulnerability scanner. `target` is a single URL or host (e.g. http://juice-shop:3000) \u2014 not a file list. Returns one JSON object per finding (JSON lines). A full scan can take a few minutes; call it directly and wait for the result (raise `timeout` if needed).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Single target URL, IP, or hostname (e.g. http://juice-shop:3000)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "nuclei options; REPLACES the default '-severity medium,high,critical' when set. E.g. '-severity critical,high -tags cve'."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "sqlmap",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Automated SQL injection detection, exploitation, and data extraction. Use when you find a URL parameter that may be injectable. Handles detection, database fingerprinting, data dumping, and even OS shell access via SQLi. Output: confirms injectable parameters, database type/version, and extracted data. For command injection (not SQL), use commix. For XSS, use xsser.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL with parameters (e.g. 'http://example.com/page.php?id=1')"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional options. Default: --batch --random-agent (non-interactive with random user-agent)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "nikto",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Web server vulnerability scanner \u2014 checks for 6700+ known issues: outdated server software, dangerous files/CGIs, default credentials, and server misconfigurations. Use early in web recon to find low-hanging vulnerabilities. Does NOT exploit \u2014 only reports. For modern CVE-based scanning, use nuclei. For WordPress-specific, use wpscan. Output: categorized list of findings with severity.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "Target host or IP (e.g. 192.168.1.10 or example.com)"
+          },
+          "port": {
+            "type": "string",
+            "description": "Web server port (default: 80). Use 443 for HTTPS."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional nikto options (e.g. '-ssl' for HTTPS, '-Tuning 9' for SQLi tests)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "name": "gobuster",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Fast multi-mode brute-force tool: directory/files (dir), DNS subdomains (dns), virtual hosts (vhost), and fuzzing. Use for discovering hidden paths and subdomains. Written in Go \u2014 faster than dirb. For pure directory brute-force, dirb is simpler. For parameter/header fuzzing, use ffuf. Output: discovered paths/subdomains with HTTP status codes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target URL (e.g. http://example.com). Include http:// or https://"
+          },
+          "wordlist": {
+            "type": "string",
+            "description": "Path to wordlist file (e.g. /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt)"
+          },
+          "mode": {
+            "type": "string",
+            "description": "Mode: dir (directories/files), dns (subdomains), vhost (virtual hosts), fuzz (default: dir)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional gobuster options (e.g. '-x php,html,txt' for extensions)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target",
+          "wordlist"
+        ]
+      }
+    },
+    {
+      "name": "dirb",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Classic web content scanner using dictionary-based attacks to find hidden directories and files. Simpler than gobuster \u2014 good for quick scans with built-in wordlists. Use when you want a straightforward directory scan without configuring many options. Output: list of found paths with HTTP response codes. Non-recursive by default.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target URL (e.g. http://192.168.1.10)"
+          },
+          "wordlist": {
+            "type": "string",
+            "description": "Wordlist path. Default: /usr/share/wordlists/dirb/common.txt"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional dirb options (e.g. '-X .php,.txt' for specific extensions)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "wpscan",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Dedicated WordPress security scanner. Enumerates installed plugins, themes, users, and checks for known vulnerabilities in all of them. Use ONLY when the target is confirmed to be WordPress (verify with whatweb first). Output: WordPress version, vulnerable plugins/themes with CVE references, enumerated usernames.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target WordPress site URL (e.g. https://blog.example.com)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional wpscan options (e.g. '--enumerate u,p,t' for users, plugins, themes)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "ffuf",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Extremely fast web fuzzer written in Go. Supports directory discovery, virtual host enumeration, GET/POST parameter fuzzing, header fuzzing, and more. Use for high-performance fuzzing tasks. Place 'FUZZ' keyword in the target URL where fuzzing should occur. For simpler directory scans, use gobuster or dirb. For HTTP parameter brute-force, wfuzz has more features. Output: matched URLs with status codes and response sizes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target URL with FUZZ keyword (e.g. 'http://example.com/FUZZ' or 'http://example.com?param=FUZZ')"
+          },
+          "wordlist": {
+            "type": "string",
+            "description": "Path to wordlist file"
+          },
+          "match_code": {
+            "type": "string",
+            "description": "HTTP status codes to match, comma-separated (default: '200,301,302'). Use 'all' to see everything."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional ffuf options (e.g. '-H \"Host: FUZZ.example.com\"' for vhost)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target",
+          "wordlist"
+        ]
+      }
+    },
+    {
+      "name": "whatweb",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Passive web technology fingerprinting. Identifies CMS (WordPress, Joomla, Drupal), web frameworks, JavaScript libraries, analytics platforms, CDNs, server software, and more. Use FIRST on any web target to understand the tech stack before running specialized tools. Output: structured list of identified technologies with version numbers where available.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target URL or IP (e.g. https://example.com)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional whatweb options (e.g. '-a 3' for aggressive level)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "wfuzz",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Feature-rich web application brute-forcer. Fuzzes URLs, POST data, headers, cookies, and authentication. Use for parameter discovery, login brute-force, header injection testing, and custom fuzzing scenarios. More flexible than ffuf for complex fuzzing (multi-point injection, encoders, auth handling). Output: requests with their response codes, line/word/char counts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target URL with FUZZ keyword (e.g. 'http://example.com/FUZZ')"
+          },
+          "wordlist": {
+            "type": "string",
+            "description": "Path to wordlist file"
+          },
+          "filter_code": {
+            "type": "string",
+            "description": "HTTP codes to HIDE from output (e.g. '404,500'). Helps reduce noise."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional wfuzz options (e.g. '-d \"user=FUZZ&pass=FUZZ\"' for POST data fuzzing)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target",
+          "wordlist"
+        ]
+      }
+    },
+    {
+      "name": "xsser",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Cross-Site Scripting (XSS) detection and exploitation framework. Tests for reflected, stored, and DOM-based XSS. Use when you find user input reflected in page output. Automatically encodes payloads to bypass filters. For general web vulnerability scanning, use nuclei or nikto. For SQL injection, use sqlmap. Output: identified XSS vectors with payload and injection point.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL with injectable parameter (e.g. 'http://example.com/search?q=test')"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional xsser options. Default: --auto (automatic mode)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "commix",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Automated OS command injection detection and exploitation tool. Tests for shell command injection in HTTP parameters, headers, cookies, and POST data. Use when sqlmap confirms the parameter is NOT SQL injectable but may still be vulnerable to command injection. Supports multiple injection techniques: results-based, blind, time-based. Output: confirms injection, shows OS type, and provides an interactive pseudo-shell on success.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL with injectable parameter (e.g. 'http://example.com/ping?ip=127.0.0.1')"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional commix options. Default: --batch (non-interactive)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "httpx_probe",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Probe HTTP services with ProjectDiscovery's httpx-toolkit (not the Python httpx client). Returns JSON lines with status, title, and server information.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "URL or host to probe"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional httpx-toolkit options, including quoted headers"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "testssl",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Check TLS protocols, ciphers, certificates, and vulnerabilities with testssl.sh. Returns a text report. Use only against authorized services.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "HTTPS URL or host:port"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional testssl options (e.g. --protocols)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "katana",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Discover web endpoints and JavaScript URLs. Optional headless Chromium crawling captures browser XHR requests. Returns JSON lines. Scope defaults to the target hostname.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute HTTP(S) target URL"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Maximum crawl depth (default: 3)"
+          },
+          "headless": {
+            "type": "boolean",
+            "description": "Render JavaScript with Chromium (default: false)"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "HTTP headers, including Authorization or Cookie, for the target"
+          },
+          "rate_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Requests per second (default: 5)"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600,
+            "description": "Total execution timeout in seconds (default: 300)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Katana options; quoted values supported"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "arjun",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Discover hidden HTTP parameters in GET, POST, JSON, or XML requests. Supports authenticated headers and a local wordlist. Returns a JSON report.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute HTTP(S) target URL"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "JSON",
+              "XML"
+            ],
+            "description": "Parameter location/method (default: GET)"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "HTTP headers, including Authorization or Cookie, for the target"
+          },
+          "wordlist": {
+            "type": "string",
+            "description": "Optional existing local parameter wordlist"
+          },
+          "delay": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Delay between requests in seconds (default: 0.2)"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600,
+            "description": "Total execution timeout in seconds (default: 300)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Arjun options; quoted values supported"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "dalfox",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Scan an HTTP(S) URL for XSS with Dalfox 3. Supports headers, cookies, request bodies, and selected parameters. Returns JSON including findings, evidence, and scan-completeness metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute HTTP(S) target URL"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ],
+            "description": "HTTP method (default: GET)"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "HTTP headers, including Authorization or Cookie, for the target"
+          },
+          "body": {
+            "type": "string",
+            "description": "Optional raw request body"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional parameter names to test"
+          },
+          "delay": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Delay between requests in milliseconds (default: 200)"
+          },
+          "rate_limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Global requests per second (default: 5)"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600,
+            "description": "Total execution timeout in seconds (default: 300)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Dalfox 3 scan options; quoted values supported"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "semgrep",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Statically scan source code with Semgrep for security issues. `path` is a file or directory path INSIDE the container (e.g. /workspace/...). Returns JSON findings; the scan is already configured for JSON output, so you normally pass only `path`. Read the returned findings directly \u2014 do not wrap this in run_job.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Source file or directory path inside the container (e.g. /workspace/source-code/vulpy)"
+          },
+          "config": {
+            "type": "string",
+            "description": "Ruleset: a registry pack or a rules file (default: p/default, a broad multi-language pack). Set the ruleset here, not via opts. 'auto' is unavailable (metrics are off)."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Extra Semgrep flags, rarely needed. Do NOT pass output/format flags (--json, --sarif, ...) or --config here \u2014 output is already JSON and the ruleset is the config field."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "gitleaks",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Scan a local directory for leaked secrets. Returns redacted JSON findings. Scans current files by default; set history=true to scan the full Git commit history instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory path inside the container to scan (e.g. /workspace)"
+          },
+          "history": {
+            "type": "boolean",
+            "description": "Scan the full Git commit history (gitleaks git) instead of the working tree (gitleaks dir). Requires a Git repository at path."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Gitleaks options (e.g. --config rules.toml)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "trivy",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Scan a local directory's dependency manifests and lockfiles for known vulnerabilities. Returns JSON; downloads and caches the vulnerability database.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Local project directory"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Trivy filesystem options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "sonar_scan",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Run the SonarScanner CLI against a local project directory, reporting results to the configured SonarQube server. Requires SONAR_HOST_URL and SONAR_TOKEN in the environment. Returns the scanner's log output.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Local project directory to scan (sonar.projectBaseDir)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional SonarScanner -D properties (e.g. -Dsonar.projectKey=my-key)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "syft",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Generate a Software Bill of Materials (SBOM) for a local directory or container image with Syft. Returns Syft's native JSON.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Directory path or image reference (e.g. ./project, dir:/src, alpine:3.19)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Syft options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "grype",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Scan a directory, container image, or Syft SBOM for known vulnerabilities with Grype. Returns JSON; downloads and caches the vulnerability database.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Directory, image, or SBOM reference (e.g. ./project, alpine:3.19, sbom:sbom.json)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Grype options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "osv_scanner",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Scan a local project directory for dependencies that are known-vulnerable OR known-malicious/compromised (supply-chain), using OSV-Scanner against the OSV database (includes OpenSSF malicious-package advisories, IDs like MAL-*). Reads lockfiles/manifests; returns JSON.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Local project directory to scan"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional OSV-Scanner options (e.g. --lockfile path, --no-ignore)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "schemathesis",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Property-based API fuzzer driven by an OpenAPI/GraphQL schema. Point it at a schema URL (or local file plus base_url) and it generates and sends test cases, flagging server errors and schema violations. Advanced selectors (checks, path/method filters) go through opts. Output: a per-operation pass/fail report.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "description": "Schema URL (e.g. http://vampi:5000/openapi.json) or local schema file"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "API base URL; required when `schema` is a local file"
+          },
+          "headers": {
+            "type": "object",
+            "description": "Request headers (e.g. Authorization or Cookie)"
+          },
+          "max_examples": {
+            "type": "integer",
+            "description": "Maximum generated examples per operation"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional `schemathesis run` options (e.g. '--checks all', '--include-path /users')"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "schema"
+        ]
+      }
+    },
+    {
+      "name": "newman",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Run an exported Postman collection for API regression tests. Supports a local environment file. Failed assertions return an error with the test report.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Existing local Postman collection JSON file"
+          },
+          "environment": {
+            "type": "string",
+            "description": "Optional local Postman environment JSON file"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional Newman run options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "collection"
+        ]
+      }
+    },
+    {
+      "name": "zap_start",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Start (or verify) a headless OWASP ZAP daemon used by all other zap_* tools. Normally you do not need to call this \u2014 every zap_* tool auto-starts the daemon. Java 17/21 is selected automatically (ZAP 2.17 is unstable on Java 25). Output: ZAP version and address once the daemon is ready.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "zap_stop",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Shut down the OWASP ZAP daemon started by this server. Use to free resources when finished scanning. Output: confirmation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "zap_status",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Check whether the OWASP ZAP daemon is running and reachable, and report its version. Output: running/stopped status and ZAP version.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "zap_spider",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Crawl (spider) a web application with OWASP ZAP to enumerate URLs, forms, and endpoints. Use as the FIRST ZAP step to map the application before active scanning. For a complete scan in one call, use zap_scan. Can be slow on first use (one-time daemon start); call it directly and wait. Output: number of URLs discovered and a sample.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL to spider (e.g. http://192.168.1.10)"
+          },
+          "recurse": {
+            "type": "boolean",
+            "description": "Recurse into discovered URLs (default: true)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Max seconds to wait for the spider (default: 300)"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "zap_active_scan",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Run an OWASP ZAP active scan against a target URL. Active scanning sends real attack payloads (SQLi, XSS, path traversal, etc.) and is intrusive \u2014 only use on systems you are authorized to test. You MUST run zap_spider on the URL first (ZAP can only actively scan URLs already in its site tree); or just use zap_scan which does both. It is slow; call it directly and wait (raise `timeout` if needed). Output: scan progress and the alerts discovered.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL to actively scan (e.g. http://192.168.1.10)"
+          },
+          "recurse": {
+            "type": "boolean",
+            "description": "Scan URLs discovered under the target (default: true)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Max seconds to wait for the scan (default: 600)"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "zap_scan",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Full OWASP ZAP web application scan in one call: spider, wait for passive scanning, active scan, then return the findings. Intrusive \u2014 authorized targets only. This is the primary ZAP tool; use zap_spider/zap_active_scan for finer control. It is slow (several minutes, plus a one-time ~1-2 min daemon start on first use): call it directly and wait for the result, raising `timeout` for large sites. Output: discovered URLs, scan progress, and the alert list with risk levels.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target URL to scan (e.g. http://192.168.1.10)"
+          },
+          "recurse": {
+            "type": "boolean",
+            "description": "Recurse into discovered URLs (default: true)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Max seconds for the active scan phase (default: 900)"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "zap_alerts",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "List the security alerts (findings) OWASP ZAP has recorded, optionally filtered by target base URL and risk level. Use after a spider/active scan to review results. Output: alerts with risk, confidence, affected URL, parameter, and evidence.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "description": "Filter alerts to this target base URL (optional)"
+          },
+          "risk": {
+            "type": "string",
+            "description": "Filter by risk: High, Medium, Low, Informational (optional)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max alerts to display (default: 100)"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "zap_report",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Generate an OWASP ZAP report for the findings collected so far and save it to disk. Working templates: traditional-html, traditional-md, modern, high-level-report, sarif-json. Output: path to the generated report file and the alert count.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "type": "string",
+            "description": "Report template (default: sarif-json)"
+          },
+          "report_dir": {
+            "type": "string",
+            "description": "Directory to write the report (default: /tmp)"
+          },
+          "file_name": {
+            "type": "string",
+            "description": "Report file name without extension (default: zap-report)"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "zap_context",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Create a scoped OWASP ZAP context: include the target URL, optionally exclude URL patterns, and optionally configure authentication (form/json/http/script) plus an enabled user, so later scans stay authenticated and in-scope.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique context name"
+          },
+          "url": {
+            "type": "string",
+            "description": "HTTP(S) base URL whose subtree is in scope; no query or fragment"
+          },
+          "exclude": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "URL regexes to exclude, e.g. logout or destructive routes"
+          },
+          "authentication_method": {
+            "type": "string",
+            "description": "ZAP method name, e.g. formBasedAuthentication, jsonBasedAuthentication, browserBasedAuthentication, or httpAuthentication; omitted leaves manual authentication"
+          },
+          "authentication_params": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Method parameters such as loginUrl and loginRequestData; values are URL-encoded by the wrapper"
+          },
+          "user_name": {
+            "type": "string",
+            "description": "Optional name for a new context user"
+          },
+          "credentials": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Credential parameters, typically username and password; requires user_name and authentication_method"
+          },
+          "logged_in_regex": {
+            "type": "string",
+            "description": "Response regex indicating a successful login"
+          },
+          "logged_out_regex": {
+            "type": "string",
+            "description": "Response regex indicating an unauthenticated session"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "zap_openapi_import",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Import an OpenAPI definition from a URL or local file into ZAP. Optionally override the API base URL and import in a context/as a user. Returns import results and discovered API URLs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "string",
+            "description": "OpenAPI definition: a URL (e.g. http://vampi:5000/openapi.json) or a local file path"
+          },
+          "base_url": {
+            "type": "string",
+            "description": "Override the API target/host (hostOverride) \u2014 needed for local files"
+          },
+          "context_id": {
+            "type": "string",
+            "description": "Import into this ZAP context id (optional)"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": [
+          "schema"
+        ]
+      }
+    },
+    {
+      "name": "zap_ajax_spider",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Crawl a JavaScript-heavy / single-page application with OWASP ZAP's AJAX spider, which drives a browser engine to reach URLs the traditional spider misses. Runs with the bundled HtmlUnit engine (no external browser needed; install Firefox/Chrome for full SPA rendering). Optionally scan within a context as a user.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "HTTP(S) start URL"
+          },
+          "context_name": {
+            "type": "string",
+            "description": "Optional context name from zap_context"
+          },
+          "user_name": {
+            "type": "string",
+            "description": "Optional context user name; requires context_name"
+          },
+          "max_depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Maximum crawl depth (default: 5)"
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600,
+            "description": "Maximum crawl wait in seconds (default: 300)"
+          },
+          "host": {
+            "type": "string",
+            "description": "ZAP daemon address (default: 127.0.0.1)"
+          },
+          "port": {
+            "type": "integer",
+            "description": "ZAP daemon port (default: 8090)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "hydra",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Fast network login brute-force tool supporting 50+ protocols (SSH, FTP, HTTP, RDP, SMB, MySQL, etc.). Use for testing password strength on network services. Specify the target service and provide user/password lists. For offline hash cracking, use john or hashcat instead. Output: found credentials in login:password format, or 'no valid credentials found'.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target host or IP"
+          },
+          "service": {
+            "type": "string",
+            "description": "Service name (e.g. ssh, ftp, http-post-form, rdp, smb, mysql)"
+          },
+          "userlist": {
+            "type": "string",
+            "description": "Single username OR path to user wordlist file"
+          },
+          "passlist": {
+            "type": "string",
+            "description": "Path to password wordlist file"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional hydra options (e.g. '-t 4' for threads, '-V' for verbose)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target",
+          "service",
+          "userlist",
+          "passlist"
+        ]
+      }
+    },
+    {
+      "name": "john",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "John the Ripper \u2014 offline password hash cracker. Supports hundreds of hash formats with auto-detection. Use for cracking password hashes extracted from /etc/shadow, SAM databases, or captured network hashes. CPU-based \u2014 better for smaller hash sets or when GPU is unavailable. For GPU-accelerated cracking of large hash sets, prefer hashcat. Output: cracked passwords with their corresponding hashes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "hashfile": {
+            "type": "string",
+            "description": "Path to file containing hashes (one per line or colon-separated)"
+          },
+          "wordlist": {
+            "type": "string",
+            "description": "Path to wordlist for dictionary attack (optional \u2014 uses brute-force if omitted)"
+          },
+          "fmt": {
+            "type": "string",
+            "description": "Force hash format (e.g. 'raw-md5', 'sha256crypt', 'nt'). Auto-detect if omitted."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional john options (e.g. '--rules' for word mangling, '--show' to display cracked)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "hashfile"
+        ]
+      }
+    },
+    {
+      "name": "hashcat",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "World's fastest GPU-accelerated password cracker with 300+ hash type modes. Use for high-performance cracking of large hash sets. REQUIRES the mode number matching the hash type. For CPU-only or auto-detect cracking, use john instead. Use hash_identifier first if unsure of hash type. Output: cracked hashes with their plaintext passwords. Status lines show cracking speed and progress.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "hashfile": {
+            "type": "string",
+            "description": "Path to file containing hashes"
+          },
+          "wordlist": {
+            "type": "string",
+            "description": "Path to wordlist file"
+          },
+          "mode": {
+            "type": "integer",
+            "description": "Hash type mode number. Key values: 0=MD5, 100=NTLM, 1000=SHA1, 1400=SHA256, 1800=sha512crypt"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional hashcat options (e.g. '-r rules/best64.rule' for rules, '--show' for results)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "hashfile",
+          "wordlist"
+        ]
+      }
+    },
+    {
+      "name": "crunch",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Wordlist generator \u2014 creates custom password lists based on character sets, length ranges, and patterns. Use to generate targeted wordlists when you know password policy (min/max length, required characters). For generating wordlists from website content (password profiling), use cewl instead. Output: wordlist printed to stdout or written to a file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "min_len": {
+            "type": "integer",
+            "description": "Minimum word length (e.g. 6)"
+          },
+          "max_len": {
+            "type": "integer",
+            "description": "Maximum word length (e.g. 8)"
+          },
+          "charset": {
+            "type": "string",
+            "description": "Character set to use (e.g. 'abc123!@#' or '0123456789' for numeric-only)"
+          },
+          "output": {
+            "type": "string",
+            "description": "Output file path to save generated wordlist"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional crunch options (e.g. '-t @@@%%%' for pattern: 3 lowercase + 3 digits)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "min_len",
+          "max_len"
+        ]
+      }
+    },
+    {
+      "name": "enum4linux",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Windows/Samba enumeration tool. Extracts user lists, shares, groups, password policies, and OS information from SMB services (ports 139/445). Use for Windows domain reconnaissance without authentication. For more advanced AD enumeration with credentials, use crackmapexec or impacket modules. Output: structured enumeration data including RID-cycled user lists and accessible shares.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target IP or hostname of Windows/Samba server"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional enum4linux options (e.g. '-a' for all enumeration)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "searchsploit",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Command-line interface to the Exploit Database. Search for public exploit code by software name, version, CVE number, or vulnerability description. Use after identifying software versions (from nmap, whatweb, etc.) to find available exploits. Output: exploit title, path, and sometimes the exploit file content. Pair with msf_search for Metasploit module equivalents.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search term, CVE ID (e.g. 'CVE-2017-0144'), or software name (e.g. 'vsftpd 2.3.4')"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional searchsploit options (e.g. '-m 12345' to mirror/copy an exploit to current dir)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "subfinder",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Passive subdomain discovery using multiple online sources (certificate transparency, search engines, DNS datasets). No direct DNS queries \u2014 completely passive and undetectable. Use for initial domain reconnaissance to map external attack surface. For active DNS brute-force and zone transfers, use dnsrecon. For deeper OSINT, use amass. Output: list of discovered subdomains.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Target domain (e.g. example.com). Do NOT include subdomains."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional subfinder options (e.g. '-all' for all sources, '-o output.txt')"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      }
+    },
+    {
+      "name": "amass",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Comprehensive network mapping and attack surface discovery using OSINT and active techniques. Discovers subdomains, IP ranges, ASNs, and related domains. Use for deep domain mapping \u2014 combines passive (OSINT) and active (DNS brute-force) methods. More thorough than subfinder but slower. Use subfinder for quick passive-only results. Output: discovered assets with their sources and relationships.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Target domain (e.g. example.com)"
+          },
+          "mode": {
+            "type": "string",
+            "description": "Mode: 'enum' for subdomain enumeration (default), 'intel' for OSINT on IP ranges/ASNs"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional amass options (e.g. '-active' to enable active DNS brute-force)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      }
+    },
+    {
+      "name": "exiftool",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Read, write, and edit metadata embedded in files \u2014 images, PDFs, Office documents, audio, video. Use to extract hidden information: GPS coordinates from photos, author names from documents, software versions from PDFs, or creation timestamps. Output: all metadata fields with their values. Can also strip or modify metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filepath": {
+            "type": "string",
+            "description": "Path to the file to analyze (image, PDF, document, etc.)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional exiftool options (e.g. '-all=' to strip all metadata)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "filepath"
+        ]
+      }
+    },
+    {
+      "name": "theHarvester",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "OSINT tool for harvesting emails, names, subdomains, IPs, and URLs from public sources (Google, Bing, LinkedIn, Shodan, PGP key servers, and 20+ others). Use for early reconnaissance to identify employee email patterns, exposed services, and related domains. Output: organized results by source \u2014 emails, hosts, IPs, and URLs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Target domain (e.g. example.com)"
+          },
+          "source": {
+            "type": "string",
+            "description": "Data source to query. 'all' uses all available sources. Options: google, linkedin, shodan, hunter, etc."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum results per source (default: 100). Lower if getting rate-limited."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional theHarvester options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      }
+    },
+    {
+      "name": "smbclient",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "SMB/CIFS client \u2014 connects to Windows file shares for browsing, downloading, and uploading files. Use to access SMB shares with or without credentials (anonymous/null session). For SMB vulnerability scanning, use nmap or crackmapexec. For automated share enumeration, use enum4linux. Output: directory listings, file contents, or confirmation of upload/download.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Target IP or hostname"
+          },
+          "share": {
+            "type": "string",
+            "description": "Share name (e.g. 'C$', 'IPC$', 'shared'). Leave empty to list shares."
+          },
+          "user": {
+            "type": "string",
+            "description": "Username for authentication. Omit for anonymous/null session."
+          },
+          "password": {
+            "type": "string",
+            "description": "Password for authentication"
+          },
+          "command": {
+            "type": "string",
+            "description": "SMB command to execute (e.g. 'ls' to list, 'get file.txt' to download)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional smbclient options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "msfconsole",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Metasploit Framework console \u2014 the primary interface for running exploit, auxiliary, post-exploitation, and payload modules. Use to execute exploits, scan with auxiliary modules, or run post-exploitation tasks. For generating standalone payloads without the console, use msfvenom. For searching modules without opening console, use msf_search. Output: module output, exploit results, or session information.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Metasploit command to run (e.g. 'use exploit/windows/smb/ms17_010_eternalblue; set RHOSTS 10.0.0.1; run')"
+          },
+          "resource_file": {
+            "type": "string",
+            "description": "Path to .rc resource script for multi-step automation (overrides command if set)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional commands to chain after the main command"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "msfvenom",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Metasploit payload generator \u2014 creates shellcode and executables from payloads. Use for generating standalone payloads (reverse shells, meterpreter, etc.) in various formats. For AV-evasion with encoding, encryption, and template injection, use evasive_payload instead. Output: generated payload in the requested format, or list of available payloads/encoders.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "string",
+            "description": "Payload name (e.g. 'linux/x64/shell_reverse_tcp', 'windows/meterpreter/reverse_tcp')"
+          },
+          "lhost": {
+            "type": "string",
+            "description": "Listen host IP \u2014 where the payload connects back to"
+          },
+          "lport": {
+            "type": "string",
+            "description": "Listen port \u2014 which port the payload connects to"
+          },
+          "fmt": {
+            "type": "string",
+            "description": "Output format: raw, exe, dll, python, c, csharp, powershell, hex, js, vba, etc."
+          },
+          "encoder": {
+            "type": "string",
+            "description": "Encoder to use (e.g. 'x86/shikata_ga_nai'). Omit for no encoding."
+          },
+          "iterations": {
+            "type": "integer",
+            "description": "Number of encoding iterations (default: 1). More iterations = larger payload."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Target platform: windows, linux, android, osx, solaris"
+          },
+          "arch": {
+            "type": "string",
+            "description": "Target architecture: x86, x64, armle, mipsle, ppc"
+          },
+          "template": {
+            "type": "string",
+            "description": "Path to executable to use as template (payload injected into it)"
+          },
+          "outfile": {
+            "type": "string",
+            "description": "Output file path to save generated payload"
+          },
+          "badchars": {
+            "type": "string",
+            "description": "Bad characters to avoid (e.g. '\\x00\\x0a\\x0d' for null, newline, carriage return)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional msfvenom options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "payload"
+        ]
+      }
+    },
+    {
+      "name": "msfdb",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Metasploit database management. Controls the PostgreSQL database used by Metasploit for storing host data, service info, credentials, and loot from scans and exploits. Run 'init' before first use, 'start' to launch the DB, 'status' to check if running. Output: status messages about database state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "DB command: init, start, stop, status, reinit, delete (default: status)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional msfdb options"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "msf_search",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Search the Metasploit module database by keyword, CVE, platform, or module type. Use BEFORE opening msfconsole to find relevant modules for a target. Returns module paths, disclosure dates, ranks, and descriptions. After finding a module, use msf_info to see its options and requirements. Output: table of matching modules with full paths and metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search keyword (e.g. 'smb', 'eternalblue', 'CVE-2021-34527', 'apache 2.4')"
+          },
+          "module_type": {
+            "type": "string",
+            "description": "Filter by module type: auxiliary, exploit, post, payload, encoder, nop"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "msf_info",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Display detailed information about a specific Metasploit module: description, available options, required settings, supported targets, and references. Use after msf_search to understand what a module does and what parameters it needs before running it. Output: module metadata, option table (name, current setting, required, description), and references.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "module_path": {
+            "type": "string",
+            "description": "Full module path (e.g. 'exploit/windows/smb/ms17_010_eternalblue', 'auxiliary/scanner/smb/smb_version')"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "module_path"
+        ]
+      }
+    },
+    {
+      "name": "msf_resource",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Execute a Metasploit resource script (.rc file) \u2014 batch automation for multi-step Metasploit operations. Use for running pre-written attack sequences, setting up multi-handlers, or automating complex module chains. Resource files contain msfconsole commands (one per line) executed sequentially. Output: combined output of all commands in the script.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "script_path": {
+            "type": "string",
+            "description": "Path to .rc resource script file"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "script_path"
+        ]
+      }
+    },
+    {
+      "name": "responder",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "LLMNR, NBT-NS, and mDNS poisoner. Responds to name resolution requests on the local network and captures NTLMv2 password hashes from Windows systems. Use on internal network assessments to capture credentials when systems attempt to resolve names. Run on a network interface with an IP on the target subnet. Output: captured NTLMv2 hashes that can be cracked with hashcat (mode 5600).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "interface": {
+            "type": "string",
+            "description": "Network interface to listen on (e.g. eth0, tun0). Must be on target network."
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional responder options (e.g. '-A' to analyze mode, '-w' to start WPAD server)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "interface"
+        ]
+      }
+    },
+    {
+      "name": "impacket",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Collection of Python tools for Windows network protocols. Includes secretsdump (dump credentials remotely), psexec (remote command execution), wmiexec (WMI shell), GetNPUsers (AS-REP roasting), GetUserSPNs (Kerberoasting), and many more. Use for post-exploitation Windows/AD operations when you have credentials. Output: varies by module \u2014 dumped hashes, command output, or shell access.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string",
+            "description": "Impacket module (e.g. secretsdump, psexec, wmiexec, GetNPUsers, GetUserSPNs, samrdump)"
+          },
+          "target": {
+            "type": "string",
+            "description": "Target IP or hostname"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Module-specific options (e.g. 'domain/user:password@target' for authenticated access)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "module",
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "mimikatz",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "List Kali's packaged Mimikatz Windows resources. These executables require Windows; this Linux tool does not run credential extraction. Output: resource locations.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "opts": {
+            "type": "string",
+            "description": "Reserved; Windows execution is not supported in this Linux container"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "bettercap",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "status": "implemented",
+      "description": "Real-time MITM attack framework with modular caplets. Performs ARP spoofing, DNS spoofing, HTTP/HTTPS traffic manipulation, credential sniffing, and session hijacking. Use for man-in-the-middle attacks on a local network segment. Output: real-time captured credentials, session cookies, and traffic logs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "iface": {
+            "type": "string",
+            "description": "Network interface to use (e.g. eth0, wlan0)"
+          },
+          "caplet": {
+            "type": "string",
+            "description": "Caplet file to load predefined attack workflows (e.g. 'http-ui', 'net.probe')"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional bettercap options (e.g. '-eval \"net.probe on\"' for auto-discovery)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "hash_identifier",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Non-interactive hash type identification using hashID. Analyzes a hash string and determines which algorithm(s) likely produced it (MD5, SHA1, SHA256, NTLM, bcrypt, etc.). Use BEFORE attempting to crack a hash \u2014 you must know the hash type to select the correct mode in hashcat or format in john. Output: list of possible hash types ranked by likelihood with the corresponding hashcat mode and john format.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "hash_str": {
+            "type": "string",
+            "description": "Hash string to identify (e.g. '5f4dcc3b5aa765d61d8327deb882cf99')"
+          },
+          "hashfile": {
+            "type": "string",
+            "description": "File containing hashes to identify (one per line)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "cewl",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Custom wordlist generator that spiders a website and extracts words from its content. Creates targeted password lists based on the vocabulary actually used by the target organization. Use to generate wordlists for password attacks when you have a target website. For generating wordlists from character sets and patterns (not website content), use crunch. Output: list of extracted words, optionally saved to a file for use with hydra, john, or hashcat.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Target website URL to spider (e.g. http://example.com)"
+          },
+          "depth": {
+            "type": "integer",
+            "description": "How many links deep to spider from the starting URL (default: 2)"
+          },
+          "min_length": {
+            "type": "integer",
+            "description": "Minimum word length to include in output (default: 3)"
+          },
+          "outfile": {
+            "type": "string",
+            "description": "Output file path to save the generated wordlist"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional cewl options (e.g. '--lowercase' for lowercase-only output)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "proxychains",
+      "risk": "medium",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Proxy wrapper \u2014 forces any TCP-based tool's connections through a chain of proxies (Tor, SOCKS4/5, HTTP proxies). Reads proxy configuration from /etc/proxychains4.conf. Use to route tools through a pivot host (after setting up chisel or SSH tunneling) or through Tor for anonymity. Wrap any command: proxychains nmap -sT target.com Output: the wrapped tool's normal output, plus proxy chain connection debug info.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Full command to run through proxychains (e.g. 'nmap -sT target.com' or 'curl http://internal.corp.local')"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Additional proxychains options (e.g. '-f custom_proxychains.conf' for non-default config)"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "tools_info",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Report the MCP tools this container exposes and the installed binary/package versions (read from /opt/kali-versions). Use to discover capabilities and verify a tool is present before calling it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "run_job",
+      "risk": "low",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Start another tool as a background job and return its job_id immediately, instead of blocking the call until it finishes. Use this for any slow scan \u2014 zap_scan, zap_active_scan, zap_spider, nuclei, large nmap (CIDR / -p-), and big semgrep runs \u2014 then poll job_status and read the result envelope with job_result. A direct call to these can exceed the client timeout; run_job never does.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string",
+            "description": "Name of the tool to run as a job (any tool except the meta job tools)"
+          },
+          "args": {
+            "type": "object",
+            "description": "Arguments object passed to that tool, exactly as a direct call would take"
+          }
+        },
+        "required": [
+          "tool"
+        ]
+      }
+    },
+    {
+      "name": "job_status",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Check a background job's state by job_id: 'running', 'done', or 'failed'. Poll it a few seconds apart (not in a tight loop) until it is no longer 'running', then call job_result ONCE to read the output. Stop polling once it is done/failed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id returned by run_job"
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      }
+    },
+    {
+      "name": "job_result",
+      "risk": "low",
+      "read_only": true,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Fetch a finished background job's result envelope by job_id. If the job is still running it says so (keep waiting via job_status); once done/failed it returns the tool's own result envelope \u2014 call this to read the findings, then summarize them.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "description": "Job id returned by run_job"
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      }
+    },
+    {
+      "name": "run_command",
+      "risk": "high",
+      "read_only": null,
+      "destructive": null,
+      "status": "implemented",
+      "description": "Execute an allowlisted command on the Kali system. Use ONLY as a fallback when the specific tool you need is not available as a dedicated MCP tool. Runs through /bin/bash, so full shell syntax is supported: pipes (|), chaining (&& || ;), redirection (> >> <), and command substitution ($()). Safety: only known-safe binaries are permitted (an allowlist); every binary in a chain/pipeline/substitution must be allowlisted, and system-damaging commands (rm, dd, shutdown, mkfs, sudo, interpreters like python3) are rejected. Output: command stdout and stderr.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Shell command to execute (e.g. 'whois example.com', 'dig example.com ANY')"
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Timeout in seconds (default: 120, max: 600)"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  ]
+}

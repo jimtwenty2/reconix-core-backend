@@ -54,7 +54,7 @@ class AgentRun(Base):
     model_name: Mapped[str] = mapped_column(String(100))  # copy of the model used for this run
     checkpoint_id: Mapped[str | None] = mapped_column(Text)  # agent checkpoint for resume
     agent_runs_status: Mapped[AgentRunStatus] = mapped_column(
-        pg_enum(AgentRunStatus, "agent_run_status"), server_default=AgentRunStatus.RUNNING
+        pg_enum(AgentRunStatus, "agent_runs_status"), server_default=AgentRunStatus.RUNNING
     )
     started_at: Mapped[datetime] = created_at()
     plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
