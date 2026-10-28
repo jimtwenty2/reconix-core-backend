@@ -37,7 +37,7 @@ class ScopeManifest(Base):
     manifest_id: Mapped[uuid.UUID] = uuid_pk()
     version: Mapped[int] = mapped_column(Integer, server_default="1")
     manifests_status: Mapped[ManifestStatus] = mapped_column(
-        pg_enum(ManifestStatus, "manifest_status"), server_default=ManifestStatus.DRAFT
+        pg_enum(ManifestStatus, "manifests_status"), server_default=ManifestStatus.DRAFT
     )
     max_risk: Mapped[RiskLevel] = mapped_column(
         pg_enum(RiskLevel, "risk_level"), server_default=RiskLevel.LOW
