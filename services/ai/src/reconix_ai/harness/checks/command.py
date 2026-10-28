@@ -67,6 +67,11 @@ ALLOWED_OPTIONS: dict[str, dict[str, str | None]] = {
 # nmap scripts that reach hosts outside the target or are meant to break things.
 BLOCKED_SCRIPTS = {"all", "broadcast", "dos", "external"}
 BLOCKED_SCRIPT_PREFIXES = ("broadcast-", "targets-")
+# nuclei templates that only test whether a service can be knocked over.
+BLOCKED_NUCLEI_TAGS = {"dos"}
+MAX_PORT = 65535
+# Highest number an option may take. 150 is nuclei's own default rate limit.
+MAX_NUMBERS = {"-rate-limit": 150}
 
 
 def check_command(tool: str, target: str, arguments: Sequence[str]) -> CheckOutcome:
@@ -111,6 +116,12 @@ def is_allowed_value(option: str, pattern: str, value: str) -> bool:
         return False
     if option == "--script":
         return not any(is_blocked_script(name) for name in value.split(","))
+    if option == "-tags":
+        return BLOCKED_NUCLEI_TAGS.isdisjoint(value.split(","))
+    if option == "-p":
+        return all(int(port) <= MAX_PORT for port in re.findall(r"[0-9]+", value))
+    if option in MAX_NUMBERS:
+        return int(value) <= MAX_NUMBERS[option]
     return True
 
 
