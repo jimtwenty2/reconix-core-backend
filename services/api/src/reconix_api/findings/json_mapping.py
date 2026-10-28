@@ -27,6 +27,7 @@ class JsonMapping:
     key: tuple[str, ...]  # what makes two results the same finding
     items: str = ""  # where the results are; "" means the document is the list
     lines: bool = False  # one JSON object per line
+    detail: str | None = None  # added to the title, e.g. which header is missing
     severity: str | None = None
     severity_map: dict[str, SeverityStatus] = field(default_factory=dict)  # lowercase keys
     description: str | None = None
@@ -48,6 +49,9 @@ def read(mapping: JsonMapping, output: str) -> tuple[list[NewFinding], int]:
 def _finding(mapping: JsonMapping, result: dict[str, Any]) -> NewFinding:
     location = ":".join(_text(get(result, path)) for path in mapping.location)
     title = _text(get(result, mapping.title)) or mapping.kind
+    detail = _optional(result, mapping.detail)
+    if detail:
+        title = f"{title} ({detail})"
     target = _text(get(result, mapping.target)) or location
     proof = {name: value for name, value in result.items() if name not in mapping.hidden}
     return NewFinding(
@@ -108,13 +112,15 @@ MAPPINGS: dict[str, JsonMapping] = {
         title="info.name",
         target="host",
         location=("matched-at",),
-        key=("template-id", "matched-at"),
+        detail="matcher-name",  # one template can match several things, e.g. each header
+        key=("template-id", "matcher-name", "matched-at"),
         severity="info.severity",
         severity_map=SEVERITY_WORDS,
         description="info.description",
         remediation="info.remediation",
         cwe="info.classification.cwe-id",
         cve="info.classification.cve-id",
+        hidden=("request", "response", "curl-command"),  # large; kept on the tool run
     ),
     "semgrep": JsonMapping(
         kind="semgrep_match",
@@ -124,6 +130,7 @@ MAPPINGS: dict[str, JsonMapping] = {
         location=("path", "start.line"),
         key=("check_id", "path", "start.line"),
         severity="extra.severity",
+        # semgrep INFO rules still point at code worth a look, so LOW, not NONE.
         severity_map={
             "error": SeverityStatus.HIGH,
             "warning": SeverityStatus.MEDIUM,
@@ -138,7 +145,8 @@ MAPPINGS: dict[str, JsonMapping] = {
         target="File",
         location=("File", "StartLine"),
         key=("RuleID", "File", "StartLine"),
-        hidden=("Secret", "Match"),  # the leak itself never becomes evidence
+        # The leak itself, the line around it and the commit author never become evidence.
+        hidden=("Secret", "Match", "Line", "Commit", "Author", "Email", "Message"),
     ),
     "trivy": JsonMapping(
         kind="trivy_vulnerability",

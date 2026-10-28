@@ -1,5 +1,6 @@
 """Saving findings from a tool run (dedupe, sources, masked evidence) and reading them back."""
 
+import re
 from collections.abc import Callable
 from functools import partial
 from uuid import UUID
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import ToolName
-from reconix_api.core.masking import MaskSecrets
+from reconix_api.core.masking import MaskSecrets, mask_output
 from reconix_api.findings import json_mapping
 from reconix_api.findings import nmap as nmap_findings
 from reconix_api.findings.shape import NewFinding
@@ -23,6 +24,10 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     "nmap": nmap_findings.read,
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
 }
+
+# Control characters, except tab and newline. A scanned host can put terminal escape
+# codes in a banner or hostname; they must not reach the TUI, the web or the AI.
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
 def parse_run(tool: ToolName | str, output: str) -> tuple[list[NewFinding], int]:
@@ -47,8 +52,8 @@ def save_findings(
             finding = _new_finding(db, mask, assessment_id, item)
         finding_repo.add_source(db, finding.finding_id, run.tool_run_id)
         for proof in item.evidence:
-            content, _ = mask(proof.content)
-            location, _ = mask(proof.location)
+            content, _ = mask_output(mask, CONTROL.sub("", proof.content))
+            location = _clean(mask, proof.location)
             finding_repo.add(
                 db,
                 Evidence(
@@ -73,19 +78,24 @@ def _new_finding(db: Db, mask: MaskSecrets, assessment_id: UUID, item: NewFindin
     number = finding_repo.count_in_assessment(db, assessment_id) + 1
     finding = Finding(
         code=f"RCX-{number:03d}",
-        title=mask(item.title)[0],
-        target=mask(item.target)[0],
-        description=mask(item.description)[0],
+        title=_clean(mask, item.title),
+        target=_clean(mask, item.target),
+        description=_clean(mask, item.description),
         severity_status=item.severity,
         cwe_ids=item.cwe_ids,
         owasp_id=item.owasp_id,
         cve_ids=item.cve_ids,
-        remediation=item.remediation,
+        remediation=_clean(mask, item.remediation) if item.remediation else None,
         dedupe_key=item.dedupe_key,
         assessment_id=assessment_id,
     )
     finding_repo.add(db, finding)
     return finding
+
+
+def _clean(mask: MaskSecrets, text: str) -> str:
+    """Text the scanned host or the tool chose: control characters removed, then masked."""
+    return mask(CONTROL.sub("", text))[0]
 
 
 def _finding_out(db: Db, row: Finding) -> FindingOut:

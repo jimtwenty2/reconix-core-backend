@@ -1,13 +1,16 @@
+import json
 from pathlib import Path
 
 import pytest
 
+from reconix_ai.harness import mask_secrets
+from reconix_api.core.masking import mask_output
 from reconix_api.findings.json_mapping import MAPPINGS, read
 from reconix_api.findings.shape import OutputUnreadable
 from reconix_api.models.enums import SeverityStatus
-from reconix_api.services.findings import parse_run
 
 FIXTURES = Path(__file__).parents[2] / "fixtures"
+KALI_REPO = "/tmp/testrepo"  # noqa: S108 - the test project inside the Kali container
 
 
 def findings_of(tool: str, sample: str):
@@ -73,11 +76,36 @@ def test_broken_output_is_unreadable(tool):
         read(MAPPINGS[tool], "")
 
 
-def test_parse_run_picks_the_reader_by_tool_name():
-    output = (FIXTURES / "nuclei" / "juice_shop.jsonl").read_text()
-    found, _ = parse_run("NUCLEI", output)
-    assert len(found) == 3
+# Real output from the Kali container (lab only; gitleaks already redacts its secrets).
 
 
-def test_tool_without_a_reader_gives_no_findings():
-    assert parse_run("whatweb", "anything") == ([], 0)
+def test_real_nuclei_one_finding_per_missing_header():
+    found = findings_of("nuclei", "kali_self_scan.jsonl")
+    headers = [f for f in found if f.title.startswith("HTTP Missing Security Headers")]
+    assert len(headers) == 10
+    assert "HTTP Missing Security Headers (x-frame-options)" in {f.title for f in headers}
+    assert len({f.dedupe_key for f in found}) == len(found)  # none merged by mistake
+
+
+def test_real_nuclei_evidence_leaves_out_request_and_response():
+    [first, *_] = findings_of("nuclei", "kali_self_scan.jsonl")
+    proof = json.loads(first.evidence[0].content)
+    assert not {"request", "response", "curl-command"} & proof.keys()
+    assert proof["matched-at"] == "http://172.20.0.2:8096"
+
+
+def test_real_semgrep():
+    found = findings_of("semgrep", "kali_testrepo.json")
+    assert len(found) == 4
+    assert {f.cwe_ids[0] for f in found} == {"CWE-89", "CWE-78", "CWE-798"}
+    assert found[0].evidence[0].location == f"{KALI_REPO}/app/db.py:8"
+
+
+def test_real_gitleaks_still_reads_after_masking():
+    raw = (FIXTURES / "gitleaks" / "kali_testrepo.json").read_text()
+    masked, _ = mask_output(mask_secrets, raw)
+    found, _ = read(MAPPINGS["gitleaks"], masked)
+    assert [f.target for f in found] == [f"{KALI_REPO}/config/settings.py"] * 2
+    for finding in found:
+        proof = json.loads(finding.evidence[0].content)
+        assert not {"Secret", "Match", "Line"} & proof.keys()

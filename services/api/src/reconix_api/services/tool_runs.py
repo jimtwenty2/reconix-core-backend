@@ -9,7 +9,7 @@ from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Action, Interfaces, Operator, ToolJob, ToolResult
 from reconix_api.core.job_token import sign_job_token
-from reconix_api.core.masking import MaskSecrets
+from reconix_api.core.masking import MaskSecrets, mask_output
 from reconix_api.findings.shape import OutputUnreadable
 from reconix_api.models import Action as ActionRow
 from reconix_api.models import Approval, ToolRun
@@ -100,7 +100,7 @@ async def run_action(
 
 def _save_result(run: ToolRun, row: ActionRow, mask: MaskSecrets, result: ToolResult) -> None:
     # The tool's own result file is what the parsers read; stdout is the fallback.
-    output, hidden = mask(result.output_file or result.stdout)
+    output, hidden = mask_output(mask, result.output_file or result.stdout)
     stderr, hidden_in_stderr = mask(result.stderr)
     run.output_masked = output
     run.masked_count = hidden + hidden_in_stderr
@@ -121,7 +121,8 @@ def _save_findings(db: Db, mask: MaskSecrets, run: ToolRun, row: ActionRow, acti
         with db.begin_nested():  # a savepoint: a failure drops the findings, not the run
             saved = save_findings(db, mask, row.assessment_id, run, new)
     except OutputUnreadable as error:
-        run.error = _append(run.error, f"OUTPUT_UNREADABLE: {error}")
+        note, _ = mask(f"OUTPUT_UNREADABLE: {error}")  # parser messages quote the output
+        run.error = _append(run.error, note)
         return 0
     except Exception as error:  # noqa: BLE001 - a parser bug must not lose the run
         run.error = _append(run.error, f"FINDINGS_NOT_SAVED: {type(error).__name__}")

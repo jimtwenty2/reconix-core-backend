@@ -125,7 +125,7 @@ async def test_call_tool_accepts_a_token_once():
     parts["mcp"].expect_token("t1")
     result = await interfaces.call_tool(job)
     assert result.status == ToolRunStatus.COMPLETED
-    assert "172.20.0.5" in result.output_file
+    assert "172.20.0.5" in result.stdout
 
     with pytest.raises(PermissionError):
         await interfaces.call_tool(job)  # already used

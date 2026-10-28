@@ -48,7 +48,11 @@ class FakeMcp:
         else:
             output = "[]"
         return ToolResult(
-            status=ToolRunStatus.COMPLETED, exit_code=0, output_file=output, duration_ms=1200
+            # Like the real client: the output comes back in stdout.
+            status=ToolRunStatus.COMPLETED,
+            exit_code=0,
+            stdout=output,
+            duration_ms=1200,
         )
 
     def _token_is_valid(self, job: ToolJob) -> bool:

@@ -10,6 +10,8 @@ from xml.etree.ElementTree import Element, ParseError, tostring
 from defusedxml import DefusedXmlException
 from defusedxml.ElementTree import fromstring
 
+MAX_PROBES = 2**31 - 1  # tool_runs.request_count is a 32-bit integer
+
 
 class NmapParseError(ValueError):
     """The output is empty, cut off or not nmap XML."""
@@ -47,7 +49,8 @@ def parse(raw: str) -> NmapScan:
 
     hosts = root.findall("host")
     open_ports = [port for host in hosts for port in _open_ports(host)]
-    return NmapScan(open_ports=open_ports, probes=_services_per_host(root) * len(hosts))
+    probes = min(_services_per_host(root) * len(hosts), MAX_PROBES)
+    return NmapScan(open_ports=open_ports, probes=probes)
 
 
 def _open_ports(host: Element) -> list[OpenPort]:
