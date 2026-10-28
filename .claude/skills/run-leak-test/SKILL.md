@@ -23,4 +23,6 @@ Secret masking is **never cut**. The test passes only if a planted secret appear
 
 ## Where it lives
 
-Automate it as `services/api/tests/security/test_no_secret_leaks.py` so CI runs it on every PR.
+Planned: automate it as `services/api/tests/security/test_no_secret_leaks.py` so CI runs it on
+every PR. That file does not exist yet, so run the steps above by hand until it does. When you add
+it, remove the matching item from "Known gaps" in the root `AGENTS.md`.

@@ -14,8 +14,8 @@ Rule: if someone's part is not ready, use its fake. The real one replaces it on 
 | the 6 shared functions in `core/interfaces.py` | `services/api/tests/fakes/` |
 | the Kali MCP server | `services/api/tests/fakes/fake_mcp.py` |
 | the AI agent / model provider | `services/api/tests/fakes/fake_ai.py` |
-| the API, for the TUI | fake mode in `apps/tui/src/reconix_tui/api/`, reading `apps/sample-data/` |
-| the API, for the web | fake API in `apps/web/src/lib/api/`, reading `apps/sample-data/` |
+| the API, for the TUI | today: in-memory store in `apps/tui/reconix/store/`. Planned: fake mode in the TUI `api/` client, reading `apps/sample-data/` |
+| the API, for the web | today: static data in `apps/web/src/lib/data/`. Planned: fake API in `apps/web/src/lib/api/`, reading `apps/sample-data/` |
 
 ## Rules
 
