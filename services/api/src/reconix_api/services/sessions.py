@@ -1,5 +1,7 @@
 """Opening, reading and closing sessions."""
 
+import getpass
+import socket
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -14,7 +16,8 @@ from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.sessions import SessionRead
 from reconix_api.services.audit import audit
 
-LOCAL_ACTOR = "operator"
+FALLBACK_USER = "operator"  # when the OS gives no user name
+MAX_ACTOR = 100  # decided_by, reviewed_by, created_by ... are String(100)
 
 
 def open_session(
@@ -27,7 +30,7 @@ def open_session(
     """
     session = session_repo.add(db, Session(interface=interface))
     db.commit()
-    operator = Operator(session_id=session.session_id, role=Role.OPERATOR, actor=LOCAL_ACTOR)
+    operator = Operator(session_id=session.session_id, role=Role.OPERATOR, actor=local_actor())
     token = tokens.issue(operator)
     audit(write_audit, "SESSION_OPENED", operator, details={"interface": interface})
     return session, operator, token
@@ -65,3 +68,13 @@ def _get(db: Db, session_id: UUID) -> Session:
     if session is None:
         raise ApiError(404, "SESSION_NOT_FOUND", "No session with this id.")
     return session
+
+
+def local_actor() -> str:
+    """Who is at this computer, e.g. "vanneth@kshrd-laptop". Reconix only runs locally,
+    so the OS user and host name say who decided, in approvals, reviews and the audit log."""
+    try:
+        user = getpass.getuser()
+    except (KeyError, OSError):  # no user name in the environment or the user database
+        user = FALLBACK_USER
+    return f"{user}@{socket.gethostname()}"[:MAX_ACTOR]

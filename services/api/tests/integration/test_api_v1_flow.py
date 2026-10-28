@@ -1,6 +1,7 @@
 """The endpoints from the API sheet: sessions, scope manifests, assessments, approvals,
 findings and evidence, through the API and a database."""
 
+from reconix_api.services import sessions as sessions_service
 from tests.integration.test_action_flow import active_assessment
 from tests.integration.test_findings_flow import run_nmap
 from tests.integration.test_scope_flow import DRAFT, draft_and_submit, open_session, scopes_path
@@ -24,6 +25,15 @@ def test_sessions_can_be_listed_and_read(db_client):
     one = db_client.get(f"/sessions/{session_id}", headers=headers).json()
     assert (one["interface"], one["session_status"], one["closed_at"]) == ("cli", "ACTIVE", None)
     assert db_client.get(f"/sessions/{MISSING}", headers=headers).status_code == 404
+
+
+def test_operator_is_the_os_user_at_this_computer(db_client):
+    headers = open_session(db_client)
+    me = db_client.get("/operator", headers=headers).json()
+    assert me["role"] == "OPERATOR"  # the role lives with the token, not the session
+    actor = me["actor"]
+    assert actor == sessions_service.local_actor()
+    assert "@" in actor
 
 
 def test_closing_a_session_ends_its_token(db_client, db_app):

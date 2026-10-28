@@ -1312,7 +1312,20 @@
         "type": "object"
       },
       "SessionCreated": {
+        "description": "The new session and its token. The role is not shown: read it from GET /operator.",
         "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1321,9 +1334,6 @@
           "interface": {
             "title": "Interface",
             "type": "string"
-          },
-          "role": {
-            "$ref": "#/components/schemas/Role"
           },
           "session_id": {
             "format": "uuid",
@@ -1341,9 +1351,9 @@
         "required": [
           "session_id",
           "interface",
-          "role",
           "session_status",
           "created_at",
+          "closed_at",
           "token"
         ],
         "title": "SessionCreated",
@@ -1594,6 +1604,13 @@
         "title": "ValidationStatus",
         "type": "string"
       }
+    },
+    "securitySchemes": {
+      "SessionToken": {
+        "description": "The token from POST /api/v1/sessions.",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
@@ -1639,6 +1656,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Action",
         "tags": [
           "actions"
@@ -1709,6 +1731,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Approvals",
         "tags": [
           "approvals"
@@ -1752,6 +1779,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Approval",
         "tags": [
           "approvals"
@@ -1806,6 +1838,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Approve",
         "tags": [
           "approvals"
@@ -1859,6 +1896,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Reject",
         "tags": [
           "approvals"
@@ -1912,6 +1954,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Assessments",
         "tags": [
           "assessments"
@@ -1956,6 +2003,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Cancel Assessment",
         "tags": [
           "assessments"
@@ -1997,6 +2049,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Assessment",
         "tags": [
           "assessments"
@@ -2049,6 +2106,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Update Assessment",
         "tags": [
           "assessments"
@@ -2096,6 +2158,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Actions",
         "tags": [
           "actions"
@@ -2148,6 +2215,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Send Action",
         "tags": [
           "actions"
@@ -2191,6 +2263,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Evidence",
         "tags": [
           "evidence"
@@ -2246,6 +2323,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Findings",
         "tags": [
           "findings"
@@ -2289,6 +2371,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Finding",
         "tags": [
           "findings"
@@ -2341,6 +2428,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Review Finding",
         "tags": [
           "findings"
@@ -2383,6 +2475,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Operator",
         "tags": [
           "system"
@@ -2426,6 +2523,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Scope",
         "tags": [
           "scope manifests"
@@ -2478,6 +2580,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Update Scope",
         "tags": [
           "scope manifests"
@@ -2532,6 +2639,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Submit Scope",
         "tags": [
           "scope manifests"
@@ -2557,6 +2669,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Sessions",
         "tags": [
           "sessions"
@@ -2640,6 +2757,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Session",
         "tags": [
           "sessions"
@@ -2683,6 +2805,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Close Session",
         "tags": [
           "sessions"
@@ -2730,6 +2857,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Messages",
         "tags": [
           "messages"
@@ -2781,6 +2913,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Add Message",
         "tags": [
           "messages"
@@ -2828,6 +2965,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Scopes",
         "tags": [
           "scope manifests"
@@ -2879,6 +3021,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Create Scope",
         "tags": [
           "scope manifests"

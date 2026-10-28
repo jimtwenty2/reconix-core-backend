@@ -6,23 +6,11 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from reconix_api.models.enums import Role, SessionStatus
+from reconix_api.models.enums import SessionStatus
 
 
 class SessionCreate(BaseModel):
     interface: Literal["web", "cli"]
-
-
-class SessionOut(BaseModel):
-    session_id: UUID
-    interface: str
-    role: Role
-    session_status: SessionStatus
-    created_at: datetime
-
-
-class SessionCreated(SessionOut):
-    token: str  # send as "Authorization: Bearer <token>"; shown only once
 
 
 class SessionRead(BaseModel):
@@ -33,3 +21,9 @@ class SessionRead(BaseModel):
     session_status: SessionStatus
     created_at: datetime
     closed_at: datetime | None
+
+
+class SessionCreated(SessionRead):
+    """The new session and its token. The role is not shown: read it from GET /operator."""
+
+    token: str  # send as "Authorization: Bearer <token>"; shown only once

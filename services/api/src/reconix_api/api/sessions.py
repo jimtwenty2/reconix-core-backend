@@ -26,17 +26,9 @@ def open_session(
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
 ) -> SessionCreated:
     """Opens an OPERATOR session. Only reachable from this computer (Host check + CORS)."""
-    session, operator, token = sessions.open_session(
-        db, tokens, interfaces.write_audit, body.interface
-    )
-    return SessionCreated(
-        session_id=session.session_id,
-        interface=session.interface,
-        role=operator.role,
-        session_status=session.session_status,
-        created_at=session.created_at,
-        token=token,
-    )
+    session, _, token = sessions.open_session(db, tokens, interfaces.write_audit, body.interface)
+    created = SessionRead.model_validate(session, from_attributes=True)
+    return SessionCreated(**created.model_dump(), token=token)
 
 
 @router.get("")
