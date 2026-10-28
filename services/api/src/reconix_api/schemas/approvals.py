@@ -1,12 +1,14 @@
 """Request and response shapes for /approvals."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from reconix_api.models.enums import ApprovalStatus, RiskLevel
+
+ApprovalKind = Literal["scope", "action", "disclosure", "configuration", "review"]
 
 
 class ApprovalDecision(BaseModel):

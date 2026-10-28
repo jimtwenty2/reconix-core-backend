@@ -20,7 +20,7 @@ def app(fakes):
 @pytest.fixture
 def client(app):
     # The Host check only accepts this computer, so tests call 127.0.0.1, not "testserver".
-    return TestClient(app, base_url="http://127.0.0.1")
+    return TestClient(app, base_url="http://127.0.0.1/api/v1")
 
 
 @pytest.fixture

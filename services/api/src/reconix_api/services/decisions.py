@@ -64,8 +64,10 @@ def read_approval(db: Db, approval_id: UUID, ttl_minutes: int) -> ApprovalOut:
     return approval_out(_get(db, approval_id), ttl_minutes)
 
 
-def list_pending(db: Db, ttl_minutes: int) -> list[ApprovalOut]:
-    approvals = approval_repo.list_by_status(db, ApprovalStatus.PENDING)
+def list_approvals(
+    db: Db, ttl_minutes: int, status: ApprovalStatus, kind: str | None
+) -> list[ApprovalOut]:
+    approvals = approval_repo.list_by_status(db, status, kind)
     return [approval_out(approval, ttl_minutes) for approval in approvals]
 
 

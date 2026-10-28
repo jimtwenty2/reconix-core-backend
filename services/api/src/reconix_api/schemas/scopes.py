@@ -1,4 +1,4 @@
-"""Request and response shapes for /scopes and /assessments."""
+"""Request and response shapes for scope manifests and assessments."""
 
 import ipaddress
 import re
@@ -37,7 +37,7 @@ class ScopeTargetOut(ScopeTargetIn):
 
 
 class ScopeDraft(BaseModel):
-    """A new or edited draft. Editing replaces every field and every target."""
+    """A new draft, or a draft after a partial edit is applied."""
 
     max_risk: RiskLevel = RiskLevel.LOW
     allowed_tools: list[ToolName] = Field(min_length=1)
@@ -55,6 +55,21 @@ class ScopeDraft(BaseModel):
         if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
             raise ValueError("ends_at must be after starts_at")
         return self
+
+
+class ScopeUpdate(BaseModel):
+    """A partial edit of a draft: only the fields sent change. Sending targets replaces them all."""
+
+    max_risk: RiskLevel | None = None
+    allowed_tools: list[ToolName] | None = None
+    allowed_actions: list[Literal["discovery", "scan", "validation"]] | None = None
+    allowed_methods: (
+        list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] | None
+    ) = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    limitations: str | None = Field(default=None, max_length=4000)
+    targets: list[ScopeTargetIn] | None = Field(default=None, max_length=200)
 
 
 class ScopeSubmit(BaseModel):
@@ -93,6 +108,14 @@ class AssessmentOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     session_id: UUID
+
+
+class AssessmentUpdate(BaseModel):
+    """Rename, or finish an ACTIVE assessment. Cancelling is DELETE."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    type: str | None = Field(default=None, min_length=1, max_length=60)
+    assessment_status: Literal[AssessmentStatus.COMPLETED] | None = None
 
 
 class ScopeSubmitted(BaseModel):

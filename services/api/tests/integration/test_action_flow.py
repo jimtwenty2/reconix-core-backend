@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import update
 
 from reconix_api.models import Approval
-from tests.integration.test_scope_flow import draft_and_submit, open_session
+from tests.integration.test_scope_flow import draft_and_submit, open_session, scopes_path
 
 SCOPE = {
     "max_risk": "HIGH",
@@ -18,9 +18,9 @@ SCOPE = {
 
 
 def active_assessment(client, headers, scope_draft: dict = SCOPE) -> str:
-    scope = client.post("/scopes", json=scope_draft, headers=headers).json()
+    scope = client.post(scopes_path(client, headers), json=scope_draft, headers=headers).json()
     submitted = client.post(
-        f"/scopes/{scope['manifest_id']}/submit",
+        f"/scope-manifests/{scope['manifest_id']}/submit",
         json={"name": "Juice Shop", "type": "web_url"},
         headers=headers,
     ).json()
