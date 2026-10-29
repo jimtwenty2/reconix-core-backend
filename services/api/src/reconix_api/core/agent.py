@@ -37,6 +37,10 @@ AGENT_ERROR_STATUS = {
     "STEP_LIMIT": 422,  # the run stopped itself
     "TOKEN_BUDGET": 422,
     "MODEL_UNAVAILABLE": 503,  # the model is down: try again later
+    # The provider's settings are wrong: fix them on the provider, then ask again.
+    "PROVIDER_KEY_MISSING": 422,
+    "PROVIDER_URL_MISSING": 422,
+    "PROVIDER_URL_NOT_ALLOWED": 422,
     "NO_FINDINGS": 422,
     "TOO_MANY_FINDINGS": 422,
     "DUPLICATE_FINDING": 422,

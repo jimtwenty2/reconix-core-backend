@@ -220,13 +220,70 @@ async def test_empty_answer_raises(model: FakeModel) -> None:
     assert raised.value.code == "EMPTY_RESPONSE"
 
 
-async def test_provider_types_not_built_yet_are_refused(model: FakeModel) -> None:
-    config = ProviderConfig(provider_type=ProviderType.OPENAI, model_name="gpt-4o", api_key="x")
+@pytest.mark.parametrize(
+    ("provider_type", "model_name", "litellm_name"),
+    [
+        (ProviderType.OPENAI, "gpt-4o", "openai/gpt-4o"),
+        (ProviderType.ANTHROPIC, "claude-sonnet-5-5", "anthropic/claude-sonnet-5-5"),
+        (ProviderType.DEEPSEEK, "deepseek-chat", "deepseek/deepseek-chat"),
+    ],
+)
+async def test_cloud_providers_use_their_own_address_and_the_key(
+    model: FakeModel, provider_type: ProviderType, model_name: str, litellm_name: str
+) -> None:
+    config = ProviderConfig(provider_type, model_name, api_key="sk-test-key-123456789")
+
+    completion = await complete(QUESTION, config)
+
+    assert completion.provider_type == provider_type
+    assert model.calls[0]["model"] == litellm_name
+    assert model.calls[0]["api_base"] is None  # LiteLLM's address for that service
+    assert model.calls[0]["api_key"] == "sk-test-key-123456789"
+
+
+async def test_a_cloud_provider_with_its_own_address_is_checked(model: FakeModel) -> None:
+    config = ProviderConfig(
+        ProviderType.OPENAI, "gpt-4o", base_url="http://10.0.0.5:8000", api_key="sk-x"
+    )
 
     with pytest.raises(ProviderError) as raised:
         await complete(QUESTION, config)
 
-    assert raised.value.code == "PROVIDER_NOT_SUPPORTED"
+    assert raised.value.code == "PROVIDER_URL_NOT_ALLOWED"
+    assert model.calls == []
+
+
+@pytest.mark.parametrize(
+    "provider_type", [ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK]
+)
+async def test_a_cloud_provider_without_a_key_is_refused(
+    model: FakeModel, provider_type: ProviderType
+) -> None:
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, ProviderConfig(provider_type, "some-model"))
+
+    assert raised.value.code == "PROVIDER_KEY_MISSING"
+    assert model.calls == []
+
+
+async def test_an_openai_compatible_server_is_called_at_its_v1_address(model: FakeModel) -> None:
+    config = ProviderConfig(
+        ProviderType.OPENAI_API_COMPATIBLE, "qwen2.5", base_url="https://llm.example.com/v1"
+    )
+
+    await complete(QUESTION, config)
+
+    assert model.calls[0]["model"] == "openai/qwen2.5"
+    assert model.calls[0]["api_base"] == "https://llm.example.com/v1"
+
+
+async def test_an_openai_compatible_server_needs_its_address(model: FakeModel) -> None:
+    config = ProviderConfig(ProviderType.OPENAI_API_COMPATIBLE, "qwen2.5")
+
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, config)
+
+    assert raised.value.code == "PROVIDER_URL_MISSING"
     assert model.calls == []
 
 
@@ -249,3 +306,21 @@ async def test_smoke_real_reconix_model_answers() -> None:
     )
 
     assert completion.text.strip()
+
+
+async def test_an_openai_compatible_server_never_gets_a_host_key(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = ProviderConfig(
+        ProviderType.OPENAI_API_COMPATIBLE, "qwen2.5", base_url="https://llm.example.com/v1"
+    )
+
+    await complete(QUESTION, config)
+
+    assert model.calls[0]["api_key"] == "none"  # never None, which LiteLLM would fill in
+
+
+def test_provider_keys_and_addresses_in_the_environment_are_removed() -> None:
+    import os
+
+    assert not any(name in os.environ for name in client.PROVIDER_ENV)

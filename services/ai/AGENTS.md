@@ -89,7 +89,7 @@ Keep this table true; update the row in the PR that changes it.
 | Harness: 5 checks, pipeline, masking, audit log | 1 | Done |
 | ReflAct step (up to 5 times, read-only tools) | 2 | To do |
 | The 8 parts of the workflow v5 analysis | 2 | Done: ANALYZE (find → analyze, no wait); `analysis/answers.py` enforces the 8 rules, and `check()` drops a blocked next step. Tested on 10 saved tool outputs with a scripted model; not yet tried on the live model |
-| Use the active provider; all 6 provider types | 2 | Types and client done; reading the active provider from the API to do |
+| Use the active provider; all 6 provider types | 2 | Client done: all 6 types call through LiteLLM (cloud types need a key; OpenAI-compatible needs its address, `/v1` allowed). The API still sends only RECONIX until the `/llm-providers` endpoints pick the active row |
 | Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
 | Report text and PDF, DOCX, JSON files | 2 | Done: REPORT writes the executive summary and methodology; `reports/files.py` makes the 3 files from the locked copy. PDF needs Pango (WeasyPrint) |
 | Accepted findings in Qdrant | 2 | To do (`memory/` is empty) |
