@@ -33,7 +33,7 @@ api/ (routes) → services/ (rules) → repositories/ (queries) → models/ (tab
 | `api/` | Routes, one file per resource: `system`, `sessions`, `scopes`, `assessments`, `approvals`, `actions`, `findings`, `messages` |
 | `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, messages, audit |
 | `repositories/` | Database queries only |
-| `models/` | SQLAlchemy tables from ERD V3 (14 of 16 so far; see "Plan status"); enums in `models/enums.py` |
+| `models/` | SQLAlchemy tables from ERD V3 (all 16; the 2 join tables are plain `Table`s); enums in `models/enums.py` |
 | `schemas/` | Pydantic requests and responses |
 | `clients/` | `mcp.py`: the only way to reach the Kali container |
 | `parsers/` | Raw tool output → records (`nmap.py`, `json_report.py`) |
@@ -80,7 +80,7 @@ Keep this table true; update the row in the PR that changes it.
 | Plan item | Week | Status |
 |---|---|---|
 | 6 shared functions + fakes, Compose, safe API (Host, CORS, error shape), `/health`, `/me` | 1 | Done |
-| Models + one Alembic migration | 1 | 14 of 16 tables: `finding_sources` and `report_assessments` missing |
+| Models + one Alembic migration | 1 | Done: all 16 tables, upgrade and downgrade work, no model drift |
 | Sessions, messages, scopes (draft, edit, submit, approve) | 1 | Done |
 | `POST /assessments/{id}/actions`, approvals, tool run through MCP, findings saved | 1 | Done |
 | `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Not started: still the not-ready stub in `core/wiring.py` |

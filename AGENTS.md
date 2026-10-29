@@ -292,8 +292,9 @@ When unsure whether something counts, ask. A short question costs less than a re
 
 Keep this list true; remove an item in the PR that closes it.
 
-- **CI is a placeholder.** `.github/workflows/ci.yml` has no jobs yet, so run lint and tests
-  yourself before every PR.
+- **CI skips part of `apps/`.** Ruff in `.github/workflows/ci.yml` leaves out `apps/tui` (194
+  files need `ruff format`) and `apps/.claude` (17 lint errors in `hooks/stay-in-apps.py`) until
+  their owners fix them.
 - **The TUI does not use the `src/` layout yet.** Its package is `apps/tui/reconix/`, and it uses
   in-memory and static data (`reconix/store/`), not the API. The `api/` client in its AGENTS.md is
   the plan.
