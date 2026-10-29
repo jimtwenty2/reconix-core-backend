@@ -24,7 +24,7 @@ class CommandBarScreen(ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         with Vertical(id="command-bar"):
             yield PromptBox(
-                COMMANDS, store.list_history, initial="/", escape_clears=False,
+                COMMANDS, store.list_history, initial="/",
                 placeholder="Type a command, e.g. /plan", id="command-box",
             )
 
@@ -33,8 +33,11 @@ class CommandBarScreen(ModalScreen[Optional[str]]):
 
     def on_prompt_box_command_submitted(self, event: PromptBox.CommandSubmitted) -> None:
         event.stop()
+        if self is not self.app.screen:
+            return                   # a second Enter queued before the bar closed
         name, _ = parse(event.text)
-        if find(COMMANDS, name) is None:
+        # A local path (/home/me/app) is not a command: the app takes it as a target.
+        if find(COMMANDS, name) is None and "/" not in name:
             self.notify(f"Unknown command /{name} — pick one from the list.",
                         severity="warning", markup=False)
             return
