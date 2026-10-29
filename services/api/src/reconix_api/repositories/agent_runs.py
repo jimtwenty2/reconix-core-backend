@@ -1,0 +1,82 @@
+"""Database access for agent_runs and the provider a new run uses.
+
+A plan's run is marked at creation with plan = {"task": "PLAN"}; a run with no plan is
+the one a person's own actions share.
+"""
+
+from uuid import UUID
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session as Db
+
+from reconix_api.models import AgentRun, LlmProvider
+from reconix_api.models.enums import AgentRunStatus
+
+
+def add(db: Db, agent_run: AgentRun) -> None:
+    db.add(agent_run)
+    db.flush()
+
+
+def get(db: Db, agent_run_id: UUID) -> AgentRun | None:
+    return db.get(AgentRun, agent_run_id)
+
+
+def list_by_session(db: Db, session_id: UUID) -> list[AgentRun]:
+    query = (
+        select(AgentRun)
+        .where(AgentRun.session_id == session_id)
+        .order_by(AgentRun.started_at.desc())
+    )
+    return list(db.scalars(query))
+
+
+def person_run(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """The RUNNING run a person's actions share: the newest one with no plan."""
+    query = (
+        select(AgentRun)
+        .where(
+            AgentRun.assessment_id == assessment_id,
+            AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
+            AgentRun.plan.is_(None),
+        )
+        .order_by(AgentRun.started_at.desc())
+        .limit(1)
+    )
+    return db.scalar(query)
+
+
+def open_plan_runs(db: Db, assessment_id: UUID) -> list[AgentRun]:
+    """Plan runs that are still asking the agent (RUNNING) or wait for a person."""
+    query = (
+        select(AgentRun)
+        .where(
+            AgentRun.assessment_id == assessment_id,
+            AgentRun.plan["task"].astext == "PLAN",
+            AgentRun.agent_runs_status.in_(
+                [AgentRunStatus.RUNNING, AgentRunStatus.WAITING_APPROVAL]
+            ),
+        )
+        .order_by(AgentRun.started_at.desc())
+    )
+    return list(db.scalars(query))
+
+
+def claim_waiting(db: Db, agent_run_id: UUID) -> bool:
+    """WAITING_APPROVAL -> RUNNING in one statement. Only one caller gets True, so a
+    decision is handed to the agent exactly once."""
+    result = db.execute(
+        update(AgentRun)
+        .where(
+            AgentRun.agent_run_id == agent_run_id,
+            AgentRun.agent_runs_status == AgentRunStatus.WAITING_APPROVAL,
+        )
+        .values(agent_runs_status=AgentRunStatus.RUNNING)
+        .execution_options(synchronize_session="fetch")
+    )
+    db.commit()
+    return result.rowcount == 1
+
+
+def active_provider(db: Db) -> LlmProvider | None:
+    return db.scalar(select(LlmProvider).where(LlmProvider.is_active))

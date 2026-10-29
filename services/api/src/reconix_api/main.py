@@ -6,11 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from reconix_api.api import (
     actions,
+    agent_runs,
     approvals,
     assessments,
     evidence,
     findings,
     messages,
+    plans,
     scopes,
     sessions,
     system,
@@ -56,6 +58,8 @@ def create_app(
         scopes,
         assessments,
         actions,
+        plans,
+        agent_runs,
         approvals,
         findings,
         evidence,

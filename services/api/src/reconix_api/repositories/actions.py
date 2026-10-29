@@ -1,4 +1,4 @@
-"""Database access for actions, tool_runs and the agent_runs they belong to."""
+"""Database access for actions and tool_runs."""
 
 from datetime import datetime
 from uuid import UUID
@@ -6,8 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as Db
 
-from reconix_api.models import Action, AgentRun, Approval, LlmProvider, ToolRun
-from reconix_api.models.enums import AgentRunStatus
+from reconix_api.models import Action, AgentRun, Approval, ToolRun
 
 
 def add(db: Db, row: Action | ToolRun | AgentRun) -> None:
@@ -30,6 +29,11 @@ def list_by_assessment(db: Db, assessment_id: UUID) -> list[Action]:
         .where(Action.assessment_id == assessment_id)
         .order_by(Action.created_at.desc())
     )
+    return list(db.scalars(query))
+
+
+def list_by_agent_run(db: Db, agent_run_id: UUID) -> list[Action]:
+    query = select(Action).where(Action.agent_run_id == agent_run_id).order_by(Action.created_at)
     return list(db.scalars(query))
 
 
@@ -72,20 +76,3 @@ def count_runs(db: Db, assessment_id: UUID) -> int:
         .where(Action.assessment_id == assessment_id)
     )
     return db.scalar(query) or 0
-
-
-def running_agent_run(db: Db, assessment_id: UUID) -> AgentRun | None:
-    query = (
-        select(AgentRun)
-        .where(
-            AgentRun.assessment_id == assessment_id,
-            AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
-        )
-        .order_by(AgentRun.started_at.desc())
-        .limit(1)
-    )
-    return db.scalar(query)
-
-
-def active_provider(db: Db) -> LlmProvider | None:
-    return db.scalar(select(LlmProvider).where(LlmProvider.is_active))

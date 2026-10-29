@@ -84,7 +84,7 @@ Keep this table true; update the row in the PR that changes it.
 | Sessions, messages, scopes (draft, edit, submit, approve) | 1 | Done |
 | `POST /assessments/{id}/actions`, approvals, tool run through MCP, findings saved | 1 | Done |
 | `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST, ANALYZE and resume, built-in RECONIX provider only (`core/agent.py`) |
-| Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | To do |
+| Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | Done: `POST /assessments/{id}/plan` (the step goes through `send_action`), resume after the decision, `GET /sessions/{id}/agent-runs` |
 | Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done |
 | 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | To do |
 | Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | To do |
