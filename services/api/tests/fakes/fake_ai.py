@@ -21,7 +21,7 @@ from reconix_api.core.interfaces import (
     ToolName,
 )
 
-SUPPORTED_TASKS = {AgentTask.PLAN, AgentTask.SUGGEST, AgentTask.ANALYZE}
+SUPPORTED_TASKS = {AgentTask.PLAN, AgentTask.SUGGEST, AgentTask.ANALYZE, AgentTask.REPORT}
 
 
 class FakeAgent:
@@ -48,6 +48,8 @@ class FakeAgent:
             raise ApiError(409, "RUN_IS_WAITING", "This run is waiting for a person to decide.")
         if request.task == AgentTask.ANALYZE:
             return self.analyze(request)
+        if request.task == AgentTask.REPORT:
+            return self.report(request)
         return self.plan(request)
 
     def analyze(self, request: AgentRequest) -> AgentResponse:
@@ -57,6 +59,17 @@ class FakeAgent:
             text="Fake analysis.",
             analysis_summary="Fake analysis.",
             analysis=[unsure_analysis(finding) for finding in request.findings],
+            agent_run_id=request.agent_run_id,
+        )
+
+    def report(self, request: AgentRequest) -> AgentResponse:
+        if request.report is None:
+            raise ApiError(422, "NO_REPORT_DATA", "A report needs the locked copy of its data.")
+        counts = ", ".join(f"{n} {level}" for level, n in request.report.severity_counts.items())
+        return AgentResponse(
+            text="Fake report.",
+            executive_summary=f"Fake summary: {counts or 'no findings'}.",
+            methodology=f"Fake methodology: {len(request.report.tool_runs)} tool runs.",
             agent_run_id=request.agent_run_id,
         )
 

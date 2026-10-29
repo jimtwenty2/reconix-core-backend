@@ -32,3 +32,4 @@ class ApprovalOut(BaseModel):
     expires_at: datetime
     action_id: UUID | None
     manifest_id: UUID | None
+    report_id: UUID | None = None  # set for a review approval
