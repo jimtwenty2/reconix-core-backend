@@ -4,7 +4,17 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from reconix_api.api import actions, approvals, assessments, scopes, sessions, system
+from reconix_api.api import (
+    actions,
+    approvals,
+    assessments,
+    evidence,
+    findings,
+    messages,
+    scopes,
+    sessions,
+    system,
+)
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_session_factory
 from reconix_api.core.errors import add_error_handlers
@@ -13,6 +23,8 @@ from reconix_api.core.masking import MaskSecrets
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.core.wiring import build_interfaces, build_mask_secrets
+
+API_PREFIX = "/api/v1"  # every route lives under it
 
 
 def create_app(
@@ -37,12 +49,19 @@ def create_app(
     app.add_middleware(HostCheckMiddleware, allowed_hosts=settings.allowed_hosts)
     add_error_handlers(app)
 
-    app.include_router(system.router)
-    app.include_router(sessions.router)
-    app.include_router(scopes.router)
-    app.include_router(assessments.router)
-    app.include_router(approvals.router)
-    app.include_router(actions.router)
+    routers = [
+        system,
+        sessions,
+        messages,
+        scopes,
+        assessments,
+        actions,
+        approvals,
+        findings,
+        evidence,
+    ]
+    for module in routers:
+        app.include_router(module.router, prefix=API_PREFIX)
     return app
 
 
@@ -55,6 +74,7 @@ app = create_app(
         _settings.audit_log_path,
         _settings.mcp_url,
         _settings.mcp_access_key.get_secret_value(),
+        _settings.database_url,
     ),
     session_tokens=_session_tokens,
 )

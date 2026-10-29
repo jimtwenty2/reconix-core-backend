@@ -39,6 +39,9 @@ QUICKSTART = (
 
 PLACEHOLDER = "Type a target (URL, IPv4, repo or path), a question, or / for commands"
 READING = "reconix is reading the target…"
+EMPTY_HINT = "Type a target, a question, or / for commands."
+DASH_RANGE_UNSUPPORTED = ("Dash ranges aren't supported by the scope yet — use CIDR, "
+                          "e.g. 10.0.0.0/27.")
 
 
 def _quickstart_steps() -> Table:
@@ -56,6 +59,28 @@ def _welcome_hint() -> Text:
     return Text.assemble(("No active scope — type ", theme.MUTED),
                          ("/template", f"bold {theme.TEAL}"),
                          (" or a target below to begin.", theme.MUTED))
+
+
+def length_error(text: str) -> str:
+    """Why a line is too long to send ("" when it fits); the store enforces the same limit."""
+    length = len(" ".join(text.split()))
+    if length <= store.MAX_REQUEST_LENGTH:
+        return ""
+    return (f"That line has {length:,} characters — keep it under "
+            f"{store.MAX_REQUEST_LENGTH} (a target, a question, or / for commands).")
+
+
+def target_error(text: str) -> str:
+    """Why a typed target can't start a run ("" when it can).
+
+    Feedback for the person typing only: the store and the backend's scope check decide.
+    """
+    check = store.validate_target(text)
+    if not check.valid:
+        return check.error
+    if check.kind == "IPV4_RANGE" and "-" in check.value:
+        return DASH_RANGE_UNSUPPORTED
+    return ""
 
 
 def _answer(replies: List[ChatEntry]) -> Text:
@@ -77,7 +102,7 @@ class StartScreen(ReconixScreen):
     scroll = False
 
     BINDINGS = [
-        Binding("enter", "begin", "start assessment"),
+        Binding("enter", "begin", "continue"),
         Binding("question_mark", "help", "help", key_display="?"),
     ]
 
@@ -174,6 +199,7 @@ class StartScreen(ReconixScreen):
 
     # --- keys and the prompt -----------------------------------------------------------------
     def action_begin(self) -> None:
+        """Enter outside the prompt: during a run, reopen what it waits for (else nothing)."""
         if not self._working():          # Enter while working must not re-send
             self.app.submit_request("")
 
@@ -182,10 +208,36 @@ class StartScreen(ReconixScreen):
 
     def on_prompt_box_submitted(self, event: PromptBox.Submitted) -> None:
         event.stop()
-        if self.app.submit_request(event.text):
-            event.box.clear()
+        self._send(event.box, event.text)
 
     def on_prompt_box_command_submitted(self, event: PromptBox.CommandSubmitted) -> None:
         event.stop()
+        if self.app.is_path_line(event.text):
+            self._send(event.box, event.text)        # /home/me/app: a target, not a command
+            return
+        check = self.app.check_command(event.text)
+        if not check.ok:
+            event.box.show_error(check.error)
+            return
         if self.app.run_command_line(event.text):
             event.box.clear()
+        else:
+            event.box.release()                      # refused with a pop-up
+
+    def _send(self, box: PromptBox, text: str) -> None:
+        """A plain line: say why it can't be sent, or hand it to the app."""
+        text = text.strip()
+        before_run = not store.get_run().started
+        if not text and before_run:
+            box.show_notice(EMPTY_HINT)              # nothing starts, nothing changes
+            return
+        error = length_error(text)
+        if not error and before_run and store.looks_like_target(text):
+            error = target_error(text)
+        if error:
+            box.show_error(error)
+            return
+        if self.app.submit_request(text):
+            box.clear()
+        else:
+            box.release()                            # refused with a pop-up

@@ -8,8 +8,9 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 
 from .. import store
-from ..commands import COMMANDS, find, parse
+from ..commands import COMMANDS
 from ..widgets import PromptBox
+from .start import length_error, target_error
 
 
 class CommandBarScreen(ModalScreen[Optional[str]]):
@@ -35,18 +36,28 @@ class CommandBarScreen(ModalScreen[Optional[str]]):
         event.stop()
         if self is not self.app.screen:
             return                   # a second Enter queued before the bar closed
-        name, _ = parse(event.text)
-        # A local path (/home/me/app) is not a command: the app takes it as a target.
-        if find(COMMANDS, name) is None and "/" not in name:
-            self.notify(f"Unknown command /{name} — pick one from the list.",
-                        severity="warning", markup=False)
+        if self.app.is_path_line(event.text):
+            # A local path is a target: the Start prompt's checks first (a missing folder
+            # stays here), then the app takes it like a line typed at the Start prompt.
+            text = event.text.strip()
+            error = length_error(text)
+            if not error and not store.get_run().started and store.looks_like_target(text):
+                error = target_error(text)
+            if error:
+                event.box.show_error(error)
+                return
+            self.dismiss(event.text)
+            return
+        check = self.app.check_command(event.text)
+        if not check.ok:
+            event.box.show_error(check.error)    # one line under the input, until you type
             return
         self.dismiss(event.text)
 
     def on_prompt_box_submitted(self, event: PromptBox.Submitted) -> None:
         event.stop()
         if event.text:
-            self.notify("Commands start with / — type / to see them.", severity="warning")
+            event.box.show_error("Commands start with / — type / to see them.")
         else:
             self.dismiss(None)
 

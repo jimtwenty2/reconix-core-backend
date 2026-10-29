@@ -38,16 +38,24 @@ def live_client(db_app, tmp_path):
         call_tool=real.call_tool,
     )
     db_app.state.mask_secrets = build_mask_secrets()
-    return TestClient(db_app, base_url="http://127.0.0.1")
+    return TestClient(db_app, base_url="http://127.0.0.1/api/v1")
 
 
-def test_approved_nmap_runs_in_kali(live_client):
+KALI_ITSELF = "172.20.0.2"  # the only host on the dev network; its MCP port is open
+LIVE_SCOPE = {
+    "max_risk": "HIGH",
+    "allowed_tools": ["NMAP"],
+    "targets": [{"type": "ip", "value": KALI_ITSELF}],
+}
+
+
+def test_approved_nmap_runs_in_kali_and_saves_findings(live_client):
     headers = open_session(live_client)
-    assessment_id = active_assessment(live_client, headers)
-    arguments = ["-Pn", "-sT", "-p", "22"]
+    assessment_id = active_assessment(live_client, headers, LIVE_SCOPE)
+    arguments = ["-Pn", "-sT", "-sV", "-p", "22,8096"]
 
     action = send(
-        live_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=arguments
+        live_client, headers, assessment_id, tool="NMAP", target=KALI_ITSELF, arguments=arguments
     ).json()
     assert action["action_status"] == "PENDING", action
     approved = live_client.post(
@@ -59,3 +67,10 @@ def test_approved_nmap_runs_in_kali(live_client):
     [run] = action["tool_runs"]
     assert run["tool_run_status"] == "COMPLETED", run["error"] or run
     assert "<nmaprun" in run["output_masked"]
+    assert run["request_count"] == 2
+
+    findings = live_client.get(
+        "/findings", params={"assessment_id": assessment_id}, headers=headers
+    ).json()
+    assert [f["title"].split(" (")[0] for f in findings] == ["Open port 8096/tcp"]
+    assert findings[0]["severity_status"] == "NONE"

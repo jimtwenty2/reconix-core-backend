@@ -1,1 +1,93 @@
-# CI placeholder: ruff + pytest (Python), lint + test (web) on every pull request.
+# CI: ruff + pytest (Python), lint + typecheck + test (web) on every pull request.
+name: CI
+
+on:
+  pull_request:
+    branches: [Develop, Main]
+  push:
+    branches: [Develop, Main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Ruff lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      # apps/tui and apps/.claude are left out until their owners format them (AGENTS.md section 11).
+      - run: uv run ruff check . --extend-exclude apps/tui,apps/.claude
+      - run: uv run ruff format --check . --extend-exclude apps/tui,apps/.claude
+
+  api:
+    name: API tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Integration tests build the schema with the real Alembic migration.
+      RECONIX_TEST_DATABASE_URL: postgresql+psycopg://postgres:test@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run pytest
+        working-directory: services/api
+
+  ai:
+    name: AI Service and harness tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run pytest
+        working-directory: services/ai
+
+  tui:
+    name: Terminal app tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # the full suite takes about 5 minutes
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run pytest
+        working-directory: apps/tui
+
+  web:
+    name: Local web lint, typecheck and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      # Next generates the route types (PageProps, RouteContext) into .next/, which git ignores.
+      - run: npx next typegen
+      - run: npm run typecheck
+      - run: npm run test

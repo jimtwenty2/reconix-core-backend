@@ -1,5 +1,7 @@
 """The Start prompt: slash suggestions, completion, history, replies, and the command bar."""
 
+import os
+
 from reconix import store
 from reconix.commands import COMMANDS
 from reconix.screens import (
@@ -90,12 +92,29 @@ async def test_a_target_starts_the_run_and_shows_the_request(app):
         assert "[now]" in str(app.screen.query_one(".user-msg").render())
 
 
-async def test_a_local_path_is_a_target_not_a_command(app):
+def _slash_path(folder, monkeypatch) -> str:
+    """`folder` written from the root as "/…" (on Windows: of the drive we chdir onto)."""
+    monkeypatch.chdir(folder)
+    return "/" + os.path.splitdrive(str(folder))[1].lstrip("\\/").replace("\\", "/")
+
+
+async def test_a_local_path_is_a_target_not_a_command(app, tmp_path, monkeypatch):
+    path = _slash_path(tmp_path, monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
-        box(app).input.value = "/home/me/app"
+        box(app).input.value = path
         await pilot.press("enter")
         await settle(pilot)
         assert store.get_assessment().template_id == "source"
+
+
+async def test_a_missing_local_path_is_refused_and_nothing_starts(app):
+    async with app.run_test(size=SIZE) as pilot:
+        box(app).input.value = "/does/not/exist"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert not store.get_run().started
+        assert "doesn't exist" in box(app).message
+        assert box(app).input.value == "/does/not/exist"           # kept, so you can fix it
 
 
 async def test_rejected_request_keeps_the_text(app):

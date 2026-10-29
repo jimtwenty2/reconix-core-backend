@@ -9,13 +9,15 @@ from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Action, Interfaces, Operator, ToolJob, ToolResult
 from reconix_api.core.job_token import sign_job_token
-from reconix_api.core.masking import MaskSecrets
+from reconix_api.core.masking import MaskSecrets, mask_output
+from reconix_api.findings.shape import OutputUnreadable
 from reconix_api.models import Action as ActionRow
 from reconix_api.models import Approval, ToolRun
 from reconix_api.models.enums import ActionStatus, ToolRunStatus
 from reconix_api.repositories import actions as action_repo
 from reconix_api.services.approvals import approval_state, ensure_can_use
 from reconix_api.services.audit import audit
+from reconix_api.services.findings import parse_run, save_findings
 
 
 async def run_action(
@@ -76,6 +78,9 @@ async def run_action(
         _save_failure(run, row, mask, error)
     else:
         _save_result(run, row, mask, result)
+    finding_count = 0
+    if run.tool_run_status == ToolRunStatus.COMPLETED:
+        finding_count = _save_findings(db, mask, run, row, action)
     db.commit()
 
     audit(
@@ -83,14 +88,19 @@ async def run_action(
         "TOOL_RUN_FINISHED",
         operator,
         row.assessment_id,
-        {**details, "status": run.tool_run_status, "masked_count": run.masked_count},
+        {
+            **details,
+            "status": run.tool_run_status,
+            "masked_count": run.masked_count,
+            "finding_count": finding_count,
+        },
     )
     return run
 
 
 def _save_result(run: ToolRun, row: ActionRow, mask: MaskSecrets, result: ToolResult) -> None:
     # The tool's own result file is what the parsers read; stdout is the fallback.
-    output, hidden = mask(result.output_file or result.stdout)
+    output, hidden = mask_output(mask, result.output_file or result.stdout)
     stderr, hidden_in_stderr = mask(result.stderr)
     run.output_masked = output
     run.masked_count = hidden + hidden_in_stderr
@@ -102,6 +112,26 @@ def _save_result(run: ToolRun, row: ActionRow, mask: MaskSecrets, result: ToolRe
         row.action_status = ActionStatus.COMPLETED
     else:
         row.action_status = ActionStatus.FAILED
+
+
+def _save_findings(db: Db, mask: MaskSecrets, run: ToolRun, row: ActionRow, action: Action) -> int:
+    """Parse the masked output and save its findings. The run is kept whatever happens here."""
+    try:
+        new, run.request_count = parse_run(action.tool, run.output_masked or "")
+        with db.begin_nested():  # a savepoint: a failure drops the findings, not the run
+            saved = save_findings(db, mask, row.assessment_id, run, new)
+    except OutputUnreadable as error:
+        note, _ = mask(f"OUTPUT_UNREADABLE: {error}")  # parser messages quote the output
+        run.error = _append(run.error, note)
+        return 0
+    except Exception as error:  # noqa: BLE001 - a parser bug must not lose the run
+        run.error = _append(run.error, f"FINDINGS_NOT_SAVED: {type(error).__name__}")
+        return 0
+    return len(saved)
+
+
+def _append(error: str | None, note: str) -> str:
+    return f"{error}\n{note}" if error else note
 
 
 def _save_failure(run: ToolRun, row: ActionRow, mask: MaskSecrets, error: Exception) -> None:

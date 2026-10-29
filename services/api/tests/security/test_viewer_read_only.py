@@ -5,12 +5,17 @@ import pytest
 ANY_ID = "00000000-0000-0000-0000-000000000001"
 
 CHANGES = [
-    ("POST", "/scopes"),
-    ("PUT", f"/scopes/{ANY_ID}"),
-    ("POST", f"/scopes/{ANY_ID}/submit"),
+    ("POST", f"/sessions/{ANY_ID}/scope-manifests"),
+    ("PATCH", f"/scope-manifests/{ANY_ID}"),
+    ("POST", f"/scope-manifests/{ANY_ID}/submit"),
+    ("POST", f"/sessions/{ANY_ID}/close"),
+    ("PATCH", f"/assessments/{ANY_ID}"),
+    ("DELETE", f"/assessments/{ANY_ID}"),
+    ("PATCH", f"/findings/{ANY_ID}"),
     ("POST", f"/approvals/{ANY_ID}/approve"),
     ("POST", f"/approvals/{ANY_ID}/reject"),
     ("POST", f"/assessments/{ANY_ID}/actions"),
+    ("POST", f"/sessions/{ANY_ID}/messages"),
 ]
 
 

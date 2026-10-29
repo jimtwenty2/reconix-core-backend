@@ -158,7 +158,7 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         risk=values.get("risk"),
         blocked=[BlockedStep(**step) for step in values.get("blocked", [])],
         references=[hit["ref_id"] for hit in values.get("knowledge", [])],
-        run_id=run_id,
+        agent_run_id=run_id,
         checkpoint_id=snapshot.config["configurable"].get("checkpoint_id"),
         waiting="wait" in snapshot.next,
         decision=values.get("decision"),

@@ -84,6 +84,7 @@ async def test_scrolling_up_stops_following_until_end(app):
         log.focus()
         await pilot.press("pageup")
         await settle(pilot)
+        await pilot.wait_for_animation()      # PageUp scrolls animated: let it land
         assert not log.following
         top = log.scroll_y
         for _ in range(4):
@@ -94,5 +95,6 @@ async def test_scrolling_up_stops_following_until_end(app):
         assert "new · End to follow" in str(log.border_subtitle)
         await pilot.press("end")
         await settle(pilot)
+        await pilot.wait_for_animation()
         assert log.following and log.unseen == 0 and log.is_vertical_scroll_end
         assert "End to follow" not in str(log.border_subtitle)

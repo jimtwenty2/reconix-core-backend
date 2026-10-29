@@ -1,5 +1,7 @@
-"""The `/` command bar: a local path is a target, Esc steps back one thing at a time, and a
-double Enter runs the command once."""
+"""The `/` command bar: a local path is a target, an unknown command is refused in the bar,
+Esc steps back one thing at a time, and a double Enter runs the command once."""
+
+import os
 
 from reconix import store
 from reconix.screens import CommandBarScreen, FindingsListScreen, ReportScreen
@@ -15,20 +17,52 @@ async def open_bar(app, pilot) -> PromptBox:
     return app.screen.query_one(PromptBox)
 
 
-async def test_the_bar_takes_a_local_path_as_a_target(app):
+def _slash_path(folder, monkeypatch) -> str:
+    """`folder` written from the root as "/…" (on Windows: of the drive we chdir onto)."""
+    monkeypatch.chdir(folder)
+    return "/" + os.path.splitdrive(str(folder))[1].lstrip("\\/").replace("\\", "/")
+
+
+async def test_the_bar_takes_a_local_path_as_a_target(app, tmp_path, monkeypatch):
+    path = _slash_path(tmp_path, monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
         bar = await open_bar(app, pilot)
-        bar.input.value = "/home/me/app"
+        bar.input.value = path
         await pilot.press("enter")
         await settle(pilot)
         assert not isinstance(app.screen, CommandBarScreen)
-        assert store.list_requests()[-1].text == "/home/me/app"
+        assert store.list_requests()[-1].text == path
         assert store.get_assessment().template_id == "source"
         # The run stops at its first gate: nothing is approved and nothing is tested.
         await wait_until(pilot, lambda: bool(store.waiting_gate()), what="the first gate")
         assert not store.is_scope_approved()
         assert store.list_findings() == []
+
+
+async def test_a_missing_local_path_is_refused_in_the_bar(app):
+    async with app.run_test(size=SIZE) as pilot:
+        await show(app, pilot, "findings")
+        bar = await open_bar(app, pilot)
+        bar.input.value = "/does/not/exist"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert isinstance(app.screen, CommandBarScreen)
+        assert "doesn't exist" in bar.message
+        assert not store.get_run().started
+
+
+async def test_an_unknown_command_is_refused_in_the_bar(app):
+    async with app.run_test(size=SIZE) as pilot:
+        await show(app, pilot, "findings")
+        bar = await open_bar(app, pilot)
+        bar.input.value = "/scna"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert isinstance(app.screen, CommandBarScreen)
+        assert 'Unknown command "/scna"' in bar.message
+        assert bar.input.value == "/scna"
+        assert store.list_requests() == []
 
 
 async def test_esc_in_the_bar_closes_the_menu_then_clears_then_closes(app):
@@ -56,10 +90,9 @@ async def test_two_submits_before_the_bar_closes_run_the_command_once(app):
         await show(app, pilot, "findings")
         depth = len(app.screen_stack)
         bar = await open_bar(app, pilot)
-        bar.input.value = "/report"
-        await pilot.pause()
-        await bar.input.action_submit()          # Enter twice, both queued in the bar
-        await bar.input.action_submit()
+        # Two command lines queued in the bar before it closes (past the prompt's own guard).
+        bar.post_message(PromptBox.CommandSubmitted(bar, "/report"))
+        bar.post_message(PromptBox.CommandSubmitted(bar, "/report"))
         await settle(pilot)
         assert isinstance(app.screen, ReportScreen)
         assert len(app.screen_stack) == depth

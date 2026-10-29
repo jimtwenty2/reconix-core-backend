@@ -13,6 +13,7 @@ from reconix_api.core.interfaces import (
     CheckContext,
     CheckName,
     Decision,
+    ResumeInput,
     RiskLevel,
     Role,
     ToolJob,
@@ -107,11 +108,42 @@ def test_check_allows_and_rates_risk():
 async def test_ask_agent_suggests_one_step():
     interfaces, _ = build_fake_interfaces()
     scope = make_scope()
+    run_id = uuid4()
     response = await interfaces.ask_agent(
-        AgentRequest(task=AgentTask.PLAN, assessment_id=scope.assessment_id, scope=scope)
+        AgentRequest(
+            task=AgentTask.PLAN,
+            assessment_id=scope.assessment_id,
+            agent_run_id=run_id,
+            scope=scope,
+        )
     )
     assert response.proposed_action is not None
     assert response.proposed_action.tool == ToolName.NMAP
+    assert response.waiting
+    assert response.agent_run_id == run_id
+
+
+async def test_ask_agent_resume_gives_the_decision_and_no_new_step():
+    interfaces, _ = build_fake_interfaces()
+    scope = make_scope()
+    request = AgentRequest(
+        task=AgentTask.SUGGEST,
+        assessment_id=scope.assessment_id,
+        agent_run_id=uuid4(),
+        scope=scope,
+    )
+    planned = await interfaces.ask_agent(request)
+    resume = ResumeInput(
+        agent_run_id=request.agent_run_id,
+        assessment_id=scope.assessment_id,
+        approval_id=uuid4(),
+        action=planned.proposed_action,
+        decision="REJECTED",
+    )
+    response = await interfaces.ask_agent(request.model_copy(update={"resume": resume}))
+    assert response.decision == "REJECTED"
+    assert response.proposed_action is None
+    assert not response.waiting
 
 
 async def test_call_tool_accepts_a_token_once():
@@ -125,7 +157,7 @@ async def test_call_tool_accepts_a_token_once():
     parts["mcp"].expect_token("t1")
     result = await interfaces.call_tool(job)
     assert result.status == ToolRunStatus.COMPLETED
-    assert "172.20.0.5" in result.output_file
+    assert "172.20.0.5" in result.stdout
 
     with pytest.raises(PermissionError):
         await interfaces.call_tool(job)  # already used

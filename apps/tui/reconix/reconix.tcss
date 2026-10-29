@@ -162,6 +162,12 @@ PromptBox {
     padding: 0 1;
 }
 
+/* An error or notice may wrap, but never grows past three lines. */
+#prompt-hint.-message {
+    height: auto;
+    max-height: 3;
+}
+
 /* ------------------------------------------------- lists & tables (arrow keys) */
 OptionList {
     background: $surface;
