@@ -6,12 +6,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import Operator
+from reconix_api.core.interfaces import Interfaces, Operator
 from reconix_api.models import AgentRun
 from reconix_api.models.enums import AgentRunStatus
 from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.agent_runs import AgentRunOut
+from reconix_api.services.audit import audit
 
 
 def new_agent_run(
@@ -37,6 +38,38 @@ def new_agent_run(
 def finish(agent_run: AgentRun, status: AgentRunStatus) -> None:
     agent_run.agent_runs_status = status
     agent_run.finished_at = datetime.now(UTC)
+
+
+def end(
+    db: Db,
+    interfaces: Interfaces,
+    operator: Operator,
+    agent_run: AgentRun,
+    status: AgentRunStatus,
+    details: dict[str, str],
+) -> None:
+    """Ends a run and writes its one audit line, e.g. AGENT_RUN_COMPLETED."""
+    finish(agent_run, status)
+    db.commit()
+    audit(
+        interfaces.write_audit,
+        f"AGENT_RUN_{status}",
+        operator,
+        agent_run.assessment_id,
+        {"agent_run_id": str(agent_run.agent_run_id), **details},
+    )
+
+
+def fail(
+    db: Db, interfaces: Interfaces, operator: Operator, agent_run: AgentRun, error: Exception
+) -> None:
+    """Any error ends the run FAILED, so no run is left RUNNING. A run that has already
+    ended keeps its end and its one audit line (e.g. the audit write after it failed)."""
+    db.rollback()
+    if agent_run.finished_at is not None:
+        return
+    code = error.code if isinstance(error, ApiError) else "UNEXPECTED_ERROR"
+    end(db, interfaces, operator, agent_run, AgentRunStatus.FAILED, {"code": code})
 
 
 def list_for_session(db: Db, session_id: UUID) -> list[AgentRunOut]:
