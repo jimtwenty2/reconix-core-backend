@@ -1,8 +1,10 @@
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
 
 from reconix_ai.agent import AgentError, ask_agent, resume_agent
+from reconix_ai.agent import graph as agent_graph
 from reconix_ai.agent.graph import NO_ACTION_TEXT, NO_KNOWLEDGE_TEXT
 from reconix_ai.contracts import ProposedAction
 from reconix_ai.providers import ProviderError
@@ -149,6 +151,27 @@ async def test_two_bad_answers_give_a_clear_error(graph) -> None:
         await ask_agent(graph, Request(), run_id(), make_deps(model))
 
     assert raised.value.code == "BAD_MODEL_ANSWER"
+
+
+async def test_no_call_starts_once_the_token_budget_is_used(graph) -> None:
+    model = FakeModel(UNDERSTOOD, PLANNED)  # each fake call costs 120 tokens
+    deps = replace(make_deps(model), token_budget=100)
+
+    with pytest.raises(AgentError) as raised:
+        await ask_agent(graph, Request(), run_id(), deps)
+
+    assert raised.value.code == "TOKEN_BUDGET"
+    assert len(model.prompts) == 1
+
+
+async def test_a_run_that_takes_too_many_steps_stops(graph, monkeypatch) -> None:
+    monkeypatch.setattr(agent_graph, "MAX_STEPS", 2)
+    model = FakeModel(UNDERSTOOD, PLANNED)
+
+    with pytest.raises(AgentError) as raised:
+        await ask_agent(graph, Request(), run_id(), make_deps(model))
+
+    assert raised.value.code == "STEP_LIMIT"
 
 
 async def test_a_bad_understanding_falls_back_to_the_chat(graph) -> None:

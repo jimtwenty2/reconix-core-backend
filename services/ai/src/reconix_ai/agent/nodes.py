@@ -38,6 +38,8 @@ from reconix_ai.providers import (
 )
 
 ATTEMPTS = 2  # a bad answer is asked once more
+# Tokens one ask may spend in total, prompts and answers together. A plan uses a few thousand.
+DEFAULT_TOKEN_BUDGET = 20_000
 HITS_PER_QUERY = 3
 MAX_HITS = 6
 MAX_PROMPT_HIT_CHARS = 1200
@@ -65,6 +67,7 @@ class AgentDeps:
     complete: Complete = complete
     search: Search = search_knowledge
     now: Callable[[], datetime] = lambda: datetime.now(UTC)
+    token_budget: int = DEFAULT_TOKEN_BUDGET
 
 
 @dataclass(frozen=True)
@@ -80,7 +83,9 @@ class CheckInput:
 
 
 async def understand(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
-    answer, usage = await ask_json(runtime.context, understand_messages(state), read_understanding)
+    answer, usage = await ask_json(
+        runtime.context, understand_messages(state), read_understanding, tokens_used(state)
+    )
     if answer is None:
         messages = state.get("messages", [])
         goal = messages[-1][:MAX_GOAL_CHARS] if messages else DEFAULT_GOAL
@@ -105,7 +110,9 @@ async def find(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]
 
 
 async def plan(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
-    answer, usage = await ask_json(runtime.context, plan_messages(state), read_plan)
+    answer, usage = await ask_json(
+        runtime.context, plan_messages(state), read_plan, tokens_used(state)
+    )
     if answer is None:
         raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable plan.")
     summary, steps = answer
@@ -145,11 +152,19 @@ def after_suggest(state: AgentState) -> str:
 
 
 async def ask_json(
-    deps: AgentDeps, messages: list[Message], read: Callable[[dict[str, Any]], Any]
+    deps: AgentDeps,
+    messages: list[Message],
+    read: Callable[[dict[str, Any]], Any],
+    spent: int,
 ) -> tuple[Any | None, dict[str, int]]:
-    """Ask for a JSON answer and read it with `read`. None after ATTEMPTS bad answers."""
+    """Ask for a JSON answer and read it with `read`. None after ATTEMPTS bad answers.
+
+    spent is the tokens this ask used before this step; no call starts once the
+    budget is used up.
+    """
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "masked_count": 0}
     for _ in range(ATTEMPTS):
+        check_budget(deps, spent + usage["prompt_tokens"] + usage["completion_tokens"])
         completion = await safe_complete(deps, messages)
         usage["prompt_tokens"] += completion.prompt_tokens
         usage["completion_tokens"] += completion.completion_tokens
@@ -175,6 +190,18 @@ async def safe_complete(deps: AgentDeps, messages: list[Message]) -> Completion:
     except Exception:
         failure = AgentError("MODEL_UNAVAILABLE", "The model could not answer.")
     raise failure
+
+
+def check_budget(deps: AgentDeps, spent: int) -> None:
+    if spent >= deps.token_budget:
+        raise AgentError(
+            "TOKEN_BUDGET",
+            f"The agent used its budget of {deps.token_budget} tokens and stopped.",
+        )
+
+
+def tokens_used(state: AgentState) -> int:
+    return state.get("prompt_tokens", 0) + state.get("completion_tokens", 0)
 
 
 def added(state: AgentState, usage: dict[str, int]) -> dict[str, int]:
