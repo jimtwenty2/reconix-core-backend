@@ -294,8 +294,7 @@ Keep this list true; remove an item in the PR that closes it.
 
 - **CI skips part of `apps/`.** Ruff in `.github/workflows/ci.yml` leaves out `apps/tui` (194
   files need `ruff format`) and `apps/.claude` (17 lint errors in `hooks/stay-in-apps.py`) until
-  their owners fix them. The TUI test job does not block a PR: the full suite hangs at
-  `test_empty_line_after_a_run_without_findings_opens_report`, which passes alone.
+  their owners fix them.
 - **The TUI does not use the `src/` layout yet.** Its package is `apps/tui/reconix/`, and it uses
   in-memory and static data (`reconix/store/`), not the API. The `api/` client in its AGENTS.md is
   the plan.

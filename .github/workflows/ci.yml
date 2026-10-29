@@ -64,9 +64,7 @@ jobs:
   tui:
     name: Terminal app tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # The full suite hangs today (AGENTS.md section 11), so this job reports but does not block.
-    continue-on-error: true
+    timeout-minutes: 15  # the full suite takes about 5 minutes
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
