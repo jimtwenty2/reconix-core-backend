@@ -74,6 +74,7 @@ app = create_app(
         _settings.audit_log_path,
         _settings.mcp_url,
         _settings.mcp_access_key.get_secret_value(),
+        _settings.database_url,
     ),
     session_tokens=_session_tokens,
 )
