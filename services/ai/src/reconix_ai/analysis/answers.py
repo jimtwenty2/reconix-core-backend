@@ -12,8 +12,9 @@ import re
 from typing import Any
 
 from reconix_ai.agent.answers import MAX_SUMMARY_CHARS, BadAnswer, read_action
+from reconix_ai.contracts import SEVERITY_ORDER
 
-SEVERITIES = {"CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN"}
+SEVERITIES = set(SEVERITY_ORDER)
 MAX_TEXT_CHARS = 1500
 MIN_EVIDENCE_CHARS = 8  # shorter text is found almost anywhere
 MAX_IDS = 10

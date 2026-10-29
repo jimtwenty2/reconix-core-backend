@@ -18,11 +18,19 @@ to the API owner; until it is merged, the agent does only PLAN and SUGGEST.
 """
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 # The shared ToolName values. A step with any other tool is dropped, so the API
 # can always build its own Action from a ProposedAction.
 TOOL_NAMES = frozenset({"NMAP", "NUCLEI", "ZAP", "SEMGREP", "GITLEAKS"})
+# findings.severity_status, worst first.
+SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN")
+
+
+def severity_rank(finding: dict[str, Any]) -> int:
+    """For sorting worst first; an unknown value goes last."""
+    level = finding.get("severity_status")
+    return SEVERITY_ORDER.index(level) if level in SEVERITY_ORDER else len(SEVERITY_ORDER)
 
 
 @dataclass(frozen=True)

@@ -25,7 +25,7 @@ Mon 2 Nov.** After Tue 17 Nov (feature freeze), only bug fixes and prompt tuning
 | `providers/` | The only place that calls a model, through LiteLLM (`client.py`); the 6 provider types (`settings.py`); safe base URLs (`base_url.py`); embeddings |
 | `knowledge/` | Ingest (LlamaIndex), Qdrant hybrid search (BGE-M3 + keywords), `search_knowledge(query, filters)` |
 | `analysis/` | The 8 parts of workflow v5, severity and OWASP mapping (empty, to build) |
-| `reports/` | Report text and PDF, DOCX, JSON files (empty, to build) |
+| `reports/` | Report text (`answers.py`) and the PDF, DOCX and JSON files (`files.py`, `report.html`) |
 | `memory/` | Accepted findings in Qdrant (empty, to build) |
 | `harness/` | Safety checks, masking, audit log (see below) |
 
@@ -91,7 +91,7 @@ Keep this table true; update the row in the PR that changes it.
 | The 8 parts of the workflow v5 analysis | 2 | Done: ANALYZE (find → analyze, no wait); `analysis/answers.py` enforces the 8 rules, and `check()` drops a blocked next step. Tested on 10 saved tool outputs with a scripted model; not yet tried on the live model |
 | Use the active provider; all 6 provider types | 2 | Types and client done; reading the active provider from the API to do |
 | Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
-| Report text and PDF, DOCX, JSON files | 2 | To do (`reports/` is empty) |
+| Report text and PDF, DOCX, JSON files | 2 | Done: REPORT writes the executive summary and methodology; `reports/files.py` makes the 3 files from the locked copy. PDF needs Pango (WeasyPrint) |
 | Accepted findings in Qdrant | 2 | To do (`memory/` is empty) |
 | Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety done; the rest to do |
 | 20 eval questions, top-3 score | 3 | To do (`tests/evals/` is empty) |

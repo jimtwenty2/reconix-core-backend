@@ -1,5 +1,6 @@
 """The LangGraph graph: understand -> find -> plan -> suggest -> wait for PLAN
-and SUGGEST, and find -> analyze for ANALYZE, which never waits.
+and SUGGEST, find -> analyze for ANALYZE and report for REPORT. Only PLAN and
+SUGGEST ever wait.
 
 ask_agent() runs it for one agent run and stops at wait, where it is saved in
 the checkpointer (Postgres in the app) until a person decides. resume_agent()
@@ -24,10 +25,12 @@ from reconix_ai.agent.state import (
     AgentState,
     ScopeLike,
     masked_findings,
+    masked_report,
     masked_texts,
     scope_to_dict,
 )
 from reconix_ai.contracts import (
+    SEVERITY_ORDER,
     AgentAnswer,
     BlockedStep,
     FindingAnalysis,
@@ -39,9 +42,13 @@ from reconix_ai.harness.checks.result import Decision
 from reconix_ai.knowledge.search import ref_ids_in
 from reconix_ai.providers import ProviderError
 
-SUPPORTED_TASKS = {"PLAN", "SUGGEST", "ANALYZE"}  # REPORT and CHAT come with tasks 4 and 6
+SUPPORTED_TASKS = {"PLAN", "SUGGEST", "ANALYZE", "REPORT"}  # CHAT comes with task 6
 MAX_FINDINGS = 10  # per ANALYZE ask; the API sends a long list in parts
 MAX_ANALYZE_QUERIES = 5
+# A report bigger than this is refused; the model sees at most MAX_REPORT_PROMPT_ROWS
+# of each list, worst first, and the files always hold everything.
+MAX_REPORT_FINDINGS = 500
+MAX_REPORT_TOOL_RUNS = 200
 # Steps one ask may take. A plan takes 5; the limit stops a loop, never a normal run.
 MAX_STEPS = 25
 
@@ -58,6 +65,7 @@ class AgentRequestLike(Protocol):
     messages: list[str]
     tool_results: list[str]
     findings: list[Any]  # ANALYZE: the shared FindingInput
+    report: Any | None  # REPORT: the shared ReportInput
 
 
 def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
@@ -68,10 +76,14 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
     graph.add_node("suggest", nodes.suggest)
     graph.add_node("wait", nodes.wait)
     graph.add_node("analyze", nodes.analyze)
-    graph.add_conditional_edges(START, nodes.start_task, {"plan": "understand", "analyze": "find"})
+    graph.add_node("report", nodes.report)
+    graph.add_conditional_edges(
+        START, nodes.start_task, {"plan": "understand", "analyze": "find", "report": "report"}
+    )
     graph.add_edge("understand", "find")
     graph.add_conditional_edges("find", nodes.start_task, {"plan": "plan", "analyze": "analyze"})
     graph.add_edge("analyze", END)
+    graph.add_edge("report", END)
     graph.add_edge("plan", "suggest")
     graph.add_conditional_edges("suggest", nodes.after_suggest, {"wait": "wait", "done": END})
     graph.add_edge("wait", END)
@@ -97,6 +109,10 @@ async def ask_agent(
     findings, masked_in_findings = masked_findings(list(request.findings))
     if task == "ANALYZE":
         check_findings(findings)
+    report, masked_in_report = {}, 0
+    if task == "REPORT":
+        check_report(request.report)
+        report, masked_in_report = masked_report(request.report)
     start: AgentState = {
         "task": task,
         "assessment_id": str(request.assessment_id),
@@ -112,7 +128,13 @@ async def ask_agent(
         "findings": findings,
         "analysis_summary": "",
         "analysis": [],
-        "masked_count": masked_in_messages + masked_in_results + masked_in_findings,
+        "report": report,
+        "executive_summary": "",
+        "methodology": "",
+        "masked_count": masked_in_messages
+        + masked_in_results
+        + masked_in_findings
+        + masked_in_report,
     }
     if task == "ANALYZE":
         start["queries"] = analyze_queries(findings)
@@ -141,6 +163,24 @@ def check_findings(findings: list[dict[str, Any]]) -> None:
                 raise AgentError(
                     "INPUT_BLOCKED", f"Finding {finding['code']} was blocked: {outcome.reason}."
                 )
+
+
+def check_report(report: Any) -> None:
+    if report is None:
+        raise AgentError("NO_REPORT_DATA", "A report needs the locked copy of its data.")
+    if len(report.findings) > MAX_REPORT_FINDINGS or len(report.tool_runs) > MAX_REPORT_TOOL_RUNS:
+        raise AgentError(
+            "REPORT_TOO_LARGE",
+            f"A report holds at most {MAX_REPORT_FINDINGS} findings and "
+            f"{MAX_REPORT_TOOL_RUNS} tool runs.",
+        )
+    for level, count in dict(report.severity_counts).items():
+        # bool is an int in Python; true is not a count.
+        good_count = isinstance(count, int) and not isinstance(count, bool) and count >= 0
+        if level not in SEVERITY_ORDER or not good_count:
+            raise AgentError(
+                "BAD_REPORT_DATA", "severity_counts takes the 6 severities and whole counts."
+            )
 
 
 def analyze_queries(findings: list[dict[str, Any]]) -> list[str]:
@@ -212,6 +252,8 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
     notes = [values.get("summary", "")]
     if values.get("task") == "ANALYZE":
         notes = [values.get("analysis_summary", "")]
+    elif values.get("task") == "REPORT":
+        notes = [values.get("executive_summary", "")]
     elif proposed is None:
         notes.append(NO_ACTION_TEXT)
     if values.get("knowledge_unavailable"):
@@ -229,6 +271,8 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         decision=values.get("decision"),
         analysis_summary=values.get("analysis_summary", ""),
         analysis=[finding_analysis(item) for item in values.get("analysis", [])],
+        executive_summary=values.get("executive_summary") or None,
+        methodology=values.get("methodology") or None,
         prompt_tokens=values.get("prompt_tokens", 0),
         completion_tokens=values.get("completion_tokens", 0),
         masked_count=values.get("masked_count", 0),
