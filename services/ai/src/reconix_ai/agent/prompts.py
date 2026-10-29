@@ -5,6 +5,7 @@ changed by PR and never hidden in code. Knowledge hits and tool output are put
 inside tags and marked as data, because an attacker may have written them.
 """
 
+import json
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,23 @@ def plan_messages(state: AgentState) -> list[Message]:
     if state.get("tool_results"):
         parts.append(tool_results_text(state["tool_results"]))
     return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def analyze_messages(state: AgentState) -> list[Message]:
+    parts = [
+        read_markdown(PROMPTS_DIR / "analyze.md"),
+        scope_text(state["scope"]),
+        tools_text(state["scope"]["allowed_tools"]),
+        findings_text(state.get("findings", [])),
+        knowledge_text(state.get("knowledge", [])),
+    ]
+    if state.get("tool_results"):
+        parts.append(tool_results_text(state["tool_results"]))
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def findings_text(findings: list[dict[str, Any]]) -> str:
+    return "## Findings\n" + fenced("findings", json.dumps(findings, indent=1))
 
 
 def scope_text(scope: dict[str, Any]) -> str:

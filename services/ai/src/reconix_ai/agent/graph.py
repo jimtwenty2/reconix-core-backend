@@ -1,4 +1,5 @@
-"""The LangGraph graph: understand -> find -> plan -> suggest -> wait.
+"""The LangGraph graph: understand -> find -> plan -> suggest -> wait for PLAN
+and SUGGEST, and find -> analyze for ANALYZE, which never waits.
 
 ask_agent() runs it for one agent run and stops at wait, where it is saved in
 the checkpointer (Postgres in the app) until a person decides. resume_agent()
@@ -22,15 +23,25 @@ from reconix_ai.agent.state import (
     MAX_TOOL_RESULTS,
     AgentState,
     ScopeLike,
+    masked_findings,
     masked_texts,
     scope_to_dict,
 )
-from reconix_ai.contracts import AgentAnswer, BlockedStep, PlanStep, ProposedAction
+from reconix_ai.contracts import (
+    AgentAnswer,
+    BlockedStep,
+    FindingAnalysis,
+    PlanStep,
+    ProposedAction,
+)
 from reconix_ai.harness.checks.input import check_input
 from reconix_ai.harness.checks.result import Decision
+from reconix_ai.knowledge.search import ref_ids_in
 from reconix_ai.providers import ProviderError
 
-SUPPORTED_TASKS = {"PLAN", "SUGGEST"}  # ANALYZE, REPORT and CHAT come with tasks 4 and 6
+SUPPORTED_TASKS = {"PLAN", "SUGGEST", "ANALYZE"}  # REPORT and CHAT come with tasks 4 and 6
+MAX_FINDINGS = 10  # per ANALYZE ask; the API sends a long list in parts
+MAX_ANALYZE_QUERIES = 5
 # Steps one ask may take. A plan takes 5; the limit stops a loop, never a normal run.
 MAX_STEPS = 25
 
@@ -46,6 +57,7 @@ class AgentRequestLike(Protocol):
     scope: ScopeLike
     messages: list[str]
     tool_results: list[str]
+    findings: list[Any]  # ANALYZE: the shared FindingInput
 
 
 def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
@@ -55,9 +67,11 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
     graph.add_node("plan", nodes.plan)
     graph.add_node("suggest", nodes.suggest)
     graph.add_node("wait", nodes.wait)
-    graph.add_edge(START, "understand")
+    graph.add_node("analyze", nodes.analyze)
+    graph.add_conditional_edges(START, nodes.start_task, {"plan": "understand", "analyze": "find"})
     graph.add_edge("understand", "find")
-    graph.add_edge("find", "plan")
+    graph.add_conditional_edges("find", nodes.start_task, {"plan": "plan", "analyze": "analyze"})
+    graph.add_edge("analyze", END)
     graph.add_edge("plan", "suggest")
     graph.add_conditional_edges("suggest", nodes.after_suggest, {"wait": "wait", "done": END})
     graph.add_edge("wait", END)
@@ -67,7 +81,8 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
 async def ask_agent(
     graph: CompiledStateGraph, request: AgentRequestLike, run_id: str, deps: AgentDeps
 ) -> AgentAnswer:
-    """Plan for the approved scope and suggest one step, then wait for a person."""
+    """PLAN or SUGGEST: plan for the approved scope, suggest one step and wait for a
+    person. ANALYZE: suggest the 8-part analysis of each finding and stop."""
     task = str(request.task).upper()
     if task not in SUPPORTED_TASKS:
         raise AgentError("TASK_NOT_SUPPORTED", f"The agent cannot do {task} yet.")
@@ -79,6 +94,9 @@ async def ask_agent(
 
     messages, masked_in_messages = masked_texts(list(request.messages), MAX_MESSAGES)
     results, masked_in_results = masked_texts(list(request.tool_results), MAX_TOOL_RESULTS)
+    findings, masked_in_findings = masked_findings(list(request.findings))
+    if task == "ANALYZE":
+        check_findings(findings)
     start: AgentState = {
         "task": task,
         "assessment_id": str(request.assessment_id),
@@ -91,10 +109,48 @@ async def ask_agent(
         "decision": None,
         "prompt_tokens": 0,
         "completion_tokens": 0,
-        "masked_count": masked_in_messages + masked_in_results,
+        "findings": findings,
+        "analysis_summary": "",
+        "analysis": [],
+        "masked_count": masked_in_messages + masked_in_results + masked_in_findings,
     }
+    if task == "ANALYZE":
+        start["queries"] = analyze_queries(findings)
     await run_graph(graph, start, config, deps)
     return await answer_for(graph, run_id)
+
+
+def check_findings(findings: list[dict[str, Any]]) -> None:
+    """The list is well formed, and the input check passes on the text the parsers
+    copied from the target, as it does on the chat."""
+    if not findings:
+        raise AgentError("NO_FINDINGS", "There are no findings to analyze.")
+    if len(findings) > MAX_FINDINGS:
+        raise AgentError(
+            "TOO_MANY_FINDINGS", f"Send at most {MAX_FINDINGS} findings in one analysis."
+        )
+    codes = [finding.get("code") for finding in findings]
+    if not all(isinstance(code, str) and code for code in codes):
+        raise AgentError("FINDING_WITHOUT_CODE", "Every finding needs its code.")
+    if len(set(codes)) != len(codes):
+        raise AgentError("DUPLICATE_FINDING", "Each finding code may be sent only once.")
+    for finding in findings:
+        for name in ("title", "target", "description"):
+            outcome = check_input(finding.get(name) or "")
+            if outcome.decision == Decision.BLOCKED:
+                raise AgentError(
+                    "INPUT_BLOCKED", f"Finding {finding['code']} was blocked: {outcome.reason}."
+                )
+
+
+def analyze_queries(findings: list[dict[str, Any]]) -> list[str]:
+    """Knowledge searches for the analysis: the findings' own ids, else their titles."""
+    names = ("cve_ids", "cwe_ids", "owasp_id")
+    # ref_ids_in keeps only well-formed ids, so no other text from a list is searched.
+    ids = [i for f in findings for name in names for i in ref_ids_in(" ".join(f.get(name, [])))]
+    titles = [finding.get("title") or finding["code"] for finding in findings]
+    queries = list(dict.fromkeys(ids)) or titles
+    return [query[:200] for query in queries[:MAX_ANALYZE_QUERIES]]
 
 
 def check_chat(messages: list[str]) -> None:
@@ -154,7 +210,9 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
     values = snapshot.values
     proposed = values.get("proposed_action")
     notes = [values.get("summary", "")]
-    if proposed is None:
+    if values.get("task") == "ANALYZE":
+        notes = [values.get("analysis_summary", "")]
+    elif proposed is None:
         notes.append(NO_ACTION_TEXT)
     if values.get("knowledge_unavailable"):
         notes.append(NO_KNOWLEDGE_TEXT)
@@ -169,10 +227,17 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         checkpoint_id=snapshot.config["configurable"].get("checkpoint_id"),
         waiting="wait" in snapshot.next,
         decision=values.get("decision"),
+        analysis_summary=values.get("analysis_summary", ""),
+        analysis=[finding_analysis(item) for item in values.get("analysis", [])],
         prompt_tokens=values.get("prompt_tokens", 0),
         completion_tokens=values.get("completion_tokens", 0),
         masked_count=values.get("masked_count", 0),
     )
+
+
+def finding_analysis(item: dict[str, Any]) -> FindingAnalysis:
+    step = item["next_step"]
+    return FindingAnalysis(**{**item, "next_step": ProposedAction(**step) if step else None})
 
 
 def plan_step(step: dict[str, Any]) -> PlanStep:

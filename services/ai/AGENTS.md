@@ -88,7 +88,7 @@ Keep this table true; update the row in the PR that changes it.
 | Prompts and agent rules as Markdown; tool specs copied from the Kali repo | 1 | Done |
 | Harness: 5 checks, pipeline, masking, audit log | 1 | Done |
 | ReflAct step (up to 5 times, read-only tools) | 2 | To do |
-| The 8 parts of the workflow v5 analysis | 2 | To do (`analysis/` is empty) |
+| The 8 parts of the workflow v5 analysis | 2 | Done: ANALYZE (find → analyze, no wait); `analysis/answers.py` enforces the 8 rules, and `check()` drops a blocked next step. Tested on 10 saved tool outputs with a scripted model; not yet tried on the live model |
 | Use the active provider; all 6 provider types | 2 | Types and client done; reading the active provider from the API to do |
 | Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
 | Report text and PDF, DOCX, JSON files | 2 | To do (`reports/` is empty) |

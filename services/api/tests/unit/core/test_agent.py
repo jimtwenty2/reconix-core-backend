@@ -26,6 +26,7 @@ from reconix_api.core.interfaces import (
     AgentTask,
     ApprovedScope,
     ChatMessage,
+    FindingInput,
     ResumeInput,
     RiskLevel,
     ToolName,
@@ -256,3 +257,48 @@ async def test_other_providers_are_not_ready(overrides):
 
     assert error.value.status == 503
     assert error.value.details == {"part": "ai_providers"}
+
+
+FTP_FINDING = FindingInput(
+    code="RCX-001",
+    title="Anonymous FTP login",
+    target="172.20.0.5",
+    description="vsftpd allows anonymous login.",
+    severity_status="MEDIUM",
+    finding_status="OPEN",
+    cwe_ids=["CWE-287"],
+)
+FTP_OUTPUT = '<script id="ftp-anon" output="Anonymous FTP login allowed (FTP code 230)"/>'
+
+
+async def test_analyze_sends_the_findings_and_gives_back_the_analysis():
+    analysis = {
+        "code": "RCX-001",
+        "explanation": "Anyone can log in to FTP.",
+        "severity_status": "HIGH",
+        "evidence": "Anonymous FTP login allowed (FTP code 230)",
+        "cwe_ids": ["CWE-287"],
+        "next_step": None,
+        "unsure": "",
+    }
+    model = ScriptedModel({"summary": "FTP lets anyone in.", "findings": [analysis]})
+    request = plan_request(
+        uuid4(), task=AgentTask.ANALYZE, findings=[FTP_FINDING], tool_results=[FTP_OUTPUT]
+    )
+
+    response = await make_ask(model)(request)
+
+    assert "Anonymous FTP login" in model.sent_text()
+    assert response.analysis_summary == "FTP lets anyone in."
+    assert response.analysis[0].code == "RCX-001"
+    assert response.analysis[0].severity_status == "HIGH"
+    assert response.analysis[0].evidence == analysis["evidence"]
+    assert not response.waiting
+
+
+async def test_analyze_without_findings_is_a_422():
+    with pytest.raises(ApiError) as error:
+        await make_ask(ScriptedModel())(plan_request(uuid4(), task=AgentTask.ANALYZE))
+
+    assert error.value.status == 422
+    assert error.value.code == "NO_FINDINGS"
