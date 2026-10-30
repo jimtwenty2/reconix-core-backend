@@ -36,6 +36,7 @@ from reconix_ai.agent.state import AgentScope, AgentState, scope_from_dict
 from reconix_ai.analysis.answers import read_analysis
 from reconix_ai.contracts import ProposedAction
 from reconix_ai.harness import check, mask_secrets
+from reconix_ai.harness.checks.input import check_input
 from reconix_ai.harness.checks.result import Decision
 from reconix_ai.knowledge import KnowledgeHit, search_knowledge
 from reconix_ai.knowledge.search import ref_ids_in
@@ -133,27 +134,31 @@ async def reflect(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, A
     without it after a bad answer or a search that is down."""
     deps = runtime.context
     reflections = state.get("reflections", [])
-    # Keep half the budget for the plan, which must still be made.
+    # Keep half the budget for the plan, which must still be made. One attempt only,
+    # so a bad answer cannot spend a second prompt past this mark.
     if tokens_used(state) >= deps.token_budget // 2:
         return {"reflect_more": False}
     answer, usage = await ask_json(
-        deps, reflect_messages(state), read_reflection, tokens_used(state)
+        deps, reflect_messages(state), read_reflection, tokens_used(state), attempts=1
     )
     update: dict[str, Any] = {"reflect_more": False, **added(state, usage)}
     if answer is None:
         return update
     line, query = answer
     line, count = mask_secrets(line)
-    update["reflections"] = [*reflections, line]
     update["masked_count"] += count
+    # The model wrote it from tool output; a line the input check blocks is dropped.
+    if check_input(line).decision == Decision.BLOCKED:
+        return update
+    update["reflections"] = [*reflections, line]
     if query is None or len(update["reflections"]) >= MAX_REFLECTIONS:
         return update
     knowledge = state.get("knowledge", [])
     seen = {(hit["ref_id"], hit["section"]) for hit in knowledge}
     try:
         found = await deps.search(query, limit=HITS_PER_QUERY)
-    except Exception:  # KnowledgeError, ProviderError or anything else: plan without it
-        return {**update, "knowledge_unavailable": True}
+    except Exception:  # find's knowledge is still there; just stop looking things up
+        return update
     new = [hit_dict(hit) for hit in found if (hit.ref_id, hit.section) not in seen]
     return {**update, "knowledge": (knowledge + new)[:MAX_KNOWLEDGE_HITS], "reflect_more": True}
 
@@ -280,14 +285,15 @@ async def ask_json(
     messages: list[Message],
     read: Callable[[dict[str, Any]], Any],
     spent: int,
+    attempts: int = ATTEMPTS,
 ) -> tuple[Any | None, dict[str, int]]:
-    """Ask for a JSON answer and read it with `read`. None after ATTEMPTS bad answers.
+    """Ask for a JSON answer and read it with `read`. None after `attempts` bad answers.
 
     spent is the tokens this ask used before this step; no call starts once the
     budget is used up.
     """
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "masked_count": 0}
-    for _ in range(ATTEMPTS):
+    for _ in range(attempts):
         check_budget(deps, spent + usage["prompt_tokens"] + usage["completion_tokens"])
         completion = await safe_complete(deps, messages)
         usage["prompt_tokens"] += completion.prompt_tokens

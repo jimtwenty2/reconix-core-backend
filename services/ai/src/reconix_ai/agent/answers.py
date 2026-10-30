@@ -6,6 +6,7 @@ command from a string.
 """
 
 import json
+import unicodedata
 from typing import Any
 
 from reconix_ai.contracts import TOOL_NAMES
@@ -58,7 +59,12 @@ def read_reflection(data: dict[str, Any]) -> tuple[str, str | None]:
     reflection = data.get("reflection")
     if not isinstance(reflection, str) or not reflection.strip():
         raise BadAnswer("no reflection")
-    line = reflection.strip().splitlines()[0].strip()[:MAX_REFLECTION_CHARS]
+    line = reflection.strip().splitlines()[0]
+    # No control characters: the line is shown in the terminal app and the web terminal.
+    line = "".join(char for char in line if unicodedata.category(char) != "Cc")
+    line = line.strip()[:MAX_REFLECTION_CHARS]
+    if not line:
+        raise BadAnswer("no reflection")
     search = data.get("search")
     query = search.strip()[:MAX_QUERY_CHARS] if isinstance(search, str) else ""
     return line, query or None

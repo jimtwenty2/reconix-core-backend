@@ -257,8 +257,9 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
     snapshot = await graph.aget_state(thread_config(run_id))
     values = snapshot.values
     proposed = values.get("proposed_action")
-    # The latest ReflAct line tells the person what the agent knows now.
-    notes = [*values.get("reflections", [])[-1:], values.get("summary", "")]
+    # The latest ReflAct line, labelled as the agent's own note on the tool results.
+    reflected = [f"Agent note: {line}" for line in values.get("reflections", [])[-1:]]
+    notes = [*reflected, values.get("summary", "")]
     if values.get("task") == "ANALYZE":
         notes = [values.get("analysis_summary", "")]
     elif values.get("task") == "REPORT":

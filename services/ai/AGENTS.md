@@ -19,7 +19,7 @@ Mon 2 Nov.** After Tue 17 Nov (feature freeze), only bug fixes and prompt tuning
 |---|---|
 | `contracts.py` | `Plan`, `ProposedAction`: field names match `AgentResponse`, `PlanStep` and `Action` in the API's `core/interfaces.py` |
 | `agent/` | LangGraph graph `understand → find → (reflect ×1–5, with tool results) → plan → suggest → wait`; `ask_agent()` and `resume_agent()`; progress saved in Postgres (`checkpoints.py`). The run id is `agent_runs.agent_run_id` and the LangGraph thread id |
-| `prompts/` | Markdown prompts, one per step: `system`, `understand`, `plan`, `analyze`, `report`, `chat` |
+| `prompts/` | Markdown prompts, one per step: `system`, `understand`, `reflect`, `plan`, `analyze`, `report`, `chat` |
 | `policies/agent-rules.md` | Suggest only, never run, never leave scope |
 | `tool_specs/tool_specs.json` | The 5 tool schemas, copied from Reconix-Kali-MCP |
 | `providers/` | The only place that calls a model, through LiteLLM (`client.py`); the 6 provider types (`settings.py`); safe base URLs (`base_url.py`); embeddings |

@@ -169,7 +169,7 @@ def tool_results_text(results: list[str]) -> str:
 def reflections_text(reflections: list[str]) -> str:
     # The model wrote these from tool output, so they are fenced as data too.
     lines = "\n".join(f"- {line}" for line in reflections)
-    return "## Your earlier reflections\n" + fenced("reflections", lines)
+    return "## Notes on the tool results (untrusted)\n" + fenced("reflections", lines)
 
 
 def fenced(tag: str, text: str) -> str:
