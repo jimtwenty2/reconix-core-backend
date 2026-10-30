@@ -350,6 +350,54 @@ test.describe("on the fixed frame (1366×768)", () => {
   });
 });
 
+for (const viewport of [{ width: 1100, height: 800 }, { width: 1440, height: 700 }]) {
+  test.describe(`two panes on the window-scrolling frame (${viewport.width}×${viewport.height})`, () => {
+    test.use({ viewport });
+
+    test("the list pane sticks, one screen tall, and its rows scroll on their own", async ({ page }) => {
+      await go(page, "/?view=findings");
+      await expect(rows(page)).toHaveCount(PER_PAGE);
+      const state = () =>
+        page.evaluate(() => {
+          const ul = document.querySelector<HTMLElement>('ul[aria-label="Findings"]')!;
+          return { list: ul.scrollTop, listRange: ul.scrollHeight - ul.clientHeight, win: scrollY };
+        });
+      expect((await state()).listRange, "ten rows do not fit a screen: the rows must scroll").toBeGreaterThan(100);
+
+      // the wheel over the rows scrolls them, not the window
+      const win = (await state()).win;
+      const box = (await list(page).boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.wheel(0, 200);
+      await expect.poll(async () => (await state()).list).toBeGreaterThan(100);
+      expect((await state()).win).toBe(win);
+
+      // the keys scroll the rows once one has focus
+      await row(page, 0).focus();
+      await page.keyboard.press("Home");
+      await expect.poll(async () => (await state()).list).toBe(0);
+      await page.keyboard.press("End");
+      await expect.poll(async () => (await state()).list).toBeGreaterThan(100);
+
+      // a detail taller than the screen: the window scrolls it while the list pane stays at the top
+      // of the window, the pager in reach. No sample finding is that tall, so the pane is made so.
+      await page.locator(".dash-findings .ui-split-detail").evaluate((el) => (el.style.minHeight = "2000px"));
+      // past where the pane would scroll off (its own top less the 16px gutter), not to the end,
+      // where the footnote under the split takes the pane up with it
+      await page.evaluate(() => {
+        const top = document.querySelector(".dash-findings .ui-split-list")!.getBoundingClientRect().top + scrollY;
+        scrollTo(0, top - 16 + 50);
+      });
+      await expect.poll(async () => (await state()).win).toBeGreaterThan(win);
+      const pane = (await page.locator(".dash-findings .ui-split-list").boundingBox())!;
+      expect(pane.y, "the list pane sticks to the top of the window").toBeGreaterThanOrEqual(0);
+      expect(pane.y + pane.height).toBeLessThanOrEqual(viewport.height);
+      const pagerBox = (await pager(page).boundingBox())!;
+      expect(pagerBox.y + pagerBox.height, "the pager stays in reach").toBeLessThanOrEqual(viewport.height);
+    });
+  });
+}
+
 test.describe("on a phone (390×844)", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
