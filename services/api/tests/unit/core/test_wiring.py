@@ -14,14 +14,13 @@ from reconix_api.core.interfaces import (
     Decision,
     Operator,
     RiskLevel,
-    Role,
     ToolName,
 )
 from reconix_api.core.wiring import build_interfaces, build_mask_secrets
 
 
 def _context(scope: ApprovedScope) -> CheckContext:
-    operator = Operator(session_id=uuid4(), role=Role.OPERATOR, actor="operator")
+    operator = Operator(session_id=uuid4(), actor="operator")
     return CheckContext(operator=operator, scope=scope, now=datetime.now(UTC))
 
 
@@ -55,7 +54,6 @@ def test_write_audit_appends_one_masked_line(tmp_path):
         event_type="SESSION_OPENED",
         assessment_id=None,
         session_id=uuid4(),
-        role=Role.OPERATOR,
         actor="operator",
         at=datetime.now(UTC),
         details={"note": "password=hunter2"},

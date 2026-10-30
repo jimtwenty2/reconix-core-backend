@@ -12,7 +12,7 @@ The harness is the part that makes "the AI suggests, the backend decides" true. 
 - `pipeline.py` runs the checks in this fixed order: **input → scope → command → risk → loop**. The first check that blocks stops the pipeline.
 - Checks are pure functions. They **never read the database**; the API passes in everything they need (approved scope, recent runs, settings).
 - The agent runs `check()` on every step it suggests, and the API runs it **again** right before any tool runs. Never add a path that skips the second run.
-- Every decision writes exactly **one** audit line (JSON lines) with `assessment_id`, `session_id`, `role`, `actor` and an event type.
+- Every decision writes exactly **one** audit line (JSON lines) with `assessment_id`, `session_id`, `actor` and an event type.
 
 ## Current rules (keep them true)
 

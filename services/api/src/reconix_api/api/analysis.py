@@ -6,7 +6,7 @@ from fastapi import APIRouter, status
 
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
-from reconix_api.core.security import CurrentInterfaces, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.agent_runs import AnalysisOut
 from reconix_api.services import analysis
 
@@ -17,7 +17,7 @@ router = APIRouter(tags=["analysis"])
 async def analyze(
     assessment_id: UUID,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> AnalysisOut:

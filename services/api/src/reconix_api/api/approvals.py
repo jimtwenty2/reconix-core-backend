@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.models.enums import ApprovalStatus
 from reconix_api.schemas.approvals import ApprovalDecision, ApprovalKind, ApprovalOut
 from reconix_api.services import decisions
@@ -42,7 +42,7 @@ async def approve(
     approval_id: UUID,
     body: ApprovalDecision,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
@@ -56,7 +56,7 @@ async def reject(
     approval_id: UUID,
     body: ApprovalDecision,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> ApprovalOut:

@@ -4,7 +4,6 @@ from reconix_api.core.interfaces import Interfaces
 from tests.fakes.fake_ai import FakeAgent
 from tests.fakes.fake_core import (
     OPERATOR_TOKEN,
-    VIEWER_TOKEN,
     FakeAudit,
     FakeOperators,
     FakeScopes,
@@ -35,7 +34,6 @@ def build_fake_interfaces() -> tuple[Interfaces, dict]:
 
 __all__ = [
     "OPERATOR_TOKEN",
-    "VIEWER_TOKEN",
     "FakeAgent",
     "FakeAudit",
     "FakeMcp",

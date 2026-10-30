@@ -15,12 +15,11 @@ from reconix_api.core.interfaces import (
     Decision,
     ResumeInput,
     RiskLevel,
-    Role,
     ToolJob,
     ToolName,
     ToolRunStatus,
 )
-from tests.fakes import OPERATOR_TOKEN, VIEWER_TOKEN, build_fake_interfaces
+from tests.fakes import OPERATOR_TOKEN, build_fake_interfaces
 
 
 def make_scope(**overrides) -> ApprovedScope:
@@ -40,12 +39,6 @@ def make_context(scope: ApprovedScope) -> CheckContext:
     interfaces, _ = build_fake_interfaces()
     operator = interfaces.get_operator(OPERATOR_TOKEN)
     return CheckContext(operator=operator, scope=scope, now=datetime.now(UTC))
-
-
-def test_get_operator_knows_both_roles():
-    interfaces, _ = build_fake_interfaces()
-    assert interfaces.get_operator(OPERATOR_TOKEN).role == Role.OPERATOR
-    assert interfaces.get_operator(VIEWER_TOKEN).role == Role.VIEWER
 
 
 def test_get_operator_refuses_unknown_token():

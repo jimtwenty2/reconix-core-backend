@@ -11,7 +11,7 @@ from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Operator, WriteAudit
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.models import Session
-from reconix_api.models.enums import Role, SessionStatus
+from reconix_api.models.enums import SessionStatus
 from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.sessions import SessionRead
 from reconix_api.services.audit import audit
@@ -23,14 +23,11 @@ MAX_ACTOR = 100  # decided_by, reviewed_by, created_by ... are String(100)
 def open_session(
     db: Db, tokens: SessionTokens, write_audit: WriteAudit, interface: str
 ) -> tuple[Session, Operator, str]:
-    """Opens an OPERATOR session for the person at this computer.
-
-    Viewer sessions are issued by `/web` (week 2), never by this endpoint.
-    The role is kept with the token, not in the sessions table (ERD V3 has no role column).
-    """
+    """Opens a session for the person at this computer. There are no roles: the token
+    may do everything."""
     session = session_repo.add(db, Session(interface=interface))
     db.commit()
-    operator = Operator(session_id=session.session_id, role=Role.OPERATOR, actor=local_actor())
+    operator = Operator(session_id=session.session_id, actor=local_actor())
     token = tokens.issue(operator)
     audit(write_audit, "SESSION_OPENED", operator, details={"interface": interface})
     return session, operator, token

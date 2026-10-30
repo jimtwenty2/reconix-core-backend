@@ -19,6 +19,7 @@ NMAP_STEP = {
     "arguments": ["-sV", "--top-ports", "100"],
 }
 PLANNED = {"summary": "Start with a service scan.", "steps": [NMAP_STEP]}
+REFLECTED = {"reflection": "Port 22 is open; the services are not yet known.", "search": None}
 
 
 @dataclass

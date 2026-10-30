@@ -2,6 +2,8 @@
 
 _Reconix · day 0 was Fri 23 Oct 2026 · Markdown copy of plan v2, exported Wed 28 Oct 2026._
 
+_Updated Fri 30 Oct 2026: Reconix has no viewer or operator roles. Anyone with a session token can do everything._
+
 What each of the 7 members does every week, from day 0 to the closing. The backend, the AI Service and the Kali tool container must be finished on Mon 2 Nov. Everything must be finished on Fri 20 Nov. The main rule: the AI suggests, the backend decides, and the tool container runs the tools.
 
 ## Official deadlines
@@ -29,7 +31,7 @@ What each of the 7 members does every week, from day 0 to the closing. The backe
 
 ## Backend 100% on Mon 2 Nov
 
-- **Backend API:** every endpoint, all 5 approval types, reports with sign-off and download, AI provider settings, web roles, timeline, and Docker.
+- **Backend API:** every endpoint, all 5 approval types, reports with sign-off and download, AI provider settings, web sign-in, timeline, and Docker.
 - **Safety checks:** input, scope, command, risk and loop checks, hiding secrets, showing hidden values with approval, settings, AI provider safety, and the audit log.
 - **AI Service:** knowledge search, the AI agent, the full analysis from workflow v5, choosing the AI provider, and the report text and files.
 - **Kali tool container:** nmap, nuclei, ZAP, semgrep and gitleaks, reading their output, findings, evidence, and checking findings.
@@ -37,7 +39,7 @@ What each of the 7 members does every week, from day 0 to the closing. The backe
 ## Everything 100% on Fri 20 Nov
 
 - The terminal app has every Figma screen and state.
-- The local web has viewer and operator roles, the Terminal page, the timeline and reports.
+- The local web has sign-in, the Terminal page, the timeline and reports.
 - The VS Code extension (.vsix) and the public website are ready.
 - We release v1.0.0. Then we test and put it online by Fri 27 Nov.
 
@@ -72,7 +74,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 | Nut Youlong | Kali tool container, parsers and findings, VS Code extension, main presenter | Reconix-Kali-MCP · Reconix-Core parsers/ findings/ · Reconix-Vscode |
 | Khin Sakphearoth | AI Service (with Vanneth), public website and backup presenter | Reconix-Core · services/ai/ · Reconix-Public-Web |
 | Horn Vanhong | Terminal app (TUI and commands) | Reconix-Core · apps/tui/ |
-| Nhoeun Sokpiseth | Local web app (viewer and operator) | Reconix-Core · apps/web/ |
+| Nhoeun Sokpiseth | Local web app | Reconix-Core · apps/web/ |
 | Choeng Sreyleak | Book, docs, public website, VS Code extension | Reconix-Public-Web · Reconix-Vscode (with Youlong and Pojim) |
 
 ## Week 1 · Backend core and first flow (Fri 23 – Wed 28 Oct)
@@ -88,7 +90,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 **Whole team**
 
 - On day one we create the 4 repos together and agree on three things: the 6 shared functions, the table and value names from ERD V3, and how we name repos, folders and branches.
-- We also close the gaps in the ERD. We add `sessions.role`, use NONE for severity (V3 already chose NONE, not INFO), and use UNKNOWN wherever workflow v5 says NEEDS_REVIEW. We also decide how to handle imported findings and finding categories.
+- We also close the gaps in the ERD. There is no `sessions.role` (Reconix has no roles); we use NONE for severity (V3 already chose NONE, not INFO), and use UNKNOWN wherever workflow v5 says NEEDS_REVIEW. We also decide how to handle imported findings and finding categories.
 - Tue 27 Oct is merge day. We join everyone's code, run all the tests, and replace the fake parts with the real ones.
 - On Wed 28 Oct each person shows the team that their week 1 "done when" check really works.
 
@@ -99,7 +101,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 - [ ] Start by creating the 4 GitHub repos: Reconix-Core for the backend, the AI, the terminal app and the local web; Reconix-Kali-MCP for the Kali tool container; Reconix-Public-Web for the website; and Reconix-Vscode for the extension. Give each member write access to the repo they work in. Set up automatic checks on every repo, so tests and code style run on each pull request.
 - [ ] On day one, write the 6 shared functions that connect everyone's parts: who the operator is, the safety check, reading the approved scope, writing to the audit log, asking the AI agent, and calling a tool. Write a fake version of each one too, and push them the same day, so everyone can start without waiting for the others.
 - [ ] Write the Docker Compose file. One command should start the database (PostgreSQL 16), the search store (Qdrant), the local AI model (Ollama) and the Kali tool container. The Kali container sits on a private network that nothing outside can reach. Until the first release, use the latest test image from the Kali repo.
-- [ ] Build the SQLAlchemy models for all 16 tables. Use exactly the names and UPPERCASE values from ERD V3 and Data Dictionary V3, and add `sessions.role` (operator or viewer). Keep it to one Alembic migration, and add the built-in RECONIX AI provider as starting data.
+- [ ] Build the SQLAlchemy models for all 16 tables. Use exactly the names and UPPERCASE values from ERD V3 and Data Dictionary V3. Keep it to one Alembic migration, and add the built-in RECONIX AI provider as starting data.
 - [ ] Make the API safe from the start. It only listens on this computer, it rejects requests with a wrong host name, and it only accepts calls from the local web. Every error has the same shape: a code, a message and details. Also add a health check and a "who am I" endpoint.
 - [ ] Build sessions, chat messages and scope, so a person can draft, edit, submit and approve a scope. When a scope is submitted, create a `scope` approval and a DRAFT assessment with a code like `RCX-2026-0001`. Once the scope is approved, the assessment becomes ACTIVE.
 - [ ] Build `POST /assessments/{id}/actions`. Every action passes through the safety checks first. A BLOCKED action returns error 422, a LOW action runs right away, and MEDIUM or HIGH actions wait for a person to approve them. Save a masked copy of the action and its SHA-256 hash. For HIGH, the person must type the target to confirm. An approval expires after 30 minutes and can be used only once.
@@ -121,7 +123,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 - [ ] Command check: only the 5 tools are allowed, each with its own list of allowed options, copied from `tool_specs.json` in the Kali repo (latest on `main` until the first release). Block shell characters, and always pass arguments as a list, never as one long string.
 - [ ] Risk check: a rule table gives each tool and option a level of LOW, MEDIUM or HIGH. Anything unknown counts as HIGH, and checking a finding is at least MEDIUM. Anything above the scope's max risk is blocked.
 - [ ] Loop check: block the same command on the same target if it runs more than 3 times in 10 minutes. Also block more than 20 actions in one minute, or more than 200 runs in one assessment.
-- [ ] Run the checks in this order: input, scope, command, risk, loop. The first check that blocks stops everything. For the audit log, write one JSON line per event, with assessment_id, session_id, role, actor and the event types the web timeline needs.
+- [ ] Run the checks in this order: input, scope, command, risk, loop. The first check that blocks stops everything. For the audit log, write one JSON line per event, with assessment_id, session_id, actor and the event types the web timeline needs.
 - [ ] On day one, also add the instruction files for AI coding assistants to Reconix-Core: one main rules file for the repo, one short rules file for each part (API, AI, terminal app, web), and the shared skills and settings. You can start from the files in `core-agent-files.zip`.
 
 **Done when:** Every check has unit tests, and Vanneth is using the real checks at the Tue 27 Oct merge.
@@ -174,13 +176,13 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 
 **Done when:** You can go from Start to Scope review using sample data.
 
-### Nhoeun Sokpiseth: Local web app (viewer and operator)
+### Nhoeun Sokpiseth: Local web app
 
 **Goal this week:** The local web runs with the main pages and sample data.
 
 - [ ] Set up Next.js with TypeScript in `Reconix-Core/apps/web/`. Go through the Figma "Local Web UI" file. The pages are Overview, AI Assistant, Assessments, Findings (list and detail), Scope, Report, Terminal and Docs.
 - [ ] Generate the request types from the API description file in Reconix-Core, and build a fake API that reads the same shared sample data as the terminal app (`apps/sample-data`). While you are at it, fix the sample data so each run has its own code and only our 5 tools appear. Reuse the pages, components and styles from the old prototype.
-- [ ] Build the page layout, the menu and a badge that shows whether you are a viewer or an operator.
+- [ ] Build the page layout and the menu.
 - [ ] Build Assessments (a list with each status, including Stopped) and the Overview page for one run, with its plan steps.
 - [ ] Build the Findings list with filters for severity, target, category, tool and check result.
 
@@ -190,8 +192,8 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 
 **Goal this week:** Everyone works from the same documents, and book part 2 is planned.
 
-- [ ] Update the business rules with what the team decided: the web roles, `report_assessments` and the ERD V3 status values.
-- [ ] Tidy up the ERD V3 file: add divider lines inside each table and remove the yellow highlights. Add `sessions.role` if it is still missing.
+- [ ] Update the business rules with what the team decided: no web roles, `report_assessments` and the ERD V3 status values.
+- [ ] Tidy up the ERD V3 file: add divider lines inside each table and remove the yellow highlights.
 - [ ] Write the outline for book part 2: analysis, planning (you can use this plan), system design and AI design.
 - [ ] Draw the system design and the AI design, showing the agent steps and the knowledge search.
 - [ ] Update the sample database data in Reconix-Core (`deploy/seed.sql`) to match ERD V3, then rebuild the shared sample files in `apps/sample-data` from it, so the terminal app, the web and the database all show the same examples.
@@ -223,7 +225,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 - [ ] Build the endpoints that read data: waiting approvals, actions (list and detail), findings (list and detail), masked evidence, check runs and AI runs.
 - [ ] Build the 6 endpoints for AI providers. Encrypt API keys with Fernet and only ever show the last 4 characters. Only one provider can be active at a time, and a provider that runs outside this computer needs a `configuration` approval first.
 - [ ] Build reports. Each new version saves a locked, masked copy of the data together with its hash. The status moves from GENERATING to READY or FAILED. A combined report covers 2 to 5 assessments (`report_assessments`), and sign-off is a `review` approval. A report can only be downloaded once it is READY and signed off. Sakphearoth will give you the PDF, DOCX and JSON files.
-- [ ] Connect Pojim's parts to the API: showing hidden values, limit settings, the timeline endpoint and the web role check.
+- [ ] Connect Pojim's parts to the API: showing hidden values, limit settings, the timeline endpoint and the web sign-in.
 - [ ] Put every backend service in Docker Compose. Write `install.sh` and the uv install steps so they install `Reconix-Core` (backend, terminal app and local web) and pull the Kali image, and one command starts everything.
 - [ ] On Sat 31 Oct, join the code and run the full test. On Mon 2 Nov, fix whatever failed and save the final `openapi.json`.
 - [ ] Help Sakphearoth with the AI Service: connect the AI provider settings you store (with encrypted keys) to the AI Service's model calls, and build the report files (PDF, DOCX and JSON) from the locked report copy together.
@@ -240,11 +242,11 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 - [ ] Showing hidden values: keep the real values in a protected folder. With a `disclosure` approval, a person can see one value, one time.
 - [ ] Settings: changing a limit creates a `configuration` approval, and the new limit only takes effect after it is approved.
 - [ ] AI provider safety: require HTTPS unless the provider runs on this computer. Reject addresses that contain a user name or password, and reject cloud metadata addresses. The API key must never appear in the logs.
-- [ ] Web sign-in and roles: `/web` creates a random token, kept only in memory, for an operator or a viewer. A viewer can only look, so write a test for every endpoint that changes data.
+- [ ] Web sign-in: `/web` creates a random token, kept only in memory. There are no roles: a signed-in person can do everything. Write a test that every endpoint refuses a request without a token.
 - [ ] Timeline: write a function that reads the audit log and returns the lines for one assessment. Vanneth will expose it as `GET /assessments/{id}/timeline`.
 - [ ] Tune the risk rules using real commands from the Kali tool container.
 
-**Done when:** A leak test finds no secret in the database, the logs, the AI messages or Qdrant, and a viewer gets error 403 on every change.
+**Done when:** A leak test finds no secret in the database, the logs, the AI messages or Qdrant, and every endpoint refuses a request without a token (error 401).
 
 ### Nut Youlong: Kali tool container, parsers and findings, VS Code extension, main presenter
 
@@ -288,7 +290,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 
 **Done when:** The 50% flow runs from the terminal app alone, with no other app needed.
 
-### Nhoeun Sokpiseth: Local web app (viewer and operator)
+### Nhoeun Sokpiseth: Local web app
 
 **Goal this week:** The web shows real data from the 50% flow.
 
@@ -335,9 +337,9 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 **Goal this week:** Keep the backend stable and safe while the frontend connects to it. The 50% check is on Wed 4 Nov.
 
 - [ ] On Tue 3 Nov, release `v0.1.0`. On Wed 4 Nov morning, install everything on a fresh computer using only the README, and then go into the 50% check.
-- [ ] Build a WebSocket that opens the terminal app inside the browser. Only operators can use it. Sokpiseth's Terminal page will connect to it.
+- [ ] Build a WebSocket that opens the terminal app inside the browser. The handshake checks the session token and the `Origin` (the Host check does not cover WebSockets). Sokpiseth's Terminal page will connect to it.
 - [ ] Add live updates (`GET /stream`) so the screens see new approvals and run progress straight away.
-- [ ] Add security tests for too many requests, a wrong Host, requests from other websites, and a viewer trying to change data. Also add tests that check every endpoint still matches `openapi.json`.
+- [ ] Add security tests for too many requests, a wrong Host, requests from other websites, and a request without a token. Also add tests that check every endpoint still matches `openapi.json`.
 - [ ] Add database indexes so the list filters stay fast, and check the speed with the sample data.
 - [ ] Answer frontend questions on the same day, and fix the API bugs they find before anything else.
 - [ ] Help Sakphearoth time one full AI step on the demo laptop, and fix any slow API calls around it.
@@ -386,21 +388,20 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 - [ ] Reports: make a new version, see the list, ask for sign-off and export. For a combined report, the person picks 2 to 5 runs.
 - [ ] The `/provider` and `/model` screens: list providers, add one (with a hidden key field), test it and make it active.
 - [ ] Add the windows for the other approval types: showing a hidden value, changing settings and signing off a report.
-- [ ] Make `/web` print the sign-in link for an operator or a viewer.
+- [ ] Make `/web` print the sign-in link.
 
 **Done when:** Every Figma screen we need has a working version.
 
-### Nhoeun Sokpiseth: Local web app (viewer and operator)
+### Nhoeun Sokpiseth: Local web app
 
-**Goal this week:** An operator can do everything in the browser, while a viewer can only look.
+**Goal this week:** A signed-in person can do everything in the browser.
 
-- [ ] Terminal page: use xterm.js to connect to Vanneth's WebSocket, which runs the terminal app. It is for operators only. Add the Restart window too.
+- [ ] Terminal page: use xterm.js to connect to Vanneth's WebSocket, which runs the terminal app. Add the Restart window too.
 - [ ] Timeline on Overview: read `/assessments/{id}/timeline` and show a chart grouped by event type.
 - [ ] Report page: show one run or a combined report (2 to 5 runs), the version and the sign-off status. Download only works when the report is READY and signed off. Also show the error state when an export fails.
-- [ ] AI Assistant page: an operator can chat, but a viewer can only read. Show "No model set up" when there is no AI provider.
-- [ ] Viewer mode: hide every button that changes data, and test that it is really hidden.
+- [ ] AI Assistant page: a signed-in person can chat. Show "No model set up" when there is no AI provider.
 
-**Done when:** A viewer cannot change anything, and an operator can run the full flow from the browser.
+**Done when:** A signed-in person can run the full flow from the browser.
 
 ### Choeng Sreyleak: Book, docs, public website, VS Code extension
 
@@ -489,22 +490,22 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 
 **Done when:** The main flow test passes, and the screens match Figma.
 
-### Nhoeun Sokpiseth: Local web app (viewer and operator)
+### Nhoeun Sokpiseth: Local web app
 
 **Goal this week:** The web looks finished and is tested.
 
 - [ ] Add empty, loading and error states to every page.
 - [ ] Use live updates for new approvals and progress.
-- [ ] Write Playwright tests for the main pages, once as a viewer and once as an operator.
+- [ ] Write Playwright tests for the main pages.
 - [ ] Tue 17 Nov is feature freeze. After that, help Sreyleak with the VS Code extension if Sreyleak needs it.
 
-**Done when:** The Playwright tests pass for both roles.
+**Done when:** The Playwright tests pass.
 
 ### Choeng Sreyleak: Book, docs, public website, VS Code extension
 
 **Goal this week:** Book part 3 and the VS Code extension are done.
 
-- [ ] VS Code: connect Youlong's folder scan and findings view to the chat panel, so a person can ask the AI about a finding. Add approve and reject for waiting actions, shown to operators only.
+- [ ] VS Code: connect Youlong's folder scan and findings view to the chat panel, so a person can ask the AI about a finding. Add approve and reject for waiting actions.
 - [ ] Build the `.vsix` file on Tue 17 Nov and test that it installs.
 - [ ] Write book part 3 with Sakphearoth: implementation, test results, conclusion and references. Submit it on Mon 16 Nov.
 - [ ] Finish the website docs and the examples page.
@@ -580,7 +581,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 
 **Done when:** No bugs are left in the terminal app.
 
-### Nhoeun Sokpiseth: Local web app (viewer and operator)
+### Nhoeun Sokpiseth: Local web app
 
 **Goal this week:** The web works on a fresh install.
 
@@ -729,7 +730,7 @@ Reconix-Core/
 │       │   └── styles/
 │       └── tests/
 │           ├── unit/
-│           └── e2e/            # Playwright, viewer and operator
+│           └── e2e/            # Playwright
 │
 ├── deploy/
 │   ├── docker-compose.yml      # PostgreSQL, Qdrant, Ollama, api, kali-mcp image from Reconix-Kali-MCP (internal network only)
@@ -838,7 +839,7 @@ Reconix-Vscode/                 # VS Code extension (TypeScript)
 ├── src/
 │   ├── extension.ts            # activate, register commands and views
 │   ├── api/                    # client for the local Core API (types from openapi.json)
-│   ├── auth.ts                 # operator token, kept in SecretStorage
+│   ├── auth.ts                 # session token, kept in SecretStorage
 │   ├── chat/                   # chat panel (webview) that talks to the AI agent
 │   ├── scan/                   # "Scan this folder": source code test with semgrep and gitleaks
 │   ├── findings/
