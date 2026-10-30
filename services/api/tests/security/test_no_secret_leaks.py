@@ -8,8 +8,9 @@ the report files, not even in base64. The masking and the audit log are the real
 the agent and MCP are fakes.
 
 Needs PostgreSQL (RECONIX_TEST_DATABASE_URL), like the integration tests. Qdrant is not
-covered here: the API writes nothing to it yet, and the knowledge loader's masking is tested
-in services/ai/tests/unit/knowledge/test_chunks.py. The API logs little today (only
+covered here: knowledge add-ons, the API's writes to it, have their own leak test in
+test_knowledge_add_on_leaks.py, and the knowledge loader's masking is tested in
+services/ai/tests/unit/knowledge/test_chunks.py. The API logs little today (only
 unexpected errors), so the log search mostly guards log lines added later.
 """
 
