@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, status
 
 from reconix_api.core.db import Db
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.schemas.sessions import SessionCreate, SessionCreated, SessionRead
 from reconix_api.services import sessions
@@ -25,7 +25,7 @@ def open_session(
     interfaces: CurrentInterfaces,
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
 ) -> SessionCreated:
-    """Opens an OPERATOR session. Only reachable from this computer (Host check + CORS)."""
+    """Opens a session. Only reachable from this computer (Host check + CORS)."""
     session, _, token = sessions.open_session(db, tokens, interfaces.write_audit, body.interface)
     created = SessionRead.model_validate(session, from_attributes=True)
     return SessionCreated(**created.model_dump(), token=token)
@@ -45,7 +45,7 @@ def read_session(session_id: UUID, db: Db, _: CurrentOperator) -> SessionRead:
 def close_session(
     session_id: UUID,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
 ) -> SessionRead:

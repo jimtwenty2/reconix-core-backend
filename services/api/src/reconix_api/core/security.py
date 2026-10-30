@@ -8,7 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from reconix_api.core.errors import ApiError, error_response
-from reconix_api.core.interfaces import Interfaces, Operator, Role
+from reconix_api.core.interfaces import Interfaces, Operator
 
 
 class HostCheckMiddleware(BaseHTTPMiddleware):
@@ -49,6 +49,8 @@ def current_operator(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     interfaces: Annotated[Interfaces, Depends(get_interfaces)],
 ) -> Operator:
+    """Use on every endpoint except /health and POST /sessions. There are no roles: a
+    valid token may do everything."""
     if credentials is None or not credentials.credentials:
         raise ApiError(401, "UNAUTHORIZED", "Send the session token as a Bearer token.")
     try:
@@ -57,13 +59,5 @@ def current_operator(
         raise ApiError(401, "UNAUTHORIZED", "The session token is not valid.") from error
 
 
-def require_operator(operator: Annotated[Operator, Depends(current_operator)]) -> Operator:
-    """Use on every endpoint that changes data. A viewer can only look."""
-    if operator.role != Role.OPERATOR:
-        raise ApiError(403, "VIEWER_READ_ONLY", "A viewer cannot change data.")
-    return operator
-
-
 CurrentOperator = Annotated[Operator, Depends(current_operator)]
-RequireOperator = Annotated[Operator, Depends(require_operator)]
 CurrentInterfaces = Annotated[Interfaces, Depends(get_interfaces)]

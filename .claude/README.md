@@ -29,6 +29,7 @@ description, so the description must say **what** the skill covers and **when** 
 | `add-tool-parser` | Turning nmap, nuclei, ZAP, semgrep or gitleaks output into findings |
 | `add-fake` | Blocked on another part and need a fake |
 | `sync-openapi` | After any route or schema change, after every merge, before a release |
+| `integrate-apps-with-api` | Moving the TUI and web off their own data and model calls onto the Core API |
 | `run-full-flow-test` | Merge day, before a release, or to prove the main flow still works |
 | `run-leak-test` | After changing masking, parsers, evidence, reports or AI providers |
 | `cut-release` | Tagging `vX.Y.Z` |

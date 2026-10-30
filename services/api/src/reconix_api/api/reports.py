@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.approvals import ApprovalOut
 from reconix_api.schemas.reports import ReportFormat, ReportOut
 from reconix_api.services import decisions, reports
@@ -23,7 +23,7 @@ CurrentSettings = Annotated[Settings, Depends(get_settings)]
 async def create_report(
     assessment_id: UUID,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
@@ -48,7 +48,7 @@ def read_report(report_id: UUID, db: Db, _: CurrentOperator) -> ReportOut:
 def request_review(
     report_id: UUID,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> ApprovalOut:

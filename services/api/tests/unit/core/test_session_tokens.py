@@ -2,12 +2,12 @@ from uuid import uuid4
 
 import pytest
 
-from reconix_api.core.interfaces import Operator, Role
+from reconix_api.core.interfaces import Operator
 from reconix_api.core.session_tokens import SessionTokens
 
 
 def make_operator() -> Operator:
-    return Operator(session_id=uuid4(), role=Role.OPERATOR, actor="operator")
+    return Operator(session_id=uuid4(), actor="operator")
 
 
 def test_issued_token_finds_the_operator():

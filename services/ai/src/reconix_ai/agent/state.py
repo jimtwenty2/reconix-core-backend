@@ -28,6 +28,8 @@ class AgentState(TypedDict, total=False):
     queries: list[str]
     knowledge: list[dict[str, str]]  # hits: source, ref_id, title, section, text, url
     knowledge_unavailable: bool
+    reflections: list[str]  # ReflAct: one masked line per look at the tool results
+    reflect_more: bool
     summary: str
     steps: list[dict[str, Any]]  # the plan; see contracts.PlanStep
     proposed_action: dict[str, Any] | None  # see contracts.ProposedAction

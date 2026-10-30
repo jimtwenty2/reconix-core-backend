@@ -18,8 +18,8 @@ Mon 2 Nov.** After Tue 17 Nov (feature freeze), only bug fixes and prompt tuning
 | Folder | Holds |
 |---|---|
 | `contracts.py` | `Plan`, `ProposedAction`: field names match `AgentResponse`, `PlanStep` and `Action` in the API's `core/interfaces.py` |
-| `agent/` | LangGraph graph `understand → find → plan → suggest → wait`; `ask_agent()` and `resume_agent()`; progress saved in Postgres (`checkpoints.py`). The run id is `agent_runs.agent_run_id` and the LangGraph thread id |
-| `prompts/` | Markdown prompts, one per step: `system`, `understand`, `plan`, `analyze`, `report`, `chat` |
+| `agent/` | LangGraph graph `understand → find → (reflect ×1–5, with tool results) → plan → suggest → wait`; `ask_agent()` and `resume_agent()`; progress saved in Postgres (`checkpoints.py`). The run id is `agent_runs.agent_run_id` and the LangGraph thread id |
+| `prompts/` | Markdown prompts, one per step: `system`, `understand`, `reflect`, `plan`, `analyze`, `report`, `chat` |
 | `policies/agent-rules.md` | Suggest only, never run, never leave scope |
 | `tool_specs/tool_specs.json` | The 5 tool schemas, copied from Reconix-Kali-MCP |
 | `providers/` | The only place that calls a model, through LiteLLM (`client.py`); the 6 provider types (`settings.py`); safe base URLs (`base_url.py`); embeddings |
@@ -72,8 +72,8 @@ Ollama) and `tests/`.
   - loop: the same command on the same target at most 3 times in 10 minutes, at most 20 actions a
     minute and 200 runs per assessment.
 - `masking.py` replaces secrets with a label such as `[MASKED:password]` and counts them.
-- `audit.py` writes exactly one JSON line per decision, with `assessment_id`, `session_id`, `role`,
-  `actor` and the event types the web timeline needs.
+- `audit.py` writes exactly one JSON line per decision, with `assessment_id`, `session_id`,
+  `actor` and the event types the web timeline needs. There are no roles, so a line has no `role`.
 - Follow the `add-guardrail-check` skill for the current rules and the tests each check needs.
 
 ## Plan status (28 Oct 2026)
@@ -87,7 +87,7 @@ Keep this table true; update the row in the PR that changes it.
 | Agent: understand, find, plan, suggest, wait; progress in Postgres | 1 | Done; wired into the API as `ask_agent` (`core/agent.py`) |
 | Prompts and agent rules as Markdown; tool specs copied from the Kali repo | 1 | Done |
 | Harness: 5 checks, pipeline, masking, audit log | 1 | Done |
-| ReflAct step (up to 5 times, read-only tools) | 2 | To do |
+| ReflAct step (up to 5 times, read-only tools) | 2 | Done: `reflect` runs between find and plan when there are tool results; one masked line each time, its only tool is the knowledge search; stops at 5, when it asks for no lookup, or at half the token budget. The latest line opens the answer text. Not yet tried on the live model |
 | The 8 parts of the workflow v5 analysis | 2 | Done: ANALYZE (find → analyze, no wait); `analysis/answers.py` enforces the 8 rules, and `check()` drops a blocked next step. Tested on 10 saved tool outputs with a scripted model; not yet tried on the live model |
 | Use the active provider; all 6 provider types | 2 | Client done: all 6 types call through LiteLLM (cloud types need a key; OpenAI-compatible needs its address, `/v1` allowed). The API still sends only RECONIX until the `/llm-providers` endpoints pick the active row |
 | Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
@@ -130,5 +130,4 @@ ollama create reconix -f services/ai/models/Modelfile
 
 **Week goals from the plan:** week 1, for an approved scope the agent suggests one step and waits.
 Week 2, on 10 saved tool outputs the AI follows all 8 analysis rules and a report exports as PDF,
-DOCX and JSON. Harness week 2: the leak test finds no secret anywhere, and a viewer gets 403 on
-every change.
+DOCX and JSON. Harness week 2: the leak test finds no secret anywhere.

@@ -30,7 +30,7 @@ def test_sessions_can_be_listed_and_read(db_client):
 def test_operator_is_the_os_user_at_this_computer(db_client):
     headers = open_session(db_client)
     me = db_client.get("/operator", headers=headers).json()
-    assert me["role"] == "OPERATOR"  # the role lives with the token, not the session
+    assert "role" not in me  # there are no roles
     actor = me["actor"]
     assert actor == sessions_service.local_actor()
     assert "@" in actor

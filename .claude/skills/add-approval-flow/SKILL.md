@@ -20,7 +20,7 @@ Approvals are how a person stays in control. They are **never cut**.
 ## Rules
 
 - An approval expires after **30 minutes** and can be used **once**. Using it marks it consumed in the same transaction.
-- Only an `OPERATOR` can approve or reject. A viewer gets 403.
+- Approving or rejecting needs a valid session token (401 without one). There are no roles.
 - For an action: store the masked copy and its SHA-256 hash at request time. Before running, re-hash and refuse with `ACTION_CHANGED` if it differs.
 - `HIGH` risk: the request must include the target typed by the person, and it must match exactly.
 - The change only happens **after** approval. Never apply it optimistically and roll back.
@@ -32,5 +32,5 @@ Approvals are how a person stays in control. They are **never cut**.
 - approve → effect happens; reject → nothing happens
 - expired approval → `APPROVAL_EXPIRED`; second use → refused
 - changed action after approval → refused
-- viewer approve → 403
+- approve without a token → 401
 - `HIGH` with the wrong typed target → refused
