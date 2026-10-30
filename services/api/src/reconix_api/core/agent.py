@@ -32,6 +32,9 @@ AGENT_ERROR_STATUS = {
     "TASK_NOT_SUPPORTED": 422,
     "RUN_IS_WAITING": 409,
     "RUN_NOT_WAITING": 409,
+    "STEP_LIMIT": 422,  # the run stopped itself
+    "TOKEN_BUDGET": 422,
+    "MODEL_UNAVAILABLE": 503,  # the model is down: try again later
 }
 
 

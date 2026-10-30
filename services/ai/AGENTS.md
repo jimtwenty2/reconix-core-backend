@@ -84,13 +84,13 @@ Keep this table true; update the row in the PR that changes it.
 |---|---|---|
 | Package with LiteLLM in one place, RECONIX on Ollama by default | 1 | Done; base model in `Modelfile` is a placeholder until the speed check |
 | Qdrant hybrid search, LlamaIndex ingest, `search_knowledge()` | 1 | Done |
-| Agent: understand, find, plan, suggest, wait; progress in Postgres | 1 | Done; not yet wired into the API (`ask_agent` is a stub in the API's `core/wiring.py`) |
+| Agent: understand, find, plan, suggest, wait; progress in Postgres | 1 | Done; wired into the API as `ask_agent` (`core/agent.py`) |
 | Prompts and agent rules as Markdown; tool specs copied from the Kali repo | 1 | Done |
 | Harness: 5 checks, pipeline, masking, audit log | 1 | Done |
 | ReflAct step (up to 5 times, read-only tools) | 2 | To do |
 | The 8 parts of the workflow v5 analysis | 2 | To do (`analysis/` is empty) |
 | Use the active provider; all 6 provider types | 2 | Types and client done; reading the active provider from the API to do |
-| Step and token limits, one retry, clear error when the model is down | 2 | To do |
+| Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
 | Report text and PDF, DOCX, JSON files | 2 | To do (`reports/` is empty) |
 | Accepted findings in Qdrant | 2 | To do (`memory/` is empty) |
 | Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety done; the rest to do |

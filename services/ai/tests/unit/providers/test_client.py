@@ -53,6 +53,16 @@ async def test_json_answer_asks_for_a_json_object(model: FakeModel) -> None:
     assert model.calls[1]["response_format"] == {"type": "json_object"}
 
 
+async def test_every_call_caps_the_answer_length(model: FakeModel) -> None:
+    short = ProviderConfig(ProviderType.RECONIX, "reconix", max_tokens=300)
+
+    await complete(QUESTION, reconix_provider())
+    await complete(QUESTION, short)
+
+    assert model.calls[0]["max_tokens"] == 2000
+    assert model.calls[1]["max_tokens"] == 300
+
+
 async def test_ollama_url_comes_from_the_environment(
     model: FakeModel, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -139,6 +149,20 @@ async def test_error_message_never_shows_the_key(model: FakeModel) -> None:
     assert "sk-live-1234567890abcdefghij" not in raised.value.message
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
+
+
+async def test_error_message_never_shows_the_provider_text(model: FakeModel) -> None:
+    model.answer = litellm.exceptions.APIConnectionError(
+        message="OllamaException: cannot reach http://127.0.0.1:11434/api/chat",
+        llm_provider="ollama_chat",
+        model="reconix",
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, reconix_provider())
+
+    assert raised.value.code == "MODEL_UNAVAILABLE"
+    assert raised.value.message == "The RECONIX model reconix could not answer. Is it running?"
 
 
 async def test_error_message_hides_the_exact_key_of_any_shape(model: FakeModel) -> None:

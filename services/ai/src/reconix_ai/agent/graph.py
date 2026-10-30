@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
@@ -30,6 +31,8 @@ from reconix_ai.harness.checks.result import Decision
 from reconix_ai.providers import ProviderError
 
 SUPPORTED_TASKS = {"PLAN", "SUGGEST"}  # ANALYZE, REPORT and CHAT come with tasks 4 and 6
+# Steps one ask may take. A plan takes 5; the limit stops a loop, never a normal run.
+MAX_STEPS = 25
 
 NO_ACTION_TEXT = "No step in the plan passed the safety checks, so nothing is suggested."
 NO_KNOWLEDGE_TEXT = "The knowledge search was not available, so this plan uses no reference data."
@@ -130,7 +133,11 @@ async def run_graph(
 ) -> None:
     failure = None
     try:
-        await graph.ainvoke(value, config, context=deps)
+        await graph.ainvoke(value, config | {"recursion_limit": MAX_STEPS}, context=deps)
+    except GraphRecursionError:
+        failure = AgentError(
+            "STEP_LIMIT", f"The agent took more than {MAX_STEPS} steps and stopped."
+        )
     except AgentError as error:
         failure = AgentError(error.code, error.message)
     except ProviderError as error:
