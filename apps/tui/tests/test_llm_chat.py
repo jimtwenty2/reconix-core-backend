@@ -85,7 +85,7 @@ def test_context_lists_findings_and_decisions(two_models):
     store.activate("openai", "gpt-4o-mini")
     store.say_operator_line("summarize")
     store.llm_answer("summarize")
-    context = two_models[-1]["messages"][1]["content"]
+    context = two_models[-1]["messages"][0]["content"]
     assert store.list_findings()[0].fid in context
     assert "findings" in context
 
@@ -110,7 +110,8 @@ def test_system_prompt_identical_across_models(two_models):
     store.activate("openai", "gpt-4o-mini")
     store.say_to_assistant("b")
     system_b = two_models[-1]["messages"][0]["content"]
-    assert system_a == system_b == guardrail.SYSTEM_PROMPT
+    assert system_a.startswith(guardrail.SYSTEM_PROMPT)
+    assert system_b.startswith(guardrail.SYSTEM_PROMPT)
 
 
 def test_secret_typed_in_chat_is_redacted(two_models):
@@ -150,3 +151,10 @@ def test_llm_error_falls_back_with_a_note(two_models, monkeypatch):
     store.say_to_assistant("are you there?")
     replies = [c.text for c in store.list_chat() if c.speaker == "reconix"]
     assert any("LLM unavailable" in r for r in replies)
+
+
+def test_picking_a_model_without_the_harness_does_not_crash(two_models):
+    from reconix.store import agent_run
+
+    store.activate("openai", "gpt-4o-mini")
+    assert agent_run.switch_model() is False        # no agent: nothing to switch

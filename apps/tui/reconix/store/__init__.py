@@ -55,10 +55,12 @@ from .run import (
 )
 from .scope import (
     approve_scope, blocked_count, check_request, edit_scope, get_scope, is_scope_approved,
-    list_verdicts,
+    list_verdicts, scope_editable,
 )
+from .scope_ask import ScopeChoices, answer_scope_change, wants_scope_change
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
+from .step_text import approval_text, plan_text, scope_text, template_text
 from .targets import TargetCheck, check_target, looks_like_target, validate_target
 from .templates import get_template, list_templates, select_template, selected_template
 from .thinking import block_seconds, group_stream, stream
@@ -90,7 +92,10 @@ __all__ = [
     "list_templates", "get_template", "select_template", "selected_template",
     "get_scope", "approve_scope", "edit_scope", "is_scope_approved", "reject_scope",
     "describe_scope", "check_request", "run_plan", "is_plan_started",
-    "list_verdicts", "blocked_count",
+    "list_verdicts", "blocked_count", "scope_editable",
+    # the chat inside a step ("Chat about this"): its content as text, scope change asks
+    "scope_text", "plan_text", "approval_text", "template_text",
+    "wants_scope_change", "answer_scope_change", "ScopeChoices",
     "provide_auth", "current_auth_challenge", "has_test_account",
     "is_authenticated", "is_code_verified", "vault_scope",
     "login_kind", "login_tools", "login_done", "code_needed", "tool_login", "tools_login",

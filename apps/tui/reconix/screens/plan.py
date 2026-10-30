@@ -309,7 +309,7 @@ class PlanScreen(ReconixScreen):
         elif choice == "new":
             self.app.new_assessment()
         elif choice == "chat":
-            self.chat_about()
+            self.chat_in_step()
 
     @on(OptionList.OptionSelected, "#plan-list")
     def _step_selected(self, event: OptionList.OptionSelected) -> None:
@@ -324,3 +324,6 @@ class PlanScreen(ReconixScreen):
 
     def chat_topic(self) -> str:
         return "the test plan"
+
+    def step_content(self) -> str:
+        return store.plan_text()

@@ -64,6 +64,13 @@ def _clean_list(values) -> list:
     return out
 
 
+def scope_editable() -> bool:
+    """The scope waits for approval, so the operator may still edit it."""
+    scope = get_scope()
+    return scope is not None and scope.status != "APPROVED" \
+        and lists.current().run.waiting_gate == GATE_SCOPE
+
+
 def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=None,
                tools=None, allowed_ports=None) -> ScopeManifest:
     """Apply the operator's scope edits before approval. Only the fields given change.
@@ -71,10 +78,9 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
     Validates each field for the scope's kind and raises StoreValidationError on bad input.
     The policy engine then enforces exactly what was approved.
     """
-    scope = get_scope()
-    if scope is None or scope.status == "APPROVED" \
-            or lists.current().run.waiting_gate != GATE_SCOPE:
+    if not scope_editable():
         raise StoreValidationError("The scope can only be edited while it waits for approval.")
+    scope = get_scope()
 
     if allowed_methods is not None:
         methods = _clean_list(allowed_methods)
