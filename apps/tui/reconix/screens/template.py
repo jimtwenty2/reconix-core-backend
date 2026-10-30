@@ -16,13 +16,14 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from textual.widget import Widget
 from textual.widgets import Input, Label, Static
 
-from .base import ReconixScreen
+from .base import Decision, ReconixScreen, scope_card
 from .. import store, theme
 from ..models import GATE_SCOPE, GATE_TEMPLATE, Choice
 from ..widgets import (
-    ActivityStatus, ChoiceMenu, Question, ScopeManifestView, UserMessage, menu_hint,
+    ActivityStatus, Question, ScopeManifestView, ScopePanel, UserMessage, menu_hint,
 )
 
 DRAFTING = "reconix is drafting the scope manifest…"
@@ -45,8 +46,9 @@ def _steps() -> List[str]:
 
 
 def _request_message() -> List[UserMessage]:
+    """The request that started the assessment (not a later chat line)."""
     requests = store.list_requests()
-    return [UserMessage(requests[-1].text)] if requests else []
+    return [UserMessage(requests[0].text)] if requests else []
 
 
 class TemplateScreen(ReconixScreen):
@@ -116,12 +118,8 @@ class TemplateScreen(ReconixScreen):
         yield ActivityStatus(_steps(), DRAFTING, expanded=self.app.activity_expanded,
                              id="template-activity", classes="activity")
 
-    def _manifest_panel(self, approved: bool) -> ComposeResult:
-        with Vertical(classes="panel success" if approved else "panel accent") as panel:
-            panel.border_title = "⛉ SCOPE"
-            panel.border_subtitle = ("approved · locked" if approved
-                                     else "draft · needs your approval")
-            yield ScopeManifestView(store.get_scope(), classes="panel-body", id="manifest")
+    def _manifest_panel(self) -> ComposeResult:
+        yield ScopePanel(store.get_scope(), body_id="manifest")
         yield Static(Text.assemble(("ℹ  ", theme.LOW), (
             "The agent can only act inside this manifest. Anything else is blocked before "
             "a tool runs.", theme.MUTED)), classes="panel-note")
@@ -132,21 +130,28 @@ class TemplateScreen(ReconixScreen):
         yield from _request_message()
         yield _ai_label(f"{template.name} template {picked} · drafted a scope manifest for "
                         "your approval")
-        yield from self._manifest_panel(approved=False)
-        yield Question(
-            "Scope", "Approve this scope manifest?",
-            [
-                Choice("approve", "Approve scope",
-                       "Lock the manifest; next you review the test plan.", recommended=True),
-                *self._spec_choices(),
-                Choice("edit", "Edit manifest",
-                       "Change methods, excluded paths, ports, tools or the time limit."),
-                Choice("reject", "Reject",
-                       "Discard this draft: nothing is tested and the assessment stops.",
-                       "danger"),
-            ],
-            hint=menu_hint("go back"), menu_id="scope-menu",
-        )
+        yield from self._manifest_panel()
+        decision = self._review_decision()
+        yield Question(decision.chip, decision.question, decision.choices,
+                       hint=menu_hint("go back"), menu_id="scope-menu")
+
+    def _review_decision(self) -> Decision:
+        return Decision("Scope", "Approve this scope manifest?", [
+            Choice("approve", "Approve scope",
+                   "Lock the manifest; next you review the test plan.", recommended=True),
+            *self._spec_choices(),
+            Choice("edit", "Edit manifest",
+                   "Change methods, excluded paths, ports, tools or the time limit."),
+            Choice("reject", "Reject",
+                   "Discard this draft: nothing is tested and the assessment stops.", "danger"),
+        ])
+
+    @staticmethod
+    def _approved_decision() -> Decision:
+        return Decision("Scope", "The scope is locked. Review the test plan?", [
+            Choice("plan", "Review the test plan",
+                   "Every phase, the login it may need, and the risky steps.", recommended=True),
+        ])
 
     @staticmethod
     def _spec_choices() -> List[Choice]:
@@ -164,11 +169,9 @@ class TemplateScreen(ReconixScreen):
     def _compose_approved(self) -> ComposeResult:
         yield from _request_message()
         yield _ai_label(f"scope approved · assessment {store.assessment_label()} created")
-        yield from self._manifest_panel(approved=True)
-        yield Question("Scope", "The scope is locked. Review the test plan?",
-                       [Choice("plan", "Review the test plan",
-                               "Every phase, the login it may need, and the risky steps.",
-                               recommended=True)],
+        yield from self._manifest_panel()
+        decision = self._approved_decision()
+        yield Question(decision.chip, decision.question, decision.choices,
                        hint=menu_hint("go back"), typing=False, menu_id="scope-menu")
 
     def _compose_stopped(self) -> ComposeResult:
@@ -200,9 +203,18 @@ class TemplateScreen(ReconixScreen):
             activity.first(ActivityStatus).show(_steps())
 
     # --- choices -----------------------------------------------------------------------------
-    def on_choice_menu_chosen(self, event: ChoiceMenu.Chosen) -> None:
-        event.stop()
-        choice = event.choice_id
+    def decision(self) -> Optional[Decision]:
+        state = self.state()
+        if state == "review":
+            return self._review_decision()
+        if state == "approved":
+            return self._approved_decision()
+        return None
+
+    def chat_card(self) -> Optional[Widget]:
+        return scope_card() if self.state() in ("review", "approved") else None
+
+    def decide(self, choice: str) -> None:
         if choice == "chat":
             self.chat_in_step()
             return
@@ -262,6 +274,9 @@ class TemplateScreen(ReconixScreen):
         return "the scope manifest" if self.state() in ("review", "approved") else "the template"
 
     def step_content(self) -> str:
-        if self.state() in ("review", "approved"):
-            return store.scope_text()
+        state = self.state()
+        if state == "review":
+            return "The scope manifest, as drafted. Nothing is approved yet."   # + the card
+        if state == "approved":
+            return "The approved scope manifest. It is locked."
         return store.template_text()

@@ -37,11 +37,13 @@ from .openapi import (
 )
 from .persist import autosave, close_session, web_dashboard_url
 from .plan import gated_count, plan_overview
+from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
+from .plan_order import movable as movable_checks
 from .providers import (
     activate, active_llm_settings, active_model, active_remote_label, get_provider,
     list_providers, set_provider, test_provider, unset_provider,
 )
-from .progress import step_states
+from .progress import StepStatus, step_states, step_status
 from .report import (
     assessment_summary, generate_report, list_report_formats, list_report_sections,
     report_data,
@@ -60,6 +62,7 @@ from .scope import (
 from .scope_ask import ScopeChoices, answer_scope_change, wants_scope_change
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
+from .step_intent import asks_about_decision, decision_reply, wants_decision, wants_view
 from .step_text import approval_text, plan_text, scope_text, template_text
 from .targets import TargetCheck, check_target, looks_like_target, validate_target
 from .templates import get_template, list_templates, select_template, selected_template
@@ -96,6 +99,9 @@ __all__ = [
     # the chat inside a step ("Chat about this"): its content as text, scope change asks
     "scope_text", "plan_text", "approval_text", "template_text",
     "wants_scope_change", "answer_scope_change", "ScopeChoices",
+    "wants_decision", "asks_about_decision", "wants_view", "decision_reply",
+    "wants_plan_reorder", "answer_plan_reorder", "reorder_gated", "movable_checks",
+    "step_status", "StepStatus",
     "provide_auth", "current_auth_challenge", "has_test_account",
     "is_authenticated", "is_code_verified", "vault_scope",
     "login_kind", "login_tools", "login_done", "code_needed", "tool_login", "tools_login",

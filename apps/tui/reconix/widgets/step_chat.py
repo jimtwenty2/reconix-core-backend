@@ -31,7 +31,11 @@ def reply_line(text: str, tone: str = "default") -> Text:
 
 
 class StepChat(Vertical):
-    """Your lines and Reconix's replies. The input is the `ChatBar` pinned under them."""
+    """Your lines and Reconix's replies. The input is the `ChatBar` pinned under them.
+
+    It may also hold the step's menu or the scope card; Esc there closes the chat too."""
+
+    BINDINGS = [Binding("escape", "close", "back to the step")]
 
     class Asked(Message):
         def __init__(self, chat: "StepChat", text: str) -> None:
@@ -76,6 +80,9 @@ class StepChat(Vertical):
         """Mount a line (or the tick list) after the others, then keep the end in view."""
         self.mount(widget)
         self.scroll_to_end()
+
+    def action_close(self) -> None:
+        self.post_message(StepChat.Closed(self))
 
     def scroll_to_end(self) -> None:
         parent = self.parent

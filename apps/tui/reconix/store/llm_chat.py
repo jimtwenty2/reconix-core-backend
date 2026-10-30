@@ -73,6 +73,7 @@ def _history() -> List[Tuple[str, str]]:
 def _context() -> str:
     """A short description of the assessment state, built from store getters."""
     from .findings import list_findings
+    from .progress import step_status
     from .run import display_phase, get_run, is_finished, waiting_gate
     from .scope import get_scope
     from .templates import selected_template
@@ -89,6 +90,7 @@ def _context() -> str:
         f"- phase: {display_phase()}",
         f"- waiting gate: {waiting_gate() or 'none'}",
     ]
+    lines += step_lines(step_status())
     if is_finished():
         state = "stopped" if get_run().stopped else "completed"
         lines.append(f"- run state: finished ({state}); nothing more will run. The operator "
@@ -106,6 +108,16 @@ def _context() -> str:
         for d in decisions:
             lines.append(f"    {d.request_id}: {d.decision}")
     return "\n".join(lines)
+
+
+def step_lines(status) -> List[str]:
+    """Where the flow is, in words: the model must not run ahead of it."""
+    return [
+        f"- current step: {status.step} ({status.state})",
+        f"- the operator moves on only with the app's menu: {status.choices}. The app shows "
+        "the scope card and the menu itself; don't repeat the scope as a list, and never "
+        "say a step is approved, run or done unless this context says so.",
+    ]
 
 
 def _context_with_knowledge(text: str) -> Tuple[str, List[str]]:

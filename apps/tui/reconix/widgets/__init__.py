@@ -6,7 +6,9 @@ from .choice_menu import ChoiceMenu, SuggestionMenu, menu_hint
 from .chrome import FlowProgress, SessionBar
 from .findings import SeverityStrip
 from .history import PromptHistory
-from .manifest import ScopeManifestView
+from .manifest import ScopeManifestView, ScopePanel
+from .plan_order import PlanOrder
+from .plan_rows import PlanPanel
 from .prompt import PromptBox, PromptInput
 from .question import Question
 from .run_log import RunLog
@@ -19,6 +21,7 @@ from .tick_list import TickList
 __all__ = [
     "ActivityStatus", "SessionBar", "FlowProgress", "ChoiceMenu", "SuggestionMenu", "menu_hint",
     "PromptHistory", "PromptBox", "PromptInput", "UserMessage", "Question",
-    "SeverityStrip", "ScopeManifestView", "RunLog", "SecretInput", "Spinner",
+    "SeverityStrip", "ScopeManifestView", "ScopePanel", "PlanPanel", "PlanOrder", "RunLog",
+    "SecretInput", "Spinner",
     "spinner_line", "duration_text", "ThinkingBlock", "StepChat", "ChatBar", "TickList",
 ]

@@ -17,55 +17,17 @@ from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.widget import Widget
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-from .base import ReconixScreen
+from .base import Decision, ReconixScreen, plan_card
 from .. import store, theme
 from ..models import GATE_PLAN, Choice, PlanRow
-from ..widgets import ChoiceMenu, Question, Spinner, UserMessage, menu_hint
+from ..widgets import Question, Spinner, UserMessage, menu_hint
+from ..widgets.plan_rows import MISSING, plan_line
 
-GATE_NOTE = {"auto": "runs automatically", "login": "asks for the target login",
-             "approve": "needs your approval"}
-STATUS_NOTE = {"done": ("✓ done", theme.GREEN), "active": ("◌ now", theme.CYAN),
-               "rejected": ("✕ rejected", theme.CRITICAL), "pending": ("· pending", theme.DIM)}
 EDIT_UNAVAILABLE = "Edit steps is unavailable: no gated step can be changed right now."
-MISSING = "—"
-NUM_WIDTH = 4             # " 3a " before the label
-LABEL_WIDTH = 30
-
-
-def _fit(text: str, width: int) -> str:
-    """`text` cut to `width` characters with "…" (unchanged when it fits or width <= 0)."""
-    if width <= 0 or len(text) <= width:
-        return text
-    return text[:max(width - 1, 0)] + "…"
-
-
-def plan_line(row: PlanRow, width: int = 0, full: bool = False) -> Text:
-    """Two lines per row: number, label and what it does; then risk, gate and status.
-
-    With `width` (the list's inner width) a long label or command is cut with "…" so the
-    row never wraps; `full` (the highlighted row) shows it whole. A missing value shows as
-    "—" and an unknown status as its own text: nothing is made up.
-    """
-    label = row.label or MISSING
-    what = f"$ {row.command}" if row.command else (row.detail or "")
-    if width and not full:
-        label = _fit(label, LABEL_WIDTH - 1)
-        what = _fit(what, width - NUM_WIDTH - LABEL_WIDTH)
-    line = Text()
-    line.append(f" {row.num or MISSING:<3}", style=f"bold {theme.MUTED}")
-    line.append(f"{label:<{LABEL_WIDTH}}", style=f"bold {theme.TEXT}")
-    line.append(what, style=theme.TEAL if row.command else theme.MUTED)
-    line.append("\n     ")
-    risk = row.risk or MISSING
-    line.append(f"● {risk}", style=f"bold {theme.RISK.get(risk, theme.MUTED)}")
-    gate_color = theme.MEDIUM if row.gate not in ("auto", "") else theme.DIM
-    line.append(f"   {GATE_NOTE.get(row.gate, row.gate or MISSING)}", style=gate_color)
-    note, color = STATUS_NOTE.get(row.status, (f"· {row.status or MISSING}", theme.DIM))
-    line.append(f"   {note}", style=color)
-    return line
 
 
 def status_counts(rows: List[PlanRow]) -> str:
@@ -133,7 +95,7 @@ class PlanScreen(ReconixScreen):
         rows = store.plan_overview()
         requests = store.list_requests()
         if requests:
-            yield UserMessage(requests[-1].text)
+            yield UserMessage(requests[0].text)          # what started it, not a chat line
         template = store.selected_template()
         yield Static(Text.assemble(
             ("◆ reconix ", theme.CYAN),
@@ -174,17 +136,9 @@ class PlanScreen(ReconixScreen):
         yield Spinner("reconix is preparing the test plan…", classes="spinner")
 
     def _question_ready(self) -> ComposeResult:
-        steps = len(store.plan_overview())
-        gated = store.gated_count()
+        decision = self._ready_decision()
         yield Question(
-            "Plan", "Run this plan?",
-            [
-                Choice("run", "Run plan",
-                       f"{steps} steps · {gated} need{'s' if gated == 1 else ''} your approval "
-                       "while it runs.", recommended=True),
-                self._edit_choice(),
-                Choice("cancel", "Cancel", "Back to the scope. Nothing runs.", "danger"),
-            ],
+            decision.chip, decision.question, decision.choices,
             hint=menu_hint("go back", "Tab to browse steps"), menu_id="plan-menu",
         )
         if not self._editable():
@@ -194,6 +148,17 @@ class PlanScreen(ReconixScreen):
         yield Static(Text.assemble(("↻ ", theme.CYAN), (
             "Risky steps pause the run and ask you first; the policy engine checks every "
             "request against the approved scope.", theme.MUTED)), classes="panel-note")
+
+    def _ready_decision(self) -> Decision:
+        steps = len(store.plan_overview())
+        gated = store.gated_count()
+        return Decision("Plan", "Run this plan?", [
+            Choice("run", "Run plan",
+                   f"{steps} steps · {gated} need{'s' if gated == 1 else ''} your approval "
+                   "while it runs.", recommended=True),
+            self._edit_choice(),
+            Choice("cancel", "Cancel", "Back to the scope. Nothing runs.", "danger"),
+        ])
 
     @staticmethod
     def _editable() -> bool:
@@ -295,9 +260,12 @@ class PlanScreen(ReconixScreen):
         (plan_list if menu.has_focus else menu).focus()
 
     # --- choices -----------------------------------------------------------------------------
-    def on_choice_menu_chosen(self, event: ChoiceMenu.Chosen) -> None:
-        event.stop()
-        choice = event.choice_id
+    def decision(self) -> Optional[Decision]:
+        if self.state() == "ready":
+            return self._ready_decision()
+        return None
+
+    def decide(self, choice: str) -> None:
         if choice == "run":
             self.app.run_plan()
         elif choice == "edit":
@@ -326,4 +294,12 @@ class PlanScreen(ReconixScreen):
         return "the test plan"
 
     def step_content(self) -> str:
-        return store.plan_text()
+        if self.state() == "ready":
+            return "The test plan, step by step. Nothing has run yet."    # + the card
+        return "The test plan and where each step stands."
+
+    def chat_card(self) -> Optional[Widget]:
+        return plan_card() if self.state() != "none" else None
+
+    def allows_reorder(self) -> bool:
+        return self.state() == "ready"

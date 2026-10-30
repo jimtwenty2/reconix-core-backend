@@ -51,18 +51,21 @@ class TickList(Vertical):
         self,
         ports: Sequence[Tuple[int, bool]],
         tools: Sequence[Tuple[str, bool]],
+        suggested: Sequence[int] = (),
         *,
         id: str = "tick-list",
     ) -> None:
         super().__init__(id=id, classes="tick-list")
         self._ports = list(ports)
         self._tools = list(tools)
+        self._suggested = set(suggested)
 
     def compose(self) -> ComposeResult:
         what = "ports and tools" if self._ports else "tools"
         yield Static(Text(f"Allowed {what}", style=f"bold {theme.TEXT}"))
         rows: List[Selection] = [
-            Selection(Text(f"port  {port}"), f"port:{port}", ticked) for port, ticked in self._ports
+            Selection(self._port_label(port), f"port:{port}", ticked)
+            for port, ticked in self._ports
         ] + [
             Selection(Text(f"tool  {tool}"), f"tool:{tool}", ticked) for tool, ticked in self._tools
         ]
@@ -70,6 +73,13 @@ class TickList(Vertical):
         yield Static(
             Text("Space tick · Enter save · Esc cancel", style=theme.DIM), classes="menu-hint"
         )
+
+    def _port_label(self, port: int) -> Text:
+        label = Text(f"port  {port:<6}")
+        if port in self._suggested:
+            label.append("suggested by the model · not in the scope until you tick it",
+                         style=theme.DIM)
+        return label
 
     def on_mount(self) -> None:
         self.query_one(_Ticks).focus()
