@@ -2,7 +2,7 @@
 
 Opt-in. Besides RECONIX_TEST_DATABASE_URL, set:
 
-    RECONIX_TEST_MCP_URL=http://127.0.0.1:8096/mcp
+    RECONIX_TEST_MCP_URL=http://127.0.0.1:8765/mcp
     RECONIX_TEST_MCP_ACCESS_KEY=<the server's KALI_MCP_AUTH_TOKEN>
 
 The container needs NET_RAW and NET_ADMIN, or nmap cannot start.

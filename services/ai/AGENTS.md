@@ -72,6 +72,11 @@ Ollama) and `tests/`.
   - loop: the same command on the same target at most 3 times in 10 minutes, at most 20 actions a
     minute and 200 runs per assessment.
 - `masking.py` replaces secrets with a label such as `[MASKED:password]` and counts them.
+- `limits.py`: a loop-limit change goes through a `configuration` approval.
+  `plan_limit_change()` checks the request against fixed bounds (same command 1-10, window
+  1-60 minutes, actions a minute 1-60, runs per assessment 1-1000) and gives the JSON for
+  `config_change`; `apply_limit_change()` re-checks it after approval and refuses if the
+  limits changed since the request (`LIMITS_CHANGED`). The API passes the result to `check()`.
 - `audit.py` writes exactly one JSON line per decision, with `assessment_id`, `session_id`,
   `actor` and the event types the web timeline needs. There are no roles, so a line has no `role`.
 - Follow the `add-guardrail-check` skill for the current rules and the tests each check needs.
@@ -89,11 +94,11 @@ Keep this table true; update the row in the PR that changes it.
 | Harness: 5 checks, pipeline, masking, audit log | 1 | Done |
 | ReflAct step (up to 5 times, read-only tools) | 2 | Done: `reflect` runs between find and plan when there are tool results; one masked line each time, its only tool is the knowledge search; stops at 5, when it asks for no lookup, or at half the token budget. The latest line opens the answer text. Not yet tried on the live model |
 | The 8 parts of the workflow v5 analysis | 2 | Done: ANALYZE (find → analyze, no wait); `analysis/answers.py` enforces the 8 rules, and `check()` drops a blocked next step. Tested on 10 saved tool outputs with a scripted model; not yet tried on the live model |
-| Use the active provider; all 6 provider types | 2 | Client done: all 6 types call through LiteLLM (cloud types need a key; OpenAI-compatible needs its address, `/v1` allowed). The API still sends only RECONIX until the `/llm-providers` endpoints pick the active row |
+| Use the active provider; all 6 provider types | 2 | Client done: all 6 types call through LiteLLM (cloud types need a key; OpenAI-compatible needs its address, `/v1` allowed). Done: the API builds each run's `ProviderConfig` from the provider row the run was started with (key decrypted) and the agent calls that model; the run saves the provider and model. Not yet tried against a live cloud provider |
 | Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
 | Report text and PDF, DOCX, JSON files | 2 | Done: REPORT writes the executive summary and methodology; `reports/files.py` makes the 3 files from the locked copy. PDF needs Pango (WeasyPrint) |
 | Accepted findings in Qdrant | 2 | Done: a finding reviewed as OPEN or FIXED is remembered (masked), FALSE_POSITIVE forgets it; the API calls it from `PATCH /findings/{id}`. Own collection, so a knowledge re-ingest keeps it; every search is limited to one assessment. Nothing reads it yet: the CHAT task comes later |
-| Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety done; the rest to do |
+| Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety, timeline reader (`audit.read_timeline`) and limit settings (`limits.py`) done; the API still has to save the approved limits and pass them to `check()`. Disclosure to do |
 | 20 eval questions, top-3 score | 3 | To do (`tests/evals/` is empty) |
 | Hypothesis and hard-case tests for scope and command checks | 3 | To do |
 | Time one full step on the demo laptop | 3 | To do |

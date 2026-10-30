@@ -2341,6 +2341,41 @@
         ],
         "title": "ValidationStatus",
         "type": "string"
+      },
+      "WebSignIn": {
+        "properties": {
+          "code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "WebSignIn",
+        "type": "object"
+      },
+      "WebSignInCode": {
+        "description": "A one-time code for the web sign-in link that `/web` prints.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "expires_at"
+        ],
+        "title": "WebSignInCode",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -4080,6 +4115,75 @@
           }
         },
         "summary": "Open Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/web-sign-in": {
+      "post": {
+        "description": "Trades a sign-in code for a new web session. Open, like POST /sessions: the code is\nthe check. 401 INVALID_SIGN_IN_CODE if the code is unknown, used or expired.",
+        "operationId": "web_sign_in_api_v1_sessions_web_sign_in_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebSignIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Web Sign In",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/web-sign-in-codes": {
+      "post": {
+        "description": "For `/web`: a one-time code to put in the sign-in link. It works for 2 minutes.",
+        "operationId": "issue_web_sign_in_code_api_v1_sessions_web_sign_in_codes_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSignInCode"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Issue Web Sign In Code",
         "tags": [
           "sessions"
         ]

@@ -30,6 +30,7 @@ class FakeMcp:
         self.jobs: list[ToolJob] = []
         self.down = False  # set True to simulate the container being unreachable
         self.secret: str | None = None
+        self.outputs: dict[ToolName, str] = {}  # set by a test: the raw output per tool
 
     def expect_token(self, token: str) -> None:
         """Tests call this where the real backend would sign a token."""
@@ -43,7 +44,9 @@ class FakeMcp:
         self.used_tokens.add(job.job_token)
         self.jobs.append(job)
 
-        if job.tool == ToolName.NMAP:
+        if job.tool in self.outputs:
+            output = self.outputs[job.tool]
+        elif job.tool == ToolName.NMAP:
             output = NMAP_XML.format(target=job.target)
         else:
             output = "[]"

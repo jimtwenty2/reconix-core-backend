@@ -27,7 +27,7 @@ def make_ask(model: ScriptedModel):
         search=no_knowledge,
         now=lambda: datetime(2026, 10, 29, 10, tzinfo=UTC),
     )
-    return make_ask_agent(postgres_graph(TEST_DATABASE_URL), deps)
+    return make_ask_agent(postgres_graph(TEST_DATABASE_URL), deps, lambda _run_id: PROVIDER)
 
 
 async def test_a_waiting_run_resumes_after_a_restart(engine):
