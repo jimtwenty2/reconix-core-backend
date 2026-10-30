@@ -13,10 +13,6 @@ SPEC = Template("network", "Network", "Hosts, ports, and exposed services",
                 target_hint="an IPv4 address or range, or a hostname", example="10.0.0.0/24")
 
 ALLOWED_PORTS = [22, 80, 443, 8080, 8443]
-TOOLS = ["nmap", "testssl.sh"]
-# the scope tools each phase uses (the plan shows those still in the approved scope)
-PHASE_TOOLS = {"discovery": ("nmap",), "scanning": ("nmap", "testssl.sh"),
-               "validation": ("nmap",)}
 
 # Hosts outside any range the run is given (RFC 5737), for the probe the policy blocks.
 OUTSIDE_HOSTS = ("198.51.100.9", "203.0.113.9")
@@ -41,7 +37,7 @@ def build_scope(parsed: ParsedTarget) -> ScopeManifest:
         allowed_methods=["TCP connect"],
         excluded_paths=[],       # network scope uses allowed_ports + the target range
         time_limit_minutes=30,
-        tools=list(TOOLS),
+        tools=["nmap", "testssl.sh"],
         allowed_ports=list(ALLOWED_PORTS),
     )
 
@@ -186,5 +182,4 @@ def build_run(assessment) -> RunBundle:
     )
     return RunBundle(scope=scope, script=build_rest(profile),
                      approvals=[profile.medium, profile.high], findings=findings,
-                     plan=make_plan(profile.plan, PHASE_TOOLS),
-                     methodology=list(profile.methodology))
+                     plan=make_plan(profile.plan), methodology=list(profile.methodology))

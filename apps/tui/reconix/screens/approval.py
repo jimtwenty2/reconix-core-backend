@@ -157,7 +157,7 @@ class ApprovalScreen(ReconixScreen):
         event.stop()
         handlers = {"approve": self.action_approve, "reject": self.action_reject,
                     "details": self.action_details, "edit": self.action_edit,
-                    "chat": self.chat_in_step,
+                    "chat": self.chat_about,
                     "execution": lambda: self.app.goto("execution"),
                     "plan": lambda: self.app.goto("plan")}
         handlers[event.choice_id]()
@@ -166,9 +166,6 @@ class ApprovalScreen(ReconixScreen):
         if self._request is None:
             return "the approvals"
         return f"{self._request.action} on {store.get_assessment().target}"
-
-    def step_content(self) -> str:
-        return store.approval_text(self._request.request_id) if self._request else ""
 
     # --- approve: one step, or a double check for HIGH risk ----------------------------------
     def action_approve(self) -> None:

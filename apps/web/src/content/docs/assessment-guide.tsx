@@ -488,7 +488,7 @@ export const assessmentGuide: GroupContent = {
             </li>
             <li>
               The Execution screen shows the agent&apos;s own plan as task rows (updated as it revises them), its tool
-              calls in the live output and its reasoning as steps folded into the thinking blocks. Findings it records are
+              calls in the live output and its reasoning as muted &quot;thinking…&quot; lines. Findings it records are
               mapped into the store as <Mono>AI-NNN</Mono> findings, their evidence redacted, so <Mono>/findings</Mono>,
               the report, <Mono>/summary</Mono> and the dashboard see them.
             </li>

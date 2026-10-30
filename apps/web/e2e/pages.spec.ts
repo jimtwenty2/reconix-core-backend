@@ -390,31 +390,3 @@ test("the switcher searches every saved run", async ({ page }) => {
   const list = page.locator('[role="dialog"] li a');
   await expect(list).toHaveCount(sample().length + 1); // "All assessments", then every run
 });
-
-test("the Run log folds the work between messages and opens one block at a time", async ({ page }) => {
-  const a = sample().find((s) => s.status === "Completed")!;
-  await signIn(page);
-  await page.goto(`/?uid=${a.uid}&view=log`);
-  await hydrated(page);
-  const pane = page.locator('[data-view-pane="log"]');
-  await expect(pane.getByRole("heading", { name: "Run log" })).toBeVisible();
-  await expect(page.locator(view("Run log"))).toHaveAttribute("aria-current", "page");
-  const titles = pane.locator(".dash-think-title");
-  expect(await titles.count()).toBeGreaterThan(0);
-  await expect(pane.locator(".dash-think-steps:visible")).toHaveCount(0); // all folded
-  const first = titles.first();
-  await expect(first).toHaveAttribute("aria-expanded", "false");
-  await first.click();
-  await expect(first).toHaveAttribute("aria-expanded", "true");
-  await expect(pane.locator(".dash-think-steps:visible")).toHaveCount(1);
-  await expect(pane.locator(".dash-think-steps:visible .dash-think-step").first()).toBeVisible();
-  // messages carry a glyph, never a name, in front
-  await expect(pane.locator(".dash-runlog-msg").first()).not.toHaveText(/^(you|reconix)\b/);
-});
-
-test("with every run shown, the Run log asks for one run", async ({ page }) => {
-  await signIn(page);
-  await page.goto("/?view=log");
-  await hydrated(page);
-  await expect(page.locator('[data-view-pane="log"]')).toContainText("Open one run");
-});

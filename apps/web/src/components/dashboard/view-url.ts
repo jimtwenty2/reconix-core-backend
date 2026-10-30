@@ -8,7 +8,7 @@ import { useCallback } from "react";
 // (no "audit", "scope" or "terminal": the Audit log, Scope and Terminal views were removed; old
 // ?view=audit, ?view=scope and ?view=terminal links open the Overview). "knowledge" is the Security knowledge page, opened from
 // the AI Assistant's header (no sidebar item).
-export const VIEWS = ["overview", "assessments", "findings", "log", "reports", "assistant", "knowledge"] as const;
+export const VIEWS = ["overview", "assessments", "findings", "reports", "assistant", "knowledge"] as const;
 export type View = (typeof VIEWS)[number];
 
 /** The Assessments view's own address parameters (its filters, its page). */

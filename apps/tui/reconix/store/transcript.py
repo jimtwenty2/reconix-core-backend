@@ -8,7 +8,7 @@ from .errors import StoreValidationError
 
 SOURCES = ("SYS", "AI", "USER", "TOOL", "POLICY")
 TONES = ("default", "ok", "warn", "block", "muted")
-CHAT_KINDS = ("text", "banner", "card", "check", "thought")
+CHAT_KINDS = ("text", "banner", "card", "check")
 
 
 def list_chat() -> List[ChatEntry]:

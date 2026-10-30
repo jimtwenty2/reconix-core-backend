@@ -50,7 +50,7 @@ def test_relevant_line_adds_the_block_and_the_knowledge_note(chat_model, tmp_pat
     run_to("scope")
     store.say_to_assistant("what sql injection severity was in the search endpoint?")
 
-    context = chat_model[-1][0]["content"]              # the system message holds the context
+    context = chat_model[-1][1]["content"]              # messages[1] is the scrubbed context
     assert "Internal knowledge (from /add-on files" in context
     assert "[runbook.md #0]" in context
     assert any(n.startswith("Knowledge: ") and "runbook.md" in n for n in _reconix_notes())
@@ -61,7 +61,7 @@ def test_irrelevant_line_has_no_block_and_no_note(chat_model, tmp_path):
     run_to("scope")
     store.say_to_assistant("hello, how are you today?")
 
-    context = chat_model[-1][0]["content"]
+    context = chat_model[-1][1]["content"]
     assert "Internal knowledge" not in context
     assert not any(n.startswith("Knowledge:") for n in _reconix_notes())
 
@@ -76,7 +76,7 @@ def test_the_block_is_fenced_with_a_fresh_tag_one_passage_per_line(chat_model, t
 
     tags = []
     for messages in chat_model[-2:]:
-        context = messages[0]["content"]
+        context = messages[1]["content"]
         found = re.findall(r"<<(knowledge_[0-9a-f]{16})>>\n(.*?)\n<</\1>>", context, re.S)
         assert len(found) == 1
         tag, body = found[0]
@@ -116,7 +116,7 @@ async def test_after_the_run_a_typed_question_shows_the_knowledge_line(
         await wait_until(pilot, lambda: any(n.startswith("Knowledge: ")
                                             for n in _reconix_notes()), what="Knowledge line")
         assert "Knowledge: runbook.md" in _reconix_notes()
-        assert "[runbook.md #0]" in chat_model[-1][0]["content"]
+        assert "[runbook.md #0]" in chat_model[-1][1]["content"]
 
 
 def test_no_knowledge_without_a_model(tmp_path):

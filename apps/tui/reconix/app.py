@@ -22,7 +22,7 @@ from .shell import (
     ActionsMixin, AgentMixin, DialogsMixin, KnowledgeMixin, LlmMixin, NavigationMixin,
     RunHostMixin, WebDashboardMixin,
 )
-from .widgets import ActivityStatus, RunLog
+from .widgets import ActivityStatus
 
 
 class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, DialogsMixin,
@@ -90,8 +90,6 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
         self.activity_expanded = not self.activity_expanded
         for status in self.screen.query(ActivityStatus):
             status.set_expanded(self.activity_expanded)
-        for log in self.screen.query(RunLog):          # the live output's thinking blocks
-            log.set_expanded(self.activity_expanded)
 
     def action_command_bar(self) -> None:
         self.open_dialog(CommandBarScreen(), self._on_command_bar)

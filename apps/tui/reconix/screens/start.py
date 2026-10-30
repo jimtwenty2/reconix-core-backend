@@ -195,11 +195,7 @@ class StartScreen(ReconixScreen):
         if working:
             status.show([e.text for e in replies])
         else:
-            conversation = self.query_one("#start-conversation", VerticalScroll)
-            at_end = conversation.is_vertical_scroll_end
             reply.update(_answer(replies))
-            if at_end:                      # a streamed reply grows: keep its end in view
-                conversation.call_after_refresh(conversation.scroll_end, animate=False)
 
     # --- keys and the prompt -----------------------------------------------------------------
     def action_begin(self) -> None:

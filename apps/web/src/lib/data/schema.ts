@@ -67,7 +67,7 @@ const ApiSpecSchema = z.object({
   servers: z.array(text),
 });
 
-export const TimelineEntrySchema = z.object({
+const TimelineEntrySchema = z.object({
   seq: z.number(),
   at: isoTime.nullable(),
   type: z.enum(["chat", "activity"]),
