@@ -12,6 +12,7 @@ from reconix_api.api import (
     assessments,
     evidence,
     findings,
+    llm_providers,
     messages,
     plans,
     reports,
@@ -67,6 +68,7 @@ def create_app(
         approvals,
         findings,
         evidence,
+        llm_providers,
     ]
     for module in routers:
         app.include_router(module.router, prefix=API_PREFIX)
