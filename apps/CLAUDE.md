@@ -87,8 +87,6 @@ Rules that keep it safe:
 - The model never supplies numbers (cards come from the saved data); questions are masked by
   `src/lib/assistant/redact.ts`, a port of the TUI's `store/redact.py`: change both, the
   vectors in `web/tests/redact-vectors.json` check both.
-- `web/src/lib/data/thinking.ts` (the Run log's thinking blocks) is a port of the TUI's
-  `store/thinking.py`: change both, the vectors in `web/tests/thinking-vectors.json` check both.
 - `web/src/lib/data/schema.ts` mirrors `tui/reconix/store/snapshot.py`: change them together,
   then rerun `make_sample_data.py`.
 - Colors only from `src/styles/tokens.css`, which is generated: never edit it.

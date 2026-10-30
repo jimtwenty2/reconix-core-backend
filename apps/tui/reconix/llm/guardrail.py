@@ -59,13 +59,13 @@ def knowledge_block(passages: Sequence[Tuple[str, int, str]]) -> str:
 
 def build_messages(context: str, history: Sequence[Tuple[str, str]],
                    user_text: str) -> List[dict]:
-    """Return the LiteLLM message list: system (rules + context), trimmed history, the new line.
+    """Return the LiteLLM message list: system, context, trimmed history, the new line.
 
-    One system message, first: some chat templates (Qwen3.6) refuse a second one.
     `history` is ``(role, content)`` pairs (``user``/``assistant``), oldest first.
     """
     messages: List[dict] = [
-        {"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{_scrub(context)}"},
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": _scrub(context)},
     ]
     for role, content in history:
         messages.append({"role": role, "content": _scrub(content)})

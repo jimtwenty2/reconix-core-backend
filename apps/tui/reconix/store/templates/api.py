@@ -7,11 +7,6 @@ from .base import RunBundle, RunProfile, approval, build_rest, make_plan
 SPEC = Template("api", "API", "REST and GraphQL endpoints",
                 target_hint="the API's base URL", example="https://api.example.com/v1")
 
-TOOLS = ["Nuclei", "Postman", "ZAP API scan"]
-# the scope tools each phase uses (the plan shows those still in the approved scope)
-PHASE_TOOLS = {"discovery": ("Postman",), "scanning": ("ZAP API scan", "Nuclei"),
-               "validation": ("Postman",)}
-
 
 def build_scope(parsed: ParsedTarget) -> ScopeManifest:
     return ScopeManifest(
@@ -20,7 +15,7 @@ def build_scope(parsed: ParsedTarget) -> ScopeManifest:
         allowed_methods=["GET", "POST"],
         excluded_paths=["/internal", "/admin"],
         time_limit_minutes=30,
-        tools=list(TOOLS),
+        tools=["Nuclei", "Postman", "ZAP API scan"],
     )
 
 
@@ -119,5 +114,5 @@ def build_run(assessment) -> RunBundle:
     )
     return RunBundle(scope=scope, script=build_rest(profile),
                      approvals=[profile.medium, profile.high], findings=findings,
-                     login_2fa=profile.login_2fa, plan=make_plan(profile.plan, PHASE_TOOLS),
+                     login_2fa=profile.login_2fa, plan=make_plan(profile.plan),
                      methodology=list(profile.methodology))

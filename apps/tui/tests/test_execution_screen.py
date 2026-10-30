@@ -6,11 +6,11 @@ from textual.widgets import Static
 
 from reconix import store
 from reconix.screens import ExecutionScreen
-from reconix.widgets import RunLog, Spinner, ThinkingBlock
+from reconix.widgets import RunLog, Spinner
 
 from .support import SIZE, decide, play_until_gate, settle, show
 
-STEP = re.compile(r"^\d\d:\d\d:\d\d  (ai|policy|tool|you|system) +\S")
+LINE = re.compile(r"^\d\d:\d\d:\d\d  (reconix|policy|tool|you|system|) +\S")
 
 
 def _testing_at_first_approval() -> str:
@@ -34,7 +34,7 @@ def _testing_running() -> None:
 def _shown(app) -> str:
     texts = [str(w.render()) for w in app.screen.query(Static)]
     log = app.screen.query_one(RunLog)
-    return " ".join(texts + log.plain_lines())
+    return " ".join(texts + [str(line.text) for line in log.lines])
 
 
 async def test_nothing_on_the_screen_is_a_percentage(app):
@@ -65,23 +65,14 @@ async def test_the_spinner_shows_while_running_and_hides_when_paused(app):
         assert "paused · waiting for you" in _shown(app)
 
 
-async def test_every_step_reads_time_who_message(app):
+async def test_every_log_line_reads_time_who_message(app):
     _testing_running()
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "execution")
-        blocks = app.screen.query(ThinkingBlock)
-        steps = [line for block in blocks for line in block.plain_lines()[1:]]
-        assert steps and all(STEP.match(line) for line in steps)
-        assert not any("[POLICY]" in line for line in steps)
-
-
-async def test_messages_carry_no_name_in_front(app):
-    _testing_running()
-    async with app.run_test(size=SIZE) as pilot:
-        await show(app, pilot, "execution")
-        messages = [str(w.render()) for w in app.screen.query(".message-line")]
-        assert messages and any(m.startswith("◆ ") for m in messages)
-        assert not any(m.startswith(("reconix", "you ")) for m in messages)
+        lines = [str(line.text) for line in app.screen.query_one(RunLog).lines]
+        starts = [line for line in lines if not line.startswith(" ")]   # not a wrapped line
+        assert starts and all(LINE.match(line) for line in starts)
+        assert not any("[POLICY]" in line or "◆" in line for line in lines)
 
 
 async def test_scrolling_up_stops_following_until_end(app):
@@ -89,8 +80,6 @@ async def test_scrolling_up_stops_following_until_end(app):
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "execution")
         log = app.screen.query_one(RunLog)
-        await pilot.press("ctrl+o")                        # open every block: enough to scroll
-        await settle(pilot)
         assert log.max_scroll_y > 0 and log.following
         log.focus()
         await pilot.press("pageup")

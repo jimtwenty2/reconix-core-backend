@@ -7,11 +7,6 @@ from .base import RunBundle, RunProfile, approval, build_rest, make_plan
 SPEC = Template("web_url", "Web URL", "Web application at a URL",
                 target_hint="the site's URL", example="https://shop.example.com")
 
-TOOLS = ["Nuclei", "OWASP ZAP"]
-# the scope tools each phase uses (the plan shows those still in the approved scope)
-PHASE_TOOLS = {"discovery": ("OWASP ZAP",), "scanning": ("Nuclei", "OWASP ZAP"),
-               "validation": ("OWASP ZAP",)}
-
 
 def build_scope(parsed: ParsedTarget) -> ScopeManifest:
     return ScopeManifest(
@@ -20,7 +15,7 @@ def build_scope(parsed: ParsedTarget) -> ScopeManifest:
         allowed_methods=["GET", "POST"],
         excluded_paths=["/admin"],
         time_limit_minutes=30,
-        tools=list(TOOLS),
+        tools=["Nuclei", "OWASP ZAP"],
     )
 
 
@@ -109,5 +104,5 @@ def build_run(assessment) -> RunBundle:
     )
     return RunBundle(scope=scope, script=build_rest(profile),
                      approvals=[profile.medium, profile.high], findings=findings,
-                     login_2fa=profile.login_2fa, plan=make_plan(profile.plan, PHASE_TOOLS),
+                     login_2fa=profile.login_2fa, plan=make_plan(profile.plan),
                      methodology=list(profile.methodology))

@@ -15,7 +15,7 @@ export type { View };
 
 /**
  * Local Assessment Viewer shell: sidebar + top bar around a content area that switches between
- * the Overview dashboard, Assessments, Findings (list + evidence), the Run log, Reports and
+ * the Overview dashboard, Assessments, Findings (list + evidence), Reports and
  * Security knowledge (opened from the assistant's header), plus the AI Assistant,
  * which opens over the top bar and content (AssistantStage). The views are
  * server-rendered and passed in as props; all stay mounted and are toggled with `hidden` so the
@@ -33,7 +33,6 @@ export function Viewer({
   overview,
   assessments,
   findings,
-  log,
   reports,
   knowledge,
   assistant,
@@ -42,8 +41,6 @@ export function Viewer({
   overview: React.ReactNode;
   assessments: React.ReactNode;
   findings: React.ReactNode;
-  /** One run's log, read like a conversation (or a note asking for a run). */
-  log: React.ReactNode;
   reports: React.ReactNode;
   /** The Security knowledge page. */
   knowledge: React.ReactNode;
@@ -88,7 +85,6 @@ export function Viewer({
             </div>
             <div data-view-pane="assessments" hidden={shown !== "assessments"}>{assessments}</div>
             <div data-view-pane="findings" hidden={shown !== "findings"}>{findings}</div>
-            <div data-view-pane="log" hidden={shown !== "log"}>{log}</div>
             <div data-view-pane="reports" hidden={shown !== "reports"}>{reports}</div>
             <div data-view-pane="knowledge" hidden={shown !== "knowledge"}>{knowledgeOpened && knowledge}</div>
           </main>

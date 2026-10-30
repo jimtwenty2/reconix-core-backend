@@ -104,7 +104,7 @@ export const terminalGuide: GroupContent = {
               { key: <><Kbd>1</Kbd> … <Kbd>8</Kbd></>, value: "Jump to a screen when no menu has focus: 1 Start, 2 Template, 3 Plan, 4 Approval, 5 Execution, 6 Findings, 7 Finding Detail, 8 Report." },
               { key: <Kbd>/</Kbd>, value: "Command suggestions: inline above the Start prompt, a command bar on every other screen." },
               { key: <Kbd>?</Kbd>, value: "Toggle the help for the current screen (on Start: when the prompt is empty)." },
-              { key: <Kbd>Ctrl+O</Kbd>, value: "Expand or collapse the steps Reconix finished: under its spinner line, and every folded block in the live output (click a block to open just that one)." },
+              { key: <Kbd>Ctrl+O</Kbd>, value: "Expand or collapse the steps Reconix finished, under its spinner line." },
               { key: <Kbd>Ctrl+Q</Kbd>, value: "Quit." },
             ]}
           />
