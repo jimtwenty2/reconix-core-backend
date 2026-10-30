@@ -2,11 +2,14 @@
 
 import dataclasses
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from reconix_api.core.wiring import build_interfaces, build_mask_secrets
+from reconix_api.models import ScopeManifest
 from tests.integration.test_action_flow import active_assessment, send
 from tests.integration.test_scope_flow import open_session
 
@@ -80,3 +83,32 @@ def test_option_not_on_the_allow_list_is_blocked(harness_client, harness_app):
     )
     assert response.status_code == 422
     assert harness_app.state.parts["mcp"].jobs == []
+
+
+def test_approving_after_the_scope_window_ended_runs_nothing(
+    harness_client, harness_app, session_factory
+):
+    headers = open_session(harness_client)
+    assessment_id = active_assessment(harness_client, headers)
+    action = send(
+        harness_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+    ).json()
+    assert action["action_status"] == "PENDING"
+    now = datetime.now(UTC)
+    with session_factory() as db:  # the window ends while the action waits for a person
+        db.execute(
+            update(ScopeManifest)
+            .where(ScopeManifest.assessment_id == assessment_id)
+            .values(starts_at=now - timedelta(hours=2), ends_at=now - timedelta(minutes=1))
+        )
+        db.commit()
+
+    response = harness_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+
+    assert response.status_code == 422, response.json()
+    assert response.json()["details"]["reason"] == "OUTSIDE_TIME_WINDOW"
+    assert harness_app.state.parts["mcp"].jobs == []
+    events = [line["event_type"] for line in audit_lines(harness_app)]
+    assert events.count("ACTION_BLOCKED") == 1
