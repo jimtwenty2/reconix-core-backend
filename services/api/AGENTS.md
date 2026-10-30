@@ -47,10 +47,11 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
   errors from `core/errors.py`; never return `None` to hide a failure.
 - **Network:** the API binds to `127.0.0.1` only, rejects an unknown `Host`, and allows CORS only
   for the local web (`RECONIX_WEB_ORIGINS`).
-- **Session token:** every endpoint except `/health` and `POST /sessions` uses `CurrentOperator`,
-  so a request without a valid token gets 401. There are no roles: a valid token may do
+- **Session token:** every endpoint except `/health`, `POST /sessions` and
+  `POST /sessions/web-sign-in` (it checks a one-time code instead) uses `CurrentOperator`, so
+  a request without a valid token gets 401. There are no roles: a valid token may do
   everything. `tests/security/test_api_protections.py` reads every route from the app and
-  checks each one gets 401 without a token; only the two above are in its `OPEN` set.
+  checks each one gets 401 without a token; only the three above are in its `OPEN` set.
 - **Audit:** every decision and state change writes exactly one audit event with `assessment_id`,
   `session_id` and `actor`.
 - **Actions:** run the harness `check()` first. `BLOCKED` → 422, `LOW` → run now,
@@ -90,7 +91,7 @@ Keep this table true; update the row in the PR that changes it.
 | Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done: check runs to do. Also done: `POST /assessments/{id}/analyze` (suggestions saved in the run) |
 | 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | Done: `/llm-providers` list, add, read, edit, remove and `/activate`. A provider on this computer is active at once, any other after its `configuration` approval. Each agent request carries its run's provider and model, and `core/agent.py` calls the agent with that run's settings (`services/agent_runs.make_provider_for_run`, key decrypted). A run whose provider is no longer active gets 409 `PROVIDER_CHANGED`, because an inactive row can be edited with no approval |
 | Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | Done except multi-assessment: one assessment per report, files in `RECONIX_REPORTS_DIR`, `review` sign-off before download |
-| Pojim's parts in the API: disclosure, limit settings, timeline, web sign-in | 2 | To do. There are no roles (decided 30 Oct), so the web sign-in issues a normal session token |
+| Pojim's parts in the API: disclosure, limit settings, timeline, web sign-in | 2 | Web sign-in done: `POST /sessions/web-sign-in-codes` (needs a token) gives a one-time code that works for 2 minutes, and `POST /sessions/web-sign-in` (open) trades it for a normal `web` session token. Disclosure, limit settings and timeline to do |
 | API in Docker Compose, `install.sh`, uv install steps | 2 | To do: API runs on the host; `install.sh` is a placeholder |
 | Full flow test on Sat 31 Oct, final `openapi.json` on Mon 2 Nov | 2 | To do (`run-full-flow-test` skill) |
 | Terminal WebSocket (the handshake checks the token and `Origin`; the Host middleware does not cover WebSockets), `GET /stream` live updates | 3 | To do |

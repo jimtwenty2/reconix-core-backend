@@ -199,7 +199,8 @@ prompt or policy change).
    that failed before the fix.
 3. A new endpoint needs the session token. The no-token test in
    `services/api/tests/security/test_api_protections.py` checks every route by itself; only
-   `GET /health` and `POST /sessions` are open, and adding to that list needs the lead.
+   `GET /health`, `POST /sessions` and `POST /sessions/web-sign-in` are open, and adding to
+   that list needs the lead.
 4. If routes or schemas changed, `docs/openapi.json` is regenerated **in the same PR**.
 5. If the schema changed, there is an Alembic migration and it upgrades from an empty database.
 6. No secret, `.env` or local-only file (section 9) is staged.
@@ -303,8 +304,9 @@ Keep this list true; remove an item in the PR that closes it.
   the plan.
 - **The web uses static data** (`apps/web/src/lib/data/`). The generated API types and the
   `gen-api-types` script are not set up yet.
-- **The automated leak test** (`services/api/tests/security/test_no_secret_leaks.py`) is not
-  written yet; run the `run-leak-test` skill by hand.
+- **The automated leak test** (`services/api/tests/security/test_no_secret_leaks.py`) covers
+  the database, logs, audit log, AI requests, API answers and report files, but not Qdrant
+  (the API writes nothing there yet) or disclosure. Check those by hand with `run-leak-test`.
 - Imported findings and finding categories: decision pending.
 
 ---
