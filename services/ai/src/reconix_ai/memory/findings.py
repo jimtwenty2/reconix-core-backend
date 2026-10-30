@@ -148,7 +148,12 @@ def point_id(finding_id: str) -> str:
 
 async def ensure_and_upsert(client: AsyncQdrantClient, point: models.PointStruct) -> None:
     if not await client.collection_exists(COLLECTION):
-        await store.make_collection(client, COLLECTION, keyword_fields=("assessment_id",))
+        try:
+            await store.make_collection(client, COLLECTION, keyword_fields=("assessment_id",))
+        except store.QDRANT_ERRORS:
+            # Two first remembers at once: the other one made it, which is fine.
+            if not await client.collection_exists(COLLECTION):
+                raise
     await client.upsert(COLLECTION, [point])
 
 

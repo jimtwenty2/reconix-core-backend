@@ -2,7 +2,7 @@ import pytest
 
 from reconix_ai.knowledge import KnowledgeError, store
 from reconix_ai.memory import AcceptedFinding, forget_finding, remember_finding, search_findings
-from tests.unit.knowledge.conftest import FakeEmbedder
+from tests.unit.knowledge.fakes import FakeEmbedder
 
 CLIENT_A = "11111111-1111-1111-1111-111111111111"
 CLIENT_B = "22222222-2222-2222-2222-222222222222"
