@@ -93,7 +93,7 @@ Keep this table true; update the row in the PR that changes it.
 | Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
 | Report text and PDF, DOCX, JSON files | 2 | Done: REPORT writes the executive summary and methodology; `reports/files.py` makes the 3 files from the locked copy. PDF needs Pango (WeasyPrint) |
 | Accepted findings in Qdrant | 2 | To do (`memory/` is empty) |
-| Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety done; the rest to do |
+| Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety and timeline reader (`audit.read_timeline`) done; the rest to do |
 | 20 eval questions, top-3 score | 3 | To do (`tests/evals/` is empty) |
 | Hypothesis and hard-case tests for scope and command checks | 3 | To do |
 | Time one full step on the demo laptop | 3 | To do |
