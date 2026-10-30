@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session as Db
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Interfaces, Operator
 from reconix_api.models import AgentRun
-from reconix_api.models.enums import AgentRunStatus
+from reconix_api.models.enums import AgentRunStatus, ProviderType
 from reconix_api.repositories import agent_runs as agent_run_repo
+from reconix_api.repositories import llm_providers as provider_repo
 from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.agent_runs import AgentRunOut
 from reconix_api.services.audit import audit
@@ -33,6 +34,16 @@ def new_agent_run(
     )
     agent_run_repo.add(db, agent_run)
     return agent_run
+
+
+def agent_provider(db: Db, agent_run: AgentRun) -> tuple[str, str | None]:
+    """The provider type and model the run was started with, for its AgentRequest, so
+    the run records the model that is really called. The built-in RECONIX provider sends
+    no model: the agent uses its own."""
+    provider = provider_repo.get(db, agent_run.llm_provider_id)
+    if provider.provider_type == ProviderType.RECONIX:
+        return ProviderType.RECONIX.value, None
+    return provider.provider_type.value, agent_run.model_name
 
 
 def finish(agent_run: AgentRun, status: AgentRunStatus) -> None:

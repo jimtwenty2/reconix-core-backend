@@ -74,10 +74,13 @@ async def plan_and_send(
     run: AgentRun,
     scope: ApprovedScope,
 ) -> PlanOut:
+    provider, model = agent_runs.agent_provider(db, run)
     request = AgentRequest(
         task=AgentTask.PLAN,
         assessment_id=run.assessment_id,
         agent_run_id=run.agent_run_id,
+        provider=provider,
+        model=model,
         scope=scope,
         messages=chat(db, operator.session_id),
     )
@@ -244,10 +247,13 @@ async def resume_claimed(
     action has run, so a failure here marks the run FAILED and audits it, and is not
     raised: the person's request did what it asked."""
     try:
+        provider, model = agent_runs.agent_provider(db, run)
         request = AgentRequest(
             task=AgentTask.PLAN,
             assessment_id=run.assessment_id,
             agent_run_id=run.agent_run_id,
+            provider=provider,
+            model=model,
             scope=approved_scope(interfaces, run.assessment_id),
             resume=ResumeInput(
                 agent_run_id=run.agent_run_id,

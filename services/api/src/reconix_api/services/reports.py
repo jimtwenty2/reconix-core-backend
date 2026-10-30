@@ -97,11 +97,14 @@ async def create_report(
         scope = plans.approved_scope(interfaces, assessment_id)
         run = agent_runs.new_agent_run(db, operator, assessment_id, task="REPORT")
         db.commit()
+        provider, model = agent_runs.agent_provider(db, run)
         response = await interfaces.ask_agent(
             AgentRequest(
                 task=AgentTask.REPORT,
                 assessment_id=assessment_id,
                 agent_run_id=run.agent_run_id,
+                provider=provider,
+                model=model,
                 scope=scope,
                 report=locked,
             )
