@@ -15,6 +15,7 @@ from reconix_api.findings import json_mapping
 from reconix_api.findings import nmap as nmap_findings
 from reconix_api.findings.shape import NewFinding
 from reconix_api.models import Evidence, Finding, ToolRun
+from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as finding_repo
 from reconix_api.schemas.findings import EvidenceOut, FindingOut, FindingReview
@@ -70,13 +71,20 @@ def save_findings(
     return saved
 
 
-def list_findings(db: Db, assessment_id: UUID | None = None) -> list[FindingOut]:
-    """Every finding, or one assessment's."""
-    if assessment_id is None:
-        return [_finding_out(db, row) for row in finding_repo.list_all(db)]
-    if assessment_repo.get(db, assessment_id) is None:
+def list_findings(
+    db: Db,
+    assessment_id: UUID | None = None,
+    severity_status: SeverityStatus | None = None,
+    validation_status: ValidationStatus | None = None,
+    finding_status: FindingStatus | None = None,
+) -> list[FindingOut]:
+    """Every finding, or one assessment's; each filter given must match."""
+    if assessment_id is not None and assessment_repo.get(db, assessment_id) is None:
         raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
-    return [_finding_out(db, row) for row in finding_repo.list_by_assessment(db, assessment_id)]
+    rows = finding_repo.list_matching(
+        db, assessment_id, severity_status, validation_status, finding_status
+    )
+    return [_finding_out(db, row) for row in rows]
 
 
 def read_finding(db: Db, finding_id: UUID) -> FindingOut:
@@ -139,7 +147,9 @@ def _clean(mask: MaskSecrets, text: str) -> str:
 
 def _finding_out(db: Db, row: Finding) -> FindingOut:
     out = FindingOut.model_validate(row, from_attributes=True)
-    out.source_tool_run_ids = finding_repo.source_run_ids(db, row.finding_id)
+    runs = finding_repo.sources(db, row.finding_id)
+    out.source_tool_run_ids = [tool_run_id for tool_run_id, _ in runs]
+    out.tools = sorted({tool for _, tool in runs})
     out.evidence = [
         EvidenceOut.model_validate(evidence, from_attributes=True)
         for evidence in finding_repo.list_evidence(db, row.finding_id)

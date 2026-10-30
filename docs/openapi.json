@@ -564,6 +564,218 @@
         "title": "AssessmentOut",
         "type": "object"
       },
+      "AssessmentOverviewOut": {
+        "description": "Everything the run overview counts, in one call. Every status is a key, 0 when none.\nfindings_by_status counts every finding; the other finding counts leave out false\npositives, as the web does.",
+        "properties": {
+          "actions_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ActionStatus"
+            },
+            "title": "Actions By Status",
+            "type": "object"
+          },
+          "assessment": {
+            "$ref": "#/components/schemas/AssessmentOut"
+          },
+          "finding_count": {
+            "title": "Finding Count",
+            "type": "integer"
+          },
+          "findings_by_severity": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SeverityStatus"
+            },
+            "title": "Findings By Severity",
+            "type": "object"
+          },
+          "findings_by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/FindingStatus"
+            },
+            "title": "Findings By Status",
+            "type": "object"
+          },
+          "findings_by_validation": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ValidationStatus"
+            },
+            "title": "Findings By Validation",
+            "type": "object"
+          },
+          "first_started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Started At"
+          },
+          "last_finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Finished At"
+          },
+          "masked_count": {
+            "title": "Masked Count",
+            "type": "integer"
+          },
+          "pending_approval_count": {
+            "title": "Pending Approval Count",
+            "type": "integer"
+          },
+          "plan_step_count": {
+            "title": "Plan Step Count",
+            "type": "integer"
+          },
+          "plan_step_done_count": {
+            "title": "Plan Step Done Count",
+            "type": "integer"
+          },
+          "request_count": {
+            "title": "Request Count",
+            "type": "integer"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "tool_run_count": {
+            "title": "Tool Run Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assessment",
+          "targets",
+          "finding_count",
+          "findings_by_severity",
+          "findings_by_validation",
+          "findings_by_status",
+          "actions_by_status",
+          "plan_step_count",
+          "plan_step_done_count",
+          "tool_run_count",
+          "request_count",
+          "masked_count",
+          "pending_approval_count",
+          "first_started_at",
+          "last_finished_at"
+        ],
+        "title": "AssessmentOverviewOut",
+        "type": "object"
+      },
+      "AssessmentRowOut": {
+        "description": "One row of GET /assessments: the assessment and what its list row shows. False\npositives are left out of finding_count and worst_severity, as the web does.",
+        "properties": {
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "assessment_status": {
+            "$ref": "#/components/schemas/AssessmentStatus"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "engagement_code": {
+            "title": "Engagement Code",
+            "type": "string"
+          },
+          "finding_count": {
+            "title": "Finding Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pending_approval_count": {
+            "title": "Pending Approval Count",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "worst_severity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeverityStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "assessment_id",
+          "engagement_code",
+          "name",
+          "type",
+          "assessment_status",
+          "created_by",
+          "created_at",
+          "updated_at",
+          "session_id",
+          "targets",
+          "finding_count",
+          "worst_severity",
+          "pending_approval_count"
+        ],
+        "title": "AssessmentRowOut",
+        "type": "object"
+      },
       "AssessmentStatus": {
         "enum": [
           "DRAFT",
@@ -944,6 +1156,13 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
           },
           "validation_status": {
             "$ref": "#/components/schemas/ValidationStatus"
@@ -2647,6 +2866,7 @@
     },
     "/api/v1/assessments": {
       "get": {
+        "description": "Newest first, each with its approved targets, finding count, worst severity and\npending approvals. False positives are left out of the count and the severity.",
         "operationId": "list_assessments_api_v1_assessments_get",
         "parameters": [
           {
@@ -2672,7 +2892,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/AssessmentOut"
+                    "$ref": "#/components/schemas/AssessmentRowOut"
                   },
                   "title": "Response List Assessments Api V1 Assessments Get",
                   "type": "array"
@@ -3013,6 +3233,55 @@
         ]
       }
     },
+    "/api/v1/assessments/{assessment_id}/overview": {
+      "get": {
+        "description": "The run overview's counts in one call: findings by severity, validation and status,\nactions by status, plan progress, tool run totals and pending approvals. Only\nfindings_by_status counts false positives; the other finding counts leave them out.",
+        "operationId": "read_overview_api_v1_assessments__assessment_id__overview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentOverviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Overview",
+        "tags": [
+          "assessments"
+        ]
+      }
+    },
     "/api/v1/assessments/{assessment_id}/plan": {
       "post": {
         "description": "The agent plans and suggests one step. The step goes through the same checks as\nany action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id.",
@@ -3212,7 +3481,7 @@
     },
     "/api/v1/findings": {
       "get": {
-        "description": "Every finding, or only one assessment's with ?assessment_id=.",
+        "description": "Every finding newest first, or one assessment's with ?assessment_id= in the order\nthey were found. Filter with ?severity_status=, ?validation_status= and\n?finding_status=; each one given must match.",
         "operationId": "list_findings_api_v1_findings_get",
         "parameters": [
           {
@@ -3230,6 +3499,54 @@
                 }
               ],
               "title": "Assessment Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SeverityStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "validation_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ValidationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Validation Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "finding_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FindingStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Finding Status"
             }
           }
         ],

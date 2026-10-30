@@ -3,10 +3,11 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Row, func, select
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.models import Action, AgentRun, Approval, ToolRun
+from reconix_api.models.enums import ActionStatus
 
 
 def add(db: Db, row: Action | ToolRun | AgentRun) -> None:
@@ -87,3 +88,28 @@ def count_runs(db: Db, assessment_id: UUID) -> int:
         .where(Action.assessment_id == assessment_id)
     )
     return db.scalar(query) or 0
+
+
+def count_by_status(db: Db, assessment_id: UUID) -> dict[ActionStatus, int]:
+    query = (
+        select(Action.action_status, func.count())
+        .where(Action.assessment_id == assessment_id)
+        .group_by(Action.action_status)
+    )
+    return {row[0]: row[1] for row in db.execute(query)}
+
+
+def tool_run_totals(db: Db, assessment_id: UUID) -> Row:
+    """One row: tool_run_count, request_count, masked_count, first_started_at, last_finished_at."""
+    query = (
+        select(
+            func.count(ToolRun.tool_run_id).label("tool_run_count"),
+            func.coalesce(func.sum(ToolRun.request_count), 0).label("request_count"),
+            func.coalesce(func.sum(ToolRun.masked_count), 0).label("masked_count"),
+            func.min(ToolRun.started_at).label("first_started_at"),
+            func.max(ToolRun.finished_at).label("last_finished_at"),
+        )
+        .join(Action, ToolRun.action_id == Action.action_id)
+        .where(Action.assessment_id == assessment_id)
+    )
+    return db.execute(query).one()
