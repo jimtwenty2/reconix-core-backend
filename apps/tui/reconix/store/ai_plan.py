@@ -17,6 +17,7 @@ import json
 from dataclasses import dataclass
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
+from .. import core_api
 from ..llm import client
 from ..models import PROGRESS_BARS, ActiveModel, Assessment
 from . import lists
@@ -90,7 +91,8 @@ def plan_draft_request() -> Optional[PlanDraftRequest]:
     if assessment.run.plan_started or not assessment.plan:
         return None
     assessment.plan_drafting = True
-    add_activity("AI", f"Drafting the plan with {active.label} · {active.model}")
+    via = " via the Core API" if core_api.enabled() else ""
+    add_activity("AI", f"Drafting the plan with {active.label} · {active.model}{via}")
     messages = ({"role": "system", "content": PLAN_PROMPT},
                 {"role": "user", "content": _question(assessment)})
     return PlanDraftRequest(assessment, active, messages, tuple(scope.tools))
@@ -99,7 +101,17 @@ def plan_draft_request() -> Optional[PlanDraftRequest]:
 def fetch_plan_draft(request: PlanDraftRequest) -> str:
     """The model's reply; one without a usable plan is asked for once more, saying why.
 
-    Blocks on the network, so it runs in a worker. Raises LLMError."""
+    Blocks on the network, so it runs in a worker. Raises LLMError. In Core API mode the
+    API plans (as a draft it never runs) and its steps come back in the same JSON shape;
+    when the API can't, the model is asked directly as before."""
+    from .. import core_api
+
+    if core_api.enabled():
+        try:
+            return core_api.plan_draft(request.assessment)
+        except core_api.CoreApiError as exc:
+            add_activity("AI", f"The Core API couldn't draft the plan ({exc}); "
+                               "asking the model directly.", tone="muted")
     key, base = credentials(request.active)
     messages = list(request.messages)
     raw = client.complete(request.active.provider_id, request.active.model, messages,

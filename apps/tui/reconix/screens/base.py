@@ -1,17 +1,49 @@
 """Base screen: window chrome + body + footer, shared by all flow screens."""
 
-from typing import Optional
+from typing import List, NamedTuple, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import Screen
+from textual.widget import Widget
 from textual.widgets import Footer
 
 from .. import store
+from ..models import Choice
 from ..widgets import (
-    ChatBar, ChoiceMenu, FlowProgress, SessionBar, StepChat, TickList, UserMessage,
+    ChatBar, ChoiceMenu, FlowProgress, PlanOrder, PlanPanel, Question, ScopePanel, SessionBar,
+    StepChat, TickList, UserMessage,
 )
 from ..widgets.step_chat import THINKING
+
+CHAT_DECISION = "chat-decision"
+CHAT_MENU_HINT = "Enter to select · ↑/↓ to navigate · Esc back to the step"
+
+
+def scope_card() -> Optional[Widget]:
+    """The ⛉ SCOPE card for the current scope (None before there is one)."""
+    scope = store.get_scope()
+    return ScopePanel(scope) if scope is not None else None
+
+
+def plan_card() -> Optional[Widget]:
+    """The ▤ PLAN card: every step in its current order (None before there is a plan)."""
+    rows = store.plan_overview()
+    if not rows:
+        return None
+    return PlanPanel(rows, f"{len(rows)} steps · {store.gated_count()} need your approval")
+
+
+CARDS = {"scope": scope_card, "plan": plan_card}
+
+
+class Decision(NamedTuple):
+    """The step's decision as its menu asks it; the step chat shows the same choices."""
+
+    chip: str
+    question: str
+    choices: List[Choice]
+    default: int = 0
 
 
 class ReconixScreen(Screen):
@@ -123,9 +155,42 @@ class ReconixScreen(Screen):
         return ""
 
     def chat_in_step(self) -> None:
-        """"Chat about this": talk about the step right here; Esc brings its menu back."""
+        """"Chat about this": talk about the step right here; Esc brings its menu back.
+
+        It opens with the step's content (the scope card on the scope step) and its menu."""
         store.log_event(f"{self.flow_name}.chat")
-        self.run_worker(self.open_step_chat(self.step_content()), exclusive=False)
+        self.run_worker(self._open_about_step(), exclusive=False)
+
+    async def _open_about_step(self) -> None:
+        """The step's content (and its card), then the input: you came to talk."""
+        chat = await self.open_step_chat(self.step_content())
+        card = self.chat_card()
+        if card is not None:
+            chat.add(card)
+
+    # --- the step's decision (its menu), also offered inside the step chat ------------------
+    def decision(self) -> Optional[Decision]:
+        """The decision this step waits for, as its menu asks it (None: nothing to decide)."""
+        return None
+
+    def decide(self, choice_id: str) -> None:
+        """Do what the step's menu does for `choice_id` (screens with a Question override)."""
+
+    def chat_card(self) -> Optional[Widget]:
+        """The step's card in the chat (the scope on Template, the plan on Plan)."""
+        return None
+
+    def allows_reorder(self) -> bool:
+        """Whether a reorder request here opens the plan's order list (the Plan screen)."""
+        return False
+
+    def on_choice_menu_chosen(self, event: ChoiceMenu.Chosen) -> None:
+        """The step's menu, or the same menu inside the step chat."""
+        event.stop()
+        if event.menu.parent is not None and event.menu.parent.has_class(CHAT_DECISION):
+            self._chat_decided(event.choice_id)
+        else:
+            self.decide(event.choice_id)
 
     async def on_choice_menu_typed(self, event: ChoiceMenu.Typed) -> None:
         """"Type something.": keep it as feedback, then answer it in the step chat."""
@@ -164,12 +229,7 @@ class ReconixScreen(Screen):
     def on_step_chat_closed(self, event: StepChat.Closed) -> None:
         """Esc: the chat goes, the step's menu comes back (rebuilt if the step moved on)."""
         event.stop()
-        event.chat.remove()
-        for bar in self.query(ChatBar):
-            bar.remove()
-        for widget in self._hidden:
-            widget.display = True
-        self._hidden = []
+        self._close_chat()
         if self._stale:
             self._stale = False
             self.app.reload_screen()
@@ -179,13 +239,68 @@ class ReconixScreen(Screen):
                 menu.focus()
                 return
 
+    def _close_chat(self) -> None:
+        """Take the chat and its bar away and show the step's own widgets again."""
+        for chat in self.query(StepChat):
+            chat.remove()
+        for bar in self.query(ChatBar):
+            bar.remove()
+        for widget in self._hidden:
+            widget.display = True
+        self._hidden = []
+
+    def _show_decision(self, chat: StepChat, card: Optional[Widget] = None) -> None:
+        """A card (the scope or the plan) and the step's menu in the chat, as the step first
+        showed them: the same choices plus "Type something." and "Chat about this". You
+        decide here exactly as in the menu. The input hides while the menu shows ("Chat
+        about this" brings it back). Nothing to decide: just the card, and the input stays."""
+        self._drop_decision()
+        if card is not None:
+            chat.add(card)
+        decision = self.decision()
+        if decision is None:
+            return
+        # A class, not an id: the menu shown before may still be leaving the DOM.
+        question = Question(decision.chip, decision.question, decision.choices,
+                            default=decision.default, hint=CHAT_MENU_HINT)
+        question.add_class(CHAT_DECISION)
+        chat.add(question)
+        for bar in self.query(ChatBar):
+            bar.display = False
+        # Queued on the question itself, so it runs once the menu is mounted.
+        question.call_after_refresh(lambda: question.menu.focus())
+
+    def _drop_decision(self) -> None:
+        """Take the menu shown in the chat away and bring the input back."""
+        for old in self.query(f".{CHAT_DECISION}"):
+            old.remove()
+        for bar in self.query(ChatBar):
+            bar.display = True
+
+    def _chat_decided(self, choice_id: str) -> None:
+        """A choice from the menu inside the chat: "Chat about this" brings the input back;
+        anything else closes the chat and does what the step's menu does (the step line moves
+        with the store). "Type something." arrives as `ChoiceMenu.Typed` instead."""
+        if choice_id == "chat":
+            self._drop_decision()
+            self.query_one(StepChat).focus_input()
+            return
+        store.log_event(f"{self.flow_name}.chat.decided", choice_id)
+        self._close_chat()
+        self.decide(choice_id)
+        if self._stale and self.app.screen is self:
+            self._stale = False
+            self.app.reload_screen()
+
     def _ask_in_chat(self, chat: StepChat, text: str) -> None:
         """Answer a line typed in the step chat. Advice only: the step still waits for you.
 
         Every line goes to the active model (or gets the built-in reply at once). A line
         asking to change the scope then opens your tick list: the model only explains, you
-        tick the change. At the target login the store refuses the line, so a password
-        never goes out.
+        tick the change. A line that makes the step's decision ("approve that scope",
+        "yes") never reaches the model: Reconix says nothing changed and shows the step's
+        menu; a question about it is answered first, then the menu. At the target login the
+        store refuses the line, so a password never goes out.
         """
         try:
             line = store.say_operator_line(f"About {self.chat_topic()}: {text}")
@@ -193,16 +308,36 @@ class ReconixScreen(Screen):
             self.notify_error(str(exc))
             return
         chat.add_you(text)
-        for old in self.query(TickList):
+        for old in [*self.query(TickList), *self.query(PlanOrder)]:
             old.remove()
+        self._drop_decision()
         scope_change = store.wants_scope_change(text)
+        view = "" if scope_change else store.wants_view(text)
+        card = CARDS[view]() if view else None
+        if card is not None:                        # its card, never the model's list
+            chat.add_reply(f"The {view} as it stands now:")
+            self._show_decision(chat, card)
+            return
+        reorder = (not scope_change and store.wants_plan_reorder(text)
+                   and self.allows_reorder())
+        if not scope_change and not reorder and store.wants_decision(text):
+            store.decision_reply()                  # only you decide: no model is asked
+            entry = store.last_exchange()[1][-1]
+            chat.add_reply(entry.text, entry.tone)
+            self._show_decision(chat)
+            return
+        about_decision = not (scope_change or reorder) and store.asks_about_decision(text)
         if store.active_model() is None:
             if scope_change:
                 self._scope_reply(chat, text)       # no model: Reconix's reply, then the ticks
+            elif reorder:
+                self._reorder_reply(chat)           # no model: Reconix's reply, then the order
             else:
                 store.llm_answer(line)              # the built-in reply: no network, at once
                 entry = store.last_exchange()[1][-1]
                 chat.add_reply(entry.text, entry.tone)
+                if about_decision:
+                    self._show_decision(chat)
             return
         reply = chat.add_reply(THINKING, tone="muted")
 
@@ -214,7 +349,13 @@ class ReconixScreen(Screen):
         def done() -> None:
             show()
             if scope_change and chat.is_mounted:
-                self._scope_reply(chat, text)       # whatever the model said, you change it
+                # The model's ports are offered as rows, never ticked.
+                model_reply = "\n".join(e.text for e in store.last_exchange()[1])
+                self._scope_reply(chat, text, model_reply)   # whatever it said, you change it
+            elif reorder and chat.is_mounted:
+                self._reorder_reply(chat)           # it discussed the move; you order it
+            elif about_decision and chat.is_mounted:
+                self._show_decision(chat)           # the model explains; you decide here
 
         def work() -> None:
             store.llm_answer(line, on_update=lambda: self.app.call_from_thread(show))
@@ -222,14 +363,15 @@ class ReconixScreen(Screen):
 
         self.app.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
-    def _scope_reply(self, chat: StepChat, text: str) -> None:
+    def _scope_reply(self, chat: StepChat, text: str, model_reply: str = "") -> None:
         """Reconix's own line ("Only you can change the scope…", or locked), then your
-        tick list (nothing new ticked). Recorded, so the model's history has it too."""
-        choices = store.answer_scope_change(text)
+        tick list (nothing new ticked; ports the model named are added unticked).
+        Recorded, so the model's history has it too."""
+        choices = store.answer_scope_change(text, model_reply)
         entry = store.last_exchange()[1][-1]
         chat.add_reply(entry.text, entry.tone)
         if choices is not None:
-            chat.add(TickList(choices.ports, choices.tools))
+            chat.add(TickList(choices.ports, choices.tools, choices.suggested))
 
     def on_tick_list_saved(self, event: TickList.Saved) -> None:
         """Your ticks become the scope (the store validates them); the chat stays open."""
@@ -243,15 +385,50 @@ class ReconixScreen(Screen):
         event.tick_list.remove()
         chat = self.query_one(StepChat)
         entry = store.last_exchange()[1][-1]
-        chat.add_reply(f"{entry.text}\n{store.scope_text()}", entry.tone)
+        chat.add_reply(entry.text, entry.tone)
         self.refresh_view()
-        chat.focus_input()
+        self._show_decision(chat, scope_card())     # the new scope, as a card, and its menu
 
     def on_tick_list_cancelled(self, event: TickList.Cancelled) -> None:
         event.stop()
         event.tick_list.remove()
         chat = self.query_one(StepChat)
         chat.add_reply("No change to the scope.", tone="muted")
+        chat.focus_input()
+
+    # --- the plan's order (store/plan_order.py) ------------------------------------------------
+    def _reorder_reply(self, chat: StepChat) -> None:
+        """Reconix's own line (what may move, or why nothing can), then your order list.
+        Recorded, so the model's history has it too."""
+        ok = store.answer_plan_reorder()
+        entry = store.last_exchange()[1][-1]
+        chat.add_reply(entry.text, entry.tone)
+        if ok:
+            chat.add(PlanOrder(store.plan_overview(), store.movable_checks()))
+        else:
+            self._show_decision(chat, plan_card())
+
+    def on_plan_order_saved(self, event: PlanOrder.Saved) -> None:
+        """Your order becomes the plan's (the store checks it and moves the run's steps)."""
+        event.stop()
+        try:
+            store.reorder_gated(event.order)
+        except store.StoreValidationError as exc:
+            self.notify_error(str(exc))
+            return
+        event.plan_order.remove()
+        chat = self.query_one(StepChat)
+        entry = store.last_exchange()[1][-1]
+        chat.add_reply(entry.text, entry.tone)
+        self.refresh_view()
+        self.refresh_live()
+        self._show_decision(chat, plan_card())      # the plan in its new order, and the menu
+
+    def on_plan_order_cancelled(self, event: PlanOrder.Cancelled) -> None:
+        event.stop()
+        event.plan_order.remove()
+        chat = self.query_one(StepChat)
+        chat.add_reply("No change to the plan.", tone="muted")
         chat.focus_input()
 
     def notify_error(self, message: str, title: Optional[str] = None) -> None:

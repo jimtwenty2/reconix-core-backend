@@ -170,9 +170,17 @@ def llm_answer(text: str, on_update: Optional[Callable[[], None]] = None) -> Non
     model failure falls back to the scripted reply so the offline demo keeps working.
     """
     from . import llm_chat, providers
+    from .. import core_api
     from ..llm import LLMError
 
     active = providers.active_model()
+    if core_api.enabled() and active is not None:
+        try:
+            llm_chat.core_reply(text, on_update)
+            return
+        except LLMError as exc:
+            add_chat("text", "reconix",
+                     f"Core API unavailable ({exc}). Asking the model directly.", tone="muted")
     if active is not None:
         try:
             llm_chat.reply(text, active, on_update)

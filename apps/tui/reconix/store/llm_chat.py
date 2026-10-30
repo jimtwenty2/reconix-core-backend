@@ -19,7 +19,7 @@ from .assessment import get_assessment
 from .errors import StoreValidationError
 from .redact import redact
 from .snapshot import uid_for
-from .transcript import add_chat, last_exchange
+from .transcript import add_activity, add_chat, last_exchange
 
 HISTORY_BUDGET = 40
 STREAM_REDRAW = 0.1          # seconds between redraws while a reply streams
@@ -46,6 +46,35 @@ def reply(text: str, active: ActiveModel,
         # A muted note under the reply, so the operator sees which add-ons informed it.
         add_chat("text", "reconix", "Knowledge: " + ", ".join(used_sources), tone="muted")
     return checked
+
+
+def core_reply(text: str, on_update: Optional[Callable[[], None]] = None) -> str:
+    """Core API mode: the API answers (it calls the model, with the scope and plan as
+    context, and keeps the history). Shown with "thinking…" until it comes back, then
+    checked like any model reply. Raises LLMError (a CoreApiError) when the API can't."""
+    from .. import core_api
+
+    entry = add_chat("text", "reconix", THINKING, tone="muted")
+    if on_update is not None:
+        on_update()
+    try:
+        answer, notes = core_api.chat_reply(text, get_assessment())
+    except Exception:
+        _drop(entry)
+        raise
+    entry.text, entry.tone = guardrail.check_response(answer), "default"
+    for note in notes:
+        add_activity("AI", note)
+    if on_update is not None:
+        on_update()
+    return entry.text
+
+
+def _drop(entry: ChatEntry) -> None:
+    """Take a placeholder line back out of the chat."""
+    chat = get_assessment().chat
+    if entry in chat:
+        chat.remove(entry)
 
 
 def messages_for(text: str) -> Tuple[List[dict], List[str]]:
@@ -125,6 +154,7 @@ def _history() -> List[Tuple[str, str]]:
 def _context() -> str:
     """A short description of the assessment state, built from store getters."""
     from .findings import list_findings
+    from .progress import step_status
     from .run import display_phase, get_run, is_finished, waiting_gate
     from .scope import get_scope
     from .templates import selected_template
@@ -141,6 +171,7 @@ def _context() -> str:
         f"- phase: {display_phase()}",
         f"- waiting gate: {waiting_gate() or 'none'}",
     ]
+    lines += step_lines(step_status())
     lines += _scope_lines(scope) + _plan_lines()
     if is_finished():
         state = "stopped" if get_run().stopped else "completed"
@@ -159,6 +190,16 @@ def _context() -> str:
         for d in decisions:
             lines.append(f"    {d.request_id}: {d.decision}")
     return "\n".join(lines)
+
+
+def step_lines(status) -> List[str]:
+    """Where the flow is, in words: the model must not run ahead of it."""
+    return [
+        f"- current step: {status.step} ({status.state})",
+        f"- the operator moves on only with the app's menu: {status.choices}. The app shows "
+        "the scope card and the menu itself; don't repeat the scope as a list, and never "
+        "say a step is approved, run or done unless this context says so.",
+    ]
 
 
 def _scope_lines(scope) -> List[str]:

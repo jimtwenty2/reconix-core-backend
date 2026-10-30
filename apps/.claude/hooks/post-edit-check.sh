@@ -23,6 +23,9 @@ esac
 # with the make-static-data skill. (`:8000/v1` is an LLM server address, not the Core API.)
 no_api="Static data only: the apps don't call the Core API yet. Read the backend for the response shape and add a JSON file under sample-data/api/ (make-static-data skill):"
 case "$f" in
+  # reconix-ai only (branch sokpiseth/ai-api, the user's OK on 2026-10-30): the opt-in Core API
+  # mode lives in this one package. Ask the lead before this exception goes to Develop.
+  */tui/reconix/core_api/*.py) ;;
   */tui/reconix/*.py)
     out=$(grep -nE '^\s*(import|from) (httpx|requests|aiohttp|urllib3)\b|RECONIX_API_URL|(localhost|127\.0\.0\.1):8000' "$f" \
       | grep -v ':8000/v1') && problems+="$no_api"$'\n'"$out"$'\n'
