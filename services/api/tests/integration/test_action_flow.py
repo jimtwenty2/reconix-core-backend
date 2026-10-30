@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import update
 
+from reconix_api.core.interfaces import RiskLevel, ToolName
 from reconix_api.models import Approval, ScopeManifest
+from tests.fakes.fake_core import FAKE_RISK
 from tests.integration.test_scope_flow import draft_and_submit, open_session, scopes_path
 
 SCOPE = {
@@ -193,8 +195,11 @@ def test_approving_after_the_assessment_is_cancelled_runs_nothing(db_client, db_
     assert response.status_code == 409
     assert response.json()["code"] == "ASSESSMENT_NOT_ACTIVE"
     assert db_app.state.parts["mcp"].jobs == []
+    saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert (saved["action_status"], saved["tool_runs"]) == ("CANCELLED", [])
     approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
-    assert (approval["approval_status"], approval["consumed_at"]) == ("PENDING", None)
+    assert (approval["approval_status"], approval["consumed_at"]) == ("EXPIRED", None)
+    assert event_types(db_app).count("ACTION_BLOCKED") == 1
 
 
 def test_approving_runs_the_checks_again(db_client, db_app, session_factory):
@@ -222,6 +227,37 @@ def test_approving_runs_the_checks_again(db_client, db_app, session_factory):
     assert db_app.state.parts["mcp"].jobs == []
     saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
     assert (saved["action_status"], saved["tool_runs"]) == ("BLOCKED", [])
+    assert saved["guardrail_report"]["reason"] == "TOOL_NOT_ALLOWED"
     approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
-    assert (approval["approval_status"], approval["consumed_at"]) == ("PENDING", None)
+    assert (approval["approval_status"], approval["reason"]) == ("EXPIRED", "TOOL_NOT_ALLOWED")
+    assert approval["consumed_at"] is None
     assert event_types(db_app).count("ACTION_BLOCKED") == 1
+
+    # The approval can no longer be used, so a blocked action never runs later.
+    again = db_client.post(f"/approvals/{action['approval_id']}/approve", json={}, headers=headers)
+    assert again.json()["code"] == "APPROVAL_ALREADY_DECIDED"
+    assert db_app.state.parts["mcp"].jobs == []
+
+
+def test_approving_refuses_an_action_whose_risk_rose(db_client, db_app, monkeypatch):
+    """A MEDIUM approval never runs an action the checks now rate HIGH (no typed target)."""
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    assert action["risk_level"] == "MEDIUM"
+    monkeypatch.setitem(FAKE_RISK, ToolName.NUCLEI, RiskLevel.HIGH)  # e.g. the risk rules changed
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+
+    assert response.status_code == 422
+    details = response.json()["details"]
+    assert (details["blocked_by"], details["reason"], details["risk"]) == (
+        "RISK",
+        "RISK_CHANGED",
+        "HIGH",
+    )
+    assert db_app.state.parts["mcp"].jobs == []

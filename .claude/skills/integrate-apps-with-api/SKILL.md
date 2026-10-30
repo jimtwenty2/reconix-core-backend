@@ -67,11 +67,9 @@ anyone writes code:
 
 Do these first. Each one is its own PR (`add-endpoint` or `add-approval-flow`, plus tests):
 
-- [ ] **Second check after approval (S2).** Today `actions.approve_action` only re-hashes the
-  action (`ensure_unchanged`), and `tool_runs.run_action` only checks expiry and single use
-  (`ensure_can_use`). Neither calls `ensure_can_act` or `interfaces.check()`. Call both again
-  right before `call_tool`. Add a test that an approved action does not run once its assessment
-  is cancelled or its scope window has closed.
+- [x] **Second check after approval (S2).** `actions.approve_action` runs `ensure_can_act` and
+  `interfaces.check()` again before the run; tests cover a cancelled assessment, a closed scope
+  window and a risk that rose (branch `fix/approval-recheck`).
 - [ ] **CORS origin.** `core/config.py` allows `:3000`, but the web runs on `:3100`
   (`apps/web/scripts/serve.mjs`). This matters only if the browser calls the API.
 - [ ] **Viewer token**, if step 1 asks for one. Add viewer-403 tests in `tests/security/`.

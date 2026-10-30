@@ -7,7 +7,7 @@ import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, NoReturn
 from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session as Db
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import (
+    RISK_ORDER,
     Action,
     CheckContext,
+    CheckName,
     CheckResult,
     Decision,
     Interfaces,
@@ -57,15 +59,19 @@ def action_hash(action: Action) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def blocked_error(result: CheckResult) -> ApiError:
+    return ApiError(
+        422,
+        "ACTION_BLOCKED",
+        "The safety checks blocked this action.",
+        {"blocked_by": result.blocked_by, "reason": result.reason, "risk": result.risk},
+    )
+
+
 def next_step(result: CheckResult) -> NextStep:
     """BLOCKED -> 422. LOW runs now. MEDIUM and HIGH wait for a person."""
     if result.decision == Decision.BLOCKED:
-        raise ApiError(
-            422,
-            "ACTION_BLOCKED",
-            "The safety checks blocked this action.",
-            {"blocked_by": result.blocked_by, "reason": result.reason, "risk": result.risk},
-        )
+        raise blocked_error(result)
     if result.risk == RiskLevel.LOW:
         return NextStep.RUN_NOW
     return NextStep.NEEDS_APPROVAL
@@ -188,10 +194,15 @@ def ensure_can_act(db: Db, assessment_id: UUID) -> ScopeManifest:
     if assessment is None:
         raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
     if assessment.assessment_status != AssessmentStatus.ACTIVE:
+        message = (
+            "Approve the scope before sending actions."
+            if assessment.assessment_status == AssessmentStatus.DRAFT
+            else f"This assessment is {assessment.assessment_status} and takes no more actions."
+        )
         raise ApiError(
             409,
             "ASSESSMENT_NOT_ACTIVE",
-            "Approve the scope before sending actions.",
+            message,
             {"assessment_status": assessment.assessment_status},
         )
     manifest = scope_repo.get_approved(db, assessment_id)
@@ -217,17 +228,40 @@ async def approve_action(
     and runs the action.
 
     Up to 30 minutes pass between sending and approving: the assessment may be cancelled,
-    the scope window over or the scope changed. Then nothing runs and the approval is not
-    used: an inactive assessment is a 409, and an action the checks now block is saved as
-    BLOCKED and answered with 422 ACTION_BLOCKED, as when it is sent.
+    the scope window over, or the risk rules changed. If the checks now refuse the action,
+    nothing runs and the approval can no longer be used (see _refuse_at_approval).
     """
     row = _get(db, approval.action_id, lock=True)
+    if row.action_status != ActionStatus.PENDING:
+        raise ApiError(
+            409,
+            "ACTION_NOT_PENDING",
+            "This action is no longer waiting for approval.",
+            {"action_status": row.action_status},
+        )
     action = to_action(row)
     ensure_unchanged(approval.subject_hash, action)
-    ensure_can_act(db, row.assessment_id)
+    write_audit = interfaces.write_audit
+    try:
+        ensure_can_act(db, row.assessment_id)
+    except ApiError as error:
+        _refuse_at_approval(db, write_audit, operator, row, approval, ActionStatus.CANCELLED, error)
     result = interfaces.check(action, _check_context(db, interfaces, operator, row.assessment_id))
+    if (
+        result.decision != Decision.BLOCKED
+        and RISK_ORDER[result.risk] > RISK_ORDER[approval.risk_level]
+    ):
+        # The approval covered a lower risk (a HIGH one needs the typed target): send it again.
+        result = CheckResult(
+            decision=Decision.BLOCKED,
+            risk=result.risk,
+            blocked_by=CheckName.RISK,
+            reason="RISK_CHANGED",
+        )
+    row.guardrail_report = result.model_dump(mode="json")  # the check this decision rests on
     if result.decision == Decision.BLOCKED:
-        _block_at_approval(db, interfaces.write_audit, operator, row, approval, result)
+        error = blocked_error(result)
+        _refuse_at_approval(db, write_audit, operator, row, approval, ActionStatus.BLOCKED, error)
     approval.approval_status = ApprovalStatus.APPROVED
     approval.decided_by = operator.actor
     approval.decided_at = datetime.now(UTC)
@@ -246,18 +280,23 @@ async def approve_action(
     )
 
 
-def _block_at_approval(
+def _refuse_at_approval(
     db: Db,
     write_audit: WriteAudit,
     operator: Operator,
     row: ActionRow,
     approval: Approval,
-    result: CheckResult,
-) -> None:
-    """The checks blocked an action as it was approved: save it as BLOCKED, write one audit
-    line and raise 422. The approval stays PENDING and unused, so it can still be rejected."""
-    row.action_status = ActionStatus.BLOCKED
-    row.guardrail_report = result.model_dump(mode="json")
+    status: ActionStatus,
+    error: ApiError,
+) -> NoReturn:
+    """The second check refused an action as it was approved, so nothing runs. The action
+    ends (BLOCKED, or CANCELLED with its assessment) and the approval can no longer be used
+    (EXPIRED, with the reason), so a plan waiting on it is freed on the next plan request.
+    Writes one audit line, then raises the error."""
+    reason = error.details.get("reason") or error.code
+    row.action_status = status
+    approval.approval_status = ApprovalStatus.EXPIRED
+    approval.reason = reason
     db.commit()
     audit(
         write_audit,
@@ -268,16 +307,12 @@ def _block_at_approval(
             "action_id": str(row.action_id),
             "approval_id": str(approval.approval_id),
             "tool": row.tool,
-            "risk": result.risk,
-            "blocked_by": result.blocked_by,
-            "reason": result.reason,
+            "blocked_by": error.details.get("blocked_by"),
+            "reason": reason,
         },
     )
-    try:
-        next_step(result)
-    except ApiError as error:
-        error.details["action_id"] = str(row.action_id)
-        raise
+    error.details["action_id"] = str(row.action_id)
+    raise error
 
 
 def reject_action(
