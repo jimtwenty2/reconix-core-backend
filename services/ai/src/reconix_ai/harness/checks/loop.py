@@ -19,7 +19,7 @@ from reconix_ai.harness.checks.result import ALLOWED, CheckOutcome, blocked
 
 @dataclass(frozen=True)
 class LoopLimits:
-    """Default limits. Changing them needs a configuration approval (week 2)."""
+    """Default limits. Changing them needs a configuration approval (harness/limits.py)."""
 
     max_same_command: int = 3
     same_command_window: timedelta = timedelta(minutes=10)
