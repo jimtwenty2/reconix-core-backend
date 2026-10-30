@@ -49,6 +49,21 @@ def plan_messages(state: AgentState) -> list[Message]:
     ]
     if state.get("tool_results"):
         parts.append(tool_results_text(state["tool_results"]))
+    if state.get("reflections"):
+        parts.append(reflections_text(state["reflections"]))
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def reflect_messages(state: AgentState) -> list[Message]:
+    parts = [
+        read_markdown(PROMPTS_DIR / "reflect.md"),
+        scope_text(state["scope"]),
+        "## Goal\n" + fenced("goal", state.get("goal", "")),
+        knowledge_text(state.get("knowledge", [])),
+        tool_results_text(state["tool_results"]),
+    ]
+    if state.get("reflections"):
+        parts.append(reflections_text(state["reflections"]))
     return [system_message(), Message("user", "\n\n".join(parts))]
 
 
@@ -149,6 +164,12 @@ def knowledge_text(hits: list[dict[str, str]]) -> str:
 
 def tool_results_text(results: list[str]) -> str:
     return "## Earlier tool results\n" + fenced("tool_results", "\n\n".join(results))
+
+
+def reflections_text(reflections: list[str]) -> str:
+    # The model wrote these from tool output, so they are fenced as data too.
+    lines = "\n".join(f"- {line}" for line in reflections)
+    return "## Your earlier reflections\n" + fenced("reflections", lines)
 
 
 def fenced(tag: str, text: str) -> str:

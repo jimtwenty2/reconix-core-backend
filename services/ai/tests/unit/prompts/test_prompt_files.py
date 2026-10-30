@@ -2,7 +2,15 @@ import pytest
 
 from reconix_ai.agent.prompts import PROMPTS_DIR, read_markdown
 
-PROMPT_FILES = ["system.md", "understand.md", "plan.md", "analyze.md", "report.md", "chat.md"]
+PROMPT_FILES = [
+    "system.md",
+    "understand.md",
+    "reflect.md",
+    "plan.md",
+    "analyze.md",
+    "report.md",
+    "chat.md",
+]
 # findings.severity_status in ERD V3: NONE, never INFO.
 SEVERITY_VALUES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN"]
 
@@ -15,7 +23,7 @@ def test_every_prompt_is_written(name: str) -> None:
     assert len(text.splitlines()) > 3
 
 
-@pytest.mark.parametrize("name", ["analyze.md", "report.md", "chat.md"])
+@pytest.mark.parametrize("name", ["analyze.md", "report.md", "chat.md", "reflect.md"])
 def test_task_prompts_ask_for_json(name: str) -> None:
     assert "JSON object" in read_markdown(PROMPTS_DIR / name)
 
@@ -31,7 +39,7 @@ def test_analysis_uses_the_erd_severity_values() -> None:
 def test_system_prompt_marks_findings_as_data() -> None:
     text = read_markdown(PROMPTS_DIR / "system.md")
 
-    for tag in ["<goal>", "<reference_data>", "<tool_results>", "<findings>"]:
+    for tag in ["<goal>", "<reference_data>", "<tool_results>", "<findings>", "<reflections>"]:
         assert tag in text
 
 

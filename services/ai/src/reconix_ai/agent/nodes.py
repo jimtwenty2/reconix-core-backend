@@ -1,8 +1,9 @@
-"""The steps of the agent: understand, find, plan, suggest and wait for PLAN and
-SUGGEST; find and analyze for ANALYZE; report for REPORT.
+"""The steps of the agent: understand, find, reflect (only with tool results),
+plan, suggest and wait for PLAN and SUGGEST; find and analyze for ANALYZE;
+report for REPORT.
 
-Only understand, plan, analyze and report call the model. suggest runs the harness check() on
-each planned step and offers the first one it allows; the API runs check()
+Only understand, reflect, plan, analyze and report call the model. suggest runs
+the harness check() on each planned step and offers the first one it allows; the API runs check()
 again, with the full context, before anything runs. wait pauses the graph
 until a person approves or rejects the step.
 """
@@ -21,18 +22,20 @@ from reconix_ai.agent.answers import (
     BadAnswer,
     json_object,
     read_plan,
+    read_reflection,
     read_understanding,
 )
 from reconix_ai.agent.prompts import (
     analyze_messages,
     plan_messages,
+    reflect_messages,
     report_messages,
     understand_messages,
 )
 from reconix_ai.agent.state import AgentScope, AgentState, scope_from_dict
 from reconix_ai.analysis.answers import read_analysis
 from reconix_ai.contracts import ProposedAction
-from reconix_ai.harness import check
+from reconix_ai.harness import check, mask_secrets
 from reconix_ai.harness.checks.result import Decision
 from reconix_ai.knowledge import KnowledgeHit, search_knowledge
 from reconix_ai.knowledge.search import ref_ids_in
@@ -54,6 +57,8 @@ HITS_PER_QUERY = 3
 ANALYZE_MAX_TOKENS = 6000
 REPORT_MAX_TOKENS = 3000
 MAX_HITS = 6
+MAX_REFLECTIONS = 5
+MAX_KNOWLEDGE_HITS = 12  # find's hits plus what reflect looks up
 MAX_PROMPT_HIT_CHARS = 1200
 DEFAULT_GOAL = "Find what runs on the approved targets."
 
@@ -119,6 +124,38 @@ async def find(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]
     except Exception:  # KnowledgeError, ProviderError or anything else: plan without it
         return {"knowledge": hits[:MAX_HITS], "knowledge_unavailable": True}
     return {"knowledge": hits[:MAX_HITS], "knowledge_unavailable": False}
+
+
+async def reflect(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
+    """ReflAct: one line on what the tool results show and how close the goal is,
+    before planning. Its only tool is the knowledge search, which reads; it may look
+    something up and reflect again, up to MAX_REFLECTIONS times. Planning goes on
+    without it after a bad answer or a search that is down."""
+    deps = runtime.context
+    reflections = state.get("reflections", [])
+    # Keep half the budget for the plan, which must still be made.
+    if tokens_used(state) >= deps.token_budget // 2:
+        return {"reflect_more": False}
+    answer, usage = await ask_json(
+        deps, reflect_messages(state), read_reflection, tokens_used(state)
+    )
+    update: dict[str, Any] = {"reflect_more": False, **added(state, usage)}
+    if answer is None:
+        return update
+    line, query = answer
+    line, count = mask_secrets(line)
+    update["reflections"] = [*reflections, line]
+    update["masked_count"] += count
+    if query is None or len(update["reflections"]) >= MAX_REFLECTIONS:
+        return update
+    knowledge = state.get("knowledge", [])
+    seen = {(hit["ref_id"], hit["section"]) for hit in knowledge}
+    try:
+        found = await deps.search(query, limit=HITS_PER_QUERY)
+    except Exception:  # KnowledgeError, ProviderError or anything else: plan without it
+        return {**update, "knowledge_unavailable": True}
+    new = [hit_dict(hit) for hit in found if (hit.ref_id, hit.section) not in seen]
+    return {**update, "knowledge": (knowledge + new)[:MAX_KNOWLEDGE_HITS], "reflect_more": True}
 
 
 async def plan(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
@@ -222,6 +259,16 @@ def wait(state: AgentState) -> dict[str, Any]:
 def start_task(state: AgentState) -> str:
     task = state.get("task")
     return {"ANALYZE": "analyze", "REPORT": "report"}.get(task, "plan")
+
+
+def after_find(state: AgentState) -> str:
+    if start_task(state) == "analyze":
+        return "analyze"
+    return "reflect" if state.get("tool_results") else "plan"
+
+
+def after_reflect(state: AgentState) -> str:
+    return "reflect" if state.get("reflect_more") else "plan"
 
 
 def after_suggest(state: AgentState) -> str:

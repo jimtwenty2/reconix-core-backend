@@ -13,6 +13,7 @@ from reconix_ai.contracts import TOOL_NAMES
 MAX_GOAL_CHARS = 500
 MAX_QUERIES = 3
 MAX_QUERY_CHARS = 200
+MAX_REFLECTION_CHARS = 300
 MAX_SUMMARY_CHARS = 2000
 MAX_PLAN_STEPS = 5
 MAX_TITLE_CHARS = 200
@@ -50,6 +51,17 @@ def read_understanding(data: dict[str, Any]) -> tuple[str, list[str]]:
         queries = [q.strip()[:MAX_QUERY_CHARS] for q in searches if isinstance(q, str)]
         queries = [query for query in queries if query]
     return goal, queries[:MAX_QUERIES] or [goal[:MAX_QUERY_CHARS]]
+
+
+def read_reflection(data: dict[str, Any]) -> tuple[str, str | None]:
+    """One line on what is known now, and a knowledge search or None."""
+    reflection = data.get("reflection")
+    if not isinstance(reflection, str) or not reflection.strip():
+        raise BadAnswer("no reflection")
+    line = reflection.strip().splitlines()[0].strip()[:MAX_REFLECTION_CHARS]
+    search = data.get("search")
+    query = search.strip()[:MAX_QUERY_CHARS] if isinstance(search, str) else ""
+    return line, query or None
 
 
 def read_plan(data: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:

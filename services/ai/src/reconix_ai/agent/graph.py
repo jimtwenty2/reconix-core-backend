@@ -1,5 +1,6 @@
 """The LangGraph graph: understand -> find -> plan -> suggest -> wait for PLAN
-and SUGGEST, find -> analyze for ANALYZE and report for REPORT. Only PLAN and
+and SUGGEST, with reflect (up to 5 times) between find and plan when there are
+tool results; find -> analyze for ANALYZE and report for REPORT. Only PLAN and
 SUGGEST ever wait.
 
 ask_agent() runs it for one agent run and stops at wait, where it is saved in
@@ -72,6 +73,7 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
     graph = StateGraph(AgentState, context_schema=AgentDeps)
     graph.add_node("understand", nodes.understand)
     graph.add_node("find", nodes.find)
+    graph.add_node("reflect", nodes.reflect)
     graph.add_node("plan", nodes.plan)
     graph.add_node("suggest", nodes.suggest)
     graph.add_node("wait", nodes.wait)
@@ -81,7 +83,12 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
         START, nodes.start_task, {"plan": "understand", "analyze": "find", "report": "report"}
     )
     graph.add_edge("understand", "find")
-    graph.add_conditional_edges("find", nodes.start_task, {"plan": "plan", "analyze": "analyze"})
+    graph.add_conditional_edges(
+        "find", nodes.after_find, {"reflect": "reflect", "plan": "plan", "analyze": "analyze"}
+    )
+    graph.add_conditional_edges(
+        "reflect", nodes.after_reflect, {"reflect": "reflect", "plan": "plan"}
+    )
     graph.add_edge("analyze", END)
     graph.add_edge("report", END)
     graph.add_edge("plan", "suggest")
@@ -119,6 +126,7 @@ async def ask_agent(
         "scope": scope_to_dict(request.scope),
         "messages": messages,
         "tool_results": results,
+        "reflections": [],
         "proposed_action": None,
         "risk": None,
         "blocked": [],
@@ -249,7 +257,8 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
     snapshot = await graph.aget_state(thread_config(run_id))
     values = snapshot.values
     proposed = values.get("proposed_action")
-    notes = [values.get("summary", "")]
+    # The latest ReflAct line tells the person what the agent knows now.
+    notes = [*values.get("reflections", [])[-1:], values.get("summary", "")]
     if values.get("task") == "ANALYZE":
         notes = [values.get("analysis_summary", "")]
     elif values.get("task") == "REPORT":
