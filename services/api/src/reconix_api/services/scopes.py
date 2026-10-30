@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy.orm import Session as Db
 from sqlalchemy.orm import sessionmaker
 
@@ -22,6 +23,7 @@ from reconix_api.schemas.scopes import (
     ScopeSubmit,
     ScopeSubmitted,
     ScopeTargetOut,
+    ScopeUpdate,
 )
 from reconix_api.services.approvals import snapshot_hash
 from reconix_api.services.audit import audit
@@ -35,8 +37,11 @@ ENGAGEMENT_PREFIX = "RCX"
 
 
 def create_draft(
-    db: Db, write_audit: WriteAudit, operator: Operator, draft: ScopeDraft
+    db: Db, write_audit: WriteAudit, operator: Operator, session_id: UUID, draft: ScopeDraft
 ) -> ScopeOut:
+    """A new draft in your own session."""
+    if session_id != operator.session_id:
+        raise ApiError(403, "NOT_YOUR_SESSION", "You can only draft a scope in your own session.")
     manifest = ScopeManifest(
         session_id=operator.session_id, version=scope_repo.next_version(db, operator.session_id)
     )
@@ -60,6 +65,32 @@ def update_draft(
     db.commit()
     audit(write_audit, "SCOPE_EDITED", operator, details={"manifest_id": str(manifest_id)})
     return read_scope(db, manifest_id)
+
+
+def patch_draft(
+    db: Db, write_audit: WriteAudit, operator: Operator, manifest_id: UUID, changes: ScopeUpdate
+) -> ScopeOut:
+    """Only the fields sent change; the result is checked like a new draft."""
+    current = read_scope(db, manifest_id)
+    merged = {
+        **current.model_dump(include=set(ScopeDraft.model_fields) - {"targets"}),
+        "targets": [t.model_dump(exclude={"scope_target_id"}) for t in current.targets],
+        **changes.model_dump(exclude_unset=True),
+    }
+    try:
+        draft = ScopeDraft.model_validate(merged)
+    except ValidationError as error:
+        fields = [
+            {"field": ".".join(map(str, e["loc"])), "message": e["msg"]} for e in error.errors()
+        ]
+        raise ApiError(
+            422, "VALIDATION_ERROR", "The scope is not valid.", {"fields": fields}
+        ) from error
+    return update_draft(db, write_audit, operator, manifest_id, draft)
+
+
+def list_session_scopes(db: Db, session_id: UUID) -> list[ScopeOut]:
+    return [read_scope(db, row.manifest_id) for row in scope_repo.list_by_session(db, session_id)]
 
 
 def read_scope(db: Db, manifest_id: UUID) -> ScopeOut:

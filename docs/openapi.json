@@ -1,6 +1,48 @@
 {
   "components": {
     "schemas": {
+      "Action": {
+        "description": "One tool run that someone (the agent or a person) wants to do.\n\nArguments are always a list, never one shell string.",
+        "properties": {
+          "arguments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Arguments",
+            "type": "array"
+          },
+          "finding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Id"
+          },
+          "is_validation": {
+            "default": false,
+            "title": "Is Validation",
+            "type": "boolean"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/ToolName"
+          }
+        },
+        "required": [
+          "tool",
+          "target"
+        ],
+        "title": "Action",
+        "type": "object"
+      },
       "ActionIn": {
         "description": "One tool run. Arguments are a list, never one shell string.",
         "properties": {
@@ -152,6 +194,116 @@
         "title": "ActionStatus",
         "type": "string"
       },
+      "AgentRunOut": {
+        "properties": {
+          "agent_run_id": {
+            "format": "uuid",
+            "title": "Agent Run Id",
+            "type": "string"
+          },
+          "agent_runs_status": {
+            "$ref": "#/components/schemas/AgentRunStatus"
+          },
+          "assessment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Id"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_run_id",
+          "agent_runs_status",
+          "model_name",
+          "plan",
+          "started_at",
+          "finished_at",
+          "session_id",
+          "assessment_id"
+        ],
+        "title": "AgentRunOut",
+        "type": "object"
+      },
+      "AgentRunStatus": {
+        "enum": [
+          "RUNNING",
+          "WAITING_APPROVAL",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED"
+        ],
+        "title": "AgentRunStatus",
+        "type": "string"
+      },
+      "AnalysisOut": {
+        "description": "The agent's suggestions for each OPEN finding. Nothing here changes a finding: a\nperson accepts a suggestion with PATCH /findings/{id}. A next_step is a validation\nstep: send it to POST /assessments/{id}/actions with purpose \"validation\", where it\nis checked and waits for an approval like any MEDIUM action.",
+        "properties": {
+          "agent_run": {
+            "$ref": "#/components/schemas/AgentRunOut"
+          },
+          "analysis": {
+            "items": {
+              "$ref": "#/components/schemas/FindingAnalysis"
+            },
+            "title": "Analysis",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_run",
+          "summary"
+        ],
+        "title": "AnalysisOut",
+        "type": "object"
+      },
       "ApprovalDecision": {
         "properties": {
           "reason": {
@@ -275,6 +427,18 @@
             ],
             "title": "Reason"
           },
+          "report_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Id"
+          },
           "requested_at": {
             "format": "date-time",
             "title": "Requested At",
@@ -396,6 +560,92 @@
         "title": "AssessmentStatus",
         "type": "string"
       },
+      "AssessmentUpdate": {
+        "description": "Rename, or finish an ACTIVE assessment. Cancelling is DELETE.",
+        "properties": {
+          "assessment_status": {
+            "anyOf": [
+              {
+                "const": "COMPLETED",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Status"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "title": "AssessmentUpdate",
+        "type": "object"
+      },
+      "BlockedStep": {
+        "description": "A planned step the harness refused, and why.",
+        "properties": {
+          "blocked_by": {
+            "$ref": "#/components/schemas/CheckName"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "order",
+          "blocked_by"
+        ],
+        "title": "BlockedStep",
+        "type": "object"
+      },
+      "CheckName": {
+        "description": "The 5 checks, in the order the pipeline runs them.",
+        "enum": [
+          "INPUT",
+          "SCOPE",
+          "COMMAND",
+          "RISK",
+          "LOOP"
+        ],
+        "title": "CheckName",
+        "type": "string"
+      },
       "EvidenceOut": {
         "properties": {
           "content": {
@@ -449,6 +699,105 @@
           "tool_run_id"
         ],
         "title": "EvidenceOut",
+        "type": "object"
+      },
+      "FindingAnalysis": {
+        "description": "The agent's suggestions for one finding (the 8 parts of workflow v5).\n\nSuggestions only: a person accepts them. next_step is never run on its own; an\noperator picks it and it becomes a normal action, with check() and an approval.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "cve_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cve Ids",
+            "type": "array"
+          },
+          "cvss_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Score"
+          },
+          "cwe_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cwe Ids",
+            "type": "array"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "impact": {
+            "title": "Impact",
+            "type": "string"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Action"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owasp_id": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owasp Id",
+            "type": "array"
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Related",
+            "type": "array"
+          },
+          "remediation": {
+            "title": "Remediation",
+            "type": "string"
+          },
+          "severity_status": {
+            "title": "Severity Status",
+            "type": "string"
+          },
+          "unsure": {
+            "title": "Unsure",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "explanation",
+          "related",
+          "severity_status",
+          "cvss_score",
+          "evidence",
+          "impact",
+          "remediation",
+          "cwe_ids",
+          "owasp_id",
+          "cve_ids",
+          "next_step",
+          "unsure"
+        ],
+        "title": "FindingAnalysis",
         "type": "object"
       },
       "FindingOut": {
@@ -540,6 +889,29 @@
             ],
             "title": "Remediation"
           },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
           "severity_status": {
             "$ref": "#/components/schemas/SeverityStatus"
           },
@@ -578,10 +950,25 @@
           "remediation",
           "validation_status",
           "finding_status",
+          "reviewed_by",
+          "reviewed_at",
           "created_at",
           "assessment_id"
         ],
         "title": "FindingOut",
+        "type": "object"
+      },
+      "FindingReview": {
+        "description": "A person's review of a finding.",
+        "properties": {
+          "finding_status": {
+            "$ref": "#/components/schemas/FindingStatus"
+          }
+        },
+        "required": [
+          "finding_status"
+        ],
+        "title": "FindingReview",
         "type": "object"
       },
       "FindingStatus": {
@@ -708,6 +1095,209 @@
         "title": "Operator",
         "type": "object"
       },
+      "PlanOut": {
+        "description": "A plan and its first step.\n\naction is the step the agent suggested, after the API's own check: BLOCKED,\nrun already (LOW), or waiting for the approval in action.approval_id.",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agent_run": {
+            "$ref": "#/components/schemas/AgentRunOut"
+          },
+          "blocked": {
+            "items": {
+              "$ref": "#/components/schemas/BlockedStep"
+            },
+            "title": "Blocked",
+            "type": "array"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStep"
+            },
+            "title": "Plan",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_run",
+          "text"
+        ],
+        "title": "PlanOut",
+        "type": "object"
+      },
+      "PlanStep": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Action"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order",
+          "title"
+        ],
+        "title": "PlanStep",
+        "type": "object"
+      },
+      "ReportOut": {
+        "properties": {
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "executive_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executive Summary"
+          },
+          "formats": {
+            "items": {
+              "enum": [
+                "PDF",
+                "DOCX",
+                "JSON"
+              ],
+              "type": "string"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "generated_by": {
+            "title": "Generated By",
+            "type": "string"
+          },
+          "methodology": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Methodology"
+          },
+          "report_id": {
+            "format": "uuid",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "report_status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "review_approval_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Approval Id"
+          },
+          "review_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signed_off": {
+            "title": "Signed Off",
+            "type": "boolean"
+          },
+          "snapshot_hash": {
+            "title": "Snapshot Hash",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "report_id",
+          "version",
+          "report_status",
+          "executive_summary",
+          "methodology",
+          "snapshot_hash",
+          "formats",
+          "generated_by",
+          "generated_at",
+          "created_at",
+          "assessment_id",
+          "review_approval_id",
+          "review_status",
+          "signed_off"
+        ],
+        "title": "ReportOut",
+        "type": "object"
+      },
+      "ReportStatus": {
+        "enum": [
+          "GENERATING",
+          "READY",
+          "FAILED"
+        ],
+        "title": "ReportStatus",
+        "type": "string"
+      },
       "RiskLevel": {
         "enum": [
           "LOW",
@@ -726,7 +1316,7 @@
         "type": "string"
       },
       "ScopeDraft": {
-        "description": "A new or edited draft. Editing replaces every field and every target.",
+        "description": "A new draft, or a draft after a partial edit is applied.",
         "properties": {
           "allowed_actions": {
             "items": {
@@ -1087,6 +1677,130 @@
         "title": "ScopeTargetOut",
         "type": "object"
       },
+      "ScopeUpdate": {
+        "description": "A partial edit of a draft: only the fields sent change. Sending targets replaces them all.",
+        "properties": {
+          "allowed_actions": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "discovery",
+                    "scan",
+                    "validation"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Actions"
+          },
+          "allowed_methods": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "GET",
+                    "HEAD",
+                    "OPTIONS",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Methods"
+          },
+          "allowed_tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolName"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Tools"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "limitations": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limitations"
+          },
+          "max_risk": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "targets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScopeTargetIn"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targets"
+          }
+        },
+        "title": "ScopeUpdate",
+        "type": "object"
+      },
       "SessionCreate": {
         "properties": {
           "interface": {
@@ -1105,7 +1819,20 @@
         "type": "object"
       },
       "SessionCreated": {
+        "description": "The new session and its token. The role is not shown: read it from GET /operator.",
         "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1114,9 +1841,6 @@
           "interface": {
             "title": "Interface",
             "type": "string"
-          },
-          "role": {
-            "$ref": "#/components/schemas/Role"
           },
           "session_id": {
             "format": "uuid",
@@ -1134,12 +1858,55 @@
         "required": [
           "session_id",
           "interface",
-          "role",
           "session_status",
           "created_at",
+          "closed_at",
           "token"
         ],
         "title": "SessionCreated",
+        "type": "object"
+      },
+      "SessionRead": {
+        "description": "A session as stored. The role lives with the token, so it is not shown here.",
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "interface": {
+            "title": "Interface",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "session_status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          }
+        },
+        "required": [
+          "session_id",
+          "interface",
+          "session_status",
+          "created_at",
+          "closed_at"
+        ],
+        "title": "SessionRead",
         "type": "object"
       },
       "SessionStatus": {
@@ -1344,6 +2111,13 @@
         "title": "ValidationStatus",
         "type": "string"
       }
+    },
+    "securitySchemes": {
+      "SessionToken": {
+        "description": "The token from POST /api/v1/sessions.",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
@@ -1352,9 +2126,9 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/actions/{action_id}": {
+    "/api/v1/actions/{action_id}": {
       "get": {
-        "operationId": "read_action_actions__action_id__get",
+        "operationId": "read_action_api_v1_actions__action_id__get",
         "parameters": [
           {
             "in": "path",
@@ -1389,15 +2163,55 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Action",
         "tags": [
           "actions"
         ]
       }
     },
-    "/approvals": {
+    "/api/v1/approvals": {
       "get": {
-        "operationId": "list_pending_approvals_approvals_get",
+        "description": "Waiting approvals by default; filter by status and kind.",
+        "operationId": "list_approvals_api_v1_approvals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ApprovalStatus",
+              "default": "PENDING"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "scope",
+                    "action",
+                    "disclosure",
+                    "configuration",
+                    "review"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1406,23 +2220,38 @@
                   "items": {
                     "$ref": "#/components/schemas/ApprovalOut"
                   },
-                  "title": "Response List Pending Approvals Approvals Get",
+                  "title": "Response List Approvals Api V1 Approvals Get",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "summary": "List Pending Approvals",
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Approvals",
         "tags": [
           "approvals"
         ]
       }
     },
-    "/approvals/{approval_id}": {
+    "/api/v1/approvals/{approval_id}": {
       "get": {
-        "operationId": "read_approval_approvals__approval_id__get",
+        "operationId": "read_approval_api_v1_approvals__approval_id__get",
         "parameters": [
           {
             "in": "path",
@@ -1457,16 +2286,21 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Approval",
         "tags": [
           "approvals"
         ]
       }
     },
-    "/approvals/{approval_id}/approve": {
+    "/api/v1/approvals/{approval_id}/approve": {
       "post": {
         "description": "Approving an action also runs it; read the action afterwards for its tool run.",
-        "operationId": "approve_approvals__approval_id__approve_post",
+        "operationId": "approve_api_v1_approvals__approval_id__approve_post",
         "parameters": [
           {
             "in": "path",
@@ -1511,15 +2345,20 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Approve",
         "tags": [
           "approvals"
         ]
       }
     },
-    "/approvals/{approval_id}/reject": {
+    "/api/v1/approvals/{approval_id}/reject": {
       "post": {
-        "operationId": "reject_approvals__approval_id__reject_post",
+        "operationId": "reject_api_v1_approvals__approval_id__reject_post",
         "parameters": [
           {
             "in": "path",
@@ -1564,15 +2403,79 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Reject",
         "tags": [
           "approvals"
         ]
       }
     },
-    "/assessments/{assessment_id}": {
+    "/api/v1/assessments": {
       "get": {
-        "operationId": "read_assessment_assessments__assessment_id__get",
+        "operationId": "list_assessments_api_v1_assessments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssessmentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AssessmentOut"
+                  },
+                  "title": "Response List Assessments Api V1 Assessments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Assessments",
+        "tags": [
+          "assessments"
+        ]
+      }
+    },
+    "/api/v1/assessments/{assessment_id}": {
+      "delete": {
+        "description": "Cancels the assessment (status CANCELLED). Nothing is erased.",
+        "operationId": "cancel_assessment_api_v1_assessments__assessment_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -1607,15 +2510,123 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Cancel Assessment",
+        "tags": [
+          "assessments"
+        ]
+      },
+      "get": {
+        "operationId": "read_assessment_api_v1_assessments__assessment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Assessment",
+        "tags": [
+          "assessments"
+        ]
+      },
+      "patch": {
+        "description": "Rename it, or set assessment_status to COMPLETED when the work is done.",
+        "operationId": "update_assessment_api_v1_assessments__assessment_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssessmentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssessmentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Update Assessment",
         "tags": [
           "assessments"
         ]
       }
     },
-    "/assessments/{assessment_id}/actions": {
+    "/api/v1/assessments/{assessment_id}/actions": {
       "get": {
-        "operationId": "list_actions_assessments__assessment_id__actions_get",
+        "operationId": "list_actions_api_v1_assessments__assessment_id__actions_get",
         "parameters": [
           {
             "in": "path",
@@ -1636,7 +2647,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ActionOut"
                   },
-                  "title": "Response List Actions Assessments  Assessment Id  Actions Get",
+                  "title": "Response List Actions Api V1 Assessments  Assessment Id  Actions Get",
                   "type": "array"
                 }
               }
@@ -1654,6 +2665,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Actions",
         "tags": [
           "actions"
@@ -1661,7 +2677,7 @@
       },
       "post": {
         "description": "BLOCKED -> 422. LOW runs now. MEDIUM and HIGH return an approval_id to approve.",
-        "operationId": "send_action_assessments__assessment_id__actions_post",
+        "operationId": "send_action_api_v1_assessments__assessment_id__actions_post",
         "parameters": [
           {
             "in": "path",
@@ -1706,15 +2722,119 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Send Action",
         "tags": [
           "actions"
         ]
       }
     },
-    "/assessments/{assessment_id}/findings": {
+    "/api/v1/assessments/{assessment_id}/analyze": {
+      "post": {
+        "description": "Suggestions for each OPEN finding, 10 at a time. Nothing changes a finding until\na person accepts a suggestion with PATCH /findings/{id}.",
+        "operationId": "analyze_api_v1_assessments__assessment_id__analyze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Analyze",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/api/v1/assessments/{assessment_id}/plan": {
+      "post": {
+        "description": "The agent plans and suggests one step. The step goes through the same checks as\nany action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id.",
+        "operationId": "start_plan_api_v1_assessments__assessment_id__plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Start Plan",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/assessments/{assessment_id}/reports": {
       "get": {
-        "operationId": "list_findings_assessments__assessment_id__findings_get",
+        "description": "Newest version first.",
+        "operationId": "list_reports_api_v1_assessments__assessment_id__reports_get",
         "parameters": [
           {
             "in": "path",
@@ -1733,9 +2853,9 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/FindingOut"
+                    "$ref": "#/components/schemas/ReportOut"
                   },
-                  "title": "Response List Findings Assessments  Assessment Id  Findings Get",
+                  "title": "Response List Reports Api V1 Assessments  Assessment Id  Reports Get",
                   "type": "array"
                 }
               }
@@ -1753,15 +2873,280 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Reports",
+        "tags": [
+          "reports"
+        ]
+      },
+      "post": {
+        "description": "A new version from a locked copy of the findings and tool runs. Answers READY with\nits files, or an error and a FAILED report.",
+        "operationId": "create_report_api_v1_assessments__assessment_id__reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Create Report",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}": {
+      "get": {
+        "operationId": "read_evidence_api_v1_evidence__evidence_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Evidence",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/findings": {
+      "get": {
+        "description": "Every finding, or only one assessment's with ?assessment_id=.",
+        "operationId": "list_findings_api_v1_findings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "assessment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assessment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FindingOut"
+                  },
+                  "title": "Response List Findings Api V1 Findings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Findings",
         "tags": [
           "findings"
         ]
       }
     },
-    "/health": {
+    "/api/v1/findings/{finding_id}": {
       "get": {
-        "operationId": "health_health_get",
+        "operationId": "read_finding_api_v1_findings__finding_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Finding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Finding",
+        "tags": [
+          "findings"
+        ]
+      },
+      "patch": {
+        "description": "Mark a finding OPEN, FALSE_POSITIVE or FIXED.",
+        "operationId": "review_finding_api_v1_findings__finding_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Finding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FindingReview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Review Finding",
+        "tags": [
+          "findings"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "health_api_v1_health_get",
         "responses": {
           "200": {
             "content": {
@@ -1780,9 +3165,9 @@
         ]
       }
     },
-    "/me": {
+    "/api/v1/operator": {
       "get": {
-        "operationId": "me_me_get",
+        "operationId": "read_operator_api_v1_operator_get",
         "responses": {
           "200": {
             "content": {
@@ -1795,31 +3180,149 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Me",
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Operator",
         "tags": [
           "system"
         ]
       }
     },
-    "/scopes": {
-      "post": {
-        "operationId": "create_scope_scopes_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScopeDraft"
+    "/api/v1/reports/{report_id}": {
+      "get": {
+        "operationId": "read_report_api_v1_reports__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportOut"
+                }
               }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Report",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/{report_id}/download": {
+      "get": {
+        "description": "The file, once the report is READY and its review is approved.",
+        "operationId": "download_api_v1_reports__report_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
             }
           },
-          "required": true
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "PDF",
+              "enum": [
+                "PDF",
+                "DOCX",
+                "JSON"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Download",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/v1/reports/{report_id}/review-requests": {
+      "post": {
+        "description": "A `review` approval; approve or reject it with /approvals/{id}/approve or /reject.",
+        "operationId": "request_review_api_v1_reports__report_id__review_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ScopeOut"
+                  "$ref": "#/components/schemas/ApprovalOut"
                 }
               }
             },
@@ -1836,15 +3339,20 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create Scope",
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Request Review",
         "tags": [
-          "scopes"
+          "reports"
         ]
       }
     },
-    "/scopes/{manifest_id}": {
+    "/api/v1/scope-manifests/{manifest_id}": {
       "get": {
-        "operationId": "read_scope_scopes__manifest_id__get",
+        "operationId": "read_scope_api_v1_scope_manifests__manifest_id__get",
         "parameters": [
           {
             "in": "path",
@@ -1879,13 +3387,19 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Read Scope",
         "tags": [
-          "scopes"
+          "scope manifests"
         ]
       },
-      "put": {
-        "operationId": "update_scope_scopes__manifest_id__put",
+      "patch": {
+        "description": "Only the fields sent change. Only a draft that was not submitted can change.",
+        "operationId": "update_scope_api_v1_scope_manifests__manifest_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -1902,7 +3416,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ScopeDraft"
+                "$ref": "#/components/schemas/ScopeUpdate"
               }
             }
           },
@@ -1930,16 +3444,21 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Update Scope",
         "tags": [
-          "scopes"
+          "scope manifests"
         ]
       }
     },
-    "/scopes/{manifest_id}/submit": {
+    "/api/v1/scope-manifests/{manifest_id}/submit": {
       "post": {
         "description": "Creates the DRAFT assessment and a scope approval.",
-        "operationId": "submit_scope_scopes__manifest_id__submit_post",
+        "operationId": "submit_scope_api_v1_scope_manifests__manifest_id__submit_post",
         "parameters": [
           {
             "in": "path",
@@ -1984,16 +3503,49 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Submit Scope",
         "tags": [
-          "scopes"
+          "scope manifests"
         ]
       }
     },
-    "/sessions": {
+    "/api/v1/sessions": {
+      "get": {
+        "operationId": "list_sessions_api_v1_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionRead"
+                  },
+                  "title": "Response List Sessions Api V1 Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Sessions",
+        "tags": [
+          "sessions"
+        ]
+      },
       "post": {
         "description": "Opens an OPERATOR session. Only reachable from this computer (Host check + CORS).",
-        "operationId": "open_session_sessions_post",
+        "operationId": "open_session_api_v1_sessions_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2032,9 +3584,158 @@
         ]
       }
     },
-    "/sessions/{session_id}/messages": {
+    "/api/v1/sessions/{session_id}": {
       "get": {
-        "operationId": "list_messages_sessions__session_id__messages_get",
+        "operationId": "read_session_api_v1_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/agent-runs": {
+      "get": {
+        "description": "Newest first.",
+        "operationId": "list_agent_runs_api_v1_sessions__session_id__agent_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunOut"
+                  },
+                  "title": "Response List Agent Runs Api V1 Sessions  Session Id  Agent Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Agent Runs",
+        "tags": [
+          "agent runs"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/close": {
+      "post": {
+        "operationId": "close_session_api_v1_sessions__session_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Close Session",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/messages": {
+      "get": {
+        "operationId": "list_messages_api_v1_sessions__session_id__messages_get",
         "parameters": [
           {
             "in": "path",
@@ -2055,7 +3756,7 @@
                   "items": {
                     "$ref": "#/components/schemas/MessageOut"
                   },
-                  "title": "Response List Messages Sessions  Session Id  Messages Get",
+                  "title": "Response List Messages Api V1 Sessions  Session Id  Messages Get",
                   "type": "array"
                 }
               }
@@ -2073,13 +3774,18 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "List Messages",
         "tags": [
           "messages"
         ]
       },
       "post": {
-        "operationId": "add_message_sessions__session_id__messages_post",
+        "operationId": "add_message_api_v1_sessions__session_id__messages_post",
         "parameters": [
           {
             "in": "path",
@@ -2124,9 +3830,122 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
         "summary": "Add Message",
         "tags": [
           "messages"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/scope-manifests": {
+      "get": {
+        "operationId": "list_scopes_api_v1_sessions__session_id__scope_manifests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScopeOut"
+                  },
+                  "title": "Response List Scopes Api V1 Sessions  Session Id  Scope Manifests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Scopes",
+        "tags": [
+          "scope manifests"
+        ]
+      },
+      "post": {
+        "operationId": "create_scope_api_v1_sessions__session_id__scope_manifests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Create Scope",
+        "tags": [
+          "scope manifests"
         ]
       }
     }

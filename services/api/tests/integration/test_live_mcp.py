@@ -38,7 +38,7 @@ def live_client(db_app, tmp_path):
         call_tool=real.call_tool,
     )
     db_app.state.mask_secrets = build_mask_secrets()
-    return TestClient(db_app, base_url="http://127.0.0.1")
+    return TestClient(db_app, base_url="http://127.0.0.1/api/v1")
 
 
 KALI_ITSELF = "172.20.0.2"  # the only host on the dev network; its MCP port is open
@@ -69,6 +69,8 @@ def test_approved_nmap_runs_in_kali_and_saves_findings(live_client):
     assert "<nmaprun" in run["output_masked"]
     assert run["request_count"] == 2
 
-    findings = live_client.get(f"/assessments/{assessment_id}/findings", headers=headers).json()
+    findings = live_client.get(
+        "/findings", params={"assessment_id": assessment_id}, headers=headers
+    ).json()
     assert [f["title"].split(" (")[0] for f in findings] == ["Open port 8096/tcp"]
     assert findings[0]["severity_status"] == "NONE"

@@ -9,7 +9,8 @@ from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
-from reconix_api.schemas.approvals import ApprovalDecision, ApprovalOut
+from reconix_api.models.enums import ApprovalStatus
+from reconix_api.schemas.approvals import ApprovalDecision, ApprovalKind, ApprovalOut
 from reconix_api.services import decisions
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -18,10 +19,15 @@ CurrentSettings = Annotated[Settings, Depends(get_settings)]
 
 
 @router.get("")
-def list_pending_approvals(
-    db: Db, _: CurrentOperator, settings: CurrentSettings
+def list_approvals(
+    db: Db,
+    _: CurrentOperator,
+    settings: CurrentSettings,
+    status: ApprovalStatus = ApprovalStatus.PENDING,
+    kind: ApprovalKind | None = None,
 ) -> list[ApprovalOut]:
-    return decisions.list_pending(db, settings.approval_ttl_minutes)
+    """Waiting approvals by default; filter by status and kind."""
+    return decisions.list_approvals(db, settings.approval_ttl_minutes, status, kind)
 
 
 @router.get("/{approval_id}")
@@ -46,7 +52,7 @@ async def approve(
 
 
 @router.post("/{approval_id}/reject")
-def reject(
+async def reject(
     approval_id: UUID,
     body: ApprovalDecision,
     db: Db,
@@ -54,6 +60,6 @@ def reject(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> ApprovalOut:
-    return decisions.reject(
-        db, interfaces.write_audit, operator, settings.approval_ttl_minutes, approval_id, body
+    return await decisions.reject(
+        db, interfaces, operator, settings.approval_ttl_minutes, approval_id, body
     )

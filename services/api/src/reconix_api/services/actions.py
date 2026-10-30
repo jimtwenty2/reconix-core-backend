@@ -28,14 +28,19 @@ from reconix_api.core.interfaces import (
 )
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import Action as ActionRow
-from reconix_api.models import AgentRun, Approval
-from reconix_api.models.enums import ActionStatus, ApprovalStatus, AssessmentStatus
+from reconix_api.models import AgentRun, Approval, ScopeManifest
+from reconix_api.models.enums import (
+    ActionStatus,
+    ApprovalStatus,
+    AssessmentStatus,
+)
 from reconix_api.repositories import actions as action_repo
+from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import scopes as scope_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut, ToolRunOut
-from reconix_api.services import tool_runs
+from reconix_api.services import agent_runs, tool_runs
 from reconix_api.services.audit import audit
 
 RECENT_MINUTES = 10  # the loop check looks at least this far back
@@ -103,21 +108,12 @@ async def send_action(
     operator: Operator,
     assessment_id: UUID,
     body: ActionIn,
+    source: str = "operator",
+    agent_run_id: UUID | None = None,
 ) -> ActionOut:
-    assessment = assessment_repo.get(db, assessment_id)
-    if assessment is None:
-        raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
-    if assessment.assessment_status != AssessmentStatus.ACTIVE:
-        raise ApiError(
-            409,
-            "ASSESSMENT_NOT_ACTIVE",
-            "Approve the scope before sending actions.",
-            {"assessment_status": assessment.assessment_status},
-        )
-    manifest = scope_repo.get_approved(db, assessment_id)
-    if manifest is None:
-        raise ApiError(409, "SCOPE_NOT_APPROVED", "This assessment has no approved scope.")
-
+    """source is who asked: "operator", or "agent" for the step a plan suggested, which
+    passes its own agent_run_id so the action is filed under that plan's run."""
+    manifest = ensure_can_act(db, assessment_id)
     action = Action(
         tool=body.tool,
         target=body.target,
@@ -132,10 +128,10 @@ async def send_action(
         purpose=body.purpose,
         risk_level=result.risk,
         guardrail_report=result.model_dump(mode="json"),
-        source="operator",
+        source=source,
         assessment_id=assessment_id,
         manifest_id=manifest.manifest_id,
-        agent_run_id=_agent_run(db, operator, assessment_id).agent_run_id,
+        agent_run_id=agent_run_id or _agent_run(db, operator, assessment_id).agent_run_id,
     )
     if result.decision == Decision.BLOCKED:
         row.action_status = ActionStatus.BLOCKED
@@ -184,6 +180,24 @@ async def send_action(
         {**details, "approval_id": str(approval.approval_id)},
     )
     return read_action(db, row.action_id)
+
+
+def ensure_can_act(db: Db, assessment_id: UUID) -> ScopeManifest:
+    """The assessment exists and is ACTIVE with an approved scope; returns that scope."""
+    assessment = assessment_repo.get(db, assessment_id)
+    if assessment is None:
+        raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
+    if assessment.assessment_status != AssessmentStatus.ACTIVE:
+        raise ApiError(
+            409,
+            "ASSESSMENT_NOT_ACTIVE",
+            "Approve the scope before sending actions.",
+            {"assessment_status": assessment.assessment_status},
+        )
+    manifest = scope_repo.get_approved(db, assessment_id)
+    if manifest is None:
+        raise ApiError(409, "SCOPE_NOT_APPROVED", "This assessment has no approved scope.")
+    return manifest
 
 
 # ---------------------------------------------------------------------------
@@ -296,21 +310,10 @@ def _check_context(
 
 
 def _agent_run(db: Db, operator: Operator, assessment_id: UUID) -> AgentRun:
-    """Every action belongs to an agent run. A person's action joins the running one."""
-    agent_run = action_repo.running_agent_run(db, assessment_id)
-    if agent_run is not None:
-        return agent_run
-    provider = action_repo.active_provider(db)
-    if provider is None:
-        raise ApiError(503, "NO_ACTIVE_PROVIDER", "No AI provider is active.")
-    agent_run = AgentRun(
-        model_name=provider.model_name,
-        session_id=operator.session_id,
-        assessment_id=assessment_id,
-        llm_provider_id=provider.llm_provider_id,
-    )
-    action_repo.add(db, agent_run)
-    return agent_run
+    """Every action belongs to an agent run. A person's action joins the run a person's
+    actions share, never a plan's run."""
+    running = agent_run_repo.person_run(db, assessment_id)
+    return running or agent_runs.new_agent_run(db, operator, assessment_id)
 
 
 def _action_out(db: Db, row: ActionRow) -> ActionOut:

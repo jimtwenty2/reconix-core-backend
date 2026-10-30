@@ -19,7 +19,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -168,27 +168,140 @@ class PlanStep(BaseModel):
     action: Action | None = None
 
 
-class AgentRequest(BaseModel):
-    """What the backend sends to the AI Service.
+class ChatMessage(BaseModel):
+    """One messages row. The role is kept, so an earlier agent answer is never read
+    as something the person wrote."""
 
-    Draft: to be confirmed with the AI Service owner. Change it here, then in both fakes.
+    role: Literal["user", "assistant", "system"]  # messages.role
+    content_masked: str
+
+
+class FindingInput(BaseModel):
+    """One finding as the parsers saved it, for ANALYZE and REPORT. ERD V3 column names."""
+
+    code: str  # e.g. RCX-001
+    title: str
+    target: str
+    description: str
+    severity_status: str  # CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN or NONE
+    finding_status: str  # OPEN, FALSE_POSITIVE or FIXED
+    cvss_score: float | None = None
+    cwe_ids: list[str] = Field(default_factory=list)
+    owasp_id: list[str] = Field(default_factory=list)
+    cve_ids: list[str] = Field(default_factory=list)
+
+
+class ToolRunInput(BaseModel):
+    """One tool run and how it was approved, for the report's methodology."""
+
+    tool: ToolName
+    target: str
+    args: list[str]
+    risk_level: RiskLevel
+    tool_run_status: str  # tool_runs.tool_run_status, e.g. COMPLETED or TIMED_OUT
+    # Not a column: worked out from risk_level and the approval row.
+    # MISSING is a MEDIUM or HIGH run with no approval, which the report must name.
+    approval_check: Literal["NOT_REQUIRED", "APPROVED", "MISSING"]
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class ReportInput(BaseModel):
+    """The locked copy a report is written from. The API leaves out FALSE_POSITIVE
+    findings and counts by severity itself, so the model never counts."""
+
+    findings: list[FindingInput]
+    severity_counts: dict[str, int]  # severity_status -> number of findings
+    tool_runs: list[ToolRunInput]
+
+
+class ResumeInput(BaseModel):
+    """A person's decision on the action a waiting run proposed.
+
+    Filled only from the API's own approval row, never from a request body. It only
+    tells the agent what happened: the approval and check() still decide what runs.
+    """
+
+    agent_run_id: UUID
+    assessment_id: UUID
+    approval_id: UUID
+    action: Action  # the action the approval is for
+    decision: Literal["APPROVED", "REJECTED"]  # EXPIRED is sent as REJECTED
+
+
+class BlockedStep(BaseModel):
+    """A planned step the harness refused, and why."""
+
+    order: int
+    blocked_by: CheckName
+    reason: str | None = None  # UPPERCASE code, e.g. TARGET_OUT_OF_SCOPE
+
+
+class FindingAnalysis(BaseModel):
+    """The agent's suggestions for one finding (the 8 parts of workflow v5).
+
+    Suggestions only: a person accepts them. next_step is never run on its own; an
+    operator picks it and it becomes a normal action, with check() and an approval.
+    """
+
+    code: str
+    explanation: str
+    related: list[str]  # codes of related findings
+    severity_status: str  # suggested
+    cvss_score: float | None
+    evidence: str  # copied from the masked tool output
+    impact: str
+    remediation: str
+    cwe_ids: list[str]
+    owasp_id: list[str]
+    cve_ids: list[str]
+    next_step: Action | None
+    unsure: str  # not empty means a person decides
+
+
+class AgentRequest(BaseModel):
+    """What the backend sends to the AI Service. Everything in it is already masked.
+
+    With resume set, the waiting run gets the person's decision instead of a new task.
     """
 
     task: AgentTask
     assessment_id: UUID
+    agent_run_id: UUID  # agent_runs.agent_run_id; the LangGraph thread
     scope: ApprovedScope
     provider: str = "RECONIX"
     model: str | None = None
-    messages: list[str] = Field(default_factory=list)  # masked chat history
-    tool_results: list[str] = Field(default_factory=list)  # masked raw output
+    messages: list[ChatMessage] = Field(default_factory=list)  # oldest first
+    tool_results: list[str] = Field(default_factory=list)  # raw output
+    findings: list[FindingInput] = Field(default_factory=list)  # ANALYZE
+    report: ReportInput | None = None  # REPORT
+    resume: ResumeInput | None = None
 
 
 class AgentResponse(BaseModel):
-    """What the AI Service sends back. It only suggests; the backend decides."""
+    """What the AI Service sends back. It only suggests; the backend decides.
+
+    risk and decision are for information. The API keeps its own approval and runs
+    check() again before any tool runs, and only proposed_action may be approved.
+    """
 
     text: str = ""
     plan: list[PlanStep] = Field(default_factory=list)
     proposed_action: Action | None = None
+    risk: RiskLevel | None = None  # the harness risk of proposed_action
+    blocked: list[BlockedStep] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)  # knowledge ids, e.g. CWE-89
+    analysis_summary: str = ""  # ANALYZE
+    analysis: list[FindingAnalysis] = Field(default_factory=list)  # ANALYZE
+    executive_summary: str | None = None  # REPORT: reports.executive_summary
+    methodology: str | None = None  # REPORT: reports.methodology
+    agent_run_id: UUID
+    checkpoint_id: str | None = None  # agent_runs.checkpoint_id
+    waiting: bool = False  # paused until a person decides on proposed_action
+    decision: Literal["APPROVED", "REJECTED"] | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    masked_count: int = 0
 
 
 class ToolJob(BaseModel):

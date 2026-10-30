@@ -24,10 +24,12 @@ def get_for_update(db: Db, approval_id: UUID) -> Approval | None:
     return db.scalar(select(Approval).where(Approval.approval_id == approval_id).with_for_update())
 
 
-def list_by_status(db: Db, status: ApprovalStatus) -> list[Approval]:
+def list_by_status(db: Db, status: ApprovalStatus, kind: str | None = None) -> list[Approval]:
     query = (
         select(Approval)
         .where(Approval.approval_status == status)
         .order_by(Approval.requested_at.desc())
     )
+    if kind is not None:
+        query = query.where(Approval.kind == kind)
     return list(db.scalars(query))

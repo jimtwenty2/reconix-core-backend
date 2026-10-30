@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.models import Assessment
+from reconix_api.models.enums import AssessmentStatus
 
 
 def add(db: Db, assessment: Assessment) -> Assessment:
@@ -38,3 +39,14 @@ def latest_engagement_code(db: Db, prefix: str) -> str | None:
             Assessment.engagement_code.startswith(prefix)
         )
     )
+
+
+def list_all(db: Db, status: AssessmentStatus | None = None) -> list[Assessment]:
+    query = select(Assessment).order_by(Assessment.created_at.desc())
+    if status is not None:
+        query = query.where(Assessment.assessment_status == status)
+    return list(db.scalars(query))
+
+
+def get_for_update(db: Db, assessment_id: UUID) -> Assessment | None:
+    return db.get(Assessment, assessment_id, with_for_update=True)
