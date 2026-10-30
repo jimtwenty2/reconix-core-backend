@@ -26,7 +26,7 @@ Mon 2 Nov.** After Tue 17 Nov (feature freeze), only bug fixes and prompt tuning
 | `knowledge/` | Ingest (LlamaIndex), Qdrant hybrid search (BGE-M3 + keywords), `search_knowledge(query, filters)` |
 | `analysis/` | The 8 parts of workflow v5, severity and OWASP mapping (empty, to build) |
 | `reports/` | Report text (`answers.py`) and the PDF, DOCX and JSON files (`files.py`, `report.html`) |
-| `memory/` | Accepted findings in Qdrant (empty, to build) |
+| `memory/` | Accepted findings in their own Qdrant collection `findings`: `remember_finding`, `forget_finding`, `search_findings` (one assessment at a time) |
 | `harness/` | Safety checks, masking, audit log (see below) |
 
 Outside `src/`: `data/knowledge-sample/` (CVE, CWE, OWASP, API Top 10, ATT&CK samples),
@@ -97,7 +97,7 @@ Keep this table true; update the row in the PR that changes it.
 | Use the active provider; all 6 provider types | 2 | Client done: all 6 types call through LiteLLM (cloud types need a key; OpenAI-compatible needs its address, `/v1` allowed). Done: the API builds each run's `ProviderConfig` from the provider row the run was started with (key decrypted) and the agent calls that model; the run saves the provider and model. Not yet tried against a live cloud provider |
 | Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
 | Report text and PDF, DOCX, JSON files | 2 | Done: REPORT writes the executive summary and methodology; `reports/files.py` makes the 3 files from the locked copy. PDF needs Pango (WeasyPrint) |
-| Accepted findings in Qdrant | 2 | To do (`memory/` is empty) |
+| Accepted findings in Qdrant | 2 | Done: a finding reviewed as OPEN or FIXED is remembered (masked), FALSE_POSITIVE forgets it; the API calls it from `PATCH /findings/{id}`. Own collection, so a knowledge re-ingest keeps it; every search is limited to one assessment. Nothing reads it yet: the CHAT task comes later |
 | Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety, timeline reader (`audit.read_timeline`) and limit settings (`limits.py`) done; the API still has to save the approved limits and pass them to `check()`. Disclosure to do |
 | 20 eval questions, top-3 score | 3 | To do (`tests/evals/` is empty) |
 | Hypothesis and hard-case tests for scope and command checks | 3 | To do |

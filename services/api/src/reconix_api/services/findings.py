@@ -1,5 +1,7 @@
 """Findings from a tool run (dedupe, sources, masked evidence): save, read and review."""
 
+import asyncio
+import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -9,16 +11,21 @@ from uuid import UUID
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.errors import ApiError
+from reconix_api.core.finding_memory import FindingMemory, MemoryUnavailable
 from reconix_api.core.interfaces import Operator, ToolName, WriteAudit
 from reconix_api.core.masking import MaskSecrets, mask_output
 from reconix_api.findings import json_mapping
 from reconix_api.findings import nmap as nmap_findings
 from reconix_api.findings.shape import NewFinding
 from reconix_api.models import Evidence, Finding, ToolRun
+from reconix_api.models.enums import FindingStatus
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as finding_repo
 from reconix_api.schemas.findings import EvidenceOut, FindingOut, FindingReview
 from reconix_api.services.audit import audit
+
+logger = logging.getLogger(__name__)
+MEMORY_TIMEOUT_SECONDS = 30  # one embedding and one Qdrant write; the review is already saved
 
 # One reader per Kali tool name: masked output -> (findings, requests sent).
 # JSON tools share one reader through their mapping; the rest have their own.
@@ -96,6 +103,27 @@ def review_finding(
     details = {"finding_id": str(finding_id), "from": before, "to": body.finding_status}
     audit(write_audit, "FINDING_REVIEWED", operator, finding.assessment_id, details)
     return _finding_out(db, finding)
+
+
+async def update_memory(memory: FindingMemory, finding: FindingOut) -> None:
+    """A finding a person reviewed as OPEN or FIXED is accepted and remembered by the AI;
+    FALSE_POSITIVE forgets it. Runs after the review is saved and answered: a memory that
+    is down (Qdrant or the embedding model) is logged by its code and never undoes or
+    blocks a person's decision. Any other error is a bug and is raised.
+
+    shortcut: a failed update, or two reviews of one finding at the same moment, can leave
+    the memory behind the database; add a re-sync from the findings table when CHAT reads it.
+    """
+    accepted = finding.finding_status != FindingStatus.FALSE_POSITIVE
+    code = None
+    try:
+        await asyncio.wait_for(memory(finding, accepted), MEMORY_TIMEOUT_SECONDS)
+    except MemoryUnavailable as error:
+        code = error.code
+    except TimeoutError:
+        code = "TIMEOUT"
+    if code is not None:
+        logger.warning("Finding %s is reviewed; the AI memory is down: %s", finding.code, code)
 
 
 def read_evidence(db: Db, evidence_id: UUID) -> EvidenceOut:

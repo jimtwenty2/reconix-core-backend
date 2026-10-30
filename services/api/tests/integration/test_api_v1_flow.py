@@ -182,6 +182,7 @@ def test_findings_can_be_listed_read_and_reviewed(db_client, db_app):
     assert reviewed["reviewed_at"] is not None
     [event] = [e for e in db_app.state.parts["audit"].events if e.event_type == "FINDING_REVIEWED"]
     assert (event.details["from"], event.details["to"]) == ("OPEN", "FALSE_POSITIVE")
+    assert db_app.state.parts["memory"].calls == [(finding["code"], False)]  # forgotten
 
 
 def test_evidence_can_be_read_alone(db_client):
