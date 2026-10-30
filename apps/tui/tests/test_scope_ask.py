@@ -87,7 +87,7 @@ def test_suggested_ports_are_offered_unticked():
     run_to("scope", NETWORK)
     allowed = list(store.get_scope().allowed_ports)
     choices = scope_ask.scope_choices("add more ports", "Try ports 21 and 3306.")
-    assert choices.suggested == [21, 3306]
+    assert choices.suggested == (21, 3306)
     ticked = {port for port, on in choices.ports if on}
     assert ticked == set(allowed)                          # nothing new ticked for you
     assert store.get_scope().allowed_ports == allowed

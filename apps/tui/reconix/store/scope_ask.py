@@ -56,7 +56,7 @@ class ScopeChoices(NamedTuple):
 
     ports: List[Tuple[int, bool]]
     tools: List[Tuple[str, bool]]
-    suggested: List[int] = []
+    suggested: Tuple[int, ...] = ()
 
 
 def wants_scope_change(text: str) -> bool:
@@ -136,7 +136,7 @@ def scope_choices(text: str, reply: str = "") -> ScopeChoices:
     scope = assessment.scope
     module = MODULES.get(assessment.selected_template or "")
     ports: List[Tuple[int, bool]] = []
-    suggested: List[int] = []
+    suggested: Tuple[int, ...] = ()
     if scope.kind == "network":
         known = list(getattr(module, "ALLOWED_PORTS", [])) + list(scope.allowed_ports)
         typed = typed_ports(text)
@@ -148,7 +148,7 @@ def scope_choices(text: str, reply: str = "") -> ScopeChoices:
         tool for tool in getattr(module, "TOOLS", []) if tool.casefold() not in allowed
     ]
     tools = [(tool, tool.casefold() in allowed) for tool in names]
-    return ScopeChoices(ports, tools, suggested)
+    return ScopeChoices(ports, tools, tuple(suggested))
 
 
 def answer_scope_change(text: str, reply: str = "") -> Optional[ScopeChoices]:
