@@ -1,13 +1,19 @@
 """Agent runs: one per plan, analysis or report the AI works on."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
+from sqlalchemy.orm import sessionmaker
 
+from reconix_ai.providers import ProviderConfig, reconix_provider
+from reconix_ai.providers import ProviderType as AiProviderType
+from reconix_api.core import provider_keys
+from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Interfaces, Operator
-from reconix_api.models import AgentRun
+from reconix_api.models import AgentRun, LlmProvider
 from reconix_api.models.enums import AgentRunStatus, ProviderType
 from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import llm_providers as provider_repo
@@ -34,6 +40,37 @@ def new_agent_run(
     )
     agent_run_repo.add(db, agent_run)
     return agent_run
+
+
+def make_provider_for_run(
+    session_factory: sessionmaker[Db], settings: Settings
+) -> Callable[[UUID], ProviderConfig]:
+    """The model settings of the provider a run was started with, key decrypted, for the
+    AI Service's model calls. Read on every ask, so a resume uses the same provider."""
+
+    def provider_for_run(agent_run_id: UUID) -> ProviderConfig:
+        with session_factory() as db:
+            agent_run = agent_run_repo.get(db, agent_run_id)
+            if agent_run is None:
+                raise ApiError(404, "AGENT_RUN_NOT_FOUND", "The agent run does not exist.")
+            provider = provider_repo.get(db, agent_run.llm_provider_id)
+            return provider_config(settings, provider, agent_run.model_name)
+
+    return provider_for_run
+
+
+def provider_config(settings: Settings, provider: LlmProvider, model_name: str) -> ProviderConfig:
+    if provider.provider_type == ProviderType.RECONIX:
+        return reconix_provider()
+    api_key = None
+    if provider.api_key_encrypted:
+        api_key = provider_keys.decrypt(settings, provider.api_key_encrypted)
+    return ProviderConfig(
+        provider_type=AiProviderType(provider.provider_type.value),
+        model_name=model_name,
+        base_url=provider.base_url,
+        api_key=api_key,
+    )
 
 
 def agent_provider(db: Db, agent_run: AgentRun) -> tuple[str, str | None]:

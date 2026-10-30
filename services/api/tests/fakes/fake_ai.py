@@ -38,8 +38,6 @@ class FakeAgent:
             raise self.error
         if self.down:
             raise ApiError(503, "MODEL_UNAVAILABLE", "The RECONIX model could not answer.")
-        if request.provider != "RECONIX" or request.model is not None:
-            raise ApiError(503, "NOT_READY", "Only the built-in RECONIX provider is ready.")
         if request.resume is not None:
             return self.resume(request)
         if request.task not in SUPPORTED_TASKS:

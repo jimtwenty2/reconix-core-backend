@@ -85,6 +85,7 @@ app = create_app(
         _settings.mcp_url,
         _settings.mcp_access_key.get_secret_value(),
         _settings.database_url,
+        _settings,
     ),
     session_tokens=_session_tokens,
 )
