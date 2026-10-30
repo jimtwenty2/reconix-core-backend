@@ -241,6 +241,7 @@ An overview of the folder is in [`.claude/README.md`](.claude/README.md).
 | Parse nmap, nuclei, ZAP, semgrep or gitleaks output into findings | `add-tool-parser` |
 | Blocked on another part; need a fake | `add-fake` |
 | Regenerate `docs/openapi.json` and client types | `sync-openapi` |
+| Move the TUI or web onto the Core API (what the backend adds first, store → endpoint map) | `integrate-apps-with-api` |
 | Prove the main flow still works (merge day, pre-release) | `run-full-flow-test` |
 | Prove no secret leaks after a run | `run-leak-test` |
 | Tag a release | `cut-release` |
