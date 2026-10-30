@@ -14,7 +14,7 @@ from reconix_api.models import Approval
 from reconix_api.models.enums import ApprovalStatus
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.schemas.approvals import ApprovalDecision, ApprovalOut
-from reconix_api.services import actions, plans, scopes
+from reconix_api.services import actions, plans, reports, scopes
 from reconix_api.services.approvals import approval_state, ensure_can_decide, expires_at
 
 
@@ -39,6 +39,8 @@ async def approve(
     elif approval.kind == "action":
         await actions.approve_action(db, interfaces, mask, settings, operator, approval)
         await plans.resume_after_decision(db, interfaces, operator, approval, "APPROVED")
+    elif approval.kind == "review":
+        reports.approve_review(db, interfaces.write_audit, operator, approval)
     else:
         _not_supported(approval)
     return approval_out(approval, ttl_minutes)
@@ -58,6 +60,8 @@ async def reject(
     elif approval.kind == "action":
         actions.reject_action(db, interfaces.write_audit, operator, approval, decision.reason)
         await plans.resume_after_decision(db, interfaces, operator, approval, "REJECTED")
+    elif approval.kind == "review":
+        reports.reject_review(db, interfaces.write_audit, operator, approval, decision.reason)
     else:
         _not_supported(approval)
     return approval_out(approval, ttl_minutes)
@@ -91,6 +95,7 @@ def approval_out(approval: Approval, ttl_minutes: int) -> ApprovalOut:
         expires_at=expires_at(approval.requested_at, ttl_minutes),
         action_id=approval.action_id,
         manifest_id=approval.manifest_id,
+        report_id=approval.report_id,
     )
 
 

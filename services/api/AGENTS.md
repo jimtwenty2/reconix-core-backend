@@ -87,7 +87,7 @@ Keep this table true; update the row in the PR that changes it.
 | Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | Done: `POST /assessments/{id}/plan` (the step goes through `send_action`), resume after the decision, `GET /sessions/{id}/agent-runs` |
 | Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done: check runs to do. Also done: `POST /assessments/{id}/analyze` (suggestions saved in the run) |
 | 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | To do |
-| Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | To do |
+| Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | Done except multi-assessment: one assessment per report, files in `RECONIX_REPORTS_DIR`, `review` sign-off before download |
 | Pojim's parts in the API: disclosure, limit settings, timeline, web role check | 2 | To do |
 | API in Docker Compose, `install.sh`, uv install steps | 2 | To do: API runs on the host; `install.sh` is a placeholder |
 | Full flow test on Sat 31 Oct, final `openapi.json` on Mon 2 Nov | 2 | To do (`run-full-flow-test` skill) |

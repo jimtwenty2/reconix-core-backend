@@ -37,6 +37,17 @@ def list_by_agent_run(db: Db, agent_run_id: UUID) -> list[Action]:
     return list(db.scalars(query))
 
 
+def tool_runs_in_assessment(db: Db, assessment_id: UUID) -> list[tuple[ToolRun, Action]]:
+    """Every tool run of the assessment with its action, oldest first."""
+    query = (
+        select(ToolRun, Action)
+        .join(Action, ToolRun.action_id == Action.action_id)
+        .where(Action.assessment_id == assessment_id)
+        .order_by(ToolRun.started_at.nulls_last(), ToolRun.tool_run_id)
+    )
+    return [(run, action) for run, action in db.execute(query)]
+
+
 def approval_for(db: Db, action_id: UUID) -> Approval | None:
     """The newest approval for an action."""
     query = (
