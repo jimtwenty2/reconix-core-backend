@@ -215,9 +215,16 @@ async def approve_action(
 ) -> None:
     """Checks the action again, marks the approval and the action APPROVED, then runs it."""
     row = _get(db, approval.action_id, lock=True)
+    if row.action_status != ActionStatus.PENDING:
+        raise ApiError(
+            409,
+            "ACTION_NOT_PENDING",
+            "This action no longer waits for a decision.",
+            {"action_id": str(row.action_id), "action_status": row.action_status},
+        )
     action = to_action(row)
     ensure_unchanged(approval.subject_hash, action)
-    check_again(db, interfaces, operator, row, action)
+    check_again(db, interfaces, operator, row, action, approval)
     approval.approval_status = ApprovalStatus.APPROVED
     approval.decided_by = operator.actor
     approval.decided_at = datetime.now(UTC)
@@ -237,19 +244,54 @@ async def approve_action(
 
 
 def check_again(
-    db: Db, interfaces: Interfaces, operator: Operator, row: ActionRow, action: Action
+    db: Db,
+    interfaces: Interfaces,
+    operator: Operator,
+    row: ActionRow,
+    action: Action,
+    approval: Approval,
 ) -> None:
     """S2: the second check, with the scope and the recent runs as they are now. An
     approval given while the assessment was ACTIVE does not outlive it: a cancelled or
     finished assessment, a closed time window or a new loop limit stops the run here.
-    A block is saved on the action, audited once, and answered 422; the approval stays
-    unused, so nothing ran."""
-    ensure_can_act(db, row.assessment_id)
-    result = interfaces.check(action, _check_context(db, interfaces, operator, row.assessment_id))
+
+    A refusal blocks the action and closes its approval (EXPIRED: it can never be used),
+    in one commit with exactly one ACTION_BLOCKED audit line; then it is raised (422 for a
+    block, the original error otherwise). The plan that suggested it gets REJECTED
+    (services/decisions.py). Nothing ran."""
+    try:
+        ensure_can_act(db, row.assessment_id)
+        context = _check_context(db, interfaces, operator, row.assessment_id)
+    except ApiError as error:
+        _refuse(db, interfaces, operator, row, approval, "ASSESSMENT", error.code)
+        raise
+    result = interfaces.check(action, context)
     if result.decision != Decision.BLOCKED:
         return
-    row.action_status = ActionStatus.BLOCKED
     row.guardrail_report = result.model_dump(mode="json")
+    _refuse(db, interfaces, operator, row, approval, result.blocked_by, result.reason)
+    raise ApiError(
+        422,
+        "ACTION_BLOCKED",
+        "The action no longer passes the safety checks.",
+        {"action_id": str(row.action_id), "blocked_by": result.blocked_by, "reason": result.reason},
+    )
+
+
+def _refuse(
+    db: Db,
+    interfaces: Interfaces,
+    operator: Operator,
+    row: ActionRow,
+    approval: Approval,
+    blocked_by: str | None,
+    reason: str | None,
+) -> None:
+    """The second check refused: block the action, close its approval, audit once."""
+    row.action_status = ActionStatus.BLOCKED
+    approval.approval_status = ApprovalStatus.EXPIRED
+    approval.decided_at = datetime.now(UTC)
+    approval.reason = f"Blocked by the second check: {reason or blocked_by}"[:500]
     db.commit()
     audit(
         interfaces.write_audit,
@@ -258,16 +300,11 @@ def check_again(
         row.assessment_id,
         {
             "action_id": str(row.action_id),
+            "approval_id": str(approval.approval_id),
             "tool": row.tool,
-            "blocked_by": result.blocked_by,
-            "reason": result.reason,
+            "blocked_by": blocked_by,
+            "reason": reason,
         },
-    )
-    raise ApiError(
-        422,
-        "ACTION_BLOCKED",
-        "The action no longer passes the safety checks.",
-        {"action_id": str(row.action_id), "blocked_by": result.blocked_by, "reason": result.reason},
     )
 
 

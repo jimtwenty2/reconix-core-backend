@@ -6,6 +6,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.models import AgentRun, Approval, LlmProvider
+from reconix_api.models.enums import ApprovalStatus
 
 
 def add(db: Db, provider: LlmProvider) -> LlmProvider:
@@ -52,4 +53,20 @@ def activation_approval(
     )
     if lock:
         query = query.with_for_update()
+    return db.scalar(query)
+
+
+def approved_activation(db: Db, llm_provider_id: UUID, change: str) -> Approval | None:
+    """The newest APPROVED configuration approval that activated this provider."""
+    query = (
+        select(Approval)
+        .where(
+            Approval.kind == "configuration",
+            Approval.approval_status == ApprovalStatus.APPROVED,
+            Approval.config_change["change"].astext == change,
+            Approval.config_change["llm_provider_id"].astext == str(llm_provider_id),
+        )
+        .order_by(Approval.decided_at.desc())
+        .limit(1)
+    )
     return db.scalar(query)

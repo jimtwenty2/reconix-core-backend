@@ -1,7 +1,8 @@
 """The model settings for one agent run: the provider the run was started with, its key
 decrypted.
 
-Only ask_agent uses them, for the one call it makes. The key never goes into an
+Only ask_agent uses them, for the one call it makes, and only while the provider still has
+the settings a person approved (`llm_providers.ensure_still_approved`). The key never goes into an
 AgentRequest, the agent's state, a checkpoint, a log or a response.
 """
 
@@ -16,18 +17,22 @@ from reconix_api.core.agent import ProviderFor
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import AgentRequest
-from reconix_api.models import AgentRun, LlmProvider
+from reconix_api.models import LlmProvider
 from reconix_api.models.enums import ProviderType
+from reconix_api.repositories import agent_runs as agent_run_repo
+from reconix_api.repositories import llm_providers as provider_repo
+from reconix_api.services import llm_providers
 
 
 def make_provider_for(session_factory: sessionmaker[Session], settings: Settings) -> ProviderFor:
     def provider_for(request: AgentRequest) -> ProviderConfig:
         with session_factory() as db:
-            run = db.get(AgentRun, request.agent_run_id)
-            provider = db.get(LlmProvider, run.llm_provider_id) if run else None
+            run = agent_run_repo.get(db, request.agent_run_id)
+            provider = provider_repo.get(db, run.llm_provider_id) if run else None
             if run is None or provider is None:
                 raise ApiError(409, "RUN_NOT_FOUND", "The agent run has no saved provider.")
             check_request(request, provider, run.agent_run_id)
+            llm_providers.ensure_still_approved(db, provider)
             return provider_config(settings, provider, run.model_name)
 
     return provider_for

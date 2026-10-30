@@ -41,6 +41,7 @@ def test_ports_inside_the_list_are_allowed(arguments) -> None:
         (["-p", "22,3389"], "PORTS_OUT_OF_SCOPE"),
         (["-p", "7999-8002"], "PORTS_OUT_OF_SCOPE"),
         (["-p", "22", "--top-ports", "100"], "PORTS_OUT_OF_SCOPE"),
+        (["-p", "22", "--top-ports=100"], "PORTS_OUT_OF_SCOPE"),
         (["-p", "22", "-F"], "PORTS_OUT_OF_SCOPE"),
         (["-p-"], "PORTS_OUT_OF_SCOPE"),
         (["-p22"], "BAD_PORTS"),

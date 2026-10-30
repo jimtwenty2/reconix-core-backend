@@ -4,10 +4,12 @@ active. A provider off this computer is active only after its `configuration` ap
 import json
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select, update
 
 from reconix_api.core import provider_keys
 from reconix_api.core.config import get_settings
+from reconix_api.core.errors import ApiError
 from reconix_api.core.run_provider import make_provider_for
 from reconix_api.models import AgentRun, Approval, LlmProvider
 from tests.integration.test_action_flow import active_assessment, event_types
@@ -215,11 +217,12 @@ def test_a_provider_changed_after_the_request_is_refused(db_client):
     openai = add(db_client, headers, OPENAI)
     provider_id = openai["llm_provider_id"]
     first = activate(db_client, headers, provider_id)["approval"]
-    db_client.patch(
+    moved = db_client.patch(
         f"/llm-providers/{provider_id}",
-        json={"base_url": "https://llm.example.com"},
+        json={"base_url": "https://llm.example.com", "api_key": FAKE_API_KEY},
         headers=headers,
     )
+    assert moved.status_code == 200, moved.json()
 
     refused = approve(db_client, headers, first["approval_id"])
 
@@ -373,3 +376,67 @@ def test_the_agent_gets_the_runs_provider_with_its_key(db_client, db_app, sessio
     assert (config.provider_type, config.model_name) == ("OPENAI", "gpt-4o")
     assert config.api_key == FAKE_API_KEY
     assert FAKE_API_KEY not in repr(config)
+
+
+def test_moving_a_provider_drops_its_key(db_client, session_factory):
+    """A key is never sent to an address it wasn't given for: send it again."""
+    headers = open_session(db_client)
+    compatible = add(
+        db_client,
+        headers,
+        {
+            "provider_type": "OPENAI_API_COMPATIBLE",
+            "display_name": "Lab model",
+            "model_name": "qwen",
+            "base_url": "https://llm.example.com/v1",
+            "api_key": FAKE_API_KEY,
+        },
+    )
+    provider_id = compatible["llm_provider_id"]
+
+    moved = db_client.patch(
+        f"/llm-providers/{provider_id}",
+        json={"base_url": "https://other.example.com/v1"},
+        headers=headers,
+    )
+
+    assert moved.status_code == 200, moved.json()
+    assert moved.json()["api_key_last4"] is None
+    assert saved(session_factory, provider_id).api_key_encrypted is None
+    # A cloud service needs its key, so moving one without it is refused.
+    openai = add(db_client, headers, OPENAI)
+    refused = db_client.patch(
+        f"/llm-providers/{openai['llm_provider_id']}",
+        json={"base_url": "https://api.example.com/v1"},
+        headers=headers,
+    )
+    assert refused.json()["code"] == "PROVIDER_KEY_MISSING"
+
+
+def test_a_run_never_calls_its_provider_after_an_edit(db_client, db_app, session_factory):
+    """A plan run started with an approved cloud provider; the provider is then made
+    inactive and edited (no approval needed for that). The run must not send its key or
+    findings to the new settings: 409 PROVIDER_CHANGED."""
+    headers = open_session(db_client)
+    openai = add(db_client, headers, OPENAI)
+    provider_id = openai["llm_provider_id"]
+    approval = activate(db_client, headers, provider_id)["approval"]
+    assert approve(db_client, headers, approval["approval_id"]).status_code == 200
+    assessment_id = active_assessment(db_client, headers)
+    assert plan(db_client, headers, assessment_id).status_code == 201
+    request = db_app.state.parts["agent"].requests[-1]
+    settings = db_app.dependency_overrides[get_settings]()
+    provider_for = make_provider_for(session_factory, settings)
+    assert provider_for(request).api_key == FAKE_API_KEY  # as approved: fine
+    activate(db_client, headers, add(db_client, headers, OLLAMA)["llm_provider_id"])
+    edited = db_client.patch(
+        f"/llm-providers/{provider_id}",
+        json={"base_url": "https://attacker.example.com/v1", "api_key": FAKE_API_KEY},
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.json()
+
+    with pytest.raises(ApiError) as refused:
+        provider_for(request)
+
+    assert (refused.value.status, refused.value.code) == (409, "PROVIDER_CHANGED")

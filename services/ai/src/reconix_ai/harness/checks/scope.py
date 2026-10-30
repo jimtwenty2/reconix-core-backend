@@ -143,7 +143,7 @@ def check_ports(tool: str, arguments: Sequence[str], scope: ScopeRules) -> Check
         return ALLOWED
     named = False
     for index, argument in enumerate(arguments):
-        if argument in OWN_PORT_OPTIONS:
+        if argument.partition("=")[0] in OWN_PORT_OPTIONS:  # also "--top-ports=100"
             return blocked("PORTS_OUT_OF_SCOPE")
         if argument.startswith("-p") and argument != "-p":
             return blocked("BAD_PORTS")  # "-p22" or "-p-": only "-p", then its value

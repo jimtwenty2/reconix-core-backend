@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import update
 
 from reconix_api.models import ScopeManifest
-from tests.integration.test_action_flow import active_assessment, send
+from tests.integration.test_action_flow import active_assessment, event_types, send
 from tests.integration.test_real_harness import (  # noqa: F401
     audit_lines,
     harness_app,
@@ -37,6 +37,12 @@ def test_an_approval_does_not_outlive_its_assessment(db_client, db_app):
 
     assert (response.status_code, response.json()["code"]) == (409, "ASSESSMENT_NOT_ACTIVE")
     assert db_app.state.parts["mcp"].jobs == []
+    # S9: the refused decision is audited once, and the action can't be approved again.
+    assert event_types(db_app)[-1] == "ACTION_BLOCKED"
+    saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert saved["action_status"] == "BLOCKED"
+    again = approve(db_client, headers, action["approval_id"])
+    assert again.status_code == 409 and db_app.state.parts["mcp"].jobs == []
 
 
 def test_a_closed_time_window_blocks_an_approved_action(
@@ -66,6 +72,18 @@ def test_a_closed_time_window_blocks_an_approved_action(
     assert audit_lines(harness_app)[-1]["event_type"] == "ACTION_BLOCKED"
     approval = harness_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
     assert approval["consumed_at"] is None  # nothing ran, so the approval was not used
+    # S5: the blocked approval is closed, so a later approve can never run it.
+    assert approval["approval_status"] == "EXPIRED"
+    with session_factory() as db:
+        db.execute(
+            update(ScopeManifest)
+            .where(ScopeManifest.assessment_id == assessment_id)
+            .values(ends_at=datetime.now(UTC) + timedelta(hours=1))
+        )
+        db.commit()
+    again = approve(harness_client, headers, action["approval_id"])
+    assert again.status_code == 409
+    assert harness_app.state.parts["mcp"].jobs == []
 
 
 def test_an_action_that_still_passes_runs_once_approved(db_client, db_app):
