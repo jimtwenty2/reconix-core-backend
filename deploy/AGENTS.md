@@ -17,7 +17,7 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 | File | Holds |
 |---|---|
 | `docker-compose.yml` | The local stack: `postgres` (16), `qdrant`, `ollama`, `kali-mcp` |
-| `docker-compose.dev.yml` | Dev only: publishes the Kali MCP port on `127.0.0.1` while the API runs on the host. Drop it once the API runs in Compose |
+| `docker-compose.dev.yml` | Dev only: while the API runs on the host, a small relay (`kali-mcp-relay`) publishes the Kali MCP port on `127.0.0.1` (`RECONIX_MCP_PORT`). Kali itself keeps no published port: Docker drops ports on a container with only internal networks. Drop the file once the API runs in Compose |
 | `lab/` | Test targets: OWASP Juice Shop and a small repo with known bugs and a fake secret (empty, to build) |
 | `seed.sql` | Sample data matching ERD V3; `apps/sample-data/` is built from it (placeholder) |
 | `install.sh` | Installs Reconix-Core (backend, terminal app, local web) and pulls the Kali image (placeholder) |
@@ -27,8 +27,9 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 | Network | Who is on it | Internet |
 |---|---|---|
 | `backend` | `postgres`, `qdrant`, `ollama` (and the API, once it runs in Compose) | Yes |
-| `tools` | API ↔ `kali-mcp` | **No** (`internal: true`) |
+| `tools` | API ↔ `kali-mcp` (in dev: `kali-mcp-relay` ↔ `kali-mcp`) | **No** (`internal: true`) |
 | `reconix-lab` | `kali-mcp` ↔ lab targets | **No** (`internal: true`) |
+| `mcp-host` (dev only) | `kali-mcp-relay` only, so Docker can publish its port | Yes |
 
 ## Rules
 
@@ -79,7 +80,7 @@ docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --e
 
 docker compose -f deploy/docker-compose.yml ps
 docker compose -f deploy/docker-compose.yml logs -f kali-mcp
-docker compose -f deploy/docker-compose.yml down        # add -v only to wipe the data volumes
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml down  # -v wipes the data volumes
 
 # check a change before the PR
 docker compose -f deploy/docker-compose.yml --env-file .env config --quiet
