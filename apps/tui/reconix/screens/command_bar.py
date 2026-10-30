@@ -10,6 +10,7 @@ from textual.screen import ModalScreen
 from .. import store
 from ..commands import COMMANDS
 from ..widgets import PromptBox
+from .start import length_error, target_error
 
 
 class CommandBarScreen(ModalScreen[Optional[str]]):
@@ -24,7 +25,7 @@ class CommandBarScreen(ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         with Vertical(id="command-bar"):
             yield PromptBox(
-                COMMANDS, store.list_history, initial="/", escape_clears=False,
+                COMMANDS, store.list_history, initial="/",
                 placeholder="Type a command, e.g. /plan", id="command-box",
             )
 
@@ -33,6 +34,20 @@ class CommandBarScreen(ModalScreen[Optional[str]]):
 
     def on_prompt_box_command_submitted(self, event: PromptBox.CommandSubmitted) -> None:
         event.stop()
+        if self is not self.app.screen:
+            return                   # a second Enter queued before the bar closed
+        if self.app.is_path_line(event.text):
+            # A local path is a target: the Start prompt's checks first (a missing folder
+            # stays here), then the app takes it like a line typed at the Start prompt.
+            text = event.text.strip()
+            error = length_error(text)
+            if not error and not store.get_run().started and store.looks_like_target(text):
+                error = target_error(text)
+            if error:
+                event.box.show_error(error)
+                return
+            self.dismiss(event.text)
+            return
         check = self.app.check_command(event.text)
         if not check.ok:
             event.box.show_error(check.error)    # one line under the input, until you type
