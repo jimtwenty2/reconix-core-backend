@@ -139,6 +139,8 @@ Compose), add the dev file: it starts a small relay that publishes the Kali MCP 
 ```bash
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env up -d
 docker compose -f deploy/docker-compose.yml ps
+# once (and to update): the Kali container has no internet, so download the nuclei templates for it
+docker compose -f deploy/docker-compose.yml --env-file .env run --rm nuclei-templates
 ```
 
 ### 4. Migrate and run the API
