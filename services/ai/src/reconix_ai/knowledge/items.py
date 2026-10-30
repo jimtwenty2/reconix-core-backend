@@ -1,5 +1,7 @@
 """One knowledge item: a CVE, a CWE, an OWASP risk, an ATT&CK technique or a tool guide.
 
+A person's own documents (USER_DOC) are not items: add_ons.py saves them straight to Qdrant.
+
 Every source is turned into this one shape and saved as JSON Lines, one file
 per source, so the loader reads them all the same way.
 """
@@ -17,6 +19,18 @@ class Source(StrEnum):
     OWASP_API_TOP10 = "OWASP_API_TOP10"
     ATTACK = "ATTACK"
     TOOL_GUIDE = "TOOL_GUIDE"
+    USER_DOC = "USER_DOC"  # a knowledge add-on (add_ons.py); never part of the ingest
+
+
+# What the ingest loads and replaces. Every other source in the collection is left alone.
+PUBLIC_SOURCES = (
+    Source.CVE,
+    Source.CWE,
+    Source.OWASP_TOP10,
+    Source.OWASP_API_TOP10,
+    Source.ATTACK,
+    Source.TOOL_GUIDE,
+)
 
 
 class TextFormat(StrEnum):

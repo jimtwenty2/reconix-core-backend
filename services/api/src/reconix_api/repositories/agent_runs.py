@@ -31,12 +31,14 @@ def list_by_session(db: Db, session_id: UUID) -> list[AgentRun]:
     return list(db.scalars(query))
 
 
-def person_run(db: Db, assessment_id: UUID) -> AgentRun | None:
-    """The RUNNING run a person's actions share: the newest one with no plan."""
+def person_run(db: Db, assessment_id: UUID, session_id: UUID) -> AgentRun | None:
+    """The RUNNING run one session's own actions on an assessment share: the newest one
+    with no plan. Per session, so an action is never filed under another session's run."""
     query = (
         select(AgentRun)
         .where(
             AgentRun.assessment_id == assessment_id,
+            AgentRun.session_id == session_id,
             AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
             AgentRun.plan.is_(None),
         )

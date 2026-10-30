@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from reconix_api.core.db import Db
+from reconix_api.core.finding_memory import CurrentFindingMemory
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 from reconix_api.schemas.findings import FindingOut, FindingReview
@@ -42,6 +43,12 @@ def review_finding(
     db: Db,
     operator: CurrentOperator,
     interfaces: CurrentInterfaces,
+    memory: CurrentFindingMemory,
+    background: BackgroundTasks,
 ) -> FindingOut:
-    """Mark a finding OPEN, FALSE_POSITIVE or FIXED."""
-    return findings.review_finding(db, interfaces.write_audit, operator, finding_id, body)
+    """Mark a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED are accepted, and the
+    AI remembers them."""
+    reviewed = findings.review_finding(db, interfaces.write_audit, operator, finding_id, body)
+    # After the response: a slow memory never holds the person or a database connection.
+    background.add_task(findings.update_memory, memory, reviewed)
+    return reviewed

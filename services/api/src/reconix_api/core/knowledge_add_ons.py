@@ -1,0 +1,82 @@
+"""Knowledge add-ons in Qdrant, through the AI Service's knowledge package.
+
+Like core/agent.py for the agent, this is the one place the API reaches into
+reconix_ai for add-ons. A failure comes back as an ApiError: 503 when Qdrant is not
+there, and the agent's status for an embedding model error (AGENT_ERROR_STATUS).
+"""
+
+import asyncio
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Annotated
+
+from fastapi import Depends, Request
+from qdrant_client import AsyncQdrantClient
+
+from reconix_ai import knowledge
+from reconix_ai.knowledge import AddOn, EmbedTexts, KnowledgeError, split_passages
+from reconix_ai.providers import ProviderError, embed_texts
+from reconix_api.core.agent import AGENT_ERROR_STATUS
+from reconix_api.core.errors import ApiError
+
+__all__ = [
+    "AddOn",
+    "CurrentKnowledgeStore",
+    "KnowledgeStore",
+    "list_all",
+    "remove",
+    "remove_all",
+    "save",
+    "split_passages",
+]
+
+
+@dataclass(frozen=True)
+class KnowledgeStore:
+    """Where add-ons go. Tests pass Qdrant in this process and a fake embedder."""
+
+    client: AsyncQdrantClient | None = None  # None: the shared client on RECONIX_QDRANT_URL
+    embed: EmbedTexts = embed_texts
+    # One upload at a time: the add-on limit holds, and only one file is read at once.
+    adding: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
+
+
+def get_knowledge_store(request: Request) -> KnowledgeStore:
+    return request.app.state.knowledge_store
+
+
+CurrentKnowledgeStore = Annotated[KnowledgeStore, Depends(get_knowledge_store)]
+
+
+async def save(store: KnowledgeStore, add_on: AddOn, passages: list[str]) -> None:
+    with api_errors():
+        await knowledge.save_add_on(add_on, passages, store.client, store.embed)
+
+
+async def list_all(store: KnowledgeStore) -> list[AddOn]:
+    with api_errors():
+        return await knowledge.list_add_ons(store.client)
+
+
+async def remove(store: KnowledgeStore, knowledge_add_on_id: str) -> None:
+    with api_errors():
+        await knowledge.remove_add_on(knowledge_add_on_id, store.client)
+
+
+async def remove_all(store: KnowledgeStore) -> None:
+    with api_errors():
+        await knowledge.remove_all_add_ons(store.client)
+
+
+@contextmanager
+def api_errors() -> Iterator[None]:
+    """Qdrant down (KNOWLEDGE_UNAVAILABLE and the like) -> 503. A model error gets the
+    status the agent gives the same code, else 502. Messages are masked by reconix_ai."""
+    try:
+        yield
+    except KnowledgeError as error:
+        raise ApiError(503, error.code, error.message) from None
+    except ProviderError as error:
+        status = AGENT_ERROR_STATUS.get(error.code, 502)
+        raise ApiError(status, error.code, error.message) from None
