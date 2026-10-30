@@ -249,7 +249,7 @@ def test_broken_lines_are_skipped(tmp_path: Path) -> None:
         "42",
         json.dumps({**record, "at": "yesterday"}),
         json.dumps({**record, "details": "not a dict"}),
-        json.dumps({key: value for key, value in record.items() if key != "role"}),
+        json.dumps({key: value for key, value in record.items() if key != "actor"}),
         "\xff\xfe",
     ]
     with path.open("a", encoding="utf-8", errors="surrogateescape") as file:

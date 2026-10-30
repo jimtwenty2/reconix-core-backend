@@ -80,7 +80,7 @@ def audit_line(event: AuditRecord) -> str:
     return json.dumps(record, ensure_ascii=True)
 
 
-RECORD_FIELDS = ("event_type", "assessment_id", "session_id", "role", "actor", "at", "details")
+RECORD_FIELDS = ("event_type", "assessment_id", "session_id", "actor", "at", "details")
 
 
 def read_timeline(
