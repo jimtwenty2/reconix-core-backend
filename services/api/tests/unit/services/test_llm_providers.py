@@ -56,23 +56,42 @@ def test_an_unsafe_address_is_refused(base_url):
     )
 
 
+@pytest.fixture(autouse=True)
+def default_ollama(monkeypatch):
+    monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+
+
 @pytest.mark.parametrize(
     ("provider_type", "base_url", "local"),
     [
         (ProviderType.RECONIX, None, True),
         (ProviderType.OLLAMA, None, True),  # the local Ollama
         (ProviderType.OLLAMA, "http://127.0.0.1:11434", True),
-        (ProviderType.OLLAMA, "http://ollama:11434", True),  # the compose service
+        (ProviderType.OLLAMA, "http://[::1]:11434", True),
+        # A name could resolve anywhere (a DNS search domain), so it needs an approval.
+        (ProviderType.OLLAMA, "http://ollama:11434", False),
         (ProviderType.OLLAMA, "https://gpu.example.com", False),
         (ProviderType.OPENAI_API_COMPATIBLE, "http://localhost:8080", True),
         (ProviderType.OPENAI_API_COMPATIBLE, "https://llm.example.com", False),
         (ProviderType.OPENAI, None, False),  # the cloud service's own address
         (ProviderType.ANTHROPIC, None, False),
         (ProviderType.DEEPSEEK, None, False),
+        # A cloud service on this computer is a proxy or a tunnel to the cloud.
+        (ProviderType.OPENAI, "http://127.0.0.1:4000", False),
+        (ProviderType.ANTHROPIC, "http://localhost:8080", False),
+        (ProviderType.DEEPSEEK, "http://[::1]:8080", False),
     ],
 )
 def test_which_providers_run_on_this_computer(provider_type, base_url, local):
     assert is_local(provider_type, base_url) is local
+
+
+def test_with_no_address_reconix_and_ollama_follow_reconix_ollama_url(monkeypatch):
+    monkeypatch.setenv("RECONIX_OLLAMA_URL", "https://gpu.example.com")
+
+    assert is_local(ProviderType.RECONIX, None) is False
+    assert is_local(ProviderType.OLLAMA, None) is False
+    assert is_local(ProviderType.OLLAMA, "http://127.0.0.1:11434") is True
 
 
 def cloud_provider(**overrides) -> LlmProvider:

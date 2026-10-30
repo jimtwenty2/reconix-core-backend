@@ -8,20 +8,20 @@ it first with a `configuration` approval, for exactly the settings they saw.
 The built-in RECONIX provider comes from the migration: it can be made active again, but
 never changed or removed. The active provider cannot be changed or removed either, so an
 approved address or key cannot be swapped afterwards.
+
+Locks are always taken in the same order as approving: the approval first, then the
+provider.
 """
 
 import hashlib
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy.orm import Session as Db
 
-from reconix_ai.providers.base_url import BaseUrlError, check_base_url
-from reconix_ai.providers.base_url import is_local as is_local_host
-from reconix_api.core import provider_keys
+from reconix_api.core import provider_keys, provider_urls
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Operator, WriteAudit
@@ -35,8 +35,11 @@ from reconix_api.services.approvals import expires_at, snapshot_hash
 from reconix_api.services.audit import audit
 
 ACTIVATE = "ACTIVATE_LLM_PROVIDER"  # config_change["change"] of an activation approval
-# The 3 cloud services always need a key.
-KEY_REQUIRED = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
+# The 3 cloud services always need a key, and never count as local: an address on this
+# computer can still be a proxy or a tunnel to the cloud.
+CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
+# With no address, these call RECONIX_OLLAMA_URL.
+OLLAMA_TYPES = {ProviderType.RECONIX, ProviderType.OLLAMA}
 DISPLAY_NAME_LENGTH = 100  # llm_providers.display_name is VARCHAR(100)
 
 
@@ -63,6 +66,7 @@ def create_provider(
         )
     api_key = body.api_key.get_secret_value() if body.api_key else None
     base_url = body.base_url or None
+    _refuse_secrets(mask, {"model_name": body.model_name, "base_url": base_url})
     check_settings(body.provider_type, base_url, has_key=api_key is not None)
     provider = LlmProvider(
         provider_type=body.provider_type,
@@ -103,6 +107,7 @@ def update_provider(
     api_key = changes.api_key.get_secret_value() if changes.api_key else None
     has_key = api_key is not None if new_key else provider.api_key_encrypted is not None
     base_url = merged.base_url or None
+    _refuse_secrets(mask, {"model_name": merged.model_name, "base_url": base_url})
     check_settings(provider.provider_type, base_url, has_key=has_key)
     provider.display_name = _masked_name(mask, merged.display_name)
     provider.model_name = merged.model_name
@@ -117,15 +122,19 @@ def update_provider(
 def delete_provider(
     db: Db, write_audit: WriteAudit, operator: Operator, llm_provider_id: UUID
 ) -> None:
-    """A provider that agent runs used stays, so their history keeps its model."""
+    """A provider that agent runs used stays, so their history keeps its model. Its open
+    activation approval, if any, is closed as EXPIRED."""
+    open_approval = provider_repo.activation_approval(db, llm_provider_id, ACTIVATE, lock=True)
     provider = _get(db, llm_provider_id, lock=True)
     _ensure_editable(provider)
     if provider_repo.run_count(db, llm_provider_id):
         raise ApiError(
             409, "PROVIDER_IN_USE", "Agent runs used this provider, so it stays for their history."
         )
+    expired = _expire(open_approval)
     provider_repo.delete(db, provider)
     db.commit()
+    _audit_expired(write_audit, operator, provider, expired)
     _audit(write_audit, "LLM_PROVIDER_REMOVED", operator, provider)
 
 
@@ -133,16 +142,29 @@ def activate(
     db: Db, write_audit: WriteAudit, operator: Operator, llm_provider_id: UUID, ttl_minutes: int
 ) -> tuple[LlmProviderOut, Approval | None]:
     """A provider on this computer is active at once. Any other one gets a
-    `configuration` approval and stays inactive until a person approves it."""
+    `configuration` approval and stays inactive until a person approves it.
+
+    One open approval per provider: one that lapsed, or that is for settings the
+    provider no longer has, is closed as EXPIRED first."""
+    open_approval = provider_repo.activation_approval(db, llm_provider_id, ACTIVATE, lock=True)
     provider = _get(db, llm_provider_id, lock=True)
     if provider.is_active:
         raise ApiError(409, "PROVIDER_ALREADY_ACTIVE", "This provider is already active.")
-    if is_local(provider.provider_type, provider.base_url):
+    local = is_local(provider.provider_type, provider.base_url)
+    if not local:
+        _refuse_if_waiting(provider, open_approval, ttl_minutes)
+    expired = _expire(open_approval)
+    approval = None
+    if local:
         _make_active(db, provider)
-        db.commit()
+    else:
+        approval = approval_repo.add(db, _activation_approval(provider))
+    db.commit()
+    _audit_expired(write_audit, operator, provider, expired)
+    if local:
         _audit(write_audit, "LLM_PROVIDER_ACTIVATED", operator, provider)
-        return provider_out(provider), None
-    approval = _request_activation(db, write_audit, operator, provider, ttl_minutes)
+    else:
+        _audit(write_audit, "APPROVAL_REQUESTED", operator, provider, approval)
     return provider_out(provider), approval
 
 
@@ -161,8 +183,9 @@ def is_activation(approval: Approval) -> bool:
 def approve_activation(
     db: Db, write_audit: WriteAudit, operator: Operator, approval: Approval
 ) -> None:
-    """Called from services/decisions.py. Only for the exact settings the person saw: if
-    the provider changed since, it is refused. Approving uses it."""
+    """Called from services/decisions.py, which has locked the approval. Only for the
+    exact settings the person saw: if the provider changed since, it is refused.
+    Approving uses it."""
     provider = _get(db, UUID(approval.config_change["llm_provider_id"]), lock=True)
     if activation_hash(provider) != approval.subject_hash:
         raise ApiError(
@@ -219,37 +242,36 @@ def activation_hash(provider: LlmProvider) -> str:
     return snapshot_hash({**activation_snapshot(provider), "api_key_encrypted": encrypted_key})
 
 
-def _request_activation(
-    db: Db, write_audit: WriteAudit, operator: Operator, provider: LlmProvider, ttl_minutes: int
-) -> Approval:
-    """One open approval per provider. One that lapsed, or that is for settings the
-    provider no longer has, is closed as EXPIRED and replaced."""
-    open_approval = provider_repo.activation_approval(db, provider.llm_provider_id, ACTIVATE)
-    expired = None
-    if open_approval is not None and open_approval.approval_status == ApprovalStatus.PENDING:
-        lapsed = datetime.now(UTC) >= expires_at(open_approval.requested_at, ttl_minutes)
-        if not lapsed and open_approval.subject_hash == activation_hash(provider):
-            raise ApiError(
-                409,
-                "APPROVAL_PENDING",
-                "This provider already waits for an approval.",
-                {"approval_id": str(open_approval.approval_id)},
-            )
-        open_approval.approval_status = ApprovalStatus.EXPIRED
-        expired = open_approval
-    approval = approval_repo.add(
-        db,
-        Approval(
-            kind="configuration",
-            subject_snapshot=activation_snapshot(provider),
-            subject_hash=activation_hash(provider),
-            config_change={"change": ACTIVATE, "llm_provider_id": str(provider.llm_provider_id)},
-        ),
+def _activation_approval(provider: LlmProvider) -> Approval:
+    return Approval(
+        kind="configuration",
+        subject_snapshot=activation_snapshot(provider),
+        subject_hash=activation_hash(provider),
+        config_change={"change": ACTIVATE, "llm_provider_id": str(provider.llm_provider_id)},
     )
-    db.commit()
-    if expired is not None:
-        _audit(write_audit, "APPROVAL_EXPIRED", operator, provider, expired)
-    _audit(write_audit, "APPROVAL_REQUESTED", operator, provider, approval)
+
+
+def _refuse_if_waiting(
+    provider: LlmProvider, open_approval: Approval | None, ttl_minutes: int
+) -> None:
+    """409 while an approval for these exact settings still waits."""
+    if open_approval is None or open_approval.approval_status != ApprovalStatus.PENDING:
+        return
+    lapsed = datetime.now(UTC) >= expires_at(open_approval.requested_at, ttl_minutes)
+    if not lapsed and open_approval.subject_hash == activation_hash(provider):
+        raise ApiError(
+            409,
+            "APPROVAL_PENDING",
+            "This provider already waits for an approval.",
+            {"approval_id": str(open_approval.approval_id)},
+        )
+
+
+def _expire(approval: Approval | None) -> Approval | None:
+    """Closes a still-PENDING approval as EXPIRED and returns it, for its audit line."""
+    if approval is None or approval.approval_status != ApprovalStatus.PENDING:
+        return None
+    approval.approval_status = ApprovalStatus.EXPIRED
     return approval
 
 
@@ -264,25 +286,23 @@ def check_settings(provider_type: ProviderType, base_url: str | None, has_key: b
         raise ApiError(
             422, "PROVIDER_URL_MISSING", "An OpenAI-compatible provider needs its address."
         )
-    if provider_type in KEY_REQUIRED and not has_key:
+    if provider_type in CLOUD_TYPES and not has_key:
         raise ApiError(
             422, "PROVIDER_KEY_MISSING", f"The {provider_type} provider needs an API key."
         )
     if base_url:
-        try:
-            check_base_url(base_url)
-        except BaseUrlError as error:
-            raise ApiError(422, "PROVIDER_URL_NOT_ALLOWED", str(error)) from None
+        provider_urls.check(base_url)
 
 
 def is_local(provider_type: ProviderType, base_url: str | None) -> bool:
-    """On this computer: the built-in model, Ollama at its default address, or any
-    provider whose address is this computer or a compose service."""
-    if provider_type == ProviderType.RECONIX:
-        return True
-    if not base_url:
-        return provider_type == ProviderType.OLLAMA
-    return is_local_host(urlsplit(base_url).hostname or "")
+    """On this computer: the address that is really called is localhost or a loopback
+    IP. The 3 cloud services never are. RECONIX and Ollama with no address call
+    RECONIX_OLLAMA_URL."""
+    if provider_type in CLOUD_TYPES:
+        return False
+    if not base_url and provider_type in OLLAMA_TYPES:
+        base_url = provider_urls.default_ollama_url()
+    return bool(base_url) and provider_urls.is_local_address(base_url)
 
 
 def provider_out(provider: LlmProvider) -> LlmProviderOut:
@@ -299,6 +319,19 @@ def provider_out(provider: LlmProvider) -> LlmProviderOut:
         created_at=provider.created_at,
         updated_at=provider.updated_at,
     )
+
+
+def _refuse_secrets(mask: MaskSecrets, fields: dict[str, str | None]) -> None:
+    """The model name and the address are saved and shown as typed, so one that looks
+    like a secret is refused. The message never repeats the value."""
+    for field, value in fields.items():
+        if value and mask(value)[1]:
+            raise ApiError(
+                422,
+                "SECRET_NOT_ALLOWED",
+                f"The {field} looks like a secret. Put the key in api_key.",
+                {"field": field},
+            )
 
 
 def _make_active(db: Db, provider: LlmProvider) -> None:
@@ -326,7 +359,7 @@ def _validated(values: dict[str, Any]) -> LlmProviderIn:
         ]
         raise ApiError(
             422, "VALIDATION_ERROR", "The provider is not valid.", {"fields": fields}
-        ) from error
+        ) from None
 
 
 def _ensure_editable(provider: LlmProvider) -> None:
@@ -347,6 +380,13 @@ def _get(db: Db, llm_provider_id: UUID, lock: bool = False) -> LlmProvider:
     if provider is None:
         raise ApiError(404, "LLM_PROVIDER_NOT_FOUND", "No AI provider with this id.")
     return provider
+
+
+def _audit_expired(
+    write_audit: WriteAudit, operator: Operator, provider: LlmProvider, expired: Approval | None
+) -> None:
+    if expired is not None:
+        _audit(write_audit, "APPROVAL_EXPIRED", operator, provider, expired)
 
 
 def _audit(

@@ -35,8 +35,11 @@ def run_count(db: Db, llm_provider_id: UUID) -> int:
     return db.scalar(query) or 0
 
 
-def activation_approval(db: Db, llm_provider_id: UUID, change: str) -> Approval | None:
-    """The newest configuration approval that activates this provider."""
+def activation_approval(
+    db: Db, llm_provider_id: UUID, change: str, lock: bool = False
+) -> Approval | None:
+    """The newest configuration approval that activates this provider. lock holds it
+    until commit, so it cannot be decided at the same time."""
     query = (
         select(Approval)
         .where(
@@ -47,4 +50,6 @@ def activation_approval(db: Db, llm_provider_id: UUID, change: str) -> Approval 
         .order_by(Approval.requested_at.desc())
         .limit(1)
     )
+    if lock:
+        query = query.with_for_update()
     return db.scalar(query)

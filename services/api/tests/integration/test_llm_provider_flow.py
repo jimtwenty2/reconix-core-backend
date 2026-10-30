@@ -96,12 +96,17 @@ def test_bad_settings_are_refused_without_echoing_the_key(db_client):
         ({**OPENAI, "base_url": "http://llm.example.com"}, "PROVIDER_URL_NOT_ALLOWED"),
         ({**OPENAI, "base_url": "https://169.254.169.254"}, "PROVIDER_URL_NOT_ALLOWED"),
         ({**OPENAI, "model_name": "gpt 4o"}, "VALIDATION_ERROR"),
+        ({**OPENAI, "model_name": "token:fake-model-secret"}, "SECRET_NOT_ALLOWED"),
+        ({**OPENAI, "base_url": " https://llm.example.com"}, "PROVIDER_URL_NOT_ALLOWED"),
+        ({**OPENAI, "api_key": "sk-short"}, "VALIDATION_ERROR"),  # under 16 characters
     ]
     for body, code in cases:
         response = db_client.post("/llm-providers", json=body, headers=headers)
         assert response.status_code == 422, body
         assert response.json()["code"] == code
         assert FAKE_API_KEY not in response.text
+        assert "fake-model-secret" not in response.text
+        assert "sk-short" not in response.text
     assert db_client.get("/llm-providers", headers=headers).json()[1:] == []
 
 
@@ -115,10 +120,46 @@ def test_a_provider_on_this_computer_is_active_at_once(db_client, db_app):
     assert activation["llm_provider"]["is_active"] is True
     assert active(db_client, headers) == ["OLLAMA"]
     assert event_types(db_app)[-1] == "LLM_PROVIDER_ACTIVATED"
-    # New agent runs use it.
+
+
+def test_a_new_run_asks_the_agent_for_the_active_provider(db_client, db_app):
+    """The run records the model the agent is asked for. Until the saved settings reach
+    the model calls, the agent answers NOT_READY for anything but RECONIX: loudly,
+    instead of calling RECONIX under another provider's name."""
+    headers = open_session(db_client)
+    activate(db_client, headers, add(db_client, headers, OLLAMA)["llm_provider_id"])
     assessment_id = active_assessment(db_client, headers)
+
+    response = plan(db_client, headers, assessment_id)
+
+    assert (response.status_code, response.json()["code"]) == (503, "NOT_READY")
+    request = db_app.state.parts["agent"].requests[-1]
+    assert (request.provider, request.model) == ("OLLAMA", "llama3.1:8b")
+    run = runs(db_client, headers)[0]
+    assert (run["model_name"], run["agent_runs_status"]) == ("llama3.1:8b", "FAILED")
+
+
+def test_the_built_in_provider_asks_the_agent_for_its_own_model(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+
     assert plan(db_client, headers, assessment_id).status_code == 201
-    assert runs(db_client, headers)[0]["model_name"] == "llama3.1:8b"
+
+    request = db_app.state.parts["agent"].requests[-1]
+    assert (request.provider, request.model) == ("RECONIX", None)
+
+
+def test_a_cloud_service_on_this_computer_still_needs_an_approval(db_client):
+    """A local address for OpenAI is a proxy or a tunnel: the key and the prompts still
+    leave this computer."""
+    headers = open_session(db_client)
+    proxy = add(db_client, headers, {**OPENAI, "base_url": "http://127.0.0.1:4000"})
+
+    activation = activate(db_client, headers, proxy["llm_provider_id"])
+
+    assert proxy["is_local"] is False
+    assert activation["approval"]["kind"] == "configuration"
+    assert active(db_client, headers) == ["RECONIX"]
 
 
 def test_a_cloud_provider_is_active_only_after_its_approval(db_client, db_app):
@@ -281,6 +322,21 @@ def test_an_unused_provider_can_be_removed(db_client, db_app):
     assert removed.status_code == 204
     assert db_client.get(f"/llm-providers/{provider_id}", headers=headers).status_code == 404
     assert event_types(db_app)[-1] == "LLM_PROVIDER_REMOVED"
+
+
+def test_removing_a_provider_closes_its_open_approval(db_client, db_app):
+    headers = open_session(db_client)
+    provider_id = add(db_client, headers, OPENAI)["llm_provider_id"]
+    approval = activate(db_client, headers, provider_id)["approval"]
+
+    removed = db_client.delete(f"/llm-providers/{provider_id}", headers=headers)
+
+    assert removed.status_code == 204
+    closed = db_client.get(f"/approvals/{approval['approval_id']}", headers=headers).json()
+    assert closed["approval_status"] == "EXPIRED"
+    waiting = db_client.get("/approvals?kind=configuration", headers=headers).json()
+    assert waiting == []
+    assert event_types(db_app)[-2:] == ["APPROVAL_EXPIRED", "LLM_PROVIDER_REMOVED"]
 
 
 def test_a_provider_that_agent_runs_used_stays(db_client, session_factory):

@@ -16,9 +16,9 @@ class LlmProviderIn(BaseModel):
     provider_type: ProviderType
     display_name: str = Field(min_length=1, max_length=100)
     model_name: str = Field(min_length=1, max_length=100, pattern=MODEL_NAME)
-    # Empty: the cloud service's own address, or Ollama on this computer.
+    # Empty: the cloud service's own address, or RECONIX_OLLAMA_URL for Ollama.
     base_url: str | None = Field(default=None, max_length=2048)
-    api_key: SecretStr | None = Field(default=None, min_length=8, max_length=500)
+    api_key: SecretStr | None = Field(default=None, min_length=16, max_length=500)
 
 
 class LlmProviderUpdate(BaseModel):
@@ -27,7 +27,7 @@ class LlmProviderUpdate(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     model_name: str | None = Field(default=None, min_length=1, max_length=100, pattern=MODEL_NAME)
     base_url: str | None = Field(default=None, max_length=2048)
-    api_key: SecretStr | None = Field(default=None, min_length=8, max_length=500)
+    api_key: SecretStr | None = Field(default=None, min_length=16, max_length=500)
 
 
 class LlmProviderOut(BaseModel):
