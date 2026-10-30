@@ -134,6 +134,10 @@ async def send_action(
         agent_run_id=agent_run_id or _agent_run(db, operator, assessment_id).agent_run_id,
     )
     if result.decision == Decision.BLOCKED:
+        # A blocked action never runs, so it keeps only the masked copy: what got it
+        # blocked may be a secret pasted into the target or the arguments.
+        snapshot = masked_snapshot(action, mask)
+        row.target, row.args = snapshot["target"], snapshot["arguments"]
         row.action_status = ActionStatus.BLOCKED
     action_repo.add(db, row)
     db.commit()
