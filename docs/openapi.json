@@ -1020,6 +1020,92 @@
         "title": "Health",
         "type": "object"
       },
+      "KnowledgeAddOnOut": {
+        "properties": {
+          "chunk_count": {
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cut": {
+            "anyOf": [
+              {
+                "enum": [
+                  "TEXT_LIMIT",
+                  "PAGE_LIMIT",
+                  "PASSAGE_LIMIT"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut"
+          },
+          "interface": {
+            "enum": [
+              "web",
+              "cli"
+            ],
+            "title": "Interface",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "TXT",
+              "MD",
+              "JSON",
+              "YAML",
+              "DOCX",
+              "PDF"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "knowledge_add_on_id": {
+            "format": "uuid",
+            "title": "Knowledge Add On Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "knowledge_add_on_id",
+          "name",
+          "kind",
+          "size_bytes",
+          "chunk_count",
+          "interface",
+          "created_at"
+        ],
+        "title": "KnowledgeAddOnOut",
+        "type": "object"
+      },
+      "KnowledgeAddOnsCleared": {
+        "properties": {
+          "removed_count": {
+            "title": "Removed Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "removed_count"
+        ],
+        "title": "KnowledgeAddOnsCleared",
+        "type": "object"
+      },
       "LlmProviderActivation": {
         "description": "approval is set when the provider runs off this computer: it becomes active once\nthe approval is approved with /approvals/{id}/approve.",
         "properties": {
@@ -3393,6 +3479,159 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/knowledge-add-ons": {
+      "delete": {
+        "description": "Every add-on. The public knowledge (CVE, CWE, OWASP, ATT&CK, tool guides) stays.",
+        "operationId": "delete_all_knowledge_add_ons_api_v1_knowledge_add_ons_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeAddOnsCleared"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Delete All Knowledge Add Ons",
+        "tags": [
+          "knowledge add-ons"
+        ]
+      },
+      "get": {
+        "description": "Oldest first.",
+        "operationId": "list_knowledge_add_ons_api_v1_knowledge_add_ons_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeAddOnOut"
+                  },
+                  "title": "Response List Knowledge Add Ons Api V1 Knowledge Add Ons Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Knowledge Add Ons",
+        "tags": [
+          "knowledge add-ons"
+        ]
+      },
+      "post": {
+        "description": "multipart/form-data with a .txt .md .json .yaml .yml .docx or .pdf file of at most\n10 MB, and interface (web or cli). name (optional) is the name to show, and its\nextension picks the type; without it, the file's own name. The text is masked, cut\ninto passages and saved in the knowledge search, where the agent finds it from then\non. No copy of the file is kept. Needs Qdrant and the embedding model: 503 without.",
+        "operationId": "create_knowledge_add_on_api_v1_knowledge_add_ons_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  },
+                  "interface": {
+                    "enum": [
+                      "web",
+                      "cli"
+                    ],
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 255,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file",
+                  "interface"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeAddOnOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Create Knowledge Add On",
+        "tags": [
+          "knowledge add-ons"
+        ]
+      }
+    },
+    "/api/v1/knowledge-add-ons/{knowledge_add_on_id}": {
+      "delete": {
+        "operationId": "delete_knowledge_add_on_api_v1_knowledge_add_ons__knowledge_add_on_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_add_on_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Add On Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Delete Knowledge Add On",
+        "tags": [
+          "knowledge add-ons"
         ]
       }
     },

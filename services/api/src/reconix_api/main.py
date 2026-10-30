@@ -12,6 +12,7 @@ from reconix_api.api import (
     assessments,
     evidence,
     findings,
+    knowledge_add_ons,
     llm_providers,
     messages,
     plans,
@@ -24,6 +25,7 @@ from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_session_factory
 from reconix_api.core.errors import add_error_handlers
 from reconix_api.core.interfaces import Interfaces
+from reconix_api.core.knowledge_add_ons import KnowledgeStore
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
@@ -37,12 +39,14 @@ def create_app(
     settings: Settings | None = None,
     session_tokens: SessionTokens | None = None,
     mask_secrets: MaskSecrets | None = None,
+    knowledge_store: KnowledgeStore | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="Reconix API", version="0.0.0")
     app.state.interfaces = interfaces
     app.state.session_tokens = session_tokens or SessionTokens()
     app.state.mask_secrets = mask_secrets or build_mask_secrets()
+    app.state.knowledge_store = knowledge_store or KnowledgeStore()
 
     # Added last = runs first: the Host check wraps everything, CORS included.
     app.add_middleware(
@@ -69,6 +73,7 @@ def create_app(
         findings,
         evidence,
         llm_providers,
+        knowledge_add_ons,
     ]
     for module in routers:
         app.include_router(module.router, prefix=API_PREFIX)

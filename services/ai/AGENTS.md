@@ -23,7 +23,7 @@ Mon 2 Nov.** After Tue 17 Nov (feature freeze), only bug fixes and prompt tuning
 | `policies/agent-rules.md` | Suggest only, never run, never leave scope |
 | `tool_specs/tool_specs.json` | The 5 tool schemas, copied from Reconix-Kali-MCP |
 | `providers/` | The only place that calls a model, through LiteLLM (`client.py`); the 6 provider types (`settings.py`); safe base URLs (`base_url.py`); embeddings |
-| `knowledge/` | Ingest (LlamaIndex), Qdrant hybrid search (BGE-M3 + keywords), `search_knowledge(query, filters)` |
+| `knowledge/` | Ingest (LlamaIndex), Qdrant hybrid search (BGE-M3 + keywords), `search_knowledge(query, filters)`, add-ons (`add_ons.py`: a person's own documents as `USER_DOC`, uploaded through the API; the ingest keeps them) |
 | `analysis/` | The 8 parts of workflow v5, severity and OWASP mapping (empty, to build) |
 | `reports/` | Report text (`answers.py`) and the PDF, DOCX and JSON files (`files.py`, `report.html`) |
 | `memory/` | Accepted findings in Qdrant (empty, to build) |
@@ -104,7 +104,7 @@ Keep this table true; update the row in the PR that changes it.
 |---|---|
 | `unit/agent/` | Graph, state, prompts, answers, checkpoints (with fakes in `fakes.py`) |
 | `unit/harness/` | Each check, the pipeline order, masking and the audit line |
-| `unit/knowledge/` | Chunks, items, keywords, paths, download and search |
+| `unit/knowledge/` | Chunks, items, keywords, paths, download, search and add-ons |
 | `unit/providers/` | Client, base URL safety, embeddings |
 | `evals/` | 20 questions with expected answers (empty, to add) |
 

@@ -16,7 +16,7 @@ from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedR
 from reconix_ai.harness import mask_secrets
 from reconix_ai.knowledge import keywords
 from reconix_ai.knowledge.chunks import Chunk
-from reconix_ai.knowledge.items import Source
+from reconix_ai.knowledge.items import PUBLIC_SOURCES, Source
 from reconix_ai.providers import EMBEDDING_SIZE
 from reconix_ai.providers.base_url import BaseUrlError, check_base_url
 
@@ -96,6 +96,26 @@ async def create_collection(client: AsyncQdrantClient) -> None:
         await client.create_payload_index(COLLECTION, "index", models.PayloadSchemaType.INTEGER)
 
 
+async def ensure_collection(client: AsyncQdrantClient) -> None:
+    """Make the collection when it is not there yet. Never empties it."""
+    if not await client.collection_exists(COLLECTION):
+        await create_collection(client)
+
+
+async def clear_public_knowledge(client: AsyncQdrantClient) -> None:
+    """Remove the public knowledge (PUBLIC_SOURCES) and keep everything else, such as the
+    add-ons. Makes the collection when it is not there yet."""
+    if not await client.collection_exists(COLLECTION):
+        await create_collection(client)
+        return
+    public = models.FieldCondition(key="source", match=models.MatchAny(any=list(PUBLIC_SOURCES)))
+    await client.delete(COLLECTION, models.Filter(must=[public]))
+
+
+def source_is(source: Source) -> models.FieldCondition:
+    return models.FieldCondition(key="source", match=models.MatchValue(value=source))
+
+
 async def save_chunks(
     client: AsyncQdrantClient, chunks: list[Chunk], vectors: list[list[float]]
 ) -> None:
@@ -106,10 +126,14 @@ async def save_chunks(
 
 def point(chunk: Chunk, vector: list[float]) -> models.PointStruct:
     return models.PointStruct(
-        id=str(uuid.uuid5(POINT_NAMESPACE, f"{chunk.source}:{chunk.ref_id}:{chunk.index}")),
+        id=point_id(chunk),
         vector={DENSE: vector, KEYWORDS: keywords.document_vector(chunk.title + "\n" + chunk.text)},
         payload=asdict(chunk),
     )
+
+
+def point_id(chunk: Chunk) -> str:
+    return str(uuid.uuid5(POINT_NAMESPACE, f"{chunk.source}:{chunk.ref_id}:{chunk.index}"))
 
 
 async def find_by_ref_ids(
