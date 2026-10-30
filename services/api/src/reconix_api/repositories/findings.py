@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session as Db
 
-from reconix_api.models import Evidence, Finding, finding_sources
+from reconix_api.models import Evidence, Finding, ToolRun, finding_sources
 
 
 def add(db: Db, row: Finding | Evidence) -> None:
@@ -45,6 +45,19 @@ def list_by_assessment(db: Db, assessment_id: UUID) -> list[Finding]:
 
 def source_run_ids(db: Db, finding_id: UUID) -> list[UUID]:
     query = select(finding_sources.c.tool_run_id).where(finding_sources.c.finding_id == finding_id)
+    return list(db.scalars(query))
+
+
+def source_outputs(db: Db, finding_ids: list[UUID], limit: int) -> list[str]:
+    """The masked output of the newest tool runs that found these findings."""
+    query = (
+        select(ToolRun.output_masked)
+        .join(finding_sources, finding_sources.c.tool_run_id == ToolRun.tool_run_id)
+        .where(finding_sources.c.finding_id.in_(finding_ids), ToolRun.output_masked.is_not(None))
+        .group_by(ToolRun.tool_run_id)
+        .order_by(func.max(ToolRun.finished_at).desc().nulls_last())
+        .limit(limit)
+    )
     return list(db.scalars(query))
 
 

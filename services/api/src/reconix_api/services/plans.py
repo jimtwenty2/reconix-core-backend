@@ -61,7 +61,7 @@ async def start_plan(
     try:
         return await plan_and_send(db, interfaces, mask, settings, operator, run, scope)
     except Exception as error:
-        fail(db, interfaces, operator, run, error)
+        agent_runs.fail(db, interfaces, operator, run, error)
         raise
 
 
@@ -108,7 +108,9 @@ async def plan_and_send(
         db.commit()
     else:
         # Nothing to decide: no step, the API blocked it, or it was LOW and ran.
-        end(db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"step": step_note(action)})
+        agent_runs.end(
+            db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"step": step_note(action)}
+        )
     return PlanOut(
         agent_run=agent_runs.agent_run_out(run),
         text=text,
@@ -161,7 +163,9 @@ def open_plan_run(
     cutoff = datetime.now(UTC) - timedelta(minutes=STALE_MINUTES)
     for run in agent_run_repo.open_plan_runs(db, assessment_id):
         if run.agent_runs_status == AgentRunStatus.RUNNING and run.started_at < cutoff:
-            fail(db, interfaces, operator, run, ApiError(500, "RUN_CUT_OFF", "The run stopped."))
+            agent_runs.fail(
+                db, interfaces, operator, run, ApiError(500, "RUN_CUT_OFF", "The run stopped.")
+            )
             assessment_repo.get_for_update(db, assessment_id)  # fail() committed: lock again
             continue
         waiting = run.agent_runs_status == AgentRunStatus.WAITING_APPROVAL
@@ -189,7 +193,9 @@ async def settle_waiting_run(
         found = waiting_step(db, run)
         if found is None:
             if agent_run_repo.claim_waiting(db, run.agent_run_id):
-                end(db, interfaces, operator, run, AgentRunStatus.CANCELLED, {"reason": "NO_STEP"})
+                agent_runs.end(
+                    db, interfaces, operator, run, AgentRunStatus.CANCELLED, {"reason": "NO_STEP"}
+                )
             continue
         row, approval = found
         pending = approval.approval_status == ApprovalStatus.PENDING
@@ -253,10 +259,10 @@ async def resume_claimed(
         )
         response = await interfaces.ask_agent(request)
     except Exception as error:
-        fail(db, interfaces, operator, run, error)
+        agent_runs.fail(db, interfaces, operator, run, error)
         return
     run.checkpoint_id = response.checkpoint_id
-    end(db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"decision": decision})
+    agent_runs.end(db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"decision": decision})
 
 
 def waiting_step(db: Db, run: AgentRun) -> tuple[ActionRow, Approval] | None:
@@ -266,34 +272,6 @@ def waiting_step(db: Db, run: AgentRun) -> tuple[ActionRow, Approval] | None:
         if row.source == "agent" and approval is not None:
             return row, approval
     return None
-
-
-def end(
-    db: Db,
-    interfaces: Interfaces,
-    operator: Operator,
-    run: AgentRun,
-    status: AgentRunStatus,
-    details: dict[str, str],
-) -> None:
-    agent_runs.finish(run, status)
-    db.commit()
-    audit(
-        interfaces.write_audit,
-        f"AGENT_RUN_{status}",
-        operator,
-        run.assessment_id,
-        {"agent_run_id": str(run.agent_run_id), **details},
-    )
-
-
-def fail(
-    db: Db, interfaces: Interfaces, operator: Operator, run: AgentRun, error: Exception
-) -> None:
-    """Any error ends the run FAILED, so no run is left RUNNING."""
-    db.rollback()
-    code = error.code if isinstance(error, ApiError) else "UNEXPECTED_ERROR"
-    end(db, interfaces, operator, run, AgentRunStatus.FAILED, {"code": code})
 
 
 def step_note(action: ActionOut | None) -> str:

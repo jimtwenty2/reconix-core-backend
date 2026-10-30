@@ -279,6 +279,31 @@
         "title": "AgentRunStatus",
         "type": "string"
       },
+      "AnalysisOut": {
+        "description": "The agent's suggestions for each OPEN finding. Nothing here changes a finding: a\nperson accepts a suggestion with PATCH /findings/{id}. A next_step is a validation\nstep: send it to POST /assessments/{id}/actions with purpose \"validation\", where it\nis checked and waits for an approval like any MEDIUM action.",
+        "properties": {
+          "agent_run": {
+            "$ref": "#/components/schemas/AgentRunOut"
+          },
+          "analysis": {
+            "items": {
+              "$ref": "#/components/schemas/FindingAnalysis"
+            },
+            "title": "Analysis",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_run",
+          "summary"
+        ],
+        "title": "AnalysisOut",
+        "type": "object"
+      },
       "ApprovalDecision": {
         "properties": {
           "reason": {
@@ -662,6 +687,105 @@
           "tool_run_id"
         ],
         "title": "EvidenceOut",
+        "type": "object"
+      },
+      "FindingAnalysis": {
+        "description": "The agent's suggestions for one finding (the 8 parts of workflow v5).\n\nSuggestions only: a person accepts them. next_step is never run on its own; an\noperator picks it and it becomes a normal action, with check() and an approval.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "cve_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cve Ids",
+            "type": "array"
+          },
+          "cvss_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Score"
+          },
+          "cwe_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cwe Ids",
+            "type": "array"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "impact": {
+            "title": "Impact",
+            "type": "string"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Action"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "owasp_id": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owasp Id",
+            "type": "array"
+          },
+          "related": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Related",
+            "type": "array"
+          },
+          "remediation": {
+            "title": "Remediation",
+            "type": "string"
+          },
+          "severity_status": {
+            "title": "Severity Status",
+            "type": "string"
+          },
+          "unsure": {
+            "title": "Unsure",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "explanation",
+          "related",
+          "severity_status",
+          "cvss_score",
+          "evidence",
+          "impact",
+          "remediation",
+          "cwe_ids",
+          "owasp_id",
+          "cve_ids",
+          "next_step",
+          "unsure"
+        ],
+        "title": "FindingAnalysis",
         "type": "object"
       },
       "FindingOut": {
@@ -2461,6 +2585,55 @@
         "summary": "Send Action",
         "tags": [
           "actions"
+        ]
+      }
+    },
+    "/api/v1/assessments/{assessment_id}/analyze": {
+      "post": {
+        "description": "Suggestions for each OPEN finding, 10 at a time. Nothing changes a finding until\na person accepts a suggestion with PATCH /findings/{id}.",
+        "operationId": "analyze_api_v1_assessments__assessment_id__analyze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Analyze",
+        "tags": [
+          "analysis"
         ]
       }
     },
