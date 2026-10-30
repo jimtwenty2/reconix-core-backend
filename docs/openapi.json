@@ -356,6 +356,18 @@
           "approval_status": {
             "$ref": "#/components/schemas/ApprovalStatus"
           },
+          "config_change": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Change"
+          },
           "confirmation_verified": {
             "title": "Confirmation Verified",
             "type": "boolean"
@@ -479,7 +491,9 @@
           "consumed_at",
           "expires_at",
           "action_id",
-          "manifest_id"
+          "manifest_id",
+          "report_id",
+          "config_change"
         ],
         "title": "ApprovalOut",
         "type": "object"
@@ -1006,6 +1020,223 @@
         "title": "Health",
         "type": "object"
       },
+      "LlmProviderActivation": {
+        "description": "approval is set when the provider runs off this computer: it becomes active once\nthe approval is approved with /approvals/{id}/approve.",
+        "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llm_provider": {
+            "$ref": "#/components/schemas/LlmProviderOut"
+          }
+        },
+        "required": [
+          "llm_provider"
+        ],
+        "title": "LlmProviderActivation",
+        "type": "object"
+      },
+      "LlmProviderIn": {
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 500,
+                "minLength": 16,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "display_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "model_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[\\w.:/@+-]+$",
+            "title": "Model Name",
+            "type": "string"
+          },
+          "provider_type": {
+            "$ref": "#/components/schemas/ProviderType"
+          }
+        },
+        "required": [
+          "provider_type",
+          "display_name",
+          "model_name"
+        ],
+        "title": "LlmProviderIn",
+        "type": "object"
+      },
+      "LlmProviderOut": {
+        "properties": {
+          "api_key_last4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Last4"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_local": {
+            "title": "Is Local",
+            "type": "boolean"
+          },
+          "llm_provider_id": {
+            "format": "uuid",
+            "title": "Llm Provider Id",
+            "type": "string"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "provider_type": {
+            "$ref": "#/components/schemas/ProviderType"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "llm_provider_id",
+          "provider_type",
+          "display_name",
+          "base_url",
+          "api_key_last4",
+          "model_name",
+          "is_active",
+          "is_local",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "LlmProviderOut",
+        "type": "object"
+      },
+      "LlmProviderUpdate": {
+        "description": "Only the fields sent change. A new api_key replaces the old one; null removes it.",
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 500,
+                "minLength": 16,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "model_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[\\w.:/@+-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          }
+        },
+        "title": "LlmProviderUpdate",
+        "type": "object"
+      },
       "ManifestStatus": {
         "enum": [
           "DRAFT",
@@ -1164,6 +1395,18 @@
         ],
         "title": "PlanStep",
         "type": "object"
+      },
+      "ProviderType": {
+        "enum": [
+          "RECONIX",
+          "OPENAI",
+          "ANTHROPIC",
+          "DEEPSEEK",
+          "OLLAMA",
+          "OPENAI_API_COMPATIBLE"
+        ],
+        "title": "ProviderType",
+        "type": "string"
       },
       "ReportOut": {
         "properties": {
@@ -3162,6 +3405,276 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/llm-providers": {
+      "get": {
+        "description": "Oldest first; the built-in RECONIX provider is always there.",
+        "operationId": "list_providers_api_v1_llm_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LlmProviderOut"
+                  },
+                  "title": "Response List Providers Api V1 Llm Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Providers",
+        "tags": [
+          "llm providers"
+        ]
+      },
+      "post": {
+        "description": "Saved inactive. The API key is encrypted and never shown again, only its last 4\ncharacters. OPENAI, ANTHROPIC and DEEPSEEK need a key; OPENAI_API_COMPATIBLE needs\nbase_url.",
+        "operationId": "create_provider_api_v1_llm_providers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Create Provider",
+        "tags": [
+          "llm providers"
+        ]
+      }
+    },
+    "/api/v1/llm-providers/{llm_provider_id}": {
+      "delete": {
+        "description": "Not the built-in or the active provider, nor one that agent runs used.",
+        "operationId": "delete_provider_api_v1_llm_providers__llm_provider_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "llm_provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Llm Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Delete Provider",
+        "tags": [
+          "llm providers"
+        ]
+      },
+      "get": {
+        "operationId": "read_provider_api_v1_llm_providers__llm_provider_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "llm_provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Llm Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Provider",
+        "tags": [
+          "llm providers"
+        ]
+      },
+      "patch": {
+        "description": "Only the fields sent change. The built-in and the active provider cannot change.",
+        "operationId": "update_provider_api_v1_llm_providers__llm_provider_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "llm_provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Llm Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Update Provider",
+        "tags": [
+          "llm providers"
+        ]
+      }
+    },
+    "/api/v1/llm-providers/{llm_provider_id}/activate": {
+      "post": {
+        "description": "A provider on this computer is active at once. Any other one answers with a\n`configuration` approval and becomes active when it is approved.",
+        "operationId": "activate_provider_api_v1_llm_providers__llm_provider_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "llm_provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Llm Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderActivation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Activate Provider",
+        "tags": [
+          "llm providers"
         ]
       }
     },

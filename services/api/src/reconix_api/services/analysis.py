@@ -61,6 +61,7 @@ async def analyze_in_groups(
 ) -> AnalysisOut:
     summaries: list[str] = []
     analysis: list[FindingAnalysis] = []
+    provider, model = agent_runs.agent_provider(db, run)
     for start in range(0, len(findings), GROUP_SIZE):
         group = findings[start : start + GROUP_SIZE]
         outputs = findings_repo.source_outputs(db, [f.finding_id for f in group], TOOL_OUTPUTS)
@@ -69,6 +70,8 @@ async def analyze_in_groups(
                 task=AgentTask.ANALYZE,
                 assessment_id=run.assessment_id,
                 agent_run_id=run.agent_run_id,
+                provider=provider,
+                model=model,
                 scope=scope,
                 findings=[finding_input(finding) for finding in group],
                 tool_results=outputs,
