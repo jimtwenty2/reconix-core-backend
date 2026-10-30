@@ -55,3 +55,12 @@ def replace_targets(db: Db, manifest_id: UUID, targets: list[ScopeTarget]) -> No
     db.execute(delete(ScopeTarget).where(ScopeTarget.manifest_id == manifest_id))
     db.add_all(targets)
     db.flush()
+
+
+def list_by_session(db: Db, session_id: UUID) -> list[ScopeManifest]:
+    query = (
+        select(ScopeManifest)
+        .where(ScopeManifest.session_id == session_id)
+        .order_by(ScopeManifest.version)
+    )
+    return list(db.scalars(query))

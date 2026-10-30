@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -35,15 +36,23 @@ def get_interfaces(request: Request) -> Interfaces:
     return request.app.state.interfaces
 
 
+# Declared so the API docs (Swagger) show an Authorize button and send the token.
+# auto_error=False keeps our own error shape for a missing or wrong header.
+bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="SessionToken",
+    description="The token from POST /api/v1/sessions.",
+)
+
+
 def current_operator(
-    request: Request, interfaces: Annotated[Interfaces, Depends(get_interfaces)]
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    interfaces: Annotated[Interfaces, Depends(get_interfaces)],
 ) -> Operator:
-    header = request.headers.get("authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not token:
+    if credentials is None or not credentials.credentials:
         raise ApiError(401, "UNAUTHORIZED", "Send the session token as a Bearer token.")
     try:
-        return interfaces.get_operator(token)
+        return interfaces.get_operator(credentials.credentials)
     except PermissionError as error:
         raise ApiError(401, "UNAUTHORIZED", "The session token is not valid.") from error
 

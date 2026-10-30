@@ -1,4 +1,4 @@
-"""Response shapes for /assessments/{id}/findings."""
+"""Request and response shapes for /findings and /evidence."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -33,7 +33,15 @@ class FindingOut(BaseModel):
     remediation: str | None
     validation_status: ValidationStatus
     finding_status: FindingStatus
+    reviewed_by: str | None
+    reviewed_at: datetime | None
     created_at: datetime
     assessment_id: UUID
     source_tool_run_ids: list[UUID] = Field(default_factory=list)  # the runs that found it
     evidence: list[EvidenceOut] = Field(default_factory=list)
+
+
+class FindingReview(BaseModel):
+    """A person's review of a finding."""
+
+    finding_status: FindingStatus

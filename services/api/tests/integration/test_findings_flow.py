@@ -22,7 +22,7 @@ def run_nmap(client, headers, assessment_id) -> dict:
 
 
 def findings(client, headers, assessment_id) -> list[dict]:
-    response = client.get(f"/assessments/{assessment_id}/findings", headers=headers)
+    response = client.get("/findings", params={"assessment_id": assessment_id}, headers=headers)
     assert response.status_code == 200, response.json()
     return response.json()
 
@@ -94,7 +94,9 @@ def test_parser_bug_keeps_the_run(db_client, monkeypatch):
 def test_findings_of_an_unknown_assessment_is_404(db_client):
     headers = open_session(db_client)
     response = db_client.get(
-        "/assessments/00000000-0000-0000-0000-000000000000/findings", headers=headers
+        "/findings",
+        params={"assessment_id": "00000000-0000-0000-0000-000000000000"},
+        headers=headers,
     )
     assert response.status_code == 404
     assert response.json()["code"] == "ASSESSMENT_NOT_FOUND"

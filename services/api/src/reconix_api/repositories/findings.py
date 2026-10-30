@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session as Db
 
-from reconix_api.models import Evidence, Finding, finding_sources
+from reconix_api.models import Evidence, Finding, ToolRun, finding_sources
 
 
 def add(db: Db, row: Finding | Evidence) -> None:
@@ -48,6 +48,31 @@ def source_run_ids(db: Db, finding_id: UUID) -> list[UUID]:
     return list(db.scalars(query))
 
 
+def source_outputs(db: Db, finding_ids: list[UUID], limit: int) -> list[str]:
+    """The masked output of the newest tool runs that found these findings."""
+    query = (
+        select(ToolRun.output_masked)
+        .join(finding_sources, finding_sources.c.tool_run_id == ToolRun.tool_run_id)
+        .where(finding_sources.c.finding_id.in_(finding_ids), ToolRun.output_masked.is_not(None))
+        .group_by(ToolRun.tool_run_id)
+        .order_by(func.max(ToolRun.finished_at).desc().nulls_last())
+        .limit(limit)
+    )
+    return list(db.scalars(query))
+
+
 def list_evidence(db: Db, finding_id: UUID) -> list[Evidence]:
     query = select(Evidence).where(Evidence.finding_id == finding_id).order_by(Evidence.created_at)
     return list(db.scalars(query))
+
+
+def get(db: Db, finding_id: UUID, lock: bool = False) -> Finding | None:
+    return db.get(Finding, finding_id, with_for_update=lock)
+
+
+def list_all(db: Db) -> list[Finding]:
+    return list(db.scalars(select(Finding).order_by(Finding.created_at.desc(), Finding.code)))
+
+
+def get_evidence(db: Db, evidence_id: UUID) -> Evidence | None:
+    return db.get(Evidence, evidence_id)

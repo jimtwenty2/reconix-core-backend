@@ -47,6 +47,8 @@ class Request:
     model: str | None = None
     messages: list[str] = field(default_factory=lambda: ["Scan the lab host for services."])
     tool_results: list[str] = field(default_factory=list)
+    findings: list[dict] = field(default_factory=list)
+    report: object | None = None
 
 
 class FakeModel:

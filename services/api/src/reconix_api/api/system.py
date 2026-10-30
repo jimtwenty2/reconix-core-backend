@@ -1,4 +1,4 @@
-"""Health check and who-am-I."""
+"""Health check and who is calling."""
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -18,6 +18,6 @@ def health() -> Health:
     return Health(status="OK")
 
 
-@router.get("/me")
-def me(operator: CurrentOperator) -> Operator:
+@router.get("/operator")
+def read_operator(operator: CurrentOperator) -> Operator:
     return operator

@@ -32,7 +32,9 @@ the reports and the TUI.)
   address (`?sev=HIGH,LOW&val=review&q=sql&page=2&finding=F-001`), so a link opens on its
   finding's page. The finding's evidence and remediation sit beside the list; on the fixed
   desktop frame the list scrolls on its own under the filters with no scrollbar drawn (wheel,
-  touch, trackpad and keys still move it; the detail and the page keep theirs), and on a phone
+  touch, trackpad and keys still move it; the detail and the page keep theirs); at other
+  two-pane sizes (≥1024 wide) the list pane sticks to the top of the window, one screen tall,
+  and its rows scroll inside it while the window scrolls the detail; and on a phone
   the list and the detail take turns (Back returns to the list). Ten rows a page is
   `lib/paging.ts`, shared with Assessments and the Report view's runs. False positives are left
   out of the list as they are out of every count (so its headline and chips are the Overview's
