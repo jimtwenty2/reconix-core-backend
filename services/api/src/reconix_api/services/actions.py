@@ -390,9 +390,9 @@ def _check_context(
 
 
 def _agent_run(db: Db, operator: Operator, assessment_id: UUID) -> AgentRun:
-    """Every action belongs to an agent run. A person's action joins the run a person's
-    actions share, never a plan's run."""
-    running = agent_run_repo.person_run(db, assessment_id)
+    """Every action belongs to an agent run. A person's action joins the run that their
+    session's actions on this assessment share, never a plan's run."""
+    running = agent_run_repo.person_run(db, assessment_id, operator.session_id)
     return running or agent_runs.new_agent_run(db, operator, assessment_id)
 
 
