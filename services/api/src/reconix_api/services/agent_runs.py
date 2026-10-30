@@ -7,9 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session as Db
 from sqlalchemy.orm import sessionmaker
 
-from reconix_ai.providers import ProviderConfig, reconix_provider
-from reconix_ai.providers import ProviderType as AiProviderType
-from reconix_api.core import provider_keys
+from reconix_api.core.agent import ProviderConfig, provider_config
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Interfaces, Operator
@@ -54,23 +52,23 @@ def make_provider_for_run(
             if agent_run is None:
                 raise ApiError(404, "AGENT_RUN_NOT_FOUND", "The agent run does not exist.")
             provider = provider_repo.get(db, agent_run.llm_provider_id)
-            return provider_config(settings, provider, agent_run.model_name)
+            return provider_config(settings, active_provider_of(provider), agent_run.model_name)
 
     return provider_for_run
 
 
-def provider_config(settings: Settings, provider: LlmProvider, model_name: str) -> ProviderConfig:
-    if provider.provider_type == ProviderType.RECONIX:
-        return reconix_provider()
-    api_key = None
-    if provider.api_key_encrypted:
-        api_key = provider_keys.decrypt(settings, provider.api_key_encrypted)
-    return ProviderConfig(
-        provider_type=AiProviderType(provider.provider_type.value),
-        model_name=model_name,
-        base_url=provider.base_url,
-        api_key=api_key,
-    )
+def active_provider_of(provider: LlmProvider) -> LlmProvider:
+    """Only the active row is locked against edits, and a cloud row becomes active only
+    through an approval of its exact settings. A row that is no longer active may have
+    been changed since, with no approval, so its settings are never used. The built-in
+    RECONIX row can never be changed and never gives its settings."""
+    if provider.provider_type != ProviderType.RECONIX and not provider.is_active:
+        raise ApiError(
+            409,
+            "PROVIDER_CHANGED",
+            "The AI provider this run started with is no longer active. Start a new run.",
+        )
+    return provider
 
 
 def agent_provider(db: Db, agent_run: AgentRun) -> tuple[str, str | None]:

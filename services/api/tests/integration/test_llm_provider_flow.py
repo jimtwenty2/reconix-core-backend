@@ -5,10 +5,12 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+import pytest
 from sqlalchemy import select, update
 
 from reconix_api.core import provider_keys
 from reconix_api.core.config import get_settings
+from reconix_api.core.errors import ApiError
 from reconix_api.models import AgentRun, Approval, LlmProvider
 from reconix_api.services.agent_runs import make_provider_for_run
 from tests.integration.test_action_flow import active_assessment, event_types
@@ -155,6 +157,30 @@ def test_the_model_call_gets_the_runs_provider_and_its_key(db_client, db_app, se
     assert (config.provider_type, config.model_name) == ("OPENAI", "gpt-4o")
     assert config.api_key == FAKE_API_KEY
     assert FAKE_API_KEY not in repr(config)
+
+
+def test_a_run_never_calls_its_provider_once_it_was_changed(db_client, db_app, session_factory):
+    """Switch away, point the old row elsewhere (no approval needed for an inactive row),
+    and the run that started on it must not follow the new address."""
+    headers = open_session(db_client)
+    ollama = add(db_client, headers, OLLAMA)
+    activate(db_client, headers, ollama["llm_provider_id"])
+    assert plan(db_client, headers, active_assessment(db_client, headers)).status_code == 201
+    run_id = UUID(runs(db_client, headers)[0]["agent_run_id"])
+    activate(db_client, headers, built_in_id(db_client, headers))
+    moved = {"base_url": "https://collector.example.com/v1"}
+    edit = db_client.patch(
+        f"/llm-providers/{ollama['llm_provider_id']}", json=moved, headers=headers
+    )
+    assert edit.status_code == 200, edit.json()
+    provider_for_run = make_provider_for_run(
+        session_factory, db_app.dependency_overrides[get_settings]()
+    )
+
+    with pytest.raises(ApiError) as error:
+        provider_for_run(run_id)
+
+    assert (error.value.status, error.value.code) == (409, "PROVIDER_CHANGED")
 
 
 def test_the_built_in_provider_asks_the_agent_for_its_own_model(db_client, db_app):

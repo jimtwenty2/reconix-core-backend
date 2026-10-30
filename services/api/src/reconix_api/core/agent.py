@@ -14,7 +14,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from reconix_ai import agent
 from reconix_ai.contracts import AgentAnswer
-from reconix_ai.providers import ProviderConfig
+from reconix_ai.providers import ProviderConfig, reconix_provider
+from reconix_ai.providers import ProviderType as AiProviderType
+from reconix_api.core import provider_keys
+from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import (
     Action,
@@ -25,6 +28,8 @@ from reconix_api.core.interfaces import (
     FindingInput,
     ReportInput,
 )
+from reconix_api.models import LlmProvider
+from reconix_api.models.enums import ProviderType
 
 OpenGraph = Callable[[], AbstractAsyncContextManager[CompiledStateGraph]]
 ProviderForRun = Callable[[UUID], ProviderConfig]
@@ -61,6 +66,22 @@ class PlanInput:
     tool_results: list[str]
     findings: list[FindingInput]
     report: ReportInput | None
+
+
+def provider_config(settings: Settings, provider: LlmProvider, model_name: str) -> ProviderConfig:
+    """A provider row as the AI Service's model settings, key decrypted. model_name is
+    the run's copy."""
+    if provider.provider_type == ProviderType.RECONIX:
+        return reconix_provider()
+    api_key = None
+    if provider.api_key_encrypted:
+        api_key = provider_keys.decrypt(settings, provider.api_key_encrypted)
+    return ProviderConfig(
+        provider_type=AiProviderType(provider.provider_type.value),
+        model_name=model_name,
+        base_url=provider.base_url,
+        api_key=api_key,
+    )
 
 
 def postgres_graph(database_url: str) -> OpenGraph:
