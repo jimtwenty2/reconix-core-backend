@@ -9,7 +9,7 @@ The full test is **never cut**. It must pass from the API, the terminal app and 
 
 ## The flow
 
-1. Open a session (`OPERATOR`).
+1. Open a session (`POST /sessions`) and keep its token.
 2. Draft, submit and approve a scope → `scope` approval, a `DRAFT` assessment (`RCX-YYYY-NNNN`) that becomes `ACTIVE`.
 3. Ask for a plan → the AI run goes `RUNNING` → waiting for approval → `COMPLETED` / `FAILED` / `CANCELLED`.
 4. Send an action → harness check → `LOW` runs, `MEDIUM`/`HIGH` wait; approve it (type the target for `HIGH`).
@@ -38,7 +38,7 @@ To drive it by hand, use curl against `http://127.0.0.1:<port>` with the paths f
 ## Also check
 
 - A wrong or reused job token is refused by the Kali container.
-- A viewer session gets 403 on every step that changes data.
+- A request without a session token gets 401 on every step.
 - The assessment timeline shows one audit line per decision.
 - Nothing is stuck: a down container ends as `TIMED_OUT` or `FAILED`.
 

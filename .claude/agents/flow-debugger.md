@@ -16,7 +16,7 @@ You debug the Reconix end-to-end flow. You are given a failing step, test output
 | raw output → findings, evidence, dedupe, validation runs | `services/api/.../parsers`, `findings` |
 | plan, analysis, provider, report text/files | `services/ai` |
 | screens and commands | `apps/tui` |
-| pages, roles, terminal page | `apps/web` |
+| pages, sign-in, terminal page | `apps/web` |
 
 ## How to work
 

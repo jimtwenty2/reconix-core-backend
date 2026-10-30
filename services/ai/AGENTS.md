@@ -72,8 +72,8 @@ Ollama) and `tests/`.
   - loop: the same command on the same target at most 3 times in 10 minutes, at most 20 actions a
     minute and 200 runs per assessment.
 - `masking.py` replaces secrets with a label such as `[MASKED:password]` and counts them.
-- `audit.py` writes exactly one JSON line per decision, with `assessment_id`, `session_id`, `role`,
-  `actor` and the event types the web timeline needs.
+- `audit.py` writes exactly one JSON line per decision, with `assessment_id`, `session_id`,
+  `actor` and the event types the web timeline needs. There are no roles, so a line has no `role`.
 - Follow the `add-guardrail-check` skill for the current rules and the tests each check needs.
 
 ## Plan status (28 Oct 2026)
@@ -130,5 +130,4 @@ ollama create reconix -f services/ai/models/Modelfile
 
 **Week goals from the plan:** week 1, for an approved scope the agent suggests one step and waits.
 Week 2, on 10 saved tool outputs the AI follows all 8 analysis rules and a report exports as PDF,
-DOCX and JSON. Harness week 2: the leak test finds no secret anywhere, and a viewer gets 403 on
-every change.
+DOCX and JSON. Harness week 2: the leak test finds no secret anywhere.

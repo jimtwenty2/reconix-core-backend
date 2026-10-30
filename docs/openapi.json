@@ -1303,14 +1303,11 @@
         "type": "object"
       },
       "Operator": {
-        "description": "Who is calling. A VIEWER may only read.",
+        "description": "Who is calling. There are no roles: anyone with a session token may do everything.",
         "properties": {
           "actor": {
             "title": "Actor",
             "type": "string"
-          },
-          "role": {
-            "$ref": "#/components/schemas/Role"
           },
           "session_id": {
             "format": "uuid",
@@ -1320,7 +1317,6 @@
         },
         "required": [
           "session_id",
-          "role",
           "actor"
         ],
         "title": "Operator",
@@ -1548,14 +1544,6 @@
           "HIGH"
         ],
         "title": "RiskLevel",
-        "type": "string"
-      },
-      "Role": {
-        "enum": [
-          "OPERATOR",
-          "VIEWER"
-        ],
-        "title": "Role",
         "type": "string"
       },
       "ScopeDraft": {
@@ -2062,7 +2050,7 @@
         "type": "object"
       },
       "SessionCreated": {
-        "description": "The new session and its token. The role is not shown: read it from GET /operator.",
+        "description": "The new session and its token.",
         "properties": {
           "closed_at": {
             "anyOf": [
@@ -2110,7 +2098,7 @@
         "type": "object"
       },
       "SessionRead": {
-        "description": "A session as stored. The role lives with the token, so it is not shown here.",
+        "description": "A session as stored.",
         "properties": {
           "closed_at": {
             "anyOf": [
@@ -4057,7 +4045,7 @@
         ]
       },
       "post": {
-        "description": "Opens an OPERATOR session. Only reachable from this computer (Host check + CORS).",
+        "description": "Opens a session. Only reachable from this computer (Host check + CORS).",
         "operationId": "open_session_api_v1_sessions_post",
         "requestBody": {
           "content": {

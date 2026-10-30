@@ -11,7 +11,7 @@ The schema follows **ERD V3** (16 tables) and **Data Dictionary V3** exactly. If
 
 - Table and column names are exactly as in ERD V3. Enum values are UPPERCASE (`DRAFT`, `ACTIVE`, `NONE`, `UNKNOWN`, `TIMED_OUT`, ...).
 - Severity uses `NONE` (not `INFO`). Uncertain results use `UNKNOWN` (not `NEEDS_REVIEW`).
-- `sessions` has no `role` column (ERD V3 final). The role (`OPERATOR` / `VIEWER`) is kept with the session token.
+- `sessions` has no `role` column (ERD V3 final), and Reconix has no roles.
 - The built-in `RECONIX` AI provider is seed data.
 - The schema starts as **one initial migration**. Ask the backend owner before adding a second revision. After a release tag, never edit an old revision; add a new one.
 - Never store a secret in plain text. API keys are Fernet-encrypted; only the last 4 characters are ever shown.

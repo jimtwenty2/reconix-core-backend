@@ -20,7 +20,6 @@ def audit(
             event_type=event_type,
             assessment_id=assessment_id,
             session_id=operator.session_id,
-            role=operator.role,
             actor=operator.actor,
             at=datetime.now(UTC),
             details=details or {},

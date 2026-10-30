@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from reconix_api.core.db import Db
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.scopes import (
     ScopeDraft,
     ScopeOut,
@@ -23,7 +23,7 @@ def create_scope(
     session_id: UUID,
     body: ScopeDraft,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
 ) -> ScopeOut:
     return scopes.create_draft(db, interfaces.write_audit, operator, session_id, body)
@@ -44,7 +44,7 @@ def update_scope(
     manifest_id: UUID,
     body: ScopeUpdate,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
 ) -> ScopeOut:
     """Only the fields sent change. Only a draft that was not submitted can change."""
@@ -56,7 +56,7 @@ def submit_scope(
     manifest_id: UUID,
     body: ScopeSubmit,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
 ) -> ScopeSubmitted:
     """Creates the DRAFT assessment and a scope approval."""
