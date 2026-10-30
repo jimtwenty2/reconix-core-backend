@@ -1,7 +1,7 @@
 """The steps of the agent: understand, find, plan, suggest and wait for PLAN and
-SUGGEST; find and analyze for ANALYZE.
+SUGGEST; find and analyze for ANALYZE; report for REPORT.
 
-Only understand, plan and analyze call the model. suggest runs the harness check() on
+Only understand, plan, analyze and report call the model. suggest runs the harness check() on
 each planned step and offers the first one it allows; the API runs check()
 again, with the full context, before anything runs. wait pauses the graph
 until a person approves or rejects the step.
@@ -23,7 +23,12 @@ from reconix_ai.agent.answers import (
     read_plan,
     read_understanding,
 )
-from reconix_ai.agent.prompts import analyze_messages, plan_messages, understand_messages
+from reconix_ai.agent.prompts import (
+    analyze_messages,
+    plan_messages,
+    report_messages,
+    understand_messages,
+)
 from reconix_ai.agent.state import AgentScope, AgentState, scope_from_dict
 from reconix_ai.analysis.answers import read_analysis
 from reconix_ai.contracts import ProposedAction
@@ -39,6 +44,7 @@ from reconix_ai.providers import (
     complete,
     reconix_provider,
 )
+from reconix_ai.reports.answers import read_report
 
 ATTEMPTS = 2  # a bad answer is asked once more
 # Tokens one ask may spend in total, prompts and answers together. A plan uses a few thousand.
@@ -46,6 +52,7 @@ DEFAULT_TOKEN_BUDGET = 20_000
 HITS_PER_QUERY = 3
 # An analysis answers for up to 10 findings at once, so it may write more than a plan.
 ANALYZE_MAX_TOKENS = 6000
+REPORT_MAX_TOKENS = 3000
 MAX_HITS = 6
 MAX_PROMPT_HIT_CHARS = 1200
 DEFAULT_GOAL = "Find what runs on the approved targets."
@@ -169,6 +176,21 @@ async def analyze(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, A
     }
 
 
+async def report(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
+    """The executive summary and the methodology, written from the locked copy."""
+    deps = runtime.context
+    longer = replace(deps, provider=replace(deps.provider, max_tokens=REPORT_MAX_TOKENS))
+    answer, usage = await ask_json(longer, report_messages(state), read_report, tokens_used(state))
+    if answer is None:
+        raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable report text.")
+    executive_summary, methodology = answer
+    return {
+        "executive_summary": executive_summary,
+        "methodology": methodology,
+        **added(state, usage),
+    }
+
+
 def checked_next_step(analysis: dict[str, Any], context: "CheckInput") -> dict[str, Any]:
     """A next step the harness blocks is dropped, and the person is told why."""
     step = analysis["next_step"]
@@ -198,7 +220,8 @@ def wait(state: AgentState) -> dict[str, Any]:
 
 
 def start_task(state: AgentState) -> str:
-    return "analyze" if state.get("task") == "ANALYZE" else "plan"
+    task = state.get("task")
+    return {"ANALYZE": "analyze", "REPORT": "report"}.get(task, "plan")
 
 
 def after_suggest(state: AgentState) -> str:

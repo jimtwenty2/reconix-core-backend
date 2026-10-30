@@ -27,9 +27,11 @@ from reconix_api.core.interfaces import (
     ApprovedScope,
     ChatMessage,
     FindingInput,
+    ReportInput,
     ResumeInput,
     RiskLevel,
     ToolName,
+    ToolRunInput,
 )
 
 UNDERSTOOD = {"goal": "Find open ports on the lab host.", "search": ["nmap service scan"]}
@@ -302,3 +304,32 @@ async def test_analyze_without_findings_is_a_422():
 
     assert error.value.status == 422
     assert error.value.code == "NO_FINDINGS"
+
+
+async def test_report_sends_the_real_locked_copy_with_dates():
+    run = ToolRunInput(
+        tool=ToolName.NMAP,
+        target="172.20.0.5",
+        args=["-sV"],
+        risk_level=RiskLevel.MEDIUM,
+        tool_run_status="COMPLETED",
+        approval_check="APPROVED",
+        started_at=datetime(2026, 10, 29, 9, tzinfo=UTC),
+    )
+    copy = ReportInput(findings=[FTP_FINDING], severity_counts={"MEDIUM": 1}, tool_runs=[run])
+    model = ScriptedModel({"executive_summary": "One FTP issue.", "methodology": "One nmap run."})
+
+    response = await make_ask(model)(plan_request(uuid4(), task=AgentTask.REPORT, report=copy))
+
+    assert response.executive_summary == "One FTP issue."
+    assert response.methodology == "One nmap run."
+    assert '"started_at": "2026-10-29T09:00:00+00:00"' in model.sent_text()
+    assert '"tool": "NMAP"' in model.sent_text()
+
+
+async def test_report_without_its_locked_copy_is_a_422():
+    with pytest.raises(ApiError) as error:
+        await make_ask(ScriptedModel())(plan_request(uuid4(), task=AgentTask.REPORT))
+
+    assert error.value.status == 422
+    assert error.value.code == "NO_REPORT_DATA"

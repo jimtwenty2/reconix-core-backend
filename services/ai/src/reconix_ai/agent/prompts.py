@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from reconix_ai.agent.state import AgentState
+from reconix_ai.contracts import severity_rank
 from reconix_ai.harness.checks.command import ALLOWED_OPTIONS
 from reconix_ai.harness.checks.scope import TOOL_TARGET_KINDS
 from reconix_ai.providers import Message
@@ -62,6 +63,41 @@ def analyze_messages(state: AgentState) -> list[Message]:
     if state.get("tool_results"):
         parts.append(tool_results_text(state["tool_results"]))
     return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+MAX_REPORT_PROMPT_ROWS = 50
+
+
+def report_messages(state: AgentState) -> list[Message]:
+    report = state["report"]
+    findings = sorted(report["findings"], key=severity_rank)
+    rows = [report_row(finding) for finding in findings[:MAX_REPORT_PROMPT_ROWS]]
+    runs = report["tool_runs"][:MAX_REPORT_PROMPT_ROWS]
+    parts = [
+        read_markdown(PROMPTS_DIR / "report.md"),
+        scope_text(state["scope"]),
+        counts_text(report["severity_counts"]),
+        findings_text(rows) + more_text(len(findings) - len(rows), "findings"),
+        "## Tool runs\n"
+        + fenced("tool_results", json.dumps(runs, indent=1))
+        + more_text(len(report["tool_runs"]) - len(runs), "tool runs"),
+    ]
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def more_text(left_out: int, what: str) -> str:
+    return f"\n({left_out} more {what} are in the report but not shown here.)" if left_out else ""
+
+
+def counts_text(counts: dict[str, int]) -> str:
+    lines = [f"- {level}: {count}" for level, count in counts.items()]
+    return "## Findings by severity (final)\n" + ("\n".join(lines) or "- none")
+
+
+def report_row(finding: dict[str, Any]) -> dict[str, Any]:
+    """What the report text needs of a finding; the full text stays in the files."""
+    names = ("code", "title", "target", "severity_status", "finding_status")
+    return {name: finding.get(name) for name in names}
 
 
 def findings_text(findings: list[dict[str, Any]]) -> str:

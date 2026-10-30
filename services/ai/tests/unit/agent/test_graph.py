@@ -247,9 +247,9 @@ async def test_secrets_never_reach_the_model_or_the_checkpoint(graph, saver) -> 
         assert secret not in saved
 
 
-async def test_only_plan_and_suggest_are_supported(graph) -> None:
+async def test_chat_is_not_supported_yet(graph) -> None:
     with pytest.raises(AgentError) as raised:
-        await ask_agent(graph, Request(task="REPORT"), run_id(), make_deps(FakeModel()))
+        await ask_agent(graph, Request(task="CHAT"), run_id(), make_deps(FakeModel()))
 
     assert raised.value.code == "TASK_NOT_SUPPORTED"
 

@@ -22,6 +22,7 @@ from reconix_api.core.interfaces import (
     ApprovedScope,
     AskAgent,
     FindingInput,
+    ReportInput,
 )
 
 OpenGraph = Callable[[], AbstractAsyncContextManager[CompiledStateGraph]]
@@ -40,12 +41,13 @@ AGENT_ERROR_STATUS = {
     "TOO_MANY_FINDINGS": 422,
     "DUPLICATE_FINDING": 422,
     "FINDING_WITHOUT_CODE": 422,
+    "NO_REPORT_DATA": 422,
 }
 
 
 @dataclass(frozen=True)
 class PlanInput:
-    """The fields the agent reads for PLAN, SUGGEST and ANALYZE."""
+    """The fields the agent reads for PLAN, SUGGEST, ANALYZE and REPORT."""
 
     task: str
     assessment_id: UUID
@@ -53,6 +55,7 @@ class PlanInput:
     messages: list[str]
     tool_results: list[str]
     findings: list[FindingInput]
+    report: ReportInput | None
 
 
 def postgres_graph(database_url: str) -> OpenGraph:
@@ -132,6 +135,7 @@ def plan_input(request: AgentRequest) -> PlanInput:
         messages=person_messages,
         tool_results=list(request.tool_results),
         findings=list(request.findings),
+        report=request.report,
     )
 
 

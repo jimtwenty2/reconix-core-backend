@@ -49,6 +49,9 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
   it, rebuild `apps/sample-data/` so the TUI, the web and the database show the same examples.
 - **`install.sh`:** `set -euo pipefail`, quote every variable, no `curl | sh` of unpinned scripts,
   and never ask for or store a provider API key.
+- **The API image needs Pango** (`libpango-1.0-0`, `libpangoft2-1.0-0` on Debian): the AI
+  Service draws the PDF report with WeasyPrint. Install it in the image when the API moves into
+  Compose, and check for it in `install.sh`.
 - A change here that affects how other parts start (ports, variable names, networks) must be called
   out in the PR so their owners can check it.
 
