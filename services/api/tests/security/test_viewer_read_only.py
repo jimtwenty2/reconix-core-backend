@@ -20,6 +20,10 @@ CHANGES = [
     ("POST", f"/assessments/{ANY_ID}/reports"),
     ("POST", f"/reports/{ANY_ID}/review-requests"),
     ("POST", f"/sessions/{ANY_ID}/messages"),
+    ("POST", "/llm-providers"),
+    ("PATCH", f"/llm-providers/{ANY_ID}"),
+    ("DELETE", f"/llm-providers/{ANY_ID}"),
+    ("POST", f"/llm-providers/{ANY_ID}/activate"),
 ]
 
 

@@ -86,7 +86,7 @@ Keep this table true; update the row in the PR that changes it.
 | `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST, ANALYZE and resume, built-in RECONIX provider only (`core/agent.py`) |
 | Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | Done: `POST /assessments/{id}/plan` (the step goes through `send_action`), resume after the decision, `GET /sessions/{id}/agent-runs` |
 | Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done: check runs to do. Also done: `POST /assessments/{id}/analyze` (suggestions saved in the run) |
-| 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | To do |
+| 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | Done: `/llm-providers` list, add, read, edit, remove and `/activate`. A provider on this computer is active at once, any other after its `configuration` approval. The agent still calls only RECONIX until the saved settings reach the model calls (`core/agent.py`) |
 | Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | Done except multi-assessment: one assessment per report, files in `RECONIX_REPORTS_DIR`, `review` sign-off before download |
 | Pojim's parts in the API: disclosure, limit settings, timeline, web role check | 2 | To do |
 | API in Docker Compose, `install.sh`, uv install steps | 2 | To do: API runs on the host; `install.sh` is a placeholder |
