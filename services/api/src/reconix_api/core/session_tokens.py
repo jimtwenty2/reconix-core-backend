@@ -1,7 +1,7 @@
 """Session tokens, kept in memory only (never in the database or logs).
 
 This is the real get_operator. A restart of the API signs everyone out, on purpose.
-Week 2: `/web` will issue viewer tokens through the same store.
+`/web` will issue its sign-in tokens through the same store.
 """
 
 import secrets

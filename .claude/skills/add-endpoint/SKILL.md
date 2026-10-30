@@ -19,8 +19,8 @@ Code is split by job: **api** (route) → **services** (logic) → **repositorie
 ## Every endpoint must
 
 - Return errors in the one shared shape: `{"code": "...", "message": "...", "details": {...}}`. Use UPPERCASE codes such as `SCOPE_VIOLATION`, `APPROVAL_EXPIRED`.
-- Check the caller's role. A **viewer** may only read: any endpoint that changes data returns **403** for a viewer. Add a test for it in `tests/security/`.
-- Write an audit event (through the shared audit function) for every state change, with `assessment_id`, `session_id`, `role`, `actor`.
+- Need the session token: take `CurrentOperator`, so a request without a valid token gets **401**. There are no roles: a valid token may do everything. `tests/security/test_api_protections.py` checks every route by itself; never add to its `OPEN` set (only `GET /health` and `POST /sessions`) without the lead.
+- Write an audit event (through the shared audit function) for every state change, with `assessment_id`, `session_id`, `actor`.
 - Mask secrets before anything is saved or returned.
 - Stay behind the app-wide protections: bind to `127.0.0.1` only, reject an unknown `Host` header, CORS only for the local web origin.
 
@@ -35,5 +35,5 @@ If the endpoint can lead to a tool running:
 
 ## Done when
 
-- `uv run pytest services/api` passes, including the viewer-403 test.
+- `uv run pytest services/api` passes, including the no-token (401) test.
 - `docs/openapi.json` is updated and the contract tests pass.

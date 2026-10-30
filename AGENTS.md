@@ -1,6 +1,6 @@
 # AGENTS.md — Reconix-Core (whole repo)
 
-Owner: Pojim (lead) · Last reviewed: 28 Oct 2026
+Owner: Pojim (lead) · Last reviewed: 30 Oct 2026
 
 Rules for AI coding agents (Claude Code, Codex, Cursor) and the people who review their work.
 `CLAUDE.md` imports this file, so Claude Code reads it on every session.
@@ -53,8 +53,7 @@ These rules are the product. A change that weakens one is a bug, even if every t
 | S7 | Tools are called only through the MCP client, with a fresh one-time job token. | `clients/`, `core/job_token.py` |
 | S8 | Secrets are masked before anything is saved, logged, shown, sent to the AI or stored in Qdrant. Provider API keys are Fernet-encrypted and shown as the last 4 characters only. | `harness/masking.py`, `core/masking.py` |
 | S9 | Every decision writes **exactly one** audit line. | `harness/audit.py`, `services/audit.py` |
-| S10 | A `VIEWER` can only read. Every endpoint that changes data returns 403 for a viewer. | `core/security.py`, tested in `tests/security/` |
-| S11 | The API binds to `127.0.0.1`, rejects an unknown `Host`, and allows CORS only for the local web. | `main.py`, `core/config.py` |
+| S10 | The API binds to `127.0.0.1`, rejects an unknown `Host`, and allows CORS only for the local web. | `main.py`, `core/config.py` |
 
 Paths without a prefix are under `services/api/src/reconix_api/` or
 `services/ai/src/reconix_ai/` (`harness/`).
@@ -113,7 +112,8 @@ tests wire the fakes in `services/api/tests/fakes/`. If the other side is not re
   `finding`, `approval`), never synonyms.
 - Enum values are UPPERCASE everywhere: Python, SQL, TypeScript, sample data.
 - Severity uses `NONE`, not `INFO`. Uncertain results use `UNKNOWN`, not `NEEDS_REVIEW`.
-- The role (`OPERATOR` or `VIEWER`) lives with the session token; ERD V3 has no `sessions.role`.
+- There are no roles: anyone with a valid session token may do everything. ERD V3 has no
+  `sessions.role`.
 - Errors use one shape: `{"code": "UPPER_CASE", "message": "...", "details": {...}}`.
 
 ---
@@ -184,7 +184,7 @@ Export the API contract after any route or schema change: see the `sync-openapi`
 |---|---|
 | `unit/` | One function or class, no network, no database |
 | `contract/` | Responses match `docs/openapi.json`; fakes match the real interfaces |
-| `security/` | Viewer gets 403 on every write, Host and CORS protections, no secret leaks |
+| `security/` | Every endpoint needs a session token (401), Host and CORS protections, no secret leaks |
 | `integration/` | Real database and repositories |
 | `e2e/` | The full flow, scope to download |
 | `fakes/`, `fixtures/` | Shared fakes (`fake_core.py`, `fake_mcp.py`, `fake_ai.py`) and test data |
@@ -197,7 +197,9 @@ prompt or policy change).
 1. Lint and format pass.
 2. The tests for every package you touched pass. New behaviour has a new test; a bug fix has a test
    that failed before the fix.
-3. A new write endpoint has a viewer-403 test in `services/api/tests/security/`.
+3. A new endpoint needs the session token. The no-token test in
+   `services/api/tests/security/test_api_protections.py` checks every route by itself; only
+   `GET /health` and `POST /sessions` are open, and adding to that list needs the lead.
 4. If routes or schemas changed, `docs/openapi.json` is regenerated **in the same PR**.
 5. If the schema changed, there is an Alembic migration and it upgrades from an empty database.
 6. No secret, `.env` or local-only file (section 9) is staged.

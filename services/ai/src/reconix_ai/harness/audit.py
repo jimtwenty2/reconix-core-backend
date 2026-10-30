@@ -30,8 +30,6 @@ class AuditRecord(Protocol):
     @property
     def session_id(self) -> UUID: ...
     @property
-    def role(self) -> str: ...
-    @property
     def actor(self) -> str: ...
     @property
     def at(self) -> datetime: ...
@@ -67,7 +65,6 @@ def audit_line(event: AuditRecord) -> str:
         "event_type": str(event.event_type),
         "assessment_id": str(event.assessment_id) if event.assessment_id else None,
         "session_id": str(event.session_id),
-        "role": str(event.role),
         "actor": actor,
         "at": event.at.isoformat(),
         "details": details,

@@ -14,7 +14,7 @@ class SessionCreate(BaseModel):
 
 
 class SessionRead(BaseModel):
-    """A session as stored. The role lives with the token, so it is not shown here."""
+    """A session as stored."""
 
     session_id: UUID
     interface: str
@@ -24,6 +24,6 @@ class SessionRead(BaseModel):
 
 
 class SessionCreated(SessionRead):
-    """The new session and its token. The role is not shown: read it from GET /operator."""
+    """The new session and its token."""
 
     token: str  # send as "Authorization: Bearer <token>"; shown only once

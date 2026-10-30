@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, status
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.llm_providers import (
     LlmProviderActivation,
     LlmProviderIn,
@@ -32,7 +32,7 @@ def list_providers(db: Db, _: CurrentOperator) -> list[LlmProviderOut]:
 def create_provider(
     body: LlmProviderIn,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
@@ -53,7 +53,7 @@ def update_provider(
     llm_provider_id: UUID,
     body: LlmProviderUpdate,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
@@ -66,7 +66,7 @@ def update_provider(
 
 @router.delete("/{llm_provider_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_provider(
-    llm_provider_id: UUID, db: Db, operator: RequireOperator, interfaces: CurrentInterfaces
+    llm_provider_id: UUID, db: Db, operator: CurrentOperator, interfaces: CurrentInterfaces
 ) -> None:
     """Not the built-in or the active provider, nor one that agent runs used."""
     llm_providers.delete_provider(db, interfaces.write_audit, operator, llm_provider_id)
@@ -76,7 +76,7 @@ def delete_provider(
 def activate_provider(
     llm_provider_id: UUID,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> LlmProviderActivation:

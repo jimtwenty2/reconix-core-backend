@@ -7,7 +7,7 @@ for the real one in `Interfaces`; no caller changes.
 
 | Function           | Real one lives in                          |
 |--------------------|--------------------------------------------|
-| get_operator       | services/api (web token, session role)     |
+| get_operator       | services/api (session token)               |
 | check              | services/ai/src/reconix_ai/harness         |
 | get_approved_scope | services/api (database)                    |
 | write_audit        | services/ai/src/reconix_ai/harness/audit   |
@@ -27,11 +27,6 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 # Shared values (UPPERCASE everywhere, as in ERD V3)
 # ---------------------------------------------------------------------------
-
-
-class Role(StrEnum):
-    OPERATOR = "OPERATOR"
-    VIEWER = "VIEWER"
 
 
 class RiskLevel(StrEnum):
@@ -88,10 +83,9 @@ class AgentTask(StrEnum):
 
 
 class Operator(BaseModel):
-    """Who is calling. A VIEWER may only read."""
+    """Who is calling. There are no roles: anyone with a session token may do everything."""
 
     session_id: UUID
-    role: Role
     actor: str
 
 
@@ -156,7 +150,6 @@ class AuditEvent(BaseModel):
     event_type: str  # UPPERCASE, e.g. "ACTION_BLOCKED", "APPROVAL_GRANTED"
     assessment_id: UUID | None
     session_id: UUID
-    role: Role
     actor: str
     at: datetime
     details: dict[str, Any] = Field(default_factory=dict)  # already masked

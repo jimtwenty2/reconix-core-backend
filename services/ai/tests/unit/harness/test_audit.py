@@ -3,7 +3,6 @@ import stat
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -17,10 +16,6 @@ SESSION_ID = UUID("22222222-2222-2222-2222-222222222222")
 AT = datetime(2026, 10, 26, 14, 0, tzinfo=UTC)
 
 
-class Role(StrEnum):
-    OPERATOR = "OPERATOR"
-
-
 @dataclass(frozen=True)
 class Event:
     """Same fields as the shared AuditEvent."""
@@ -28,7 +23,6 @@ class Event:
     event_type: str = "ACTION_BLOCKED"
     assessment_id: UUID | None = ASSESSMENT_ID
     session_id: UUID = SESSION_ID
-    role: str = Role.OPERATOR
     actor: str = "pojim"
     at: datetime = AT
     details: dict[str, Any] = field(default_factory=dict)
@@ -44,7 +38,6 @@ def test_line_has_every_field() -> None:
         "event_type": "ACTION_BLOCKED",
         "assessment_id": "11111111-1111-1111-1111-111111111111",
         "session_id": "22222222-2222-2222-2222-222222222222",
-        "role": "OPERATOR",
         "actor": "pojim",
         "at": "2026-10-26T14:00:00+00:00",
         "details": {"reason": "TARGET_OUT_OF_SCOPE"},
