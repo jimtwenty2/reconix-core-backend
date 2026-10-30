@@ -30,6 +30,13 @@ class MessageLine(Static):
     def __init__(self, item: MessageItem) -> None:
         super().__init__(message_line(item.entry), classes="message-line")
         self.item = item
+        self._shown = (item.entry.text, item.entry.tone)
+
+    def show(self, item: MessageItem) -> None:
+        """Redraw if the message changed (a streamed reply grows in place)."""
+        if (item.entry.text, item.entry.tone) != self._shown:
+            self._shown = (item.entry.text, item.entry.tone)
+            self.update(message_line(item.entry))
 
 
 class RunLog(VerticalScroll):
@@ -78,6 +85,8 @@ class RunLog(VerticalScroll):
                 self._items[key] = widget
                 new.append(widget)
             elif isinstance(widget, ThinkingBlock) and isinstance(item, ThinkingItem):
+                widget.show(item)
+            elif isinstance(widget, MessageLine) and isinstance(item, MessageItem):
                 widget.show(item)
         if new:
             self.mount_all(new)

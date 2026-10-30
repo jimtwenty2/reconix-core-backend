@@ -9,7 +9,7 @@ approval), so no step past a gate can play early, whatever the UI does. Steps ma
 from datetime import timedelta
 from pathlib import PurePath
 from string import Template as TextTemplate
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from ..models import (
     GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, GATE_PLAN, GATE_SCOPE, GATE_TEMPLATE,
@@ -73,13 +73,17 @@ def get_run() -> RunState:
 
 # --- starting and resetting -------------------------------------------------------------
 def submit_prompt(text: str) -> str:
-    """A line typed at the prompt. Returns "started" (a run began) or "answered".
+    """A line typed at the prompt. Returns "started" (a run began), "answered", or "ask".
 
     Before a run, a line that names a target starts the run on it; anything else (a
     greeting, a question, "scan my network" without an address) gets a short answer and
-    nothing starts. A malformed target (10.0.0.300) raises, so the operator can fix it.
+    nothing starts. With a model active that answer is the model's: the line is recorded
+    and "ask" tells the app to call `llm_answer` (it blocks, so the app runs it in a
+    worker). A malformed target (10.0.0.300) raises, so the operator can fix it.
     During a run the line goes to the assistant.
     """
+    from .providers import active_model
+
     if get_run().started:
         say_to_assistant(text)
         return "answered"
@@ -87,6 +91,8 @@ def submit_prompt(text: str) -> str:
     parsed = parse_request(text)
     if parsed is None:
         add_chat("text", "you", text)
+        if active_model() is not None:
+            return "ask"
         add_chat("text", "reconix", reply_to(text), tone="muted")
         return "answered"
     _start(text, parsed, picked=False)
@@ -155,8 +161,10 @@ def say_operator_line(text: str) -> str:
     return request.text
 
 
-def llm_answer(text: str) -> None:
+def llm_answer(text: str, on_update: Optional[Callable[[], None]] = None) -> None:
     """Add Reconix's reply: the active model when one is set, else the built-in reply.
+
+    With `on_update` the model's reply streams in (`llm_chat.reply`).
 
     Blocks on the network, so the app runs it in a worker (see `shell/actions.py`). Any
     model failure falls back to the scripted reply so the offline demo keeps working.
@@ -167,12 +175,15 @@ def llm_answer(text: str) -> None:
     active = providers.active_model()
     if active is not None:
         try:
-            llm_chat.reply(text, active)
+            llm_chat.reply(text, active, on_update)
             return
         except LLMError as exc:
             add_chat("text", "reconix",
                      f"LLM unavailable ({exc}). Showing the built-in reply.", tone="muted")
-    builtin = reply_after_run if is_finished() else reply_while_running
+    if not get_run().started:
+        builtin = reply_to                  # a question before any target
+    else:
+        builtin = reply_after_run if is_finished() else reply_while_running
     add_chat("text", "reconix", builtin(text), tone="muted")
 
 
@@ -223,6 +234,9 @@ def run_plan() -> None:
         raise StoreValidationError("The plan can only be run when Reconix asks for it.")
     if run.plan_started:
         raise StoreValidationError("The plan is already running.")
+    if get_assessment().plan_drafting:
+        raise StoreValidationError("The AI is still drafting the plan. It runs once the "
+                                   "draft is in (a few seconds).")
     run.plan_started = True
     add_activity("USER", "Plan approved · testing starts", tone="ok")
     log_event("plan.run", get_assessment().label)

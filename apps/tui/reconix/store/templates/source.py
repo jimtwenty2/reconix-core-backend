@@ -8,6 +8,11 @@ SPEC = Template("source", "Source Code", "Static review of a repository",
                 target_hint="a git repo URL or a local path",
                 example="https://git.example.com/acme/app.git")
 
+TOOLS = ["Semgrep", "gitleaks", "pip-audit"]
+# the scope tools each phase uses (the plan shows those still in the approved scope)
+PHASE_TOOLS = {"scanning": ("Semgrep", "gitleaks", "pip-audit"),
+               "validation": ("Semgrep",)}
+
 
 def build_scope(parsed: ParsedTarget) -> ScopeManifest:
     return ScopeManifest(
@@ -16,7 +21,7 @@ def build_scope(parsed: ParsedTarget) -> ScopeManifest:
         allowed_methods=["read"],
         excluded_paths=[".git", "node_modules", "vendor", "secrets"],
         time_limit_minutes=30,
-        tools=["Semgrep", "gitleaks", "pip-audit"],
+        tools=list(TOOLS),
     )
 
 
@@ -103,4 +108,5 @@ def build_run(assessment) -> RunBundle:
     )
     return RunBundle(scope=scope, script=build_rest(profile),
                      approvals=[profile.medium, profile.high], findings=findings,
-                     plan=make_plan(profile.plan), methodology=list(profile.methodology))
+                     plan=make_plan(profile.plan, PHASE_TOOLS),
+                     methodology=list(profile.methodology))

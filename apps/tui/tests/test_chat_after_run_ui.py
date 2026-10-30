@@ -11,7 +11,7 @@ import pytest
 
 from reconix import store
 from reconix.llm import client
-from reconix.store import agent_run, replies
+from reconix.store import agent_run, ai_plan, replies
 from reconix.store.snapshot import uid_for
 from reconix.widgets import PromptBox
 
@@ -28,10 +28,13 @@ def _chat(speaker: str):
 
 @pytest.fixture
 def model_calls(monkeypatch):
-    """Records every completion the active model is asked for."""
+    """Records every chat completion the active model is asked for. A plan draft (approving
+    the scope asks for one) is answered without a plan, so the template's plan stays."""
     calls = []
 
     def complete(pid, model, messages, **kw):
+        if messages[0]["content"] == ai_plan.PLAN_PROMPT:
+            return "{}"
         calls.append(messages)
         return f"model answer {len(calls)}"
 

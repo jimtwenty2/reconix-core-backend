@@ -204,7 +204,7 @@ class TemplateScreen(ReconixScreen):
         event.stop()
         choice = event.choice_id
         if choice == "chat":
-            self.chat_about()
+            self.chat_in_step()
             return
         state = self.state()
         if state == "pick":
@@ -260,3 +260,8 @@ class TemplateScreen(ReconixScreen):
 
     def chat_topic(self) -> str:
         return "the scope manifest" if self.state() in ("review", "approved") else "the template"
+
+    def step_content(self) -> str:
+        if self.state() in ("review", "approved"):
+            return store.scope_text()
+        return store.template_text()
