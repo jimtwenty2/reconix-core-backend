@@ -423,8 +423,9 @@ HelpScreen {
 }
 
 #help-box {
-    width: 64;
+    width: 66;               /* room for the longest row beside a scrollbar */
     height: auto;
+    max-height: 100%;
     background: $surface;
     border: round $cyan-dim;
     border-title-color: $cyan;
