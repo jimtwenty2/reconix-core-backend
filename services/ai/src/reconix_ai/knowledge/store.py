@@ -81,8 +81,18 @@ async def create_collection(client: AsyncQdrantClient) -> None:
     """Drop the collection if it is there and make it again, empty."""
     if await client.collection_exists(COLLECTION):
         await client.delete_collection(COLLECTION)
+    await make_collection(client, COLLECTION, keyword_fields=("source", "ref_id"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # see make_collection
+        await client.create_payload_index(COLLECTION, "index", models.PayloadSchemaType.INTEGER)
+
+
+async def make_collection(
+    client: AsyncQdrantClient, name: str, keyword_fields: tuple[str, ...]
+) -> None:
+    """An empty collection with both vectors, and an index on each keyword field."""
     await client.create_collection(
-        COLLECTION,
+        name,
         vectors_config={
             DENSE: models.VectorParams(size=EMBEDDING_SIZE, distance=models.Distance.COSINE)
         },
@@ -91,9 +101,8 @@ async def create_collection(client: AsyncQdrantClient) -> None:
     with warnings.catch_warnings():
         # In-process Qdrant (tests) has no payload indexes and says so; the server uses it.
         warnings.simplefilter("ignore", UserWarning)
-        for name in ("source", "ref_id"):
-            await client.create_payload_index(COLLECTION, name, models.PayloadSchemaType.KEYWORD)
-        await client.create_payload_index(COLLECTION, "index", models.PayloadSchemaType.INTEGER)
+        for field_name in keyword_fields:
+            await client.create_payload_index(name, field_name, models.PayloadSchemaType.KEYWORD)
 
 
 async def save_chunks(
@@ -142,15 +151,27 @@ async def hybrid_search(
         source_filter = models.Filter(
             must=[models.FieldCondition(key="source", match=models.MatchAny(any=list(sources)))]
         )
+    return await fused_search(client, COLLECTION, query, query_vector, source_filter, limit)
+
+
+async def fused_search(
+    client: AsyncQdrantClient,
+    collection: str,
+    query: str,
+    query_vector: list[float],
+    query_filter: models.Filter | None,
+    limit: int,
+) -> list[models.ScoredPoint]:
+    """Meaning and exact words, merged with Reciprocal Rank Fusion."""
     response = await client.query_points(
-        COLLECTION,
+        collection,
         prefetch=[
-            models.Prefetch(query=query_vector, using=DENSE, limit=limit * 4, filter=source_filter),
+            models.Prefetch(query=query_vector, using=DENSE, limit=limit * 4, filter=query_filter),
             models.Prefetch(
                 query=keywords.query_vector(query),
                 using=KEYWORDS,
                 limit=limit * 4,
-                filter=source_filter,
+                filter=query_filter,
             ),
         ],
         query=models.FusionQuery(fusion=models.Fusion.RRF),

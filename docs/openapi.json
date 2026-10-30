@@ -3318,7 +3318,7 @@
         ]
       },
       "patch": {
-        "description": "Mark a finding OPEN, FALSE_POSITIVE or FIXED.",
+        "description": "Mark a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED are accepted, and the\nAI remembers them.",
         "operationId": "review_finding_api_v1_findings__finding_id__patch",
         "parameters": [
           {

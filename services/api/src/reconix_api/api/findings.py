@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from reconix_api.core.db import Db
+from reconix_api.core.finding_memory import CurrentFindingMemory
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.findings import FindingOut, FindingReview
 from reconix_api.services import findings
@@ -26,12 +27,16 @@ def read_finding(finding_id: UUID, db: Db, _: CurrentOperator) -> FindingOut:
 
 
 @router.patch("/{finding_id}")
-def review_finding(
+async def review_finding(
     finding_id: UUID,
     body: FindingReview,
     db: Db,
     operator: CurrentOperator,
     interfaces: CurrentInterfaces,
+    memory: CurrentFindingMemory,
 ) -> FindingOut:
-    """Mark a finding OPEN, FALSE_POSITIVE or FIXED."""
-    return findings.review_finding(db, interfaces.write_audit, operator, finding_id, body)
+    """Mark a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED are accepted, and the
+    AI remembers them."""
+    reviewed = findings.review_finding(db, interfaces.write_audit, operator, finding_id, body)
+    await findings.update_memory(memory, reviewed)
+    return reviewed
