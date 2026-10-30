@@ -79,7 +79,7 @@ Do these first. Each one is its own PR (`add-endpoint` or `add-approval-flow`, p
   responses match it; there is none yet.
 - [ ] **How to run it.** Write down how an app owner starts the API:
   `uv run --package reconix-api python -m reconix_api.main` serves 127.0.0.1:8000 against
-  Postgres after `alembic upgrade head`. `RECONIX_MCP_URL` has a default, but without
+  Postgres after `alembic upgrade head`. `RECONIX_KALI_MCP_URL` has a default, but without
   `RECONIX_MCP_ACCESS_KEY` and `RECONIX_JOB_TOKEN_SECRET` (already listed in `.env.example`),
   actions answer 503 `NOT_READY`.
 
