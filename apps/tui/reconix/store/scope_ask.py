@@ -73,11 +73,6 @@ def scope_choices(text: str) -> ScopeChoices:
     return ScopeChoices(ports, tools)
 
 
-def scope_tick_choices(text: str) -> Optional[ScopeChoices]:
-    """The tick rows while the scope can still change, else None (no chat line added)."""
-    return scope_choices(text) if scope_editable() else None
-
-
 def answer_scope_change(text: str) -> Optional[ScopeChoices]:
     """Reply to a line asking to change the scope: the rows to tick, or None once locked.
 

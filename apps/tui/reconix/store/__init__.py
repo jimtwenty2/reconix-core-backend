@@ -61,9 +61,7 @@ from .scope import (
     approve_scope, blocked_count, check_request, edit_scope, get_scope, is_scope_approved,
     list_verdicts, scope_editable,
 )
-from .scope_ask import (
-    ScopeChoices, answer_scope_change, scope_tick_choices, wants_scope_change,
-)
+from .scope_ask import ScopeChoices, answer_scope_change, wants_scope_change
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
 from .step_text import approval_text, plan_text, scope_text, template_text
@@ -104,7 +102,7 @@ __all__ = [
     "list_verdicts", "blocked_count", "scope_editable",
     # the chat inside a step ("Chat about this"): its content as text, scope change asks
     "scope_text", "plan_text", "approval_text", "template_text",
-    "wants_scope_change", "answer_scope_change", "scope_tick_choices", "ScopeChoices",
+    "wants_scope_change", "answer_scope_change", "ScopeChoices",
     "provide_auth", "current_auth_challenge", "has_test_account",
     "is_authenticated", "is_code_verified", "vault_scope",
     "login_kind", "login_tools", "login_done", "code_needed", "tool_login", "tools_login",

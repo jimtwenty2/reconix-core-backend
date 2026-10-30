@@ -198,3 +198,21 @@ async def test_the_question_box_is_pinned_at_the_bottom(app):
         await pilot.press("escape")
         await settle(pilot)
         assert not app.screen.query(ChatBar)
+
+
+async def test_a_model_claiming_it_changed_the_scope_is_corrected(app, model_active, monkeypatch):
+    """A model may say "added"; Reconix's own line follows it and the scope is unchanged."""
+    from reconix.llm import guardrail
+    from reconix.store import scope_ask
+
+    monkeypatch.setattr(client, "complete", lambda *a, **k: "Port 3389 has been added.")
+    async with app.run_test(size=SIZE) as pilot:
+        await run_ui_to(app, pilot, "scope", request=NETWORK)
+        before = list(store.get_scope().allowed_ports)
+        _type(app, "add port 3389")
+        await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
+        text = _chat_text(app)
+        assert text.index("has been added") < text.index("Only you can change the scope")
+        assert store.list_chat()[-1].text == scope_ask.ONLY_YOU   # in the model's history
+        assert store.get_scope().allowed_ports == before
+    assert "Never say you changed" in guardrail.SYSTEM_PROMPT

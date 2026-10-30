@@ -198,13 +198,11 @@ class ReconixScreen(Screen):
         scope_change = store.wants_scope_change(text)
         if store.active_model() is None:
             if scope_change:
-                store.answer_scope_change(text)     # the built-in reply, then the ticks
+                self._scope_reply(chat, text)       # no model: Reconix's reply, then the ticks
             else:
                 store.llm_answer(line)              # the built-in reply: no network, at once
-            entry = store.last_exchange()[1][-1]
-            chat.add_reply(entry.text, entry.tone)
-            if scope_change:
-                self._offer_ticks(chat, text)
+                entry = store.last_exchange()[1][-1]
+                chat.add_reply(entry.text, entry.tone)
             return
         reply = chat.add_reply(THINKING, tone="muted")
 
@@ -215,8 +213,8 @@ class ReconixScreen(Screen):
 
         def done() -> None:
             show()
-            if scope_change:
-                self._offer_ticks(chat, text)
+            if scope_change and chat.is_mounted:
+                self._scope_reply(chat, text)       # whatever the model said, you change it
 
         def work() -> None:
             store.llm_answer(line, on_update=lambda: self.app.call_from_thread(show))
@@ -224,10 +222,13 @@ class ReconixScreen(Screen):
 
         self.app.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
-    def _offer_ticks(self, chat: StepChat, text: str) -> None:
-        """Your tick list for the scope (nothing new ticked), while it can still change."""
-        choices = store.scope_tick_choices(text)
-        if choices is not None and chat.is_mounted:
+    def _scope_reply(self, chat: StepChat, text: str) -> None:
+        """Reconix's own line ("Only you can change the scope…", or locked), then your
+        tick list (nothing new ticked). Recorded, so the model's history has it too."""
+        choices = store.answer_scope_change(text)
+        entry = store.last_exchange()[1][-1]
+        chat.add_reply(entry.text, entry.tone)
+        if choices is not None:
             chat.add(TickList(choices.ports, choices.tools))
 
     def on_tick_list_saved(self, event: TickList.Saved) -> None:
