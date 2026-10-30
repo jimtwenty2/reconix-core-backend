@@ -65,7 +65,9 @@ async def analyze_in_groups(
     for start in range(0, len(findings), GROUP_SIZE):
         group = findings[start : start + GROUP_SIZE]
         outputs = findings_repo.source_outputs(db, [f.finding_id for f in group], TOOL_OUTPUTS)
-        response = await interfaces.ask_agent(
+        response = await agent_runs.ask_agent(
+            db,
+            interfaces,
             AgentRequest(
                 task=AgentTask.ANALYZE,
                 assessment_id=run.assessment_id,
@@ -75,7 +77,7 @@ async def analyze_in_groups(
                 scope=scope,
                 findings=[finding_input(finding) for finding in group],
                 tool_results=outputs,
-            )
+            ),
         )
         summaries.append(mask(response.analysis_summary)[0])
         analysis.extend(masked(item, mask) for item in response.analysis)

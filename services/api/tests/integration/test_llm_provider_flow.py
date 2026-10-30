@@ -8,6 +8,7 @@ from sqlalchemy import select, update
 
 from reconix_api.core import provider_keys
 from reconix_api.core.config import get_settings
+from reconix_api.core.run_provider import make_provider_for
 from reconix_api.models import AgentRun, Approval, LlmProvider
 from tests.integration.test_action_flow import active_assessment, event_types
 from tests.integration.test_plan_flow import plan, runs
@@ -123,20 +124,18 @@ def test_a_provider_on_this_computer_is_active_at_once(db_client, db_app):
 
 
 def test_a_new_run_asks_the_agent_for_the_active_provider(db_client, db_app):
-    """The run records the model the agent is asked for. Until the saved settings reach
-    the model calls, the agent answers NOT_READY for anything but RECONIX: loudly,
-    instead of calling RECONIX under another provider's name."""
+    """The run records the model the agent is asked for, and the agent is called with it."""
     headers = open_session(db_client)
     activate(db_client, headers, add(db_client, headers, OLLAMA)["llm_provider_id"])
     assessment_id = active_assessment(db_client, headers)
 
     response = plan(db_client, headers, assessment_id)
 
-    assert (response.status_code, response.json()["code"]) == (503, "NOT_READY")
+    assert response.status_code == 201, response.json()
     request = db_app.state.parts["agent"].requests[-1]
     assert (request.provider, request.model) == ("OLLAMA", "llama3.1:8b")
     run = runs(db_client, headers)[0]
-    assert (run["model_name"], run["agent_runs_status"]) == ("llama3.1:8b", "FAILED")
+    assert run["model_name"] == "llama3.1:8b"
 
 
 def test_the_built_in_provider_asks_the_agent_for_its_own_model(db_client, db_app):
@@ -355,3 +354,22 @@ def test_a_provider_that_agent_runs_used_stays(db_client, session_factory):
     assert refused.json()["code"] == "PROVIDER_IN_USE"
     with session_factory() as db:
         assert db.scalar(select(LlmProvider).where(LlmProvider.llm_provider_id == provider_id))
+
+
+def test_the_agent_gets_the_runs_provider_with_its_key(db_client, db_app, session_factory):
+    """After its approval a cloud provider is active, and the run started with it reads
+    back its own settings, the key decrypted only for the model call."""
+    headers = open_session(db_client)
+    openai = add(db_client, headers, OPENAI)
+    approval = activate(db_client, headers, openai["llm_provider_id"])["approval"]
+    assert approve(db_client, headers, approval["approval_id"]).status_code == 200
+    assessment_id = active_assessment(db_client, headers)
+    assert plan(db_client, headers, assessment_id).status_code == 201
+    request = db_app.state.parts["agent"].requests[-1]
+    settings = db_app.dependency_overrides[get_settings]()
+
+    config = make_provider_for(session_factory, settings)(request)
+
+    assert (config.provider_type, config.model_name) == ("OPENAI", "gpt-4o")
+    assert config.api_key == FAKE_API_KEY
+    assert FAKE_API_KEY not in repr(config)

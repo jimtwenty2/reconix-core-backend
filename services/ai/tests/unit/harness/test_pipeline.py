@@ -217,3 +217,24 @@ def test_hidden_characters_in_arguments_are_blocked(arguments: list[str]) -> Non
     result = check(Action(arguments=arguments), Context())
     assert result.decision == Decision.BLOCKED
     assert result.blocked_by == CheckName.COMMAND
+
+
+def test_a_port_outside_the_scope_is_a_scope_block() -> None:
+    @dataclass(frozen=True)
+    class PortScope(Scope):
+        allowed_ports: list[int] = field(default_factory=lambda: [80, 443])
+
+    context = replace(Context(), scope=PortScope())
+    action = Action(arguments=["-sV", "-p", "80,3389"])
+
+    assert blocked(check(action, context)) == (CheckName.SCOPE, "PORTS_OUT_OF_SCOPE")
+
+
+def test_ports_inside_the_scope_pass_the_scope_check() -> None:
+    @dataclass(frozen=True)
+    class PortScope(Scope):
+        allowed_ports: list[int] = field(default_factory=lambda: [80, 443])
+
+    result = check(Action(), replace(Context(), scope=PortScope()))
+
+    assert result.decision == Decision.ALLOW

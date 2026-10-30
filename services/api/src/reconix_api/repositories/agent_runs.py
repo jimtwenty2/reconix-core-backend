@@ -62,6 +62,21 @@ def open_plan_runs(db: Db, assessment_id: UUID) -> list[AgentRun]:
     return list(db.scalars(query))
 
 
+def latest_plan(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """The newest plan run that has its plan saved, whatever its status."""
+    query = (
+        select(AgentRun)
+        .where(
+            AgentRun.assessment_id == assessment_id,
+            AgentRun.plan["task"].astext == "PLAN",
+            AgentRun.plan.has_key("steps"),
+        )
+        .order_by(AgentRun.started_at.desc())
+        .limit(1)
+    )
+    return db.scalar(query)
+
+
 def claim_waiting(db: Db, agent_run_id: UUID) -> bool:
     """WAITING_APPROVAL -> RUNNING in one statement. Only one caller gets True, so a
     decision is handed to the agent exactly once."""

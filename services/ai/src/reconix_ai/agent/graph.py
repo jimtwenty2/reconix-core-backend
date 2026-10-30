@@ -1,7 +1,7 @@
 """The LangGraph graph: understand -> find -> plan -> suggest -> wait for PLAN
 and SUGGEST, with reflect (up to 5 times) between find and plan when there are
-tool results; find -> analyze for ANALYZE and report for REPORT. Only PLAN and
-SUGGEST ever wait.
+tool results; find -> analyze for ANALYZE, report for REPORT and find -> chat
+for CHAT. Only PLAN and SUGGEST ever wait.
 
 ask_agent() runs it for one agent run and stops at wait, where it is saved in
 the checkpointer (Postgres in the app) until a person decides. resume_agent()
@@ -43,7 +43,10 @@ from reconix_ai.harness.checks.result import Decision
 from reconix_ai.knowledge.search import ref_ids_in
 from reconix_ai.providers import ProviderError
 
-SUPPORTED_TASKS = {"PLAN", "SUGGEST", "ANALYZE", "REPORT"}  # CHAT comes with task 6
+SUPPORTED_TASKS = {"PLAN", "SUGGEST", "ANALYZE", "REPORT", "CHAT"}
+SCOPE_STATUSES = {"APPROVED", "DRAFT"}
+MAX_PLAN_LINES = 10  # CHAT: the plan has at most 5 steps; a few lines of notes besides
+MAX_CHAT_QUERY_CHARS = 200
 MAX_FINDINGS = 10  # per ANALYZE ask; the API sends a long list in parts
 MAX_ANALYZE_QUERIES = 5
 # A report bigger than this is refused; the model sees at most MAX_REPORT_PROMPT_ROWS
@@ -57,16 +60,22 @@ NO_ACTION_TEXT = "No step in the plan passed the safety checks, so nothing is su
 NO_KNOWLEDGE_TEXT = "The knowledge search was not available, so this plan uses no reference data."
 
 
+class ChatScopeLike(ScopeLike, Protocol):
+    status: str  # APPROVED or DRAFT
+
+
 class AgentRequestLike(Protocol):
     """The fields of the shared AgentRequest the agent reads."""
 
     task: str
-    assessment_id: UUID
-    scope: ScopeLike
+    assessment_id: UUID | None  # CHAT: none before the scope is submitted
+    scope: ScopeLike | None  # every task but CHAT needs it
     messages: list[str]
     tool_results: list[str]
     findings: list[Any]  # ANALYZE: the shared FindingInput
     report: Any | None  # REPORT: the shared ReportInput
+    chat_scope: ChatScopeLike | None  # CHAT: the scope the person talks about
+    plan: list[str]  # CHAT: the current plan, one line per step
 
 
 def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
@@ -79,18 +88,24 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
     graph.add_node("wait", nodes.wait)
     graph.add_node("analyze", nodes.analyze)
     graph.add_node("report", nodes.report)
+    graph.add_node("chat", nodes.chat)
     graph.add_conditional_edges(
-        START, nodes.start_task, {"plan": "understand", "analyze": "find", "report": "report"}
+        START,
+        nodes.start_task,
+        {"plan": "understand", "analyze": "find", "report": "report", "chat": "find"},
     )
     graph.add_edge("understand", "find")
     graph.add_conditional_edges(
-        "find", nodes.after_find, {"reflect": "reflect", "plan": "plan", "analyze": "analyze"}
+        "find",
+        nodes.after_find,
+        {"reflect": "reflect", "plan": "plan", "analyze": "analyze", "chat": "chat"},
     )
     graph.add_conditional_edges(
         "reflect", nodes.after_reflect, {"reflect": "reflect", "plan": "plan"}
     )
     graph.add_edge("analyze", END)
     graph.add_edge("report", END)
+    graph.add_edge("chat", END)
     graph.add_edge("plan", "suggest")
     graph.add_conditional_edges("suggest", nodes.after_suggest, {"wait": "wait", "done": END})
     graph.add_edge("wait", END)
@@ -101,7 +116,8 @@ async def ask_agent(
     graph: CompiledStateGraph, request: AgentRequestLike, run_id: str, deps: AgentDeps
 ) -> AgentAnswer:
     """PLAN or SUGGEST: plan for the approved scope, suggest one step and wait for a
-    person. ANALYZE: suggest the 8-part analysis of each finding and stop."""
+    person. ANALYZE: suggest the 8-part analysis of each finding and stop. CHAT: answer
+    the person's last message and stop."""
     task = str(request.task).upper()
     if task not in SUPPORTED_TASKS:
         raise AgentError("TASK_NOT_SUPPORTED", f"The agent cannot do {task} yet.")
@@ -122,8 +138,8 @@ async def ask_agent(
         report, masked_in_report = masked_report(request.report)
     start: AgentState = {
         "task": task,
-        "assessment_id": str(request.assessment_id),
-        "scope": scope_to_dict(request.scope),
+        "assessment_id": str(request.assessment_id or ""),
+        **task_scope(task, request),
         "messages": messages,
         "tool_results": results,
         "reflections": [],
@@ -146,8 +162,29 @@ async def ask_agent(
     }
     if task == "ANALYZE":
         start["queries"] = analyze_queries(findings)
+    if task == "CHAT":
+        plan, masked_in_plan = masked_texts(list(request.plan), MAX_PLAN_LINES)
+        start["plan_lines"] = plan
+        start["masked_count"] += masked_in_plan
+        start["queries"] = [messages[-1][:MAX_CHAT_QUERY_CHARS]] if messages else []
     await run_graph(graph, start, config, deps)
     return await answer_for(graph, run_id)
+
+
+def task_scope(task: str, request: AgentRequestLike) -> dict[str, Any]:
+    """The scope the task reads. Every task but CHAT needs the approved scope; CHAT reads
+    the scope the person talks about, approved or a draft, or none at all."""
+    if task != "CHAT":
+        if request.scope is None:
+            raise AgentError("SCOPE_MISSING", f"{task} needs the approved scope.")
+        return {"scope": scope_to_dict(request.scope), "scope_status": "APPROVED"}
+    chat_scope = request.chat_scope
+    if chat_scope is None:
+        return {"scope": None, "scope_status": "NONE"}
+    status = str(chat_scope.status).upper()
+    if status not in SCOPE_STATUSES:
+        raise AgentError("BAD_SCOPE_STATUS", "A chat scope is APPROVED or DRAFT.")
+    return {"scope": scope_to_dict(chat_scope), "scope_status": status}
 
 
 def check_findings(findings: list[dict[str, Any]]) -> None:
@@ -264,9 +301,11 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         notes = [values.get("analysis_summary", "")]
     elif values.get("task") == "REPORT":
         notes = [values.get("executive_summary", "")]
+    elif values.get("task") == "CHAT":
+        notes = [values.get("answer", "")]
     elif proposed is None:
         notes.append(NO_ACTION_TEXT)
-    if values.get("knowledge_unavailable"):
+    if values.get("knowledge_unavailable") and values.get("task") != "CHAT":
         notes.append(NO_KNOWLEDGE_TEXT)
     return AgentAnswer(
         text=" ".join(note for note in notes if note),
@@ -274,7 +313,7 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         proposed_action=ProposedAction(**proposed) if proposed else None,
         risk=values.get("risk"),
         blocked=[BlockedStep(**step) for step in values.get("blocked", [])],
-        references=[hit["ref_id"] for hit in values.get("knowledge", [])],
+        references=references(values),
         agent_run_id=run_id,
         checkpoint_id=snapshot.config["configurable"].get("checkpoint_id"),
         waiting="wait" in snapshot.next,
@@ -289,6 +328,13 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
     )
 
 
+def references(values: dict[str, Any]) -> list[str]:
+    """The knowledge used; for CHAT, only the known ids its answer names."""
+    if values.get("task") == "CHAT":
+        return list(values.get("chat_references", []))
+    return [hit["ref_id"] for hit in values.get("knowledge", [])]
+
+
 def finding_analysis(item: dict[str, Any]) -> FindingAnalysis:
     step = item["next_step"]
     return FindingAnalysis(**{**item, "next_step": ProposedAction(**step) if step else None})
@@ -300,6 +346,8 @@ def plan_step(step: dict[str, Any]) -> PlanStep:
         order=step["order"],
         title=step["title"],
         action=ProposedAction(**action) if action else None,
+        phase=step.get("phase"),
+        reason=step.get("reason", ""),
     )
 
 

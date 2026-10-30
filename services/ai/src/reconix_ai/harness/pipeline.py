@@ -30,7 +30,7 @@ from reconix_ai.harness.checks.loop import (
 )
 from reconix_ai.harness.checks.result import CheckOutcome, Decision, RiskLevel, blocked
 from reconix_ai.harness.checks.risk import check_risk
-from reconix_ai.harness.checks.scope import ScopeRules, check_scope
+from reconix_ai.harness.checks.scope import ScopeRules, check_ports, check_scope
 
 
 class CheckName(StrEnum):
@@ -117,7 +117,7 @@ def check_steps(action: ActionLike, context: ContextLike, limits: LoopLimits) ->
     scope = context.scope
     return [
         (CheckName.INPUT, lambda: check_input(context.input_text)),
-        (CheckName.SCOPE, lambda: check_scope(tool, target, scope, context.now)),
+        (CheckName.SCOPE, lambda: scope_and_ports(tool, target, arguments, scope, context.now)),
         (CheckName.COMMAND, lambda: check_command(tool, target, arguments)),
         (CheckName.RISK, lambda: check_risk(tool, arguments, action.is_validation, scope.max_risk)),
         (
@@ -133,6 +133,16 @@ def check_steps(action: ActionLike, context: ContextLike, limits: LoopLimits) ->
             ),
         ),
     ]
+
+
+def scope_and_ports(
+    tool: str, target: str, arguments: Sequence[str], scope: PipelineScope, now: datetime
+) -> CheckOutcome:
+    """The scope check: the target first, then the ports it may scan."""
+    outcome = check_scope(tool, target, scope, now)
+    if outcome.decision == Decision.BLOCKED:
+        return outcome
+    return check_ports(tool, arguments, scope)
 
 
 def blocked_result(

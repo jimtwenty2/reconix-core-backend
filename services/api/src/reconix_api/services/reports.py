@@ -98,7 +98,9 @@ async def create_report(
         run = agent_runs.new_agent_run(db, operator, assessment_id, task="REPORT")
         db.commit()
         provider, model = agent_runs.agent_provider(db, run)
-        response = await interfaces.ask_agent(
+        response = await agent_runs.ask_agent(
+            db,
+            interfaces,
             AgentRequest(
                 task=AgentTask.REPORT,
                 assessment_id=assessment_id,
@@ -107,7 +109,7 @@ async def create_report(
                 model=model,
                 scope=scope,
                 report=locked,
-            )
+            ),
         )
         summary = mask(response.executive_summary or "")[0]
         methodology = mask(response.methodology or "")[0]

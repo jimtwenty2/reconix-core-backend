@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import Interfaces, Operator
+from reconix_api.core.interfaces import AgentRequest, AgentResponse, Interfaces, Operator
 from reconix_api.models import AgentRun
 from reconix_api.models.enums import AgentRunStatus, ProviderType
 from reconix_api.repositories import agent_runs as agent_run_repo
@@ -17,7 +17,7 @@ from reconix_api.services.audit import audit
 
 
 def new_agent_run(
-    db: Db, operator: Operator, assessment_id: UUID, task: str | None = None
+    db: Db, operator: Operator, assessment_id: UUID | None, task: str | None = None
 ) -> AgentRun:
     """A RUNNING run with the active provider. task marks a plan, analysis or report run
     (plan = {"task": ...}); a run without one is shared by a person's actions. The
@@ -34,6 +34,14 @@ def new_agent_run(
     )
     agent_run_repo.add(db, agent_run)
     return agent_run
+
+
+async def ask_agent(db: Db, interfaces: Interfaces, request: AgentRequest) -> AgentResponse:
+    """Ask the agent with no transaction left open. A model call takes seconds, and the
+    agent's checkpointer, the first time it sets itself up, waits for every open
+    transaction to end: one held by this request would make them wait for each other."""
+    db.commit()
+    return await interfaces.ask_agent(request)
 
 
 def agent_provider(db: Db, agent_run: AgentRun) -> tuple[str, str | None]:

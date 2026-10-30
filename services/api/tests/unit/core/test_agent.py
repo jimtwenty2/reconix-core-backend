@@ -51,11 +51,13 @@ class ScriptedModel:
     def __init__(self, *answers: object) -> None:
         self.answers = list(answers)
         self.prompts: list[list[Message]] = []
+        self.configs: list[ProviderConfig] = []
 
     async def complete(
         self, messages: list[Message], config: ProviderConfig, json_answer: bool = False
     ) -> Completion:
         self.prompts.append(messages)
+        self.configs.append(config)
         answer = self.answers.pop(0)
         if isinstance(answer, Exception):
             raise answer
@@ -69,7 +71,7 @@ async def no_knowledge(query: str, limit: int = 5) -> list:
     return []
 
 
-def make_ask(model: ScriptedModel, **deps_overrides):
+def make_ask(model: ScriptedModel, provider_for=None, **deps_overrides):
     saver = InMemorySaver()  # shared by every call, like the Postgres tables
 
     @asynccontextmanager
@@ -82,7 +84,7 @@ def make_ask(model: ScriptedModel, **deps_overrides):
         search=no_knowledge,
         now=lambda: datetime(2026, 10, 28, 10, tzinfo=UTC),
     )
-    return make_ask_agent(open_graph, replace(deps, **deps_overrides))
+    return make_ask_agent(open_graph, replace(deps, **deps_overrides), provider_for)
 
 
 def plan_request(run_id: UUID, **overrides) -> AgentRequest:
@@ -263,6 +265,28 @@ async def test_other_providers_are_not_ready(overrides):
     assert error.value.details == {"part": "ai_providers"}
 
 
+async def test_with_provider_for_each_call_uses_the_runs_own_provider():
+    model = ScriptedModel(UNDERSTOOD, PLANNED)
+    theirs = ProviderConfig(
+        ProviderType.OPENAI_API_COMPATIBLE,
+        "their-model",
+        base_url="https://llm.example.test/v1",
+        api_key="sk-fake-test-key-0000-abcd",  # noqa: S106
+    )
+    asked: list[AgentRequest] = []
+
+    def provider_for(request: AgentRequest) -> ProviderConfig:
+        asked.append(request)
+        return theirs
+
+    request = plan_request(uuid4(), provider="OPENAI_API_COMPATIBLE", model="their-model")
+    response = await make_ask(model, provider_for)(request)
+
+    assert response.waiting
+    assert asked == [request]
+    assert model.configs == [theirs, theirs]  # understand and plan
+
+
 FTP_FINDING = FindingInput(
     code="RCX-001",
     title="Anonymous FTP login",
@@ -335,3 +359,30 @@ async def test_report_without_its_locked_copy_is_a_422():
 
     assert error.value.status == 422
     assert error.value.code == "NO_REPORT_DATA"
+
+
+async def test_chat_names_each_speaker_and_answers_without_a_step():
+    model = ScriptedModel({"answer": "It finds service versions.", "references": []})
+    request = AgentRequest(
+        task=AgentTask.CHAT,
+        agent_run_id=uuid4(),
+        messages=[
+            ChatMessage(role="user", content_masked="What is -sV?"),
+            ChatMessage(role="assistant", content_masked="A version scan."),
+            ChatMessage(role="user", content_masked="Is it loud?"),
+        ],
+    )
+
+    response = await make_ask(model)(request)
+
+    assert response.text == "It finds service versions."
+    assert response.proposed_action is None and not response.waiting
+    sent = model.sent_text()
+    assert "Person: What is -sV?" in sent and "Reconix: A version scan." in sent
+
+
+def test_every_task_but_chat_needs_the_assessment_and_scope():
+    with pytest.raises(ValueError, match="needs the assessment"):
+        AgentRequest(task=AgentTask.PLAN, agent_run_id=uuid4())
+
+    assert AgentRequest(task=AgentTask.CHAT, agent_run_id=uuid4()).scope is None

@@ -648,6 +648,29 @@
         "title": "BlockedStep",
         "type": "object"
       },
+      "ChatOut": {
+        "description": "The person's message as saved, and the agent's answer to it. Both are masked.",
+        "properties": {
+          "agent_run_id": {
+            "format": "uuid",
+            "title": "Agent Run Id",
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/MessageOut"
+          },
+          "reply": {
+            "$ref": "#/components/schemas/MessageOut"
+          }
+        },
+        "required": [
+          "message",
+          "reply",
+          "agent_run_id"
+        ],
+        "title": "ChatOut",
+        "type": "object"
+      },
       "CheckName": {
         "description": "The 5 checks, in the order the pipeline runs them.",
         "enum": [
@@ -1323,7 +1346,7 @@
         "type": "object"
       },
       "PlanOut": {
-        "description": "A plan and its first step.\n\naction is the step the agent suggested, after the API's own check: BLOCKED,\nrun already (LOW), or waiting for the approval in action.approval_id.",
+        "description": "A plan and its first step.\n\naction is the step the agent suggested, after the API's own check: BLOCKED,\nrun already (LOW), or waiting for the approval in action.approval_id.\nA draft has no action yet: nothing was sent until a person sends it with\nPOST /agent-runs/{id}/send (or drops it with POST /agent-runs/{id}/discard).",
         "properties": {
           "action": {
             "anyOf": [
@@ -1344,6 +1367,11 @@
             },
             "title": "Blocked",
             "type": "array"
+          },
+          "draft": {
+            "default": false,
+            "title": "Draft",
+            "type": "boolean"
           },
           "plan": {
             "items": {
@@ -1379,6 +1407,27 @@
           "order": {
             "title": "Order",
             "type": "integer"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "enum": [
+                  "discovery",
+                  "scan",
+                  "validation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "reason": {
+            "default": "",
+            "title": "Reason",
+            "type": "string"
           },
           "title": {
             "title": "Title",
@@ -1577,6 +1626,16 @@
             "title": "Allowed Methods",
             "type": "array"
           },
+          "allowed_ports": {
+            "items": {
+              "maximum": 65535.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "maxItems": 1000,
+            "title": "Allowed Ports",
+            "type": "array"
+          },
           "allowed_tools": {
             "items": {
               "$ref": "#/components/schemas/ToolName"
@@ -1656,6 +1715,13 @@
               "type": "string"
             },
             "title": "Allowed Methods",
+            "type": "array"
+          },
+          "allowed_ports": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Allowed Ports",
             "type": "array"
           },
           "allowed_tools": {
@@ -1780,6 +1846,7 @@
           "manifests_status",
           "max_risk",
           "allowed_tools",
+          "allowed_ports",
           "allowed_actions",
           "allowed_methods",
           "starts_at",
@@ -1952,6 +2019,23 @@
               }
             ],
             "title": "Allowed Methods"
+          },
+          "allowed_ports": {
+            "anyOf": [
+              {
+                "items": {
+                  "maximum": 65535.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                "maxItems": 1000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Ports"
           },
           "allowed_tools": {
             "anyOf": [
@@ -2402,6 +2486,97 @@
         "summary": "Read Action",
         "tags": [
           "actions"
+        ]
+      }
+    },
+    "/api/v1/agent-runs/{agent_run_id}/discard": {
+      "post": {
+        "description": "Drop a drafted plan. Nothing was sent, so nothing ran.",
+        "operationId": "discard_plan_api_v1_agent_runs__agent_run_id__discard_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Discard Plan",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
+    "/api/v1/agent-runs/{agent_run_id}/send": {
+      "post": {
+        "description": "Send a drafted plan's first step, through the same checks as any action.",
+        "operationId": "send_plan_api_v1_agent_runs__agent_run_id__send_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Send Plan",
+        "tags": [
+          "plans"
         ]
       }
     },
@@ -3015,7 +3190,7 @@
     },
     "/api/v1/assessments/{assessment_id}/plan": {
       "post": {
-        "description": "The agent plans and suggests one step. The step goes through the same checks as\nany action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id.",
+        "description": "The agent plans and suggests one step. The step goes through the same checks as\nany action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id.\nWith draft=true nothing is sent yet: the person reads the plan first, then sends\nor discards it.",
         "operationId": "start_plan_api_v1_assessments__assessment_id__plan_post",
         "parameters": [
           {
@@ -3026,6 +3201,16 @@
               "format": "uuid",
               "title": "Assessment Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "draft",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Draft",
+              "type": "boolean"
             }
           }
         ],
@@ -4183,6 +4368,65 @@
         "summary": "List Agent Runs",
         "tags": [
           "agent runs"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/chat": {
+      "post": {
+        "description": "Saves the person's message and gives back the agent's answer. The agent only\nanswers: it never changes the scope, the plan or an approval, and runs no tool.",
+        "operationId": "chat_api_v1_sessions__session_id__chat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Chat",
+        "tags": [
+          "messages"
         ]
       }
     },

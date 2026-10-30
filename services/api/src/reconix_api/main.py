@@ -10,6 +10,7 @@ from reconix_api.api import (
     analysis,
     approvals,
     assessments,
+    chat,
     evidence,
     findings,
     llm_providers,
@@ -58,6 +59,7 @@ def create_app(
         system,
         sessions,
         messages,
+        chat,
         scopes,
         assessments,
         actions,
@@ -85,6 +87,7 @@ app = create_app(
         _settings.mcp_url,
         _settings.mcp_access_key.get_secret_value(),
         _settings.database_url,
+        _settings,
     ),
     session_tokens=_session_tokens,
 )

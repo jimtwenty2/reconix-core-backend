@@ -12,9 +12,13 @@ from enum import StrEnum
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 # The built-in model, created from services/ai/models/Modelfile.
 RECONIX_MODEL_NAME = "reconix"
-DEFAULT_TIMEOUT_SECONDS = 120
-# The longest answer one call may write. A plan or an analysis fits well under it.
-DEFAULT_MAX_TOKENS = 2000
+# A reasoning model writes ~80-90 tokens a second, so a long think needs minutes.
+DEFAULT_TIMEOUT_SECONDS = 300
+# The longest answer one call may write. A reasoning model (e.g. Qwen3) counts its
+# thinking in it too: a plan took 1,600 to 5,000 tokens with a Qwen3.6 model and once
+# ran past 8,000, so a lower limit cut it off before it wrote the answer. A plan's JSON
+# alone fits well under it.
+DEFAULT_MAX_TOKENS = 16_000
 
 
 class ProviderType(StrEnum):

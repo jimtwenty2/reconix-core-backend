@@ -3,7 +3,7 @@
 import ipaddress
 import re
 from datetime import datetime
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -12,6 +12,8 @@ from reconix_api.core.interfaces import ToolName
 from reconix_api.models.enums import AssessmentStatus, ManifestStatus, RiskLevel
 
 DOMAIN = re.compile(r"^(\*\.)?([a-z0-9-]+\.)*[a-z0-9-]+$", re.IGNORECASE)
+Port = Annotated[int, Field(ge=1, le=65535)]
+MAX_PORTS = 1000
 
 
 class ScopeTargetIn(BaseModel):
@@ -41,6 +43,8 @@ class ScopeDraft(BaseModel):
 
     max_risk: RiskLevel = RiskLevel.LOW
     allowed_tools: list[ToolName] = Field(min_length=1)
+    # The ports nmap may scan. Empty puts no limit on ports.
+    allowed_ports: list[Port] = Field(default_factory=list, max_length=MAX_PORTS)
     allowed_actions: list[Literal["discovery", "scan", "validation"]] = Field(default_factory=list)
     allowed_methods: list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] = (
         Field(default_factory=list)
@@ -62,6 +66,7 @@ class ScopeUpdate(BaseModel):
 
     max_risk: RiskLevel | None = None
     allowed_tools: list[ToolName] | None = None
+    allowed_ports: list[Port] | None = Field(default=None, max_length=MAX_PORTS)
     allowed_actions: list[Literal["discovery", "scan", "validation"]] | None = None
     allowed_methods: (
         list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] | None
@@ -85,6 +90,7 @@ class ScopeOut(BaseModel):
     manifests_status: ManifestStatus
     max_risk: RiskLevel
     allowed_tools: list[str]
+    allowed_ports: list[int]
     allowed_actions: list[str]
     allowed_methods: list[str]
     starts_at: datetime | None

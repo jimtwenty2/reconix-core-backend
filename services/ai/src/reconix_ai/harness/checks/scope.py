@@ -8,7 +8,8 @@ A target is allowed only if it is inside the approved scope:
 
 Excluded targets are always blocked, any ".." is blocked, and the tool and the
 time window must be allowed too. Each tool only takes its own kinds of target
-(nmap never gets a repo path).
+(nmap never gets a repo path). When the scope lists allowed ports, nmap must
+name its ports with -p and every one must be allowed (check_ports).
 
 The tool runs the target string exactly as given, so a target must already be
 in its plain form: ASCII only (punycode for international names), lower case,
@@ -42,6 +43,10 @@ HOST_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*
 BAD_TARGET_CHARACTERS = re.compile(r"[\s\\\x00-\x1f\x7f]")
 # Path parts some web servers read differently from this check.
 TRICKY_URL_PATH = re.compile(r"//|;|%(2f|5c|2e|3b|25|00)|(^|/)\.(/|$)", re.IGNORECASE)
+PORT_LIST = re.compile(r"^[0-9]{1,5}(-[0-9]{1,5})?(,[0-9]{1,5}(-[0-9]{1,5})?)*$")
+MAX_PORT = 65535
+# nmap options that pick their own ports, so they can reach ports outside the list.
+OWN_PORT_OPTIONS = {"--top-ports", "-F", "-p-"}
 
 
 class ScopeRules(Protocol):
@@ -126,6 +131,46 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
     if not is_in_scope(parsed, scope):
         return blocked("TARGET_OUT_OF_SCOPE")
     return ALLOWED
+
+
+def check_ports(tool: str, arguments: Sequence[str], scope: ScopeRules) -> CheckOutcome:
+    """With allowed ports in the scope, nmap scans only those: every -p value must be
+    inside them, and options that pick their own ports are blocked. A scope with no
+    allowed ports (an older scope, or a web or source scope) puts no limit on ports.
+    The other tools take their port from the target, which the scope check covers."""
+    allowed = set(getattr(scope, "allowed_ports", None) or ())
+    if not allowed or tool.upper() != "NMAP":
+        return ALLOWED
+    named = False
+    for index, argument in enumerate(arguments):
+        if argument in OWN_PORT_OPTIONS:
+            return blocked("PORTS_OUT_OF_SCOPE")
+        if argument.startswith("-p") and argument != "-p":
+            return blocked("BAD_PORTS")  # "-p22" or "-p-": only "-p", then its value
+        if argument != "-p":
+            continue
+        value = arguments[index + 1] if index + 1 < len(arguments) else ""
+        ports = port_set(value)
+        if ports is None:
+            return blocked("BAD_PORTS")
+        if not ports <= allowed:
+            return blocked("PORTS_OUT_OF_SCOPE")
+        named = True
+    return ALLOWED if named else blocked("PORTS_NOT_GIVEN")
+
+
+def port_set(value: str) -> set[int] | None:
+    """ "22,80,8000-8010" as a set of ports, or None if it is not written that way."""
+    if not PORT_LIST.match(value):
+        return None
+    ports: set[int] = set()
+    for part in value.split(","):
+        first, _, last = part.partition("-")
+        low, high = int(first), int(last or first)
+        if not 1 <= low <= high <= MAX_PORT:
+            return None
+        ports.update(range(low, high + 1))
+    return ports
 
 
 def has_path_traversal(target: str) -> bool:
