@@ -12,7 +12,13 @@ from llama_index.core import Document
 from llama_index.core.node_parser import MarkdownNodeParser
 
 from reconix_ai.harness import mask_secrets
-from reconix_ai.knowledge.items import KnowledgeItem, Source, TextFormat, read_items
+from reconix_ai.knowledge.items import (
+    PUBLIC_SOURCES,
+    KnowledgeItem,
+    Source,
+    TextFormat,
+    read_items,
+)
 
 # Pieces shorter than this (a heading with nothing under it) are dropped.
 MIN_PIECE_LENGTH = 40
@@ -30,10 +36,14 @@ class Chunk:
 
 
 def load_items(data_dir: Path, guides_dir: Path) -> list[KnowledgeItem]:
-    """Every *.jsonl file in data_dir, plus the Markdown tool guides."""
+    """Every *.jsonl file in data_dir, plus the Markdown tool guides. Only public
+    sources: an add-on (USER_DOC) comes through the API, never from a file here."""
     items = []
     for path in sorted(data_dir.glob("*.jsonl")):
         items.extend(read_items(path))
+    for item in items:
+        if item.source not in PUBLIC_SOURCES:
+            raise ValueError(f"{item.source} items cannot be ingested; upload add-ons instead.")
     items.extend(tool_guide_items(guides_dir))
     return items
 

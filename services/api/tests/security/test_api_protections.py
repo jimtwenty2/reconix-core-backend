@@ -92,6 +92,13 @@ def test_the_list_holds_every_endpoint():
     assert ("GET", f"/reports/{ANY_ID}/download") in ENDPOINTS
 
 
+def test_an_upload_is_not_read_before_the_token_check(client):
+    # 1001 files would be refused while the form is read (400); 401 means it never was.
+    files = [("file", (f"part{n}.txt", b"x")) for n in range(1001)]
+    response = client.post("/knowledge-add-ons", files=files, data={"interface": "cli"})
+    assert response.status_code == 401
+
+
 @pytest.mark.parametrize(("method", "path"), ENDPOINTS)
 def test_no_token_gets_401(client, method, path):
     response = client.request(method, path, json={})

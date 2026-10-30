@@ -29,9 +29,9 @@ api/ (routes) → services/ (rules) → repositories/ (queries) → models/ (tab
 | Folder | Holds |
 |---|---|
 | `main.py` | `create_app()`: middleware (Host check, CORS), error handlers, routers |
-| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones), `agent.py` (the real `ask_agent`), `report_files.py`, `provider_urls.py` (AI provider address check), `provider_keys.py` (Fernet for API keys). Only `core/` imports `reconix_ai` |
-| `api/` | Routes, one file per resource: `system`, `sessions`, `messages`, `scopes`, `assessments`, `actions`, `approvals`, `findings`, `evidence`, `plans`, `analysis`, `agent_runs`, `reports`, `llm_providers` |
-| `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, messages, plans, analysis, agent runs, reports, AI providers, audit |
+| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones), `agent.py` (the real `ask_agent`), `report_files.py`, `provider_urls.py` (AI provider address check), `provider_keys.py` (Fernet for API keys), `knowledge_add_ons.py` (add-ons in Qdrant), `knowledge_files.py` (an uploaded file's text). Only `core/` imports `reconix_ai` |
+| `api/` | Routes, one file per resource: `system`, `sessions`, `messages`, `scopes`, `assessments`, `actions`, `approvals`, `findings`, `evidence`, `plans`, `analysis`, `agent_runs`, `reports`, `llm_providers`, `knowledge_add_ons` |
+| `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, messages, plans, analysis, agent runs, reports, AI providers, knowledge add-ons, audit |
 | `repositories/` | Database queries only |
 | `models/` | SQLAlchemy tables from ERD V3 (all 16; the 2 join tables are plain `Table`s); enums in `models/enums.py` |
 | `schemas/` | Pydantic requests and responses |
