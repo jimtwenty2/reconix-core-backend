@@ -1,10 +1,11 @@
 """Send action -> check -> (approve) -> tool run, through the API and a real database."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy import func, select, update
 
-from reconix_api.models import AgentRun, Approval
+from reconix_api.models import Action, AgentRun, Approval
 from reconix_api.models.enums import AgentRunStatus
 from tests.integration.test_scope_flow import draft_and_submit, open_session, scopes_path
 
@@ -181,12 +182,25 @@ def test_unreachable_kali_saves_a_failed_run(db_client, db_app):
 
 def test_a_persons_actions_share_one_open_agent_run(db_client, session_factory):
     headers = open_session(db_client)
+    other = open_session(db_client)  # e.g. the web while the terminal app is open
     assessment_id = active_assessment(db_client, headers)
 
-    send(db_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"])
-    send(db_client, headers, assessment_id, tool="NMAP", target="10.0.0.1")  # blocked, still filed
+    ran = send(
+        db_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+    )
+    blocked = send(db_client, headers, assessment_id, tool="NMAP", target="10.0.0.1")
+    from_other = send(
+        db_client, other, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+    )
+    assert (ran.status_code, blocked.status_code, from_other.status_code) == (201, 422, 201)
+    action_ids = {
+        "ran": ran.json()["action_id"],
+        "blocked": blocked.json()["details"]["action_id"],  # blocked, still filed
+        "other": from_other.json()["action_id"],
+    }
 
     with session_factory() as db:
+        run_of = {name: db.get(Action, UUID(i)).agent_run_id for name, i in action_ids.items()}
         runs = db.scalars(select(AgentRun).where(AgentRun.assessment_id == assessment_id)).all()
         # A run with no plan is stored as SQL NULL, so the "no plan" lookup can find it.
         without_plan = db.scalar(
@@ -194,5 +208,7 @@ def test_a_persons_actions_share_one_open_agent_run(db_client, session_factory):
             .select_from(AgentRun)
             .where(AgentRun.assessment_id == assessment_id, AgentRun.plan.is_(None))
         )
-    assert [run.agent_runs_status for run in runs] == [AgentRunStatus.RUNNING]
-    assert without_plan == 1
+    # One open run per session: the first session's two actions share theirs.
+    assert run_of["ran"] == run_of["blocked"] != run_of["other"]
+    assert [run.agent_runs_status for run in runs] == [AgentRunStatus.RUNNING] * 2
+    assert without_plan == 2
