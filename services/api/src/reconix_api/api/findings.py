@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from reconix_api.core.db import Db
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.findings import FindingOut, FindingReview
 from reconix_api.services import findings
 
@@ -30,7 +30,7 @@ def review_finding(
     finding_id: UUID,
     body: FindingReview,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
 ) -> FindingOut:
     """Mark a finding OPEN, FALSE_POSITIVE or FIXED."""

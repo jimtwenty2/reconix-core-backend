@@ -5,7 +5,7 @@ nothing secret: messages and tool results are masked when they come in, and the
 provider settings (with the API key) are passed beside the state, never in it.
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 from typing import Any, Protocol, TypedDict
 
@@ -19,7 +19,7 @@ SCOPE_LISTS = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_t
 
 
 class AgentState(TypedDict, total=False):
-    task: str  # PLAN or SUGGEST
+    task: str  # PLAN, SUGGEST, ANALYZE or REPORT
     assessment_id: str
     scope: dict[str, Any]  # the approved scope, see scope_to_dict()
     messages: list[str]  # masked chat, oldest first
@@ -28,12 +28,20 @@ class AgentState(TypedDict, total=False):
     queries: list[str]
     knowledge: list[dict[str, str]]  # hits: source, ref_id, title, section, text, url
     knowledge_unavailable: bool
+    reflections: list[str]  # ReflAct: one masked line per look at the tool results
+    reflect_more: bool
     summary: str
     steps: list[dict[str, Any]]  # the plan; see contracts.PlanStep
     proposed_action: dict[str, Any] | None  # see contracts.ProposedAction
     risk: str | None
     blocked: list[dict[str, Any]]  # see contracts.BlockedStep
     decision: str | None  # APPROVED or REJECTED
+    findings: list[dict[str, Any]]  # ANALYZE: masked, see contracts.FindingInput
+    analysis_summary: str
+    analysis: list[dict[str, Any]]  # see contracts.FindingAnalysis
+    report: dict[str, Any]  # REPORT: the masked locked copy, see contracts.ReportInput
+    executive_summary: str
+    methodology: str
     # Totals for the current ask; ask_agent() starts them again.
     prompt_tokens: int
     completion_tokens: int
@@ -92,6 +100,47 @@ def scope_from_dict(data: dict[str, Any]) -> AgentScope:
 
 def parse_time(text: str | None) -> datetime | None:
     return datetime.fromisoformat(text) if text else None
+
+
+def masked_report(report: Any) -> tuple[dict[str, Any], int]:
+    """The locked copy as plain JSON values, every text masked. The counts stay as
+    the API made them; graph.check_report() has already checked them."""
+    findings, in_findings = masked_findings(list(report.findings))
+    tool_runs, in_runs = masked_findings(list(report.tool_runs))
+    counts = {str(level): int(n) for level, n in dict(report.severity_counts).items()}
+    copy = {"findings": findings, "severity_counts": counts, "tool_runs": tool_runs}
+    return copy, in_findings + in_runs
+
+
+def masked_findings(findings: list[Any]) -> tuple[list[dict[str, Any]], int]:
+    """Rows (findings or tool runs) as plain dicts: every text masked then cut, however
+    deep, and dates as ISO 8601 text."""
+    kept, total = [], 0
+    for finding in findings:
+        row = asdict(finding) if is_dataclass(finding) else dict(finding)
+        value, count = masked_value(row)
+        kept.append(value)
+        total += count
+    return kept, total
+
+
+def masked_value(value: Any) -> tuple[Any, int]:
+    if isinstance(value, datetime):
+        return value.isoformat(), 0
+    if isinstance(value, str):  # a StrEnum is a str too, and becomes its plain value
+        return masked_cut(str(value))
+    if isinstance(value, dict):
+        pairs = [(str(key), masked_value(item)) for key, item in value.items()]
+        return {key: item for key, (item, _) in pairs}, sum(n for _, (_, n) in pairs)
+    if isinstance(value, list | tuple):
+        items = [masked_value(item) for item in value]
+        return [item for item, _ in items], sum(n for _, n in items)
+    return value, 0
+
+
+def masked_cut(text: str) -> tuple[str, int]:
+    masked, count = mask_secrets(text)
+    return masked[:MAX_INPUT_CHARS], count
 
 
 def masked_texts(texts: list[str], keep: int) -> tuple[list[str], int]:

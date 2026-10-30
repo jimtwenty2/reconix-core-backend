@@ -23,7 +23,7 @@ def open_session(client) -> dict:
     response = client.post("/sessions", json={"interface": "cli"})
     assert response.status_code == 201
     body = response.json()
-    assert "role" not in body  # the role is read from GET /operator
+    assert "role" not in body  # there are no roles
     return {"Authorization": f"Bearer {body['token']}"}
 
 

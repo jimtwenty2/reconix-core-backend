@@ -18,8 +18,8 @@ fixes go in.
 api/ (routes) → services/ (rules) → repositories/ (queries) → models/ (tables)
 ```
 
-- A route parses the request, checks the role, calls one service and returns a schema. It never
-  queries the database.
+- A route parses the request, checks the session token, calls one service and returns a schema.
+  It never queries the database.
 - A service holds the rules. A repository holds queries only, no rules.
 - Routes get the shared functions through the `CurrentInterfaces` dependency, never by importing
   the other part directly.
@@ -29,9 +29,9 @@ api/ (routes) → services/ (rules) → repositories/ (queries) → models/ (tab
 | Folder | Holds |
 |---|---|
 | `main.py` | `create_app()`: middleware (Host check, CORS), error handlers, routers |
-| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones) |
-| `api/` | Routes, one file per resource: `system`, `sessions`, `scopes`, `assessments`, `approvals`, `actions`, `findings`, `messages` |
-| `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, messages, audit |
+| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones), `agent.py` (the real `ask_agent`), `report_files.py`, `provider_urls.py` (AI provider address check), `provider_keys.py` (Fernet for API keys). Only `core/` imports `reconix_ai` |
+| `api/` | Routes, one file per resource: `system`, `sessions`, `messages`, `scopes`, `assessments`, `actions`, `approvals`, `findings`, `evidence`, `plans`, `analysis`, `agent_runs`, `reports`, `llm_providers` |
+| `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, messages, plans, analysis, agent runs, reports, AI providers, audit |
 | `repositories/` | Database queries only |
 | `models/` | SQLAlchemy tables from ERD V3 (all 16; the 2 join tables are plain `Table`s); enums in `models/enums.py` |
 | `schemas/` | Pydantic requests and responses |
@@ -47,11 +47,12 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
   errors from `core/errors.py`; never return `None` to hide a failure.
 - **Network:** the API binds to `127.0.0.1` only, rejects an unknown `Host`, and allows CORS only
   for the local web (`RECONIX_WEB_ORIGINS`).
-- **Roles:** the role (`OPERATOR` or `VIEWER`) lives with the session token, not in the database.
-  A viewer may only read. Every endpoint that changes data returns 403 for a viewer, with a test in
-  `tests/security/test_viewer_read_only.py`.
+- **Session token:** every endpoint except `/health` and `POST /sessions` uses `CurrentOperator`,
+  so a request without a valid token gets 401. There are no roles: a valid token may do
+  everything. `tests/security/test_api_protections.py` reads every route from the app and
+  checks each one gets 401 without a token; only the two above are in its `OPEN` set.
 - **Audit:** every decision and state change writes exactly one audit event with `assessment_id`,
-  `session_id`, `role` and `actor`.
+  `session_id` and `actor`.
 - **Actions:** run the harness `check()` first. `BLOCKED` → 422, `LOW` → run now,
   `MEDIUM`/`HIGH` → approval. Store the masked action and its SHA-256 hash; re-run `check()` and
   re-hash right before the tool runs. No path may skip this second check.
@@ -73,7 +74,7 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
 - **Routes or schemas changed** → regenerate `docs/openapi.json` in the same PR (`sync-openapi`
   skill). New endpoints follow the `add-endpoint` skill.
 
-## Plan status (28 Oct 2026)
+## Plan status (30 Oct 2026)
 
 Keep this table true; update the row in the PR that changes it.
 
@@ -83,27 +84,27 @@ Keep this table true; update the row in the PR that changes it.
 | Models + one Alembic migration | 1 | Done: all 16 tables, upgrade and downgrade work, no model drift |
 | Sessions, messages, scopes (draft, edit, submit, approve) | 1 | Done |
 | `POST /assessments/{id}/actions`, approvals, tool run through MCP, findings saved | 1 | Done |
-| `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST and resume, built-in RECONIX provider only (`core/agent.py`) |
-| Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | To do |
-| Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done |
-| 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | To do |
-| Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | To do |
-| Pojim's parts in the API: disclosure, limit settings, timeline, web role check | 2 | To do |
+| `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST, ANALYZE and resume, built-in RECONIX provider only (`core/agent.py`) |
+| Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | Done: `POST /assessments/{id}/plan` (the step goes through `send_action`), resume after the decision, `GET /sessions/{id}/agent-runs` |
+| Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done: check runs to do. Also done: `POST /assessments/{id}/analyze` (suggestions saved in the run) |
+| 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | Done: `/llm-providers` list, add, read, edit, remove and `/activate`. A provider on this computer is active at once, any other after its `configuration` approval. Each agent request carries its run's provider and model; `core/agent.py` answers 503 `NOT_READY` for any provider but RECONIX until the saved settings reach the model calls |
+| Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | Done except multi-assessment: one assessment per report, files in `RECONIX_REPORTS_DIR`, `review` sign-off before download |
+| Pojim's parts in the API: disclosure, limit settings, timeline, web sign-in | 2 | To do. There are no roles (decided 30 Oct), so the web sign-in issues a normal session token |
 | API in Docker Compose, `install.sh`, uv install steps | 2 | To do: API runs on the host; `install.sh` is a placeholder |
 | Full flow test on Sat 31 Oct, final `openapi.json` on Mon 2 Nov | 2 | To do (`run-full-flow-test` skill) |
-| Terminal WebSocket (operators only), `GET /stream` live updates | 3 | To do |
-| Security tests (rate limit, Host, CORS, viewer), contract tests against `openapi.json`, list indexes | 3 | Partly done: Host, CORS and viewer tests exist |
+| Terminal WebSocket (the handshake checks the token and `Origin`; the Host middleware does not cover WebSockets), `GET /stream` live updates | 3 | To do |
+| Security tests (rate limit, Host, CORS, no token), contract tests against `openapi.json`, list indexes | 3 | Partly done: Host, CORS and no-token tests exist |
 | Release `v0.1.0` on Tue 3 Nov, `v1.0.0` on Fri 20 Nov | 3, 4 | To do (`cut-release` skill) |
 
-**Plan vs. code:** the plan adds `sessions.role`; the team instead keeps the role with the session
-token, and ERD V3 has no such column. Follow the code and the root `AGENTS.md`.
+**No roles:** Reconix has no OPERATOR/VIEWER split (decided 30 Oct 2026). ERD V3 has no
+`sessions.role`, and the plan no longer asks for one.
 
 ## Tests (`tests/`)
 
 | Folder | What it proves |
 |---|---|
 | `unit/` | One function or class, no network, no database; mirrors `src/reconix_api/` |
-| `security/` | Viewer gets 403 on every write; Host and CORS protections |
+| `security/` | Every endpoint needs a session token (401); Host and CORS protections |
 | `integration/` | Real database and repositories: scope, action, findings and messages flows; the real harness; the live MCP client |
 | `contract/` | Responses match `docs/openapi.json` (empty, to add) |
 | `e2e/` | The full flow, scope to download (empty, to add) |
@@ -130,8 +131,9 @@ Integration tests skip unless `RECONIX_TEST_DATABASE_URL` points at a PostgreSQL
 ## Done when
 
 - `uv run ruff check . && uv run ruff format --check .` pass.
-- `uv run --package reconix-api pytest` passes, including the viewer-403 tests.
-- A new write endpoint has a viewer-403 test; a bug fix has a test that failed before the fix.
+- `uv run --package reconix-api pytest` passes, including the no-token (401) tests.
+- A new endpoint needs the token (the no-token test checks it by itself); a bug fix has a test
+  that failed before the fix.
 - `docs/openapi.json` is regenerated if routes or schemas changed, and a migration exists if the
   schema changed.
 - The "Plan status" table above is updated if the change finishes a plan item.

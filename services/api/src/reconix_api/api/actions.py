@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, status
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.actions import ActionIn, ActionOut
 from reconix_api.services import actions
 
@@ -22,7 +22,7 @@ async def send_action(
     assessment_id: UUID,
     body: ActionIn,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,

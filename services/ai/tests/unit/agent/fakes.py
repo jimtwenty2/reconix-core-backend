@@ -19,6 +19,7 @@ NMAP_STEP = {
     "arguments": ["-sV", "--top-ports", "100"],
 }
 PLANNED = {"summary": "Start with a service scan.", "steps": [NMAP_STEP]}
+REFLECTED = {"reflection": "Port 22 is open; the services are not yet known.", "search": None}
 
 
 @dataclass
@@ -47,6 +48,8 @@ class Request:
     model: str | None = None
     messages: list[str] = field(default_factory=lambda: ["Scan the lab host for services."])
     tool_results: list[str] = field(default_factory=list)
+    findings: list[dict] = field(default_factory=list)
+    report: object | None = None
 
 
 class FakeModel:

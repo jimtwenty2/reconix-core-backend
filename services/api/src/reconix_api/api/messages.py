@@ -6,7 +6,7 @@ from fastapi import APIRouter, status
 
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
-from reconix_api.core.security import CurrentInterfaces, CurrentOperator, RequireOperator
+from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.messages import MessageCreate, MessageOut
 from reconix_api.services import messages
 
@@ -18,7 +18,7 @@ def add_message(
     session_id: UUID,
     body: MessageCreate,
     db: Db,
-    operator: RequireOperator,
+    operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> MessageOut:

@@ -15,12 +15,10 @@ from reconix_api.core.interfaces import (
     Decision,
     Operator,
     RiskLevel,
-    Role,
     ToolName,
 )
 
 OPERATOR_TOKEN = "fake-operator-token"
-VIEWER_TOKEN = "fake-viewer-token"
 
 # A rough copy of the real risk table, good enough for tests.
 FAKE_RISK = {
@@ -36,12 +34,7 @@ SHELL_CHARACTERS = set(";|&$`<>\n")
 class FakeOperators:
     def __init__(self) -> None:
         self.tokens = {
-            OPERATOR_TOKEN: Operator(
-                session_id=uuid5(NAMESPACE_URL, "operator"), role=Role.OPERATOR, actor="operator"
-            ),
-            VIEWER_TOKEN: Operator(
-                session_id=uuid5(NAMESPACE_URL, "viewer"), role=Role.VIEWER, actor="viewer"
-            ),
+            OPERATOR_TOKEN: Operator(session_id=uuid5(NAMESPACE_URL, "operator"), actor="operator"),
         }
 
     def get_operator(self, token: str) -> Operator:

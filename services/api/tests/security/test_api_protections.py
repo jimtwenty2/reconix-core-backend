@@ -1,12 +1,32 @@
-"""Protections every endpoint gets: Host check, CORS, error shape, roles."""
+"""Protections every endpoint gets: Host check, CORS, error shape, the session token.
+
+There are no roles: a valid session token may do everything, so the token is the check.
+"""
+
+import re
 
 import pytest
-from fastapi import APIRouter
 
-from reconix_api.core.security import RequireOperator
-from reconix_api.main import API_PREFIX
+from reconix_api.main import API_PREFIX, create_app
+from tests.fakes import build_fake_interfaces
 
 WEB_ORIGIN = "http://127.0.0.1:3000"
+ANY_ID = "00000000-0000-0000-0000-000000000001"
+# The only endpoints that answer without a session token. POST /sessions gives one out.
+OPEN = {("GET", "/health"), ("POST", "/sessions")}
+
+
+def every_endpoint() -> list[tuple[str, str]]:
+    """Every route, read from the app's own OpenAPI, so a new route is checked at once."""
+    paths = create_app(build_fake_interfaces()[0]).openapi()["paths"]
+    endpoints = []
+    for path, operations in paths.items():
+        local = re.sub(r"\{[^}]+\}", ANY_ID, path.removeprefix(API_PREFIX))
+        endpoints += [(method.upper(), local) for method in operations]
+    return sorted(endpoint for endpoint in endpoints if endpoint not in OPEN)
+
+
+ENDPOINTS = every_endpoint()
 
 
 def test_health_works_from_this_computer(client):
@@ -59,20 +79,26 @@ def test_me_refuses_a_wrong_token(client):
     assert response.status_code == 401
 
 
-def test_me_returns_the_operator(client, operator_headers, viewer_headers):
-    assert client.get("/operator", headers=operator_headers).json()["role"] == "OPERATOR"
-    assert client.get("/operator", headers=viewer_headers).json()["role"] == "VIEWER"
+def test_me_returns_the_operator(client, operator_headers):
+    me = client.get("/operator", headers=operator_headers).json()
+    assert set(me) == {"session_id", "actor"}  # no role
+    assert me["actor"] == "operator"
 
 
-def test_viewer_cannot_change_data(app, client, operator_headers, viewer_headers):
-    router = APIRouter()
+def test_the_list_holds_every_endpoint():
+    assert len(ENDPOINTS) >= 40
+    assert ("POST", f"/approvals/{ANY_ID}/approve") in ENDPOINTS
+    assert ("GET", f"/reports/{ANY_ID}/download") in ENDPOINTS
 
-    @router.post("/_test/change")
-    def change(_: RequireOperator) -> dict:
-        return {"changed": True}
 
-    app.include_router(router, prefix=API_PREFIX)
-    assert client.post("/_test/change", headers=operator_headers).status_code == 200
-    response = client.post("/_test/change", headers=viewer_headers)
-    assert response.status_code == 403
-    assert response.json()["code"] == "VIEWER_READ_ONLY"
+@pytest.mark.parametrize(("method", "path"), ENDPOINTS)
+def test_no_token_gets_401(client, method, path):
+    response = client.request(method, path, json={})
+    assert response.status_code == 401
+    assert response.json()["code"] == "UNAUTHORIZED"
+
+
+@pytest.mark.parametrize(("method", "path"), ENDPOINTS)
+def test_a_wrong_token_gets_401(client, method, path):
+    headers = {"Authorization": "Bearer wrong"}
+    assert client.request(method, path, headers=headers, json={}).status_code == 401

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # Audit log (JSON lines), written by the harness
     audit_log_path: str = "data/audit/audit.jsonl"
 
+    # Report files (PDF, DOCX, JSON), one folder per assessment and version
+    reports_dir: str = "data/reports"
+
     # Approvals
     approval_ttl_minutes: int = 30
 

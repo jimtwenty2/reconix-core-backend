@@ -1,11 +1,11 @@
 """Enum values from Data Dictionary V3. UPPERCASE everywhere.
 
-RiskLevel and Role are shared with other parts, so they live in core/interfaces.py.
+RiskLevel is shared with other parts, so it lives in core/interfaces.py.
 """
 
 from enum import StrEnum
 
-from reconix_api.core.interfaces import RiskLevel, Role
+from reconix_api.core.interfaces import RiskLevel
 
 __all__ = [
     "ActionStatus",
@@ -17,7 +17,6 @@ __all__ = [
     "ProviderType",
     "ReportStatus",
     "RiskLevel",
-    "Role",
     "SessionStatus",
     "SeverityStatus",
     "ToolRunStatus",

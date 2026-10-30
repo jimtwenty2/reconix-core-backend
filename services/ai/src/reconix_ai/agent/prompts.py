@@ -5,11 +5,13 @@ changed by PR and never hidden in code. Knowledge hits and tool output are put
 inside tags and marked as data, because an attacker may have written them.
 """
 
+import json
 import unicodedata
 from pathlib import Path
 from typing import Any
 
 from reconix_ai.agent.state import AgentState
+from reconix_ai.contracts import severity_rank
 from reconix_ai.harness.checks.command import ALLOWED_OPTIONS
 from reconix_ai.harness.checks.scope import TOOL_TARGET_KINDS
 from reconix_ai.providers import Message
@@ -47,7 +49,74 @@ def plan_messages(state: AgentState) -> list[Message]:
     ]
     if state.get("tool_results"):
         parts.append(tool_results_text(state["tool_results"]))
+    if state.get("reflections"):
+        parts.append(reflections_text(state["reflections"]))
     return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def reflect_messages(state: AgentState) -> list[Message]:
+    parts = [
+        read_markdown(PROMPTS_DIR / "reflect.md"),
+        scope_text(state["scope"]),
+        "## Goal\n" + fenced("goal", state.get("goal", "")),
+        knowledge_text(state.get("knowledge", [])),
+        tool_results_text(state["tool_results"]),
+    ]
+    if state.get("reflections"):
+        parts.append(reflections_text(state["reflections"]))
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def analyze_messages(state: AgentState) -> list[Message]:
+    parts = [
+        read_markdown(PROMPTS_DIR / "analyze.md"),
+        scope_text(state["scope"]),
+        tools_text(state["scope"]["allowed_tools"]),
+        findings_text(state.get("findings", [])),
+        knowledge_text(state.get("knowledge", [])),
+    ]
+    if state.get("tool_results"):
+        parts.append(tool_results_text(state["tool_results"]))
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+MAX_REPORT_PROMPT_ROWS = 50
+
+
+def report_messages(state: AgentState) -> list[Message]:
+    report = state["report"]
+    findings = sorted(report["findings"], key=severity_rank)
+    rows = [report_row(finding) for finding in findings[:MAX_REPORT_PROMPT_ROWS]]
+    runs = report["tool_runs"][:MAX_REPORT_PROMPT_ROWS]
+    parts = [
+        read_markdown(PROMPTS_DIR / "report.md"),
+        scope_text(state["scope"]),
+        counts_text(report["severity_counts"]),
+        findings_text(rows) + more_text(len(findings) - len(rows), "findings"),
+        "## Tool runs\n"
+        + fenced("tool_results", json.dumps(runs, indent=1))
+        + more_text(len(report["tool_runs"]) - len(runs), "tool runs"),
+    ]
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def more_text(left_out: int, what: str) -> str:
+    return f"\n({left_out} more {what} are in the report but not shown here.)" if left_out else ""
+
+
+def counts_text(counts: dict[str, int]) -> str:
+    lines = [f"- {level}: {count}" for level, count in counts.items()]
+    return "## Findings by severity (final)\n" + ("\n".join(lines) or "- none")
+
+
+def report_row(finding: dict[str, Any]) -> dict[str, Any]:
+    """What the report text needs of a finding; the full text stays in the files."""
+    names = ("code", "title", "target", "severity_status", "finding_status")
+    return {name: finding.get(name) for name in names}
+
+
+def findings_text(findings: list[dict[str, Any]]) -> str:
+    return "## Findings\n" + fenced("findings", json.dumps(findings, indent=1))
 
 
 def scope_text(scope: dict[str, Any]) -> str:
@@ -95,6 +164,12 @@ def knowledge_text(hits: list[dict[str, str]]) -> str:
 
 def tool_results_text(results: list[str]) -> str:
     return "## Earlier tool results\n" + fenced("tool_results", "\n\n".join(results))
+
+
+def reflections_text(reflections: list[str]) -> str:
+    # The model wrote these from tool output, so they are fenced as data too.
+    lines = "\n".join(f"- {line}" for line in reflections)
+    return "## Notes on the tool results (untrusted)\n" + fenced("reflections", lines)
 
 
 def fenced(tag: str, text: str) -> str:

@@ -25,7 +25,7 @@ def test_all_16_erd_v3_tables_exist() -> None:
 
 
 def test_sessions_has_no_role_column() -> None:
-    # ERD V3 has no sessions.role; the role is kept with the session token.
+    # ERD V3 has no sessions.role, and Reconix has no roles.
     assert "role" not in Base.metadata.tables["sessions"].c
 
 
