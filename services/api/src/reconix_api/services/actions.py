@@ -213,10 +213,21 @@ async def approve_action(
     operator: Operator,
     approval: Approval,
 ) -> None:
-    """Marks the approval and the action APPROVED, then runs the action."""
+    """Runs the safety checks again (S2), then marks the approval and the action APPROVED
+    and runs the action.
+
+    Up to 30 minutes pass between sending and approving: the assessment may be cancelled,
+    the scope window over or the scope changed. Then nothing runs and the approval is not
+    used: an inactive assessment is a 409, and an action the checks now block is saved as
+    BLOCKED and answered with 422 ACTION_BLOCKED, as when it is sent.
+    """
     row = _get(db, approval.action_id, lock=True)
     action = to_action(row)
     ensure_unchanged(approval.subject_hash, action)
+    ensure_can_act(db, row.assessment_id)
+    result = interfaces.check(action, _check_context(db, interfaces, operator, row.assessment_id))
+    if result.decision == Decision.BLOCKED:
+        _block_at_approval(db, interfaces.write_audit, operator, row, approval, result)
     approval.approval_status = ApprovalStatus.APPROVED
     approval.decided_by = operator.actor
     approval.decided_at = datetime.now(UTC)
@@ -233,6 +244,40 @@ async def approve_action(
     await tool_runs.run_action(
         db, interfaces, mask, settings, operator, row, action, approval.subject_hash, approval
     )
+
+
+def _block_at_approval(
+    db: Db,
+    write_audit: WriteAudit,
+    operator: Operator,
+    row: ActionRow,
+    approval: Approval,
+    result: CheckResult,
+) -> None:
+    """The checks blocked an action as it was approved: save it as BLOCKED, write one audit
+    line and raise 422. The approval stays PENDING and unused, so it can still be rejected."""
+    row.action_status = ActionStatus.BLOCKED
+    row.guardrail_report = result.model_dump(mode="json")
+    db.commit()
+    audit(
+        write_audit,
+        "ACTION_BLOCKED",
+        operator,
+        row.assessment_id,
+        {
+            "action_id": str(row.action_id),
+            "approval_id": str(approval.approval_id),
+            "tool": row.tool,
+            "risk": result.risk,
+            "blocked_by": result.blocked_by,
+            "reason": result.reason,
+        },
+    )
+    try:
+        next_step(result)
+    except ApiError as error:
+        error.details["action_id"] = str(row.action_id)
+        raise
 
 
 def reject_action(

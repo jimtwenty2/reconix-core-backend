@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import update
 
-from reconix_api.models import Approval
+from reconix_api.models import Approval, ScopeManifest
 from tests.integration.test_scope_flow import draft_and_submit, open_session, scopes_path
 
 SCOPE = {
@@ -176,3 +176,52 @@ def test_unreachable_kali_saves_a_failed_run(db_client, db_app):
     [run] = action["tool_runs"]
     assert run["tool_run_status"] == "FAILED"
     assert "KALI_UNREACHABLE" in run["error"]
+
+
+def test_approving_after_the_assessment_is_cancelled_runs_nothing(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    cancelled = db_client.delete(f"/assessments/{assessment_id}", headers=headers)
+    assert cancelled.json()["assessment_status"] == "CANCELLED"
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "ASSESSMENT_NOT_ACTIVE"
+    assert db_app.state.parts["mcp"].jobs == []
+    approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
+    assert (approval["approval_status"], approval["consumed_at"]) == ("PENDING", None)
+
+
+def test_approving_runs_the_checks_again(db_client, db_app, session_factory):
+    """The scope changed after the action was sent, so the second check blocks it."""
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    with session_factory() as db:
+        db.execute(
+            update(ScopeManifest)
+            .where(ScopeManifest.assessment_id == assessment_id)
+            .values(allowed_tools=["NMAP", "ZAP"])
+        )
+        db.commit()
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert (body["code"], body["details"]["reason"]) == ("ACTION_BLOCKED", "TOOL_NOT_ALLOWED")
+    assert body["details"]["action_id"] == action["action_id"]
+    assert db_app.state.parts["mcp"].jobs == []
+    saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert (saved["action_status"], saved["tool_runs"]) == ("BLOCKED", [])
+    approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
+    assert (approval["approval_status"], approval["consumed_at"]) == ("PENDING", None)
+    assert event_types(db_app).count("ACTION_BLOCKED") == 1
