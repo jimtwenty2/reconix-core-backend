@@ -38,6 +38,7 @@ class FindingOut(BaseModel):
     created_at: datetime
     assessment_id: UUID
     source_tool_run_ids: list[UUID] = Field(default_factory=list)  # the runs that found it
+    tools: list[str] = Field(default_factory=list)  # their tools, e.g. ["NMAP"]
     evidence: list[EvidenceOut] = Field(default_factory=list)
 
 

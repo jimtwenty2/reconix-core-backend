@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks
 from reconix_api.core.db import Db
 from reconix_api.core.finding_memory import CurrentFindingMemory
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
+from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 from reconix_api.schemas.findings import FindingOut, FindingReview
 from reconix_api.services import findings
 
@@ -15,10 +16,19 @@ router = APIRouter(prefix="/findings", tags=["findings"])
 
 @router.get("")
 def list_findings(
-    db: Db, _: CurrentOperator, assessment_id: UUID | None = None
+    db: Db,
+    _: CurrentOperator,
+    assessment_id: UUID | None = None,
+    severity_status: SeverityStatus | None = None,
+    validation_status: ValidationStatus | None = None,
+    finding_status: FindingStatus | None = None,
 ) -> list[FindingOut]:
-    """Every finding, or only one assessment's with ?assessment_id=."""
-    return findings.list_findings(db, assessment_id)
+    """Every finding newest first, or one assessment's with ?assessment_id= in the order
+    they were found. Filter with ?severity_status=, ?validation_status= and
+    ?finding_status=; each one given must match."""
+    return findings.list_findings(
+        db, assessment_id, severity_status, validation_status, finding_status
+    )
 
 
 @router.get("/{finding_id}")

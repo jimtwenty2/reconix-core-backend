@@ -82,3 +82,18 @@ def claim_waiting(db: Db, agent_run_id: UUID) -> bool:
 
 def active_provider(db: Db) -> LlmProvider | None:
     return db.scalar(select(LlmProvider).where(LlmProvider.is_active))
+
+
+def latest_plan(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """The newest PLAN run, whatever its status. Analysis runs keep their answer in
+    `plan` too ({"task": "ANALYZE"}), so the task is checked."""
+    query = (
+        select(AgentRun)
+        .where(
+            AgentRun.assessment_id == assessment_id,
+            AgentRun.plan["task"].astext == "PLAN",
+        )
+        .order_by(AgentRun.started_at.desc())
+        .limit(1)
+    )
+    return db.scalar(query)
