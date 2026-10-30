@@ -229,6 +229,8 @@ async def test_a_blocked_chat_is_a_422_and_never_reaches_the_model():
         ("MODEL_UNAVAILABLE", 503),
         ("MODEL_NOT_FOUND", 502),  # a setup problem, not a wait
         ("PROVIDER_AUTH_FAILED", 502),
+        ("PROVIDER_KEY_MISSING", 422),
+        ("PROVIDER_URL_NOT_ALLOWED", 422),
         ("BAD_MODEL_ANSWER", 502),
     ],
 )
