@@ -11,6 +11,8 @@ from reconix_ai.providers.base_url import BaseUrlError, check_base_url
         "http://ollama:11434",
         "http://[::1]:11434",
         "https://models.example.com",
+        "https://llm.example.com/v1",  # where OpenAI-compatible servers answer
+        "http://127.0.0.1:8000/v1/",
     ],
 )
 def test_allowed(url: str) -> None:
@@ -26,6 +28,12 @@ def test_allowed(url: str) -> None:
         "https://metadata.google.internal",
         "https://user:pass@models.example.com",
         "http://127.0.0.1:11434/admin",  # path tricks
+        "https://llm.example.com/v1/admin",
+        "https://llm.example.com/v2",
+        "https://llm.example.com/v\t1",  # a tab urlsplit() would drop
+        "https://llm.example.com\n/v1",
+        "https://metadata.google.internal./",  # trailing dot
+        "https://[fd00:ec2::254]/v1",  # AWS IPv6 metadata
         "http://127.0.0.1:11434/?x=1",
         "http://127.0.0.1:11434/#frag",
         "file:///etc/passwd",

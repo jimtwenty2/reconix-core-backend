@@ -47,6 +47,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # The report PDF is drawn with WeasyPrint, which needs Pango.
+      - run: sudo apt-get update && sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0
       - run: uv sync --frozen
       - run: uv run pytest
         working-directory: services/api
@@ -57,6 +59,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # WeasyPrint draws the PDF report with Pango.
+      - run: sudo apt-get update && sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0
       - run: uv sync --frozen
       - run: uv run pytest
         working-directory: services/ai

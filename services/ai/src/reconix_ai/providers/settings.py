@@ -13,6 +13,8 @@ DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 # The built-in model, created from services/ai/models/Modelfile.
 RECONIX_MODEL_NAME = "reconix"
 DEFAULT_TIMEOUT_SECONDS = 120
+# The longest answer one call may write. A plan or an analysis fits well under it.
+DEFAULT_MAX_TOKENS = 2000
 
 
 class ProviderType(StrEnum):
@@ -33,6 +35,7 @@ class ProviderConfig:
     base_url: str | None = None  # empty for the built-in provider
     api_key: str | None = field(default=None, repr=False)  # never printed
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
+    max_tokens: int = DEFAULT_MAX_TOKENS
 
 
 def reconix_provider() -> ProviderConfig:

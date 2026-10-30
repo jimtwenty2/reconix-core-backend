@@ -21,6 +21,8 @@ from reconix_api.core.interfaces import (
     AgentResponse,
     ApprovedScope,
     AskAgent,
+    FindingInput,
+    ReportInput,
 )
 
 OpenGraph = Callable[[], AbstractAsyncContextManager[CompiledStateGraph]]
@@ -32,18 +34,32 @@ AGENT_ERROR_STATUS = {
     "TASK_NOT_SUPPORTED": 422,
     "RUN_IS_WAITING": 409,
     "RUN_NOT_WAITING": 409,
+    "STEP_LIMIT": 422,  # the run stopped itself
+    "TOKEN_BUDGET": 422,
+    "MODEL_UNAVAILABLE": 503,  # the model is down: try again later
+    # The provider's settings are wrong: fix them on the provider, then ask again.
+    "PROVIDER_KEY_MISSING": 422,
+    "PROVIDER_URL_MISSING": 422,
+    "PROVIDER_URL_NOT_ALLOWED": 422,
+    "NO_FINDINGS": 422,
+    "TOO_MANY_FINDINGS": 422,
+    "DUPLICATE_FINDING": 422,
+    "FINDING_WITHOUT_CODE": 422,
+    "NO_REPORT_DATA": 422,
 }
 
 
 @dataclass(frozen=True)
 class PlanInput:
-    """The fields the agent reads for PLAN and SUGGEST."""
+    """The fields the agent reads for PLAN, SUGGEST, ANALYZE and REPORT."""
 
     task: str
     assessment_id: UUID
     scope: ApprovedScope
     messages: list[str]
     tool_results: list[str]
+    findings: list[FindingInput]
+    report: ReportInput | None
 
 
 def postgres_graph(database_url: str) -> OpenGraph:
@@ -122,6 +138,8 @@ def plan_input(request: AgentRequest) -> PlanInput:
         scope=request.scope,
         messages=person_messages,
         tool_results=list(request.tool_results),
+        findings=list(request.findings),
+        report=request.report,
     )
 
 

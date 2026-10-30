@@ -52,7 +52,7 @@ async def approve(
 
 
 @router.post("/{approval_id}/reject")
-def reject(
+async def reject(
     approval_id: UUID,
     body: ApprovalDecision,
     db: Db,
@@ -60,6 +60,6 @@ def reject(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> ApprovalOut:
-    return decisions.reject(
-        db, interfaces.write_audit, operator, settings.approval_ttl_minutes, approval_id, body
+    return await decisions.reject(
+        db, interfaces, operator, settings.approval_ttl_minutes, approval_id, body
     )

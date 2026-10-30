@@ -20,26 +20,49 @@ LITELLM_ENV = {
     # Debug logs would print the model's raw answer before it is masked.
     "LITELLM_LOG": "ERROR",
 }
+# LiteLLM falls back to these when a call gives no address or key, which would send a
+# provider key to an address check_base_url() never saw, or a host's key to a server
+# the operator entered. Reconix keys and addresses come only from llm_providers.
+PROVIDER_ENV = [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_API_BASE",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_API_BASE",
+    "ANTHROPIC_BASE_URL",
+    "DEEPSEEK_API_KEY",
+    "DEEPSEEK_API_BASE",
+]
 if "litellm" in sys.modules:
     raise RuntimeError("Import reconix_ai.providers before litellm, so its settings apply.")
 os.environ.update(LITELLM_ENV)
+for name in PROVIDER_ENV:
+    os.environ.pop(name, None)
 
 import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
 from reconix_ai.harness import mask_secrets  # noqa: E402
-from reconix_ai.harness.masking import label  # noqa: E402
 from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
 litellm.suppress_debug_info = True  # no "Give Feedback" banner on every error
 litellm.turn_off_message_logging = True
 
-# How LiteLLM names each provider type. The other 4 types come with task 5.
+# How LiteLLM names each provider type.
 LITELLM_PREFIX = {
     ProviderType.RECONIX: "ollama_chat",
     ProviderType.OLLAMA: "ollama_chat",
+    ProviderType.OPENAI: "openai",
+    ProviderType.ANTHROPIC: "anthropic",
+    ProviderType.DEEPSEEK: "deepseek",
+    ProviderType.OPENAI_API_COMPATIBLE: "openai",  # any server that speaks the OpenAI API
 }
+NO_KEY = "none"  # sent instead of an empty key, so LiteLLM never looks one up itself
+# Ollama runs on this computer (or the compose service) and needs no key.
+LOCAL_TYPES = {ProviderType.RECONIX, ProviderType.OLLAMA}
+# The 3 cloud services: their own address unless one is set, and always a key.
+CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
 
 
 @dataclass(frozen=True)
@@ -76,6 +99,7 @@ async def complete(
     """
     model = litellm_model(config)
     base_url = checked_base_url(config)
+    check_key(config)
     masked_messages, masked_count = mask_messages(messages)
     failure = None
     try:
@@ -83,8 +107,9 @@ async def complete(
             model=model,
             messages=masked_messages,
             api_base=base_url,
-            api_key=config.api_key,
+            api_key=config.api_key or NO_KEY,
             timeout=config.timeout_seconds,
+            max_tokens=config.max_tokens,
             response_format={"type": "json_object"} if json_answer else None,
         )
     except openai.OpenAIError as error:
@@ -129,8 +154,18 @@ def litellm_model(config: ProviderConfig) -> str:
     return f"{prefix}/{config.model_name}"
 
 
-def checked_base_url(config: ProviderConfig) -> str:
-    base_url = config.base_url or ollama_url()
+def checked_base_url(config: ProviderConfig) -> str | None:
+    """The address to call, checked. None means the cloud service's own address, which
+    LiteLLM knows; a custom OpenAI-compatible server must give one."""
+    base_url = config.base_url
+    if not base_url and config.provider_type in LOCAL_TYPES:
+        base_url = ollama_url()
+    if not base_url:
+        if config.provider_type == ProviderType.OPENAI_API_COMPATIBLE:
+            raise ProviderError(
+                "PROVIDER_URL_MISSING", "An OpenAI-compatible provider needs its address."
+            )
+        return None
     try:
         check_base_url(base_url)
     except BaseUrlError as error:
@@ -138,15 +173,19 @@ def checked_base_url(config: ProviderConfig) -> str:
     return base_url
 
 
+def check_key(config: ProviderConfig) -> None:
+    if config.provider_type in CLOUD_TYPES and not config.api_key:
+        raise ProviderError(
+            "PROVIDER_KEY_MISSING", f"The {config.provider_type} provider needs an API key."
+        )
+
+
 def provider_error(error: Exception, config: ProviderConfig) -> ProviderError:
-    """A clear, masked error for the API to show."""
-    reason = str(error)
-    if config.api_key:
-        # The exact key first: a provider may echo back a key of any shape.
-        reason = reason.replace(config.api_key, label("api_key"))
-    reason, _ = mask_secrets(reason)
+    """A clear error for the API to show. The provider's own text never goes out: it can
+    carry the endpoint URL, the request or an echoed key, so only fixed words are used."""
+    model = f"{config.provider_type} model {config.model_name}"
     if isinstance(error, litellm.exceptions.NotFoundError):
-        return ProviderError("MODEL_NOT_FOUND", f"The model was not found: {reason}")
+        return ProviderError("MODEL_NOT_FOUND", f"The {model} was not found. Pull or create it.")
     if isinstance(error, litellm.exceptions.AuthenticationError):
-        return ProviderError("PROVIDER_AUTH_FAILED", f"The provider refused the key: {reason}")
-    return ProviderError("MODEL_UNAVAILABLE", f"The model could not answer: {reason}")
+        return ProviderError("PROVIDER_AUTH_FAILED", f"The {model} refused the API key.")
+    return ProviderError("MODEL_UNAVAILABLE", f"The {model} could not answer. Is it running?")

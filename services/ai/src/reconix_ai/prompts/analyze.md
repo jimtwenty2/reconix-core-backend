@@ -19,7 +19,7 @@ Answer with this JSON object:
 {"summary": "<two or three sentences for the person: what matters most and why>",
  "findings": [
    {"code": "<the finding's code, for example RCX-001>",
-    "description": "<part 1>",
+    "explanation": "<part 1>",
     "related": ["<code of a related finding>", "..."],
     "severity_status": "<part 3>",
     "cvss_score": <a number from 0.0 to 10.0, or null>,
@@ -29,8 +29,7 @@ Answer with this JSON object:
     "cwe_ids": ["CWE-89", "..."],
     "owasp_id": ["A03:2021", "..."],
     "cve_ids": ["CVE-2021-44228", "..."],
-    "next_step": {"title": "<what it confirms>",
-                  "tool": "<one of the allowed tools>",
+    "next_step": {"tool": "<one of the allowed tools>",
                   "target": "<one target from the approved scope>",
                   "arguments": ["<option>", "<value>", "..."]},
     "unsure": "<what you are not sure about, or an empty string>"}

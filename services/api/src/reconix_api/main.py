@@ -6,11 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from reconix_api.api import (
     actions,
+    agent_runs,
+    analysis,
     approvals,
     assessments,
     evidence,
     findings,
+    llm_providers,
     messages,
+    plans,
+    reports,
     scopes,
     sessions,
     system,
@@ -56,9 +61,14 @@ def create_app(
         scopes,
         assessments,
         actions,
+        plans,
+        analysis,
+        agent_runs,
+        reports,
         approvals,
         findings,
         evidence,
+        llm_providers,
     ]
     for module in routers:
         app.include_router(module.router, prefix=API_PREFIX)

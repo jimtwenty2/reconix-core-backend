@@ -15,7 +15,15 @@ CHANGES = [
     ("POST", f"/approvals/{ANY_ID}/approve"),
     ("POST", f"/approvals/{ANY_ID}/reject"),
     ("POST", f"/assessments/{ANY_ID}/actions"),
+    ("POST", f"/assessments/{ANY_ID}/plan"),
+    ("POST", f"/assessments/{ANY_ID}/analyze"),
+    ("POST", f"/assessments/{ANY_ID}/reports"),
+    ("POST", f"/reports/{ANY_ID}/review-requests"),
     ("POST", f"/sessions/{ANY_ID}/messages"),
+    ("POST", "/llm-providers"),
+    ("PATCH", f"/llm-providers/{ANY_ID}"),
+    ("DELETE", f"/llm-providers/{ANY_ID}"),
+    ("POST", f"/llm-providers/{ANY_ID}/activate"),
 ]
 
 

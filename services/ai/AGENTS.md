@@ -25,7 +25,7 @@ Mon 2 Nov.** After Tue 17 Nov (feature freeze), only bug fixes and prompt tuning
 | `providers/` | The only place that calls a model, through LiteLLM (`client.py`); the 6 provider types (`settings.py`); safe base URLs (`base_url.py`); embeddings |
 | `knowledge/` | Ingest (LlamaIndex), Qdrant hybrid search (BGE-M3 + keywords), `search_knowledge(query, filters)` |
 | `analysis/` | The 8 parts of workflow v5, severity and OWASP mapping (empty, to build) |
-| `reports/` | Report text and PDF, DOCX, JSON files (empty, to build) |
+| `reports/` | Report text (`answers.py`) and the PDF, DOCX and JSON files (`files.py`, `report.html`) |
 | `memory/` | Accepted findings in Qdrant (empty, to build) |
 | `harness/` | Safety checks, masking, audit log (see below) |
 
@@ -84,14 +84,14 @@ Keep this table true; update the row in the PR that changes it.
 |---|---|---|
 | Package with LiteLLM in one place, RECONIX on Ollama by default | 1 | Done; base model in `Modelfile` is a placeholder until the speed check |
 | Qdrant hybrid search, LlamaIndex ingest, `search_knowledge()` | 1 | Done |
-| Agent: understand, find, plan, suggest, wait; progress in Postgres | 1 | Done; not yet wired into the API (`ask_agent` is a stub in the API's `core/wiring.py`) |
+| Agent: understand, find, plan, suggest, wait; progress in Postgres | 1 | Done; wired into the API as `ask_agent` (`core/agent.py`) |
 | Prompts and agent rules as Markdown; tool specs copied from the Kali repo | 1 | Done |
 | Harness: 5 checks, pipeline, masking, audit log | 1 | Done |
 | ReflAct step (up to 5 times, read-only tools) | 2 | To do |
-| The 8 parts of the workflow v5 analysis | 2 | To do (`analysis/` is empty) |
-| Use the active provider; all 6 provider types | 2 | Types and client done; reading the active provider from the API to do |
-| Step and token limits, one retry, clear error when the model is down | 2 | To do |
-| Report text and PDF, DOCX, JSON files | 2 | To do (`reports/` is empty) |
+| The 8 parts of the workflow v5 analysis | 2 | Done: ANALYZE (find → analyze, no wait); `analysis/answers.py` enforces the 8 rules, and `check()` drops a blocked next step. Tested on 10 saved tool outputs with a scripted model; not yet tried on the live model |
+| Use the active provider; all 6 provider types | 2 | Client done: all 6 types call through LiteLLM (cloud types need a key; OpenAI-compatible needs its address, `/v1` allowed). The API still sends only RECONIX until the `/llm-providers` endpoints pick the active row |
+| Step and token limits, one retry, clear error when the model is down | 2 | Done: a bad answer is asked once more; `max_tokens` 2,000 per call; no call starts once an ask has used 20,000 tokens (the last call may go past it); 25 steps per ask; a model that is down is a clear `MODEL_UNAVAILABLE` (503 in the API), not retried |
+| Report text and PDF, DOCX, JSON files | 2 | Done: REPORT writes the executive summary and methodology; `reports/files.py` makes the 3 files from the locked copy. PDF needs Pango (WeasyPrint) |
 | Accepted findings in Qdrant | 2 | To do (`memory/` is empty) |
 | Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety done; the rest to do |
 | 20 eval questions, top-3 score | 3 | To do (`tests/evals/` is empty) |
