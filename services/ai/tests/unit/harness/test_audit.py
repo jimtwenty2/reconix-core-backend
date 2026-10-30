@@ -10,11 +10,12 @@ from uuid import UUID
 
 import pytest
 
-from reconix_ai.harness.audit import audit_line, make_audit_writer
+from reconix_ai.harness.audit import audit_line, make_audit_writer, read_timeline
 
 ASSESSMENT_ID = UUID("11111111-1111-1111-1111-111111111111")
 SESSION_ID = UUID("22222222-2222-2222-2222-222222222222")
 AT = datetime(2026, 10, 26, 14, 0, tzinfo=UTC)
+OTHER_ID = UUID("33333333-3333-3333-3333-333333333333")
 
 
 class Role(StrEnum):
@@ -147,3 +148,159 @@ def test_writes_from_many_threads_do_not_mix(tmp_path: Path) -> None:
     for thread in threads:
         thread.join()
     assert len(read_lines(path)) == 400
+
+
+# --- read_timeline ---------------------------------------------------------------------
+
+
+def write_events(path: Path, *events: Event) -> None:
+    write_audit = make_audit_writer(path)
+    for event in events:
+        write_audit(event)
+
+
+def test_timeline_keeps_only_one_assessment(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(
+        path,
+        Event(event_type="ACTION_ALLOWED"),
+        Event(event_type="OTHER", assessment_id=OTHER_ID),
+        Event(event_type="SESSION_STARTED", assessment_id=None),
+        Event(event_type="ACTION_BLOCKED"),
+    )
+    timeline = read_timeline(path, ASSESSMENT_ID)
+    assert [event["event_type"] for event in timeline] == ["ACTION_ALLOWED", "ACTION_BLOCKED"]
+
+
+def test_timeline_record_has_the_written_fields(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(path, Event(details={"reason": "TARGET_OUT_OF_SCOPE"}))
+    assert read_timeline(path, str(ASSESSMENT_ID)) == [
+        json.loads(audit_line(Event(details={"reason": "TARGET_OUT_OF_SCOPE"})))
+    ]
+
+
+def test_timeline_is_oldest_first(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    later = datetime(2026, 10, 26, 15, 0, tzinfo=UTC)
+    write_events(path, Event(event_type="LATER", at=later), Event(event_type="EARLIER"))
+    assert [event["event_type"] for event in read_timeline(path, ASSESSMENT_ID)] == [
+        "EARLIER",
+        "LATER",
+    ]
+
+
+def test_same_time_keeps_file_order(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(path, *(Event(event_type=f"E{number}") for number in range(5)))
+    assert [event["event_type"] for event in read_timeline(path, ASSESSMENT_ID)] == [
+        f"E{number}" for number in range(5)
+    ]
+
+
+def test_naive_and_aware_times_sort_together(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(
+        path,
+        Event(event_type="LATER", at=datetime(2026, 10, 26, 15, 0)),
+        Event(event_type="EARLIER"),
+    )
+    assert [event["event_type"] for event in read_timeline(path, ASSESSMENT_ID)] == [
+        "EARLIER",
+        "LATER",
+    ]
+
+
+def test_timeline_filters_event_types(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(
+        path,
+        Event(event_type="ACTION_ALLOWED"),
+        Event(event_type="APPROVAL_GRANTED"),
+        Event(event_type="ACTION_BLOCKED"),
+    )
+    timeline = read_timeline(
+        path, ASSESSMENT_ID, event_types=["ACTION_BLOCKED", "APPROVAL_GRANTED"]
+    )
+    assert [event["event_type"] for event in timeline] == ["APPROVAL_GRANTED", "ACTION_BLOCKED"]
+
+
+def test_limit_keeps_the_newest_lines(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(path, *(Event(event_type=f"E{number}") for number in range(5)))
+    assert [event["event_type"] for event in read_timeline(path, ASSESSMENT_ID, limit=2)] == [
+        "E3",
+        "E4",
+    ]
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+def test_limit_must_be_positive(tmp_path: Path, limit: int) -> None:
+    with pytest.raises(ValueError):
+        read_timeline(tmp_path / "audit.jsonl", ASSESSMENT_ID, limit=limit)
+
+
+def test_missing_log_is_an_empty_timeline(tmp_path: Path) -> None:
+    assert read_timeline(tmp_path / "nothing-yet.jsonl", ASSESSMENT_ID) == []
+
+
+def test_broken_lines_are_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(path, Event(event_type="FIRST"))
+    record = json.loads(audit_line(Event()))
+    bad_lines = [
+        "",
+        "not json",
+        '{"event_type": "HALF',
+        "[1, 2]",
+        "42",
+        json.dumps({**record, "at": "yesterday"}),
+        json.dumps({**record, "details": "not a dict"}),
+        json.dumps({key: value for key, value in record.items() if key != "role"}),
+        "\xff\xfe",
+    ]
+    with path.open("a", encoding="utf-8", errors="surrogateescape") as file:
+        file.write("\n".join(bad_lines) + "\n")
+    with path.open("ab") as file:
+        file.write(b"\xff\xfe broken bytes\n")
+    write_events(path, Event(event_type="LAST"))
+    assert [event["event_type"] for event in read_timeline(path, ASSESSMENT_ID)] == [
+        "FIRST",
+        "LAST",
+    ]
+
+
+def test_extra_fields_in_a_line_are_dropped(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    record = {**json.loads(audit_line(Event())), "raw_output": "anything"}
+    path.write_text(json.dumps(record) + "\n")
+    assert "raw_output" not in read_timeline(path, ASSESSMENT_ID)[0]
+
+
+def test_timeline_masks_a_line_added_by_hand(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    record = json.loads(audit_line(Event()))
+    record["actor"] = "password=hunter22"
+    record["details"] = {"token": "abcdefgh1234", "note": "password=hunter22"}
+    path.write_text(json.dumps(record) + "\n")
+    text = json.dumps(read_timeline(path, ASSESSMENT_ID))
+    assert "hunter22" not in text
+    assert "abcdefgh1234" not in text
+
+
+def test_timeline_does_not_change_masked_lines(tmp_path: Path) -> None:
+    path = tmp_path / "audit.jsonl"
+    write_events(path, Event(details={"arguments": ["--auth", "password=hunter22"]}))
+    assert read_timeline(path, ASSESSMENT_ID)[0]["details"]["arguments"] == [
+        "--auth",
+        "password=[MASKED:password]",
+    ]
+
+
+def test_timeline_refuses_a_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "elsewhere.jsonl"
+    write_events(target, Event())
+    path = tmp_path / "audit.jsonl"
+    path.symlink_to(target)
+    with pytest.raises(OSError):
+        read_timeline(path, ASSESSMENT_ID)

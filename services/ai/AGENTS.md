@@ -93,7 +93,7 @@ Keep this table true; update the row in the PR that changes it.
 | Step and token limits, one retry, clear error when the model is down | 2 | To do |
 | Report text and PDF, DOCX, JSON files | 2 | To do (`reports/` is empty) |
 | Accepted findings in Qdrant | 2 | To do (`memory/` is empty) |
-| Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety done; the rest to do |
+| Harness: disclosure, settings approvals, provider URL safety, timeline reader | 2 | Provider URL safety and timeline reader (`audit.read_timeline`) done; the rest to do |
 | 20 eval questions, top-3 score | 3 | To do (`tests/evals/` is empty) |
 | Hypothesis and hard-case tests for scope and command checks | 3 | To do |
 | Time one full step on the demo laptop | 3 | To do |
