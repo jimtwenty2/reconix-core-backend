@@ -1,7 +1,8 @@
 """Fake of ask_agent: plans one nmap step on the first allowed IP range, then waits.
 
-Like the real agent, it answers a resume with the person's decision and no new step, and
-gives the same errors: only PLAN and SUGGEST, only the built-in RECONIX provider, one
+ANALYZE gives back each finding unchanged, marked for a person to decide. Like the
+real agent, it answers a resume with the person's decision and no new step, and gives
+the same errors: only PLAN, SUGGEST and ANALYZE, only the built-in RECONIX provider, one
 decision per waiting run, and a decision only for the action the run waits on.
 """
 
@@ -13,12 +14,14 @@ from reconix_api.core.interfaces import (
     AgentRequest,
     AgentResponse,
     AgentTask,
+    FindingAnalysis,
+    FindingInput,
     PlanStep,
     RiskLevel,
     ToolName,
 )
 
-SUPPORTED_TASKS = {AgentTask.PLAN, AgentTask.SUGGEST}
+SUPPORTED_TASKS = {AgentTask.PLAN, AgentTask.SUGGEST, AgentTask.ANALYZE}
 
 
 class FakeAgent:
@@ -36,7 +39,19 @@ class FakeAgent:
             raise ApiError(422, "TASK_NOT_SUPPORTED", f"The agent cannot do {request.task} yet.")
         if request.agent_run_id in self.waiting:
             raise ApiError(409, "RUN_IS_WAITING", "This run is waiting for a person to decide.")
+        if request.task == AgentTask.ANALYZE:
+            return self.analyze(request)
         return self.plan(request)
+
+    def analyze(self, request: AgentRequest) -> AgentResponse:
+        if not request.findings:
+            raise ApiError(422, "NO_FINDINGS", "There are no findings to analyze.")
+        return AgentResponse(
+            text="Fake analysis.",
+            analysis_summary="Fake analysis.",
+            analysis=[unsure_analysis(finding) for finding in request.findings],
+            agent_run_id=request.agent_run_id,
+        )
 
     def plan(self, request: AgentRequest) -> AgentResponse:
         run_id = request.agent_run_id
@@ -67,3 +82,21 @@ class FakeAgent:
         return AgentResponse(
             text=f"Fake run {resume.decision}.", agent_run_id=run_id, decision=resume.decision
         )
+
+
+def unsure_analysis(finding: FindingInput) -> FindingAnalysis:
+    return FindingAnalysis(
+        code=finding.code,
+        explanation=finding.title,
+        related=[],
+        severity_status=finding.severity_status,
+        cvss_score=finding.cvss_score,
+        evidence="",
+        impact="",
+        remediation="",
+        cwe_ids=finding.cwe_ids,
+        owasp_id=finding.owasp_id,
+        cve_ids=finding.cve_ids,
+        next_step=None,
+        unsure="Fake analysis: a person decides.",
+    )

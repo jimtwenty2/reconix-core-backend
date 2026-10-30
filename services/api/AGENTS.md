@@ -83,7 +83,7 @@ Keep this table true; update the row in the PR that changes it.
 | Models + one Alembic migration | 1 | Done: all 16 tables, upgrade and downgrade work, no model drift |
 | Sessions, messages, scopes (draft, edit, submit, approve) | 1 | Done |
 | `POST /assessments/{id}/actions`, approvals, tool run through MCP, findings saved | 1 | Done |
-| `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST and resume, built-in RECONIX provider only (`core/agent.py`) |
+| `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST, ANALYZE and resume, built-in RECONIX provider only (`core/agent.py`) |
 | Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | To do |
 | Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done |
 | 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | To do |

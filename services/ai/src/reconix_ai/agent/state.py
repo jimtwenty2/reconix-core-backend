@@ -5,7 +5,7 @@ nothing secret: messages and tool results are masked when they come in, and the
 provider settings (with the API key) are passed beside the state, never in it.
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 from typing import Any, Protocol, TypedDict
 
@@ -19,7 +19,7 @@ SCOPE_LISTS = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_t
 
 
 class AgentState(TypedDict, total=False):
-    task: str  # PLAN or SUGGEST
+    task: str  # PLAN, SUGGEST or ANALYZE
     assessment_id: str
     scope: dict[str, Any]  # the approved scope, see scope_to_dict()
     messages: list[str]  # masked chat, oldest first
@@ -34,6 +34,9 @@ class AgentState(TypedDict, total=False):
     risk: str | None
     blocked: list[dict[str, Any]]  # see contracts.BlockedStep
     decision: str | None  # APPROVED or REJECTED
+    findings: list[dict[str, Any]]  # ANALYZE: masked, see contracts.FindingInput
+    analysis_summary: str
+    analysis: list[dict[str, Any]]  # see contracts.FindingAnalysis
     # Totals for the current ask; ask_agent() starts them again.
     prompt_tokens: int
     completion_tokens: int
@@ -92,6 +95,28 @@ def scope_from_dict(data: dict[str, Any]) -> AgentScope:
 
 def parse_time(text: str | None) -> datetime | None:
     return datetime.fromisoformat(text) if text else None
+
+
+def masked_findings(findings: list[Any]) -> tuple[list[dict[str, Any]], int]:
+    """The findings as plain dicts, every text in them masked then cut, lists too."""
+    kept, total = [], 0
+    for finding in findings:
+        row = asdict(finding) if is_dataclass(finding) else dict(finding)
+        for name, value in row.items():
+            if isinstance(value, str):
+                row[name], count = masked_cut(value)
+                total += count
+            elif isinstance(value, list):
+                texts = [masked_cut(item) for item in value if isinstance(item, str)]
+                row[name] = [text for text, _ in texts]
+                total += sum(count for _, count in texts)
+        kept.append(row)
+    return kept, total
+
+
+def masked_cut(text: str) -> tuple[str, int]:
+    masked, count = mask_secrets(text)
+    return masked[:MAX_INPUT_CHARS], count
 
 
 def masked_texts(texts: list[str], keep: int) -> tuple[list[str], int]:
