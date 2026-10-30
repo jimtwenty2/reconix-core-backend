@@ -63,7 +63,8 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
   `add-approval-flow` skill.
 - **Scope flow:** submitting a scope creates a `scope` approval and a `DRAFT` assessment with a code
   like `RCX-2026-0001`; approving it makes the assessment `ACTIVE`.
-- **Tool runs:** after approval, check the action did not change, save a new tool run, sign a
+- **Tool runs:** after approval, check the action did not change and run `ensure_can_act` and
+  `check()` again (S2; a refusal ends the action and the approval), save a new tool run, sign a
   one-time job token, call the tool, and save the masked output, the masked-secret count, the
   request count and the final status. Then hand the output to `parsers/` and `findings/`.
 - **Tools** are called only through `clients/mcp.py` with a fresh one-time job token
