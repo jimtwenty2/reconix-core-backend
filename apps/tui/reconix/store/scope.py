@@ -15,6 +15,7 @@ from .errors import StoreValidationError
 from .policy import (
     network_entry, request_reason,
 )
+from .tools import known_tool
 from .transcript import add_activity, add_chat
 
 
@@ -51,6 +52,9 @@ def approve_scope() -> ScopeManifest:
 
 MAX_TIME_LIMIT = 480     # 8 hours
 HTTP_METHODS = ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+# scope kind -> the methods a scope of that kind may allow (the templates' own words)
+KIND_METHODS = {"web_url": HTTP_METHODS, "api": HTTP_METHODS,
+                "network": ("TCP connect",), "source": ("read",)}
 
 
 def _clean_list(values) -> list:
@@ -68,24 +72,26 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
                tools=None, allowed_ports=None) -> ScopeManifest:
     """Apply the operator's scope edits before approval. Only the fields given change.
 
-    Validates each field for the scope's kind and raises StoreValidationError on bad input.
-    The policy engine then enforces exactly what was approved.
+    Validates every field for the scope's kind first and raises StoreValidationError on bad
+    input; only when all of them pass is the scope changed (all or nothing). The policy
+    engine then enforces exactly what was approved.
     """
     scope = get_scope()
     if scope is None or scope.status == "APPROVED" \
             or lists.current().run.waiting_gate != GATE_SCOPE:
         raise StoreValidationError("The scope can only be edited while it waits for approval.")
+    changes = {}
 
     if allowed_methods is not None:
+        allowed = {m.casefold(): m for m in KIND_METHODS.get(scope.kind, ())}
         methods = _clean_list(allowed_methods)
         if not methods:
             raise StoreValidationError("Keep at least one allowed method.")
-        if scope.kind in ("web_url", "api"):
-            methods = [m.upper() for m in methods]
-            bad = [m for m in methods if m not in HTTP_METHODS]
-            if bad:
-                raise StoreValidationError(f"Not an HTTP method: {', '.join(bad)}.")
-        scope.allowed_methods = methods
+        bad = [m for m in methods if m.casefold() not in allowed]
+        if bad:
+            raise StoreValidationError(f"Not an allowed method: {', '.join(bad)} (use "
+                                       f"{', '.join(allowed.values())}).")
+        changes["allowed_methods"] = [allowed[m.casefold()] for m in methods]
 
     if excluded_paths is not None:
         paths = _clean_list(excluded_paths)
@@ -98,7 +104,7 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
             if bad:
                 raise StoreValidationError(
                     f"Exclude a host, range or host:port (e.g. 10.0.0.5:22): {', '.join(bad)}.")
-        scope.excluded_paths = paths
+        changes["excluded_paths"] = paths
 
     if allowed_ports is not None:
         ports = []
@@ -106,12 +112,13 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
             item = str(item).strip()
             if not item:
                 continue
-            if not item.isdigit() or not 1 <= int(item) <= 65535:
-                raise StoreValidationError(f"Not a valid port: {item}.")
-            ports.append(int(item))
+            if not (item.isascii() and item.isdigit()) or not 1 <= int(item) <= 65535:
+                raise StoreValidationError(f"Not a valid port (1–65535): {item}.")
+            if int(item) not in ports:
+                ports.append(int(item))
         if not ports:
             raise StoreValidationError("Keep at least one allowed port.")
-        scope.allowed_ports = ports
+        changes["allowed_ports"] = ports
 
     if time_limit_minutes is not None:
         try:
@@ -121,14 +128,19 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
         if not 1 <= minutes <= MAX_TIME_LIMIT:
             raise StoreValidationError(
                 f"Keep the time limit between 1 and {MAX_TIME_LIMIT} minutes.")
-        scope.time_limit_minutes = minutes
+        changes["time_limit_minutes"] = minutes
 
     if tools is not None:
         cleaned = _clean_list(tools)
         if not cleaned:
             raise StoreValidationError("Keep at least one tool.")
-        scope.tools = cleaned
+        unknown = [t for t in cleaned if not known_tool(t)]
+        if unknown:
+            raise StoreValidationError(f"Unknown tool: {', '.join(unknown)}.")
+        changes["tools"] = _clean_list(known_tool(t) for t in cleaned)
 
+    for field, value in changes.items():      # every field passed: now change the scope
+        setattr(scope, field, value)
     add_activity("USER", "Scope edited", tone="ok")
     add_chat("text", "reconix", "Scope updated. Review the manifest and approve when ready.",
              tone="muted")

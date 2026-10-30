@@ -99,7 +99,7 @@ async def test_edit_manifest_saves_through_the_store(app):
         assert store.get_scope().time_limit_minutes == 45
         shown = str(app.screen.query_one(ScopeManifestView).render())
         assert "Send only GET requests" in shown
-        assert "45" not in shown and "minutes" not in shown     # the time limit isn't shown
+        assert "Time limit: 45 min" in shown
 
 
 async def test_a_bad_edit_shows_the_store_error_and_changes_nothing(app):

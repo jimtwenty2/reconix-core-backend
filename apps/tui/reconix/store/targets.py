@@ -209,9 +209,10 @@ def needs(template_id: str) -> str:
 
 def check_target(template_id: str, text: str) -> ParsedTarget:
     """The target in `text`, validated for `template_id`; raises with what to type instead."""
-    finder = FINDERS.get(template_id)
-    if finder is None:
-        raise StoreValidationError(f"Unknown template {template_id}.")
+    from .templates import get_template      # (imported here: this module stays a leaf)
+
+    get_template(template_id)                 # unknown or not in the demo: refused
+    finder = FINDERS[template_id]
     if not text.strip():
         raise StoreValidationError(needs(template_id))
     found = finder(clean_request(text))

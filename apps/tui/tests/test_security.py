@@ -98,8 +98,9 @@ def _secrets_everywhere_a_report_prints() -> None:
     tools and excluded paths, and a private key stored one evidence entry per line."""
     store.start_run(store.DEMO_REQUEST)
     assert play_until_gate() == "scope"
-    store.edit_scope(tools=["Nuclei", f"api_key={TEST_PASSWORD}"],
-                     excluded_paths=["/admin", f"/backup?token={TEST_PASSWORD}"])
+    store.edit_scope(excluded_paths=["/admin", f"/backup?token={TEST_PASSWORD}"])
+    # edit_scope refuses unknown tools; set them directly so the report's masking is still tested
+    lists.current().scope.tools = ["Nuclei", f"api_key={TEST_PASSWORD}"]
     store.approve_scope()
     run_to_end()
     current = lists.current()
