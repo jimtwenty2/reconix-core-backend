@@ -1,6 +1,48 @@
 {
   "components": {
     "schemas": {
+      "Action": {
+        "description": "One tool run that someone (the agent or a person) wants to do.\n\nArguments are always a list, never one shell string.",
+        "properties": {
+          "arguments": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Arguments",
+            "type": "array"
+          },
+          "finding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Id"
+          },
+          "is_validation": {
+            "default": false,
+            "title": "Is Validation",
+            "type": "boolean"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "tool": {
+            "$ref": "#/components/schemas/ToolName"
+          }
+        },
+        "required": [
+          "tool",
+          "target"
+        ],
+        "title": "Action",
+        "type": "object"
+      },
       "ActionIn": {
         "description": "One tool run. Arguments are a list, never one shell string.",
         "properties": {
@@ -150,6 +192,91 @@
           "BLOCKED"
         ],
         "title": "ActionStatus",
+        "type": "string"
+      },
+      "AgentRunOut": {
+        "properties": {
+          "agent_run_id": {
+            "format": "uuid",
+            "title": "Agent Run Id",
+            "type": "string"
+          },
+          "agent_runs_status": {
+            "$ref": "#/components/schemas/AgentRunStatus"
+          },
+          "assessment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Id"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_run_id",
+          "agent_runs_status",
+          "model_name",
+          "plan",
+          "started_at",
+          "finished_at",
+          "session_id",
+          "assessment_id"
+        ],
+        "title": "AgentRunOut",
+        "type": "object"
+      },
+      "AgentRunStatus": {
+        "enum": [
+          "RUNNING",
+          "WAITING_APPROVAL",
+          "COMPLETED",
+          "FAILED",
+          "CANCELLED"
+        ],
+        "title": "AgentRunStatus",
         "type": "string"
       },
       "ApprovalDecision": {
@@ -440,6 +567,47 @@
         },
         "title": "AssessmentUpdate",
         "type": "object"
+      },
+      "BlockedStep": {
+        "description": "A planned step the harness refused, and why.",
+        "properties": {
+          "blocked_by": {
+            "$ref": "#/components/schemas/CheckName"
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "order",
+          "blocked_by"
+        ],
+        "title": "BlockedStep",
+        "type": "object"
+      },
+      "CheckName": {
+        "description": "The 5 checks, in the order the pipeline runs them.",
+        "enum": [
+          "INPUT",
+          "SCOPE",
+          "COMMAND",
+          "RISK",
+          "LOOP"
+        ],
+        "title": "CheckName",
+        "type": "string"
       },
       "EvidenceOut": {
         "properties": {
@@ -789,6 +957,76 @@
           "actor"
         ],
         "title": "Operator",
+        "type": "object"
+      },
+      "PlanOut": {
+        "description": "A plan and its first step.\n\naction is the step the agent suggested, after the API's own check: BLOCKED,\nrun already (LOW), or waiting for the approval in action.approval_id.",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agent_run": {
+            "$ref": "#/components/schemas/AgentRunOut"
+          },
+          "blocked": {
+            "items": {
+              "$ref": "#/components/schemas/BlockedStep"
+            },
+            "title": "Blocked",
+            "type": "array"
+          },
+          "plan": {
+            "items": {
+              "$ref": "#/components/schemas/PlanStep"
+            },
+            "title": "Plan",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_run",
+          "text"
+        ],
+        "title": "PlanOut",
+        "type": "object"
+      },
+      "PlanStep": {
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Action"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order",
+          "title"
+        ],
+        "title": "PlanStep",
         "type": "object"
       },
       "RiskLevel": {
@@ -2226,6 +2464,55 @@
         ]
       }
     },
+    "/api/v1/assessments/{assessment_id}/plan": {
+      "post": {
+        "description": "The agent plans and suggests one step. The step goes through the same checks as\nany action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id.",
+        "operationId": "start_plan_api_v1_assessments__assessment_id__plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Start Plan",
+        "tags": [
+          "plans"
+        ]
+      }
+    },
     "/api/v1/evidence/{evidence_id}": {
       "get": {
         "operationId": "read_evidence_api_v1_evidence__evidence_id__get",
@@ -2765,6 +3052,59 @@
         "summary": "Read Session",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/agent-runs": {
+      "get": {
+        "description": "Newest first.",
+        "operationId": "list_agent_runs_api_v1_sessions__session_id__agent_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunOut"
+                  },
+                  "title": "Response List Agent Runs Api V1 Sessions  Session Id  Agent Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Agent Runs",
+        "tags": [
+          "agent runs"
         ]
       }
     },

@@ -28,9 +28,16 @@ class FakeAgent:
     def __init__(self) -> None:
         self.requests: list[AgentRequest] = []
         self.waiting: dict[UUID, tuple[UUID, Action]] = {}  # run -> (assessment, action)
+        self.suggest: Action | None = None  # set by a test: the step the next plan suggests
+        self.down = False  # set by a test: the model is not running
+        self.error: Exception | None = None  # set by a test: a bug, not an ApiError
 
     async def ask_agent(self, request: AgentRequest) -> AgentResponse:
         self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        if self.down:
+            raise ApiError(503, "MODEL_UNAVAILABLE", "The RECONIX model could not answer.")
         if request.provider != "RECONIX" or request.model is not None:
             raise ApiError(503, "NOT_READY", "Only the built-in RECONIX provider is ready.")
         if request.resume is not None:
@@ -58,7 +65,9 @@ class FakeAgent:
         if not request.scope.ip_ranges:
             return AgentResponse(text="Nothing in scope to scan.", agent_run_id=run_id)
         target = request.scope.ip_ranges[0].split("/")[0]
-        action = Action(tool=ToolName.NMAP, target=target, arguments=["-sV", "--top-ports", "100"])
+        action = self.suggest or Action(
+            tool=ToolName.NMAP, target=target, arguments=["-sV", "--top-ports", "100"]
+        )
         self.waiting[run_id] = (request.assessment_id, action)
         return AgentResponse(
             text="Start with a service scan.",
