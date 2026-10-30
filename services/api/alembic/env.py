@@ -10,7 +10,8 @@ from reconix_api.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep the app's loggers on: migrations can run in the same process (tests, the app).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

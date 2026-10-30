@@ -133,11 +133,14 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 ### 3. Start the services
 
 Postgres, Qdrant, Ollama and the Kali MCP container. While the API runs on your computer (not in
-Compose), add the dev file so the Kali MCP port is published on `127.0.0.1`:
+Compose), add the dev file: it starts a small relay that publishes the Kali MCP port on `127.0.0.1`
+(`RECONIX_MCP_PORT`, default 8765; change it and `RECONIX_KALI_MCP_URL` if that port is taken):
 
 ```bash
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env up -d
 docker compose -f deploy/docker-compose.yml ps
+# once (and to update): the Kali container has no internet, so download the nuclei templates for it
+docker compose -f deploy/docker-compose.yml --env-file .env run --rm nuclei-templates
 ```
 
 ### 4. Migrate and run the API

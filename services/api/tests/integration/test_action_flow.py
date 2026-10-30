@@ -1,10 +1,14 @@
 """Send action -> check -> (approve) -> tool run, through the API and a real database."""
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 
-from reconix_api.models import Approval
+from reconix_api.core.interfaces import RiskLevel, ToolName
+from reconix_api.models import Action, AgentRun, Approval, ScopeManifest
+from reconix_api.models.enums import AgentRunStatus
+from tests.fakes.fake_core import FAKE_RISK
 from tests.integration.test_scope_flow import draft_and_submit, open_session, scopes_path
 
 SCOPE = {
@@ -176,3 +180,120 @@ def test_unreachable_kali_saves_a_failed_run(db_client, db_app):
     [run] = action["tool_runs"]
     assert run["tool_run_status"] == "FAILED"
     assert "KALI_UNREACHABLE" in run["error"]
+
+
+def test_a_persons_actions_share_one_open_agent_run(db_client, session_factory):
+    headers = open_session(db_client)
+    other = open_session(db_client)  # e.g. the web while the terminal app is open
+    assessment_id = active_assessment(db_client, headers)
+
+    ran = send(
+        db_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+    )
+    blocked = send(db_client, headers, assessment_id, tool="NMAP", target="10.0.0.1")
+    from_other = send(
+        db_client, other, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+    )
+    assert (ran.status_code, blocked.status_code, from_other.status_code) == (201, 422, 201)
+    action_ids = {
+        "ran": ran.json()["action_id"],
+        "blocked": blocked.json()["details"]["action_id"],  # blocked, still filed
+        "other": from_other.json()["action_id"],
+    }
+
+    with session_factory() as db:
+        run_of = {name: db.get(Action, UUID(i)).agent_run_id for name, i in action_ids.items()}
+        runs = db.scalars(select(AgentRun).where(AgentRun.assessment_id == assessment_id)).all()
+        # A run with no plan is stored as SQL NULL, so the "no plan" lookup can find it.
+        without_plan = db.scalar(
+            select(func.count())
+            .select_from(AgentRun)
+            .where(AgentRun.assessment_id == assessment_id, AgentRun.plan.is_(None))
+        )
+    # One open run per session: the first session's two actions share theirs.
+    assert run_of["ran"] == run_of["blocked"] != run_of["other"]
+    assert [run.agent_runs_status for run in runs] == [AgentRunStatus.RUNNING] * 2
+    assert without_plan == 2
+
+
+def test_approving_after_the_assessment_is_cancelled_runs_nothing(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    cancelled = db_client.delete(f"/assessments/{assessment_id}", headers=headers)
+    assert cancelled.json()["assessment_status"] == "CANCELLED"
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "ASSESSMENT_NOT_ACTIVE"
+    assert db_app.state.parts["mcp"].jobs == []
+    saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert (saved["action_status"], saved["tool_runs"]) == ("CANCELLED", [])
+    approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
+    assert (approval["approval_status"], approval["consumed_at"]) == ("EXPIRED", None)
+    assert event_types(db_app).count("ACTION_BLOCKED") == 1
+
+
+def test_approving_runs_the_checks_again(db_client, db_app, session_factory):
+    """The scope changed after the action was sent, so the second check blocks it."""
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    with session_factory() as db:
+        db.execute(
+            update(ScopeManifest)
+            .where(ScopeManifest.assessment_id == assessment_id)
+            .values(allowed_tools=["NMAP", "ZAP"])
+        )
+        db.commit()
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert (body["code"], body["details"]["reason"]) == ("ACTION_BLOCKED", "TOOL_NOT_ALLOWED")
+    assert body["details"]["action_id"] == action["action_id"]
+    assert db_app.state.parts["mcp"].jobs == []
+    saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert (saved["action_status"], saved["tool_runs"]) == ("BLOCKED", [])
+    assert saved["guardrail_report"]["reason"] == "TOOL_NOT_ALLOWED"
+    approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
+    assert (approval["approval_status"], approval["reason"]) == ("EXPIRED", "TOOL_NOT_ALLOWED")
+    assert approval["consumed_at"] is None
+    assert event_types(db_app).count("ACTION_BLOCKED") == 1
+
+    # The approval can no longer be used, so a blocked action never runs later.
+    again = db_client.post(f"/approvals/{action['approval_id']}/approve", json={}, headers=headers)
+    assert again.json()["code"] == "APPROVAL_ALREADY_DECIDED"
+    assert db_app.state.parts["mcp"].jobs == []
+
+
+def test_approving_refuses_an_action_whose_risk_rose(db_client, db_app, monkeypatch):
+    """A MEDIUM approval never runs an action the checks now rate HIGH (no typed target)."""
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    assert action["risk_level"] == "MEDIUM"
+    monkeypatch.setitem(FAKE_RISK, ToolName.NUCLEI, RiskLevel.HIGH)  # e.g. the risk rules changed
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+
+    assert response.status_code == 422
+    details = response.json()["details"]
+    assert (details["blocked_by"], details["reason"], details["risk"]) == (
+        "RISK",
+        "RISK_CHANGED",
+        "HIGH",
+    )
+    assert db_app.state.parts["mcp"].jobs == []

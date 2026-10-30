@@ -24,6 +24,7 @@ from reconix_api.api import (
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_session_factory
 from reconix_api.core.errors import add_error_handlers
+from reconix_api.core.finding_memory import FindingMemory, ai_finding_memory
 from reconix_api.core.interfaces import Interfaces
 from reconix_api.core.knowledge_add_ons import KnowledgeStore
 from reconix_api.core.masking import MaskSecrets
@@ -40,6 +41,7 @@ def create_app(
     session_tokens: SessionTokens | None = None,
     mask_secrets: MaskSecrets | None = None,
     knowledge_store: KnowledgeStore | None = None,
+    finding_memory: FindingMemory | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="Reconix API", version="0.0.0")
@@ -47,6 +49,7 @@ def create_app(
     app.state.session_tokens = session_tokens or SessionTokens()
     app.state.mask_secrets = mask_secrets or build_mask_secrets()
     app.state.knowledge_store = knowledge_store or KnowledgeStore()
+    app.state.finding_memory = finding_memory or ai_finding_memory
 
     # Added last = runs first: the Host check wraps everything, CORS included.
     app.add_middleware(
@@ -87,9 +90,10 @@ app = create_app(
         _session_tokens,
         get_session_factory(),
         _settings.audit_log_path,
-        _settings.mcp_url,
+        _settings.kali_mcp_url,
         _settings.mcp_access_key.get_secret_value(),
         _settings.database_url,
+        _settings,
     ),
     session_tokens=_session_tokens,
 )

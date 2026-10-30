@@ -9,6 +9,7 @@ decision per waiting run, and a decision only for the action the run waits on.
 from uuid import UUID
 
 from reconix_api.core.errors import ApiError
+from reconix_api.core.finding_memory import MemoryUnavailable
 from reconix_api.core.interfaces import (
     Action,
     AgentRequest,
@@ -20,6 +21,7 @@ from reconix_api.core.interfaces import (
     RiskLevel,
     ToolName,
 )
+from reconix_api.schemas.findings import FindingOut
 
 SUPPORTED_TASKS = {AgentTask.PLAN, AgentTask.SUGGEST, AgentTask.ANALYZE, AgentTask.REPORT}
 
@@ -38,8 +40,6 @@ class FakeAgent:
             raise self.error
         if self.down:
             raise ApiError(503, "MODEL_UNAVAILABLE", "The RECONIX model could not answer.")
-        if request.provider != "RECONIX" or request.model is not None:
-            raise ApiError(503, "NOT_READY", "Only the built-in RECONIX provider is ready.")
         if request.resume is not None:
             return self.resume(request)
         if request.task not in SUPPORTED_TASKS:
@@ -122,3 +122,16 @@ def unsure_analysis(finding: FindingInput) -> FindingAnalysis:
         next_step=None,
         unsure="Fake analysis: a person decides.",
     )
+
+
+class FakeFindingMemory:
+    """Stands in for the AI's finding memory (Qdrant): keeps what it was told."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, bool]] = []  # (finding code, accepted)
+        self.down = False  # set by a test: Qdrant or the embedding model is not running
+
+    async def update(self, finding: FindingOut, accepted: bool) -> None:
+        if self.down:
+            raise MemoryUnavailable("KNOWLEDGE_UNAVAILABLE")
+        self.calls.append((finding.code, accepted))

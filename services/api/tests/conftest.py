@@ -13,8 +13,9 @@ def fakes():
 
 @pytest.fixture
 def app(fakes):
-    interfaces, _ = fakes
-    return create_app(interfaces, mask_secrets=fake_mask_secrets)
+    interfaces, parts = fakes
+    memory = parts["memory"].update
+    return create_app(interfaces, mask_secrets=fake_mask_secrets, finding_memory=memory)
 
 
 @pytest.fixture

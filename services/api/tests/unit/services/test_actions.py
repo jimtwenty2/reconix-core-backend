@@ -9,7 +9,14 @@ from reconix_api.core.interfaces import (
     RiskLevel,
     ToolName,
 )
-from reconix_api.services.actions import NextStep, action_hash, ensure_unchanged, next_step
+from reconix_api.services.actions import (
+    NextStep,
+    action_hash,
+    ensure_unchanged,
+    masked_snapshot,
+    next_step,
+)
+from tests.fakes import fake_mask_secrets
 
 ACTION = Action(tool=ToolName.NMAP, target="172.20.0.5", arguments=["-sV"])
 
@@ -59,3 +66,14 @@ def test_blocked_action_is_422():
 )
 def test_allowed_action_next_step(risk, expected):
     assert next_step(CheckResult(decision=Decision.ALLOW, risk=risk)) == expected
+
+
+def test_the_masked_copy_hides_secrets_in_target_and_arguments():
+    """A blocked action is saved as this copy, so a pasted secret never reaches the database."""
+    action = Action(
+        tool=ToolName.GITLEAKS, target="password=hunter22", arguments=["--log-opts", "token=abc123"]
+    )
+    snapshot = masked_snapshot(action, fake_mask_secrets)
+    assert "hunter22" not in snapshot["target"]
+    assert snapshot["arguments"][0] == "--log-opts"
+    assert "abc123" not in snapshot["arguments"][1]
