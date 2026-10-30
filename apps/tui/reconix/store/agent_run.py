@@ -122,8 +122,10 @@ def switch_model() -> bool:
     Returns False if there is no agent yet (nothing to switch) or no active model.
     """
     agent = _agents.get(uid_for(get_assessment()))
+    if agent is None:       # checked first: without an agent the harness may not be installed
+        return False
     settings = _llm_settings()
-    if agent is None or settings is None:
+    if settings is None:
         return False
     agent.set_llm(settings)
     return True
@@ -292,9 +294,9 @@ def record_event(ev: Dict[str, Any]) -> None:
     if kind == "assistant":
         add_chat("text", "reconix", redact(ev.get("text") or ""))
     elif kind == "reasoning":
-        # The model's chain-of-thought, shown muted so it reads as "thinking".
-        thought = redact(f"thinking… {ev.get('text') or ''}")[:2000]
-        add_chat("text", "reconix", thought, tone="muted")
+        # The model's chain-of-thought: a "thought" step, folded into the thinking block.
+        thought = redact(ev.get("text") or "")[:2000]
+        add_chat("thought", "reconix", thought, tone="muted")
     elif kind == "plan":
         steps = ev.get("steps") or []
         set_plan(steps)             # drives the Execution task rows + spinner

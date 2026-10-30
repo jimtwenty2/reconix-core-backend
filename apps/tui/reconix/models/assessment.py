@@ -60,6 +60,8 @@ class Assessment:
     # never in the snapshot or a report; cleared/replaced with the spec (store/openapi.py).
     api_schema_digest: Optional[ApiSchemaDigest] = None
     login_2fa: bool = False         # the target asks for a one-time code after the password
+    plan_author: str = ""           # "" (the template's plan) or the model that drafted it
+    plan_drafting: bool = False     # a model is drafting the plan; Run plan waits for it
     approvals: List[ApprovalRequest] = field(default_factory=list)
     decisions: List[ApprovalDecision] = field(default_factory=list)
     confirmations: List[Confirmation] = field(default_factory=list)

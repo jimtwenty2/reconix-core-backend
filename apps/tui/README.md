@@ -137,7 +137,11 @@ The dashboard has no terminal of its own: run assessments and decide their gates
    action runs (see Approval).
 4. **Execution** — the live run: each task queued, running, paused or done (no
    percentages: a backend can't know how far a scan has got), a spinner with what
-   Reconix is on and for how long, and the live output (time · who · message). The
+   Reconix is on and for how long, and the live output. It reads like Claude's thinking:
+   what you typed and what Reconix tells you stay as lines; the steps between them (tool,
+   policy and AI lines, time · who · message) fold into one block, "✓ Worked for 9s · 7
+   steps · 1 blocked ▸". A running block shows a spinner and its newest step; click a
+   block (or Space on it) to open it, `Ctrl+O` opens or closes them all. The
    output follows new lines while you're at the bottom; scroll up to read and it stays
    put until `End`. It pauses
    when a step needs you: the **target login** opens a secure form, and each **gated
@@ -177,7 +181,7 @@ command suggestions, and `?` shows the keys for the screen you are on.
 | `d` | approval details (scope limits, exact request, audit trail) |
 | `PgUp` / `PgDn` | scroll a long dialog |
 | `Ctrl+R` | search prompt history (on the Start prompt) |
-| `Ctrl+O` | expand / collapse the steps Reconix finished, under its spinner line |
+| `Ctrl+O` | expand / collapse the steps Reconix finished (on Execution: every thinking block; click one to open it) |
 | `End` | Execution: jump to the newest line of the live output and follow it again |
 | `Ctrl+C` | stop the run (on Execution, after a confirmation) |
 | `f` / `s` / `t` | Findings: filter / cycle the sort (severity, validation) / triage |
@@ -243,7 +247,7 @@ LLM_MODEL=your-model-id
 When a `/model` is active, `/assess <target>` (or just typing a target) hands the **whole
 assessment** to the AI agent in `backend/` instead of the scripted demo. The agent plans,
 runs real Kali tools through the MCP server, and analyzes findings; its progress streams
-into the chat and `/audit` (a reasoning model's chain-of-thought shows muted as "thinking…").
+into the chat and `/audit` (a reasoning model's chain-of-thought is a step, folded into the thinking block).
 The agent's LLM is Reconix's active `/model`, so you can switch
 provider or model **mid-assessment** and its conversation context is preserved (one `Agent`
 keeps its history; only the client is swapped). When the agent needs a login it pops a

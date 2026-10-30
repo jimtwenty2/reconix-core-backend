@@ -19,7 +19,7 @@ from .base import ReconixScreen
 from .choice import ChoiceScreen
 from .. import store, theme
 from ..models import GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, Choice, PlanTask
-from ..widgets import RunLog, Spinner
+from ..widgets import RunLog, Spinner, duration_text
 
 LABEL_WIDTH = 30          # a task label's column; a longer label is cut
 
@@ -40,15 +40,6 @@ def run_state() -> str:
     return "running"
 
 
-def duration_text(delta: Optional[timedelta]) -> str:
-    """'45s', '3m 07s', '1h 02m'."""
-    minutes, seconds = divmod(int(delta.total_seconds()) if delta else 0, 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}h {minutes:02d}m"
-    return f"{minutes}m {seconds:02d}s" if minutes else f"{seconds}s"
-
-
 # what an active task says, by run state (anything else is waiting at a gate)
 ACTIVE_DETAIL = {"running": "running…", "stopped": "stopped"}
 
@@ -66,6 +57,10 @@ def task_line(task: PlanTask, state: str) -> Text:
         label = label[:LABEL_WIDTH - 2] + "…"
     return Text.assemble((f"{glyph} ", color), (f"{label:<{LABEL_WIDTH}}", f"bold {text_color}"),
                          (detail, theme.CYAN if task.status == "active" else theme.DIM))
+
+
+# how the live output's last thinking block reads, by run state (a gate pauses it)
+LOG_STATE = {"running": "running", "complete": "done", "stopped": "stopped"}
 
 
 PANEL_TITLE = {
@@ -132,7 +127,7 @@ class ExecutionScreen(ReconixScreen):
                 yield Static(task_line(task, run_state()), id=f"task-{task.key}",
                              classes="task-row")
             yield Spinner("", id="exec-spinner")
-        log = RunLog(id="live-log")
+        log = RunLog(id="live-log", expanded=self.app.activity_expanded)
         log.border_title = "▤ live output"
         yield log
         yield Static(id="exec-hint")
@@ -174,7 +169,7 @@ class ExecutionScreen(ReconixScreen):
                                      f"{'' if counters['findings'] == 1 else 's'}"
                                      f"{self._time_note(state)}")
         log = self.query_one("#live-log", RunLog)
-        log.sync()
+        log.sync(LOG_STATE.get(state, "paused"))
         log.set_status(self._log_status(state))
         self.query_one("#exec-hint", Static).update(hint_line(state))
 

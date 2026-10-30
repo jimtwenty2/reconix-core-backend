@@ -31,8 +31,9 @@ class ActionsMixin:
     def submit_request(self, text: str) -> bool:
         """A line typed at the Start prompt. True when it was accepted (the prompt clears).
 
-        Before a run, a target starts the run, anything else gets a short answer and an
-        empty line does nothing (returns False). During a run the line goes to the assistant;
+        Before a run, a target starts the run, anything else gets a short answer (the
+        active model's, when one is set) and an empty line does nothing (returns False).
+        During a run the line goes to the assistant;
         an empty line reopens what the run waits for. After the run has finished
         (completed or stopped) every line is still a chat turn about that same assessment,
         with its history and context; an empty line opens Findings (or Report when there are
@@ -89,12 +90,22 @@ class ActionsMixin:
         self.refresh_view()
         if result == "started":
             self.controller.resume()
+        elif result == "ask":            # no target, a model active: the model answers
+            self.notify("Thinking…", timeout=2)
+            self.run_worker(lambda: self._llm_answer(text), thread=True,
+                            group="llm", exit_on_error=False)
         return True
 
     def _llm_answer(self, text: str) -> None:
-        """Worker thread: build the model reply, then redraw on the UI thread."""
-        store.llm_answer(text)
+        """Worker thread: stream the model reply (redrawing as it grows), then redraw."""
+        store.llm_answer(text, on_update=lambda: self.call_from_thread(self._redraw_reply))
         self.call_from_thread(self.refresh_view)
+
+    def _redraw_reply(self) -> None:
+        """A streamed reply grew: redraw the screen (no save; the final refresh saves)."""
+        screen = self.flow_screen()
+        if screen is not None:
+            screen.refresh_view()
 
     # --- template and scope (the Template screen) --------------------------------------------
     def open_template(self, template_id: Optional[str] = None) -> None:
@@ -138,7 +149,26 @@ class ActionsMixin:
         if getattr(self, "agent_mode", False):
             self.begin_agent_execution()        # hand off to the harness agent
         else:
+            self._draft_plan()
             self.resume_run()
+
+    def _draft_plan(self) -> None:
+        """With a model active, it drafts the plan's phases in a worker; Run plan waits."""
+        request = store.plan_draft_request()
+        if request is None:
+            return
+
+        def work() -> None:
+            from ..llm import LLMError
+            try:
+                raw = store.fetch_plan_draft(request)
+            except LLMError as exc:
+                self.call_from_thread(store.plan_draft_failed, request, str(exc))
+            else:
+                self.call_from_thread(store.apply_plan_draft, request, raw)
+            self.call_from_thread(self.refresh_view)
+
+        self.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
     def edit_scope(self) -> None:
         self.open_dialog(ScopeEditForm(), lambda _result: self.refresh_view())

@@ -36,6 +36,10 @@ from .openapi import (
     remove_api_spec,
 )
 from .persist import autosave, close_session, web_dashboard_url
+from .ai_plan import (
+    apply_plan_draft, fetch_plan_draft, plan_author, plan_draft_failed, plan_draft_request,
+    plan_drafting,
+)
 from .plan import gated_count, plan_overview
 from .providers import (
     activate, active_llm_settings, active_model, active_remote_label, get_provider,
@@ -55,12 +59,17 @@ from .run import (
 )
 from .scope import (
     approve_scope, blocked_count, check_request, edit_scope, get_scope, is_scope_approved,
-    list_verdicts,
+    list_verdicts, scope_editable,
+)
+from .scope_ask import (
+    ScopeChoices, answer_scope_change, scope_tick_choices, wants_scope_change,
 )
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
+from .step_text import approval_text, plan_text, scope_text, template_text
 from .targets import TargetCheck, check_target, looks_like_target, validate_target
 from .templates import get_template, list_templates, select_template, selected_template
+from .thinking import block_seconds, group_stream, stream
 from .transcript import last_exchange, list_activity, list_chat
 from .tools import tool_login, tools_login
 from .vault import (
@@ -84,12 +93,18 @@ __all__ = [
     "advance", "peek", "gate_state", "stop_run",
     "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",
     "phase_progress", "plan_tasks", "plan_overview", "gated_count", "step_states",
+    # the plan's phases drafted by the active model (store/ai_plan.py)
+    "plan_draft_request", "fetch_plan_draft", "apply_plan_draft", "plan_draft_failed",
+    "plan_drafting", "plan_author",
     "pipeline_stage", "elapsed", "time_limit",
     # gates
     "list_templates", "get_template", "select_template", "selected_template",
     "get_scope", "approve_scope", "edit_scope", "is_scope_approved", "reject_scope",
     "describe_scope", "check_request", "run_plan", "is_plan_started",
-    "list_verdicts", "blocked_count",
+    "list_verdicts", "blocked_count", "scope_editable",
+    # the chat inside a step ("Chat about this"): its content as text, scope change asks
+    "scope_text", "plan_text", "approval_text", "template_text",
+    "wants_scope_change", "answer_scope_change", "scope_tick_choices", "ScopeChoices",
     "provide_auth", "current_auth_challenge", "has_test_account",
     "is_authenticated", "is_code_verified", "vault_scope",
     "login_kind", "login_tools", "login_done", "code_needed", "tool_login", "tools_login",
@@ -107,6 +122,7 @@ __all__ = [
     "retest", "severity_trend", "compare_findings", "previous_assessment",
     # transcript, audit, history
     "list_chat", "last_exchange", "list_activity",
+    "stream", "group_stream", "block_seconds",
     "current_operator", "log_event", "list_events", "add_feedback", "list_feedback",
     "add_history", "list_history",
     # flexible LLM: providers and the active model

@@ -11,7 +11,7 @@ from .support import SIZE, needs_harness, wait_until
 def _log_text(app) -> str:
     """What the Execution screen's live log shows, as plain text."""
     logs = app.screen.query(RunLog)
-    return "\n".join(strip.text for log in logs for strip in log.lines)
+    return "\n".join(line for log in logs for line in log.plain_lines())
 
 
 @needs_harness
