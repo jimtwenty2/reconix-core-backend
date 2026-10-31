@@ -42,6 +42,7 @@ from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import scopes as scope_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut, ToolRunOut
+from reconix_api.schemas.agent_runs import AgentRunDetailOut
 from reconix_api.services import agent_runs, tool_runs
 from reconix_api.services.audit import audit
 
@@ -420,4 +421,16 @@ def _action_out(db: Db, row: ActionRow) -> ActionOut:
             ToolRunOut.model_validate(run, from_attributes=True)
             for run in action_repo.list_tool_runs(db, row.action_id)
         ],
+    )
+
+
+def read_agent_run(db: Db, agent_run_id: UUID) -> AgentRunDetailOut:
+    """A run and the actions filed under it, e.g. a plan's suggested step and its status."""
+    agent_run = agent_run_repo.get(db, agent_run_id)
+    if agent_run is None:
+        raise ApiError(404, "AGENT_RUN_NOT_FOUND", "No agent run with this id.")
+    rows = action_repo.list_by_agent_run(db, agent_run_id)
+    return AgentRunDetailOut(
+        **agent_runs.agent_run_out(agent_run).model_dump(),
+        actions=[_action_out(db, row) for row in rows],
     )

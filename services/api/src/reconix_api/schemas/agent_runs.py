@@ -23,6 +23,13 @@ class AgentRunOut(BaseModel):
     assessment_id: UUID | None
 
 
+class AgentRunDetailOut(AgentRunOut):
+    """A run and the actions filed under it: a plan or next-step run files its one
+    suggested step, so actions[0] shows that step's status."""
+
+    actions: list[ActionOut] = Field(default_factory=list)
+
+
 class PlanOut(BaseModel):
     """A plan and its first step.
 

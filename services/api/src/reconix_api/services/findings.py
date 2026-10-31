@@ -17,11 +17,18 @@ from reconix_api.core.masking import MaskSecrets, mask_output
 from reconix_api.findings import json_mapping
 from reconix_api.findings import nmap as nmap_findings
 from reconix_api.findings.shape import NewFinding
-from reconix_api.models import Evidence, Finding, ToolRun
-from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
+from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
+from reconix_api.models.enums import FindingStatus
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as finding_repo
-from reconix_api.schemas.findings import EvidenceOut, FindingOut, FindingReview
+from reconix_api.schemas.findings import (
+    EvidenceOut,
+    FindingFilters,
+    FindingOut,
+    FindingReview,
+    ValidationRunIn,
+    ValidationRunOut,
+)
 from reconix_api.services.audit import audit
 
 logger = logging.getLogger(__name__)
@@ -77,19 +84,12 @@ def save_findings(
     return saved
 
 
-def list_findings(
-    db: Db,
-    assessment_id: UUID | None = None,
-    severity_status: SeverityStatus | None = None,
-    validation_status: ValidationStatus | None = None,
-    finding_status: FindingStatus | None = None,
-) -> list[FindingOut]:
+def list_findings(db: Db, filters: FindingFilters | None = None) -> list[FindingOut]:
     """Every finding, or one assessment's; each filter given must match."""
-    if assessment_id is not None and assessment_repo.get(db, assessment_id) is None:
+    filters = filters or FindingFilters()
+    if filters.assessment_id is not None and assessment_repo.get(db, filters.assessment_id) is None:
         raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
-    rows = finding_repo.list_matching(
-        db, assessment_id, severity_status, validation_status, finding_status
-    )
+    rows = finding_repo.list_matching(db, **filters.model_dump())
     return [_finding_out(db, row) for row in rows]
 
 
@@ -110,6 +110,49 @@ def review_finding(
     details = {"finding_id": str(finding_id), "from": before, "to": body.finding_status}
     audit(write_audit, "FINDING_REVIEWED", operator, finding.assessment_id, details)
     return _finding_out(db, finding)
+
+
+MANUAL_REVIEW = "manual_review"
+
+
+def check_finding(
+    db: Db,
+    write_audit: WriteAudit,
+    mask: MaskSecrets,
+    operator: Operator,
+    finding_id: UUID,
+    body: ValidationRunIn,
+) -> ValidationRunOut:
+    """A person checked a finding by hand. The check is saved as a validation run, and
+    the finding takes its result as its validation_status (the newest check wins)."""
+    finding = _get_finding(db, finding_id, lock=True)
+    run = ValidationRun(
+        method=MANUAL_REVIEW,
+        validation_status=body.validation_status,
+        reason=mask(body.reason)[0] if body.reason else None,
+        reviewed_by=operator.actor,
+        reviewed_at=datetime.now(UTC),
+        finding_id=finding_id,
+    )
+    finding_repo.add(db, run)
+    finding.validation_status = body.validation_status
+    db.commit()
+    details = {
+        "finding_id": str(finding_id),
+        "validation_run_id": str(run.validation_run_id),
+        "validation_status": body.validation_status,
+        "method": MANUAL_REVIEW,
+    }
+    audit(write_audit, "FINDING_CHECKED", operator, finding.assessment_id, details)
+    return ValidationRunOut.model_validate(run, from_attributes=True)
+
+
+def list_validation_runs(db: Db, finding_id: UUID) -> list[ValidationRunOut]:
+    _get_finding(db, finding_id)
+    return [
+        ValidationRunOut.model_validate(run, from_attributes=True)
+        for run in finding_repo.list_validation_runs(db, finding_id)
+    ]
 
 
 async def update_memory(memory: FindingMemory, finding: FindingOut) -> None:
@@ -181,4 +224,7 @@ def _finding_out(db: Db, row: Finding) -> FindingOut:
         EvidenceOut.model_validate(evidence, from_attributes=True)
         for evidence in finding_repo.list_evidence(db, row.finding_id)
     ]
+    checks = finding_repo.list_validation_runs(db, row.finding_id)
+    if checks:
+        out.latest_validation = ValidationRunOut.model_validate(checks[0], from_attributes=True)
     return out

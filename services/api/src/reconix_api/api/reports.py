@@ -11,7 +11,7 @@ from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.approvals import ApprovalOut
-from reconix_api.schemas.reports import ReportFormat, ReportOut
+from reconix_api.schemas.reports import CombinedReportIn, ReportFormat, ReportOut
 from reconix_api.services import decisions, reports
 
 router = APIRouter(tags=["reports"])
@@ -33,9 +33,27 @@ async def create_report(
     return await reports.create_report(db, interfaces, mask, settings, operator, assessment_id)
 
 
+@router.post("/assessments/{assessment_id}/combined-reports", status_code=status.HTTP_201_CREATED)
+async def create_combined_report(
+    assessment_id: UUID,
+    body: CombinedReportIn,
+    db: Db,
+    operator: CurrentOperator,
+    interfaces: CurrentInterfaces,
+    mask: CurrentMask,
+    settings: CurrentSettings,
+) -> ReportOut:
+    """One report over this assessment and 1 to 4 more (2 to 5 in all), each with an
+    approved scope. Filed under this one, listed under each; finding codes get their
+    assessment's code in front. Signed off and downloaded like any report."""
+    return await reports.create_report(
+        db, interfaces, mask, settings, operator, assessment_id, body.combined_with
+    )
+
+
 @router.get("/assessments/{assessment_id}/reports")
 def list_reports(assessment_id: UUID, db: Db, _: CurrentOperator) -> list[ReportOut]:
-    """Newest version first."""
+    """Its own reports, newest first, then combined reports that cover it."""
     return reports.list_reports(db, assessment_id)
 
 

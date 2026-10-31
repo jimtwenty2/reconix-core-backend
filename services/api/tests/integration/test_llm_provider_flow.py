@@ -260,11 +260,13 @@ def test_a_provider_changed_after_the_request_is_refused(db_client):
     openai = add(db_client, headers, OPENAI)
     provider_id = openai["llm_provider_id"]
     first = activate(db_client, headers, provider_id)["approval"]
-    db_client.patch(
+    # A new address needs its key typed again: the old one is never sent elsewhere.
+    changed = db_client.patch(
         f"/llm-providers/{provider_id}",
-        json={"base_url": "https://llm.example.com"},
+        json={"base_url": "https://llm.example.com", "api_key": OPENAI["api_key"]},
         headers=headers,
     )
+    assert changed.status_code == 200, changed.json()
 
     refused = approve(db_client, headers, first["approval_id"])
 

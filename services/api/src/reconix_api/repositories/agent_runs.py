@@ -49,12 +49,12 @@ def person_run(db: Db, assessment_id: UUID, session_id: UUID) -> AgentRun | None
 
 
 def open_plan_runs(db: Db, assessment_id: UUID) -> list[AgentRun]:
-    """Plan runs that are still asking the agent (RUNNING) or wait for a person."""
+    """Plan and next-step runs still asking the agent (RUNNING) or waiting for a person."""
     query = (
         select(AgentRun)
         .where(
             AgentRun.assessment_id == assessment_id,
-            AgentRun.plan["task"].astext == "PLAN",
+            AgentRun.plan["task"].astext.in_(["PLAN", "SUGGEST"]),
             AgentRun.agent_runs_status.in_(
                 [AgentRunStatus.RUNNING, AgentRunStatus.WAITING_APPROVAL]
             ),

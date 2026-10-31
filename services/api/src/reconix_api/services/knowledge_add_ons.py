@@ -15,7 +15,7 @@ from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Operator, WriteAudit
 from reconix_api.core.knowledge_add_ons import AddOn, KnowledgeStore
 from reconix_api.core.masking import MaskSecrets
-from reconix_api.schemas.knowledge_add_ons import KnowledgeAddOnOut
+from reconix_api.schemas.knowledge_add_ons import KnowledgeAddOnOut, KnowledgeHitOut
 from reconix_api.services.audit import audit
 
 MAX_ADD_ONS = 50
@@ -120,3 +120,10 @@ def _audit(write_audit: WriteAudit, event_type: str, operator: Operator, add_on:
         "chunk_count": add_on.chunk_count,
     }
     audit(write_audit, event_type, operator, details=details)
+
+
+async def search(
+    store: KnowledgeStore, query: str, sources: list[str], limit: int
+) -> list[KnowledgeHitOut]:
+    hits = await knowledge_add_ons.search(store, query, sources, limit)
+    return [KnowledgeHitOut.model_validate(hit, from_attributes=True) for hit in hits]

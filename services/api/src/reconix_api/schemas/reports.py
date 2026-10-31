@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from reconix_api.models.enums import ApprovalStatus, ReportStatus
 
@@ -22,7 +22,14 @@ class ReportOut(BaseModel):
     generated_by: str
     generated_at: datetime | None
     created_at: datetime
-    assessment_id: UUID
+    assessment_id: UUID  # the assessment it is filed under
+    assessment_ids: list[UUID]  # all it covers: itself, or 2-5 for a combined report
     review_approval_id: UUID | None  # the newest review request
     review_status: ApprovalStatus | None
     signed_off: bool  # an approved review: the files can be downloaded
+
+
+class CombinedReportIn(BaseModel):
+    """1 to 4 more assessments, each with an approved scope, to cover in one report."""
+
+    combined_with: list[UUID] = Field(min_length=1, max_length=4)
