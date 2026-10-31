@@ -2465,6 +2465,63 @@
         "title": "SeverityStatus",
         "type": "string"
       },
+      "TimelineEventOut": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "at",
+          "actor",
+          "session_id",
+          "details"
+        ],
+        "title": "TimelineEventOut",
+        "type": "object"
+      },
+      "TimelineOut": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEventOut"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "has_older": {
+            "title": "Has Older",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "events",
+          "has_older"
+        ],
+        "title": "TimelineOut",
+        "type": "object"
+      },
       "ToolName": {
         "description": "The only 5 tools. The MCP client maps these to the Kali tool names.",
         "enum": [
@@ -3549,6 +3606,88 @@
         "summary": "Create Report",
         "tags": [
           "reports"
+        ]
+      }
+    },
+    "/api/v1/assessments/{assessment_id}/timeline": {
+      "get": {
+        "description": "The assessment's audit log lines, oldest first: at most the newest `limit`, with\nhas_older when more were left out. Repeat ?event_type= to keep only those types.\nLines are masked when written and again when read.",
+        "operationId": "read_timeline_api_v1_assessments__assessment_id__timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "pattern": "^[A-Z_]{1,64}$",
+                    "type": "string"
+                  },
+                  "maxItems": 50,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Timeline",
+        "tags": [
+          "assessments"
         ]
       }
     },
