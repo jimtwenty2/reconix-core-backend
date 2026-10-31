@@ -24,6 +24,7 @@ from reconix_api.api import (
     scopes,
     sessions,
     system,
+    timeline,
 )
 from reconix_api.core.agent import prepare_checkpoints
 from reconix_api.core.config import Settings, get_settings
@@ -91,6 +92,7 @@ def create_app(
         evidence,
         llm_providers,
         knowledge_add_ons,
+        timeline,
     ]
     for module in routers:
         app.include_router(module.router, prefix=API_PREFIX)
