@@ -64,15 +64,39 @@ async def create_report(
     settings: Settings,
     operator: Operator,
     assessment_id: UUID,
+    combined_with: list[UUID] | None = None,
 ) -> ReportOut:
-    assessment = assessment_repo.get_for_update(db, assessment_id)  # one version at a time
-    if assessment is None:
-        raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
+    """A new report version for one assessment. combined_with adds 1 to 4 more: one
+    report covers them all (report_assessments), filed under the first."""
+    assessment_ids = [assessment_id, *(combined_with or [])]
+    if len(set(assessment_ids)) != len(assessment_ids):
+        raise ApiError(422, "DUPLICATE_ASSESSMENT", "Each assessment can be in the report once.")
+    assessments = []
+    for each in sorted(assessment_ids):  # always locked in the same order
+        row = assessment_repo.get_for_update(db, each)  # one version at a time
+        if row is None:
+            raise ApiError(
+                404,
+                "ASSESSMENT_NOT_FOUND",
+                "No assessment with this id.",
+                {"assessment_id": str(each)},
+            )
+        if scope_repo.get_approved(db, each) is None:
+            raise ApiError(
+                409,
+                "SCOPE_NOT_APPROVED",
+                "This assessment has no approved scope.",
+                {"assessment_id": str(each)},
+            )
+        assessments.append(row)
+    assessment = next(row for row in assessments if row.assessment_id == assessment_id)
     manifest = scope_repo.get_approved(db, assessment_id)
-    if manifest is None:
-        raise ApiError(409, "SCOPE_NOT_APPROVED", "This assessment has no approved scope.")
     fail_stuck_reports(db, interfaces, operator, assessment_id)
-    locked = locked_copy(db, assessment_id, mask)
+    if combined_with:
+        by_id = {row.assessment_id: row for row in assessments}
+        locked = combined_copy(db, [by_id[each] for each in assessment_ids], mask)
+    else:
+        locked = locked_copy(db, assessment_id, mask)
     snapshot = locked.model_dump(mode="json")
     report = Report(
         version=report_repo.next_version(db, assessment_id),
@@ -82,7 +106,7 @@ async def create_report(
         assessment_id=assessment_id,
         manifest_id=manifest.manifest_id,
     )
-    report_repo.add(db, report)
+    report_repo.add(db, report, assessment_ids)
     db.commit()
     folder = report_folder(settings, assessment, report)
     run = None
@@ -92,7 +116,11 @@ async def create_report(
             "REPORT_REQUESTED",
             operator,
             assessment_id,
-            {"report_id": str(report.report_id), "version": str(report.version)},
+            {
+                "report_id": str(report.report_id),
+                "version": str(report.version),
+                "assessment_ids": [str(each) for each in assessment_ids],
+            },
         )
         scope = plans.approved_scope(interfaces, assessment_id)
         run = agent_runs.new_agent_run(db, operator, assessment_id, task="REPORT")
@@ -113,7 +141,7 @@ async def create_report(
         )
         summary = mask(response.executive_summary or "")[0]
         methodology = mask(response.methodology or "")[0]
-        meta = report_meta(assessment, report)
+        meta = report_meta(assessment, report, [row.engagement_code for row in assessments])
         # WeasyPrint and the file writes are slow and blocking: off the event loop.
         files = await asyncio.to_thread(report_files.render, snapshot, summary, methodology, meta)
         exports = await asyncio.to_thread(save_files, folder, files)
@@ -133,7 +161,11 @@ async def create_report(
         "REPORT_READY",
         operator,
         assessment_id,
-        {"report_id": str(report.report_id), "version": str(report.version)},
+        {
+            "report_id": str(report.report_id),
+            "version": str(report.version),
+            "assessment_ids": [str(each) for each in assessment_ids],
+        },
     )
     return report_out(db, report)
 
@@ -165,6 +197,22 @@ def locked_copy(db: Db, assessment_id: UUID, mask: MaskSecrets) -> ReportInput:
     return ReportInput(findings=findings, severity_counts=counts, tool_runs=tool_runs)
 
 
+def combined_copy(db: Db, assessments: list[Assessment], mask: MaskSecrets) -> ReportInput:
+    """The locked copies of several assessments as one. Each finding code gets its
+    assessment's code in front (RCX-2026-0001/RCX-001), so codes stay unique."""
+    findings, tool_runs, counts = [], [], {}
+    for assessment in assessments:
+        copy = locked_copy(db, assessment.assessment_id, mask)
+        findings += [
+            finding.model_copy(update={"code": f"{assessment.engagement_code}/{finding.code}"})
+            for finding in copy.findings
+        ]
+        tool_runs += copy.tool_runs
+        for severity, count in copy.severity_counts.items():
+            counts[severity] = counts.get(severity, 0) + count
+    return ReportInput(findings=findings, severity_counts=counts, tool_runs=tool_runs)
+
+
 def approval_check(db: Db, action: Any, run: Any) -> str:
     """NOT_REQUIRED for a LOW run; APPROVED when the run used an approved approval;
     MISSING for a MEDIUM or HIGH run without one, which the report must name."""
@@ -181,10 +229,14 @@ def masked_finding(finding: FindingInput, mask: MaskSecrets) -> FindingInput:
     return finding.model_copy(update={name: mask(getattr(finding, name))[0] for name in texts})
 
 
-def report_meta(assessment: Assessment, report: Report) -> dict[str, str]:
+def report_meta(
+    assessment: Assessment, report: Report, codes: list[str] | None = None
+) -> dict[str, str]:
+    codes = codes or [assessment.engagement_code]
+    kind = "combined report" if len(codes) > 1 else "report"
     return {
-        "title": f"Reconix report {assessment.engagement_code}",
-        "Assessment": assessment.engagement_code,
+        "title": f"Reconix {kind} {', '.join(codes)}",
+        "Assessment": ", ".join(codes),
         "Version": str(report.version),
         "Snapshot hash (SHA-256)": report.snapshot_hash,
         "Generated": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
@@ -439,6 +491,7 @@ def report_out(db: Db, report: Report) -> ReportOut:
         generated_at=report.generated_at,
         created_at=report.created_at,
         assessment_id=report.assessment_id,
+        assessment_ids=report_repo.covered_assessments(db, report.report_id),
         review_approval_id=review.approval_id if review else None,
         review_status=review.approval_status if review else None,
         signed_off=signed_off(review),

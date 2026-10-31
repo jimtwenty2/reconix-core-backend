@@ -25,8 +25,9 @@ Answer with this JSON object:
   range, an allowed domain, a URL that starts with an allowed URL prefix, or a
   folder inside an allowed repo path.
 - If the scope lists allowed ports, every NMAP step names its ports with "-p"
-  and only those ports (for example ["-p", "22,80,443"]); never use
-  --top-ports or -F then.
+  and only those ports, and adds "-Pn" (for example ["-Pn", "-p", "22,80,443"]);
+  never use --top-ports, -F, -O, -A, -sC or --script then. A NUCLEI or ZAP step
+  uses a URL whose port is allowed.
 - arguments use only the options listed for that tool. An option that takes a
   value is followed by its value as the next item.
 - If earlier tool results are given, plan from what they found and do not

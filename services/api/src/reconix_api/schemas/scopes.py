@@ -4,6 +4,7 @@ import ipaddress
 import re
 from datetime import datetime
 from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -27,11 +28,22 @@ class ScopeTargetIn(BaseModel):
             ipaddress.ip_address(self.value)
         elif self.type == "cidr":
             ipaddress.ip_network(self.value, strict=False)
-        elif self.type == "url" and not self.value.startswith(("http://", "https://")):
-            raise ValueError("a url target must start with http:// or https://")
+        elif self.type == "url":
+            check_url(self.value)
         elif self.type == "domain" and not DOMAIN.match(self.value):
             raise ValueError("not a valid domain")
         return self
+
+
+def check_url(value: str) -> None:
+    """The scope goes to the model and the safety checks as written: no spaces or control
+    characters (text hidden on a new line), and no user:password in it."""
+    if not value.startswith(("http://", "https://")):
+        raise ValueError("a url target must start with http:// or https://")
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("a url target cannot hold spaces or control characters")
+    if "@" in urlsplit(value).netloc:
+        raise ValueError("a url target cannot hold a user name or password")
 
 
 class ScopeTargetOut(ScopeTargetIn):

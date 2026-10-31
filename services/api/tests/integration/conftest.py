@@ -70,7 +70,12 @@ def db_app(session_factory):
         get_operator=tokens.get_operator,
         get_approved_scope=make_get_approved_scope(session_factory),
     )
-    app = create_app(interfaces, session_tokens=tokens, mask_secrets=fake_mask_secrets)
+    app = create_app(
+        interfaces,
+        session_tokens=tokens,
+        mask_secrets=fake_mask_secrets,
+        finding_memory=parts["memory"].update,
+    )
     settings = Settings(
         database_url=TEST_DATABASE_URL, job_token_secret=JOB_TOKEN_SECRET, fernet_key=FERNET_KEY
     )

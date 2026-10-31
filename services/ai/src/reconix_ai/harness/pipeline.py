@@ -142,7 +142,7 @@ def scope_and_ports(
     outcome = check_scope(tool, target, scope, now)
     if outcome.decision == Decision.BLOCKED:
         return outcome
-    return check_ports(tool, arguments, scope)
+    return check_ports(tool, target, arguments, scope)
 
 
 def blocked_result(

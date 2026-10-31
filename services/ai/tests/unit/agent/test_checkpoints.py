@@ -5,7 +5,13 @@ from uuid import uuid4
 
 import pytest
 
-from reconix_ai.agent import ask_agent, build_graph, postgres_checkpointer, resume_agent
+from reconix_ai.agent import (
+    ask_agent,
+    build_graph,
+    postgres_checkpointer,
+    resume_agent,
+    setup_checkpoints,
+)
 from reconix_ai.agent.checkpoints import psycopg_url
 from tests.unit.agent.fakes import PLANNED, UNDERSTOOD, FakeModel, Request, make_deps
 
@@ -36,6 +42,7 @@ async def ask_then_resume_on_new_connections():
     database_url = os.environ.get("RECONIX_DATABASE_URL", DEFAULT_DATABASE_URL)
     deps = make_deps(FakeModel(UNDERSTOOD, PLANNED))
     run = str(uuid4())
+    await setup_checkpoints(database_url)  # once, as the API does when it starts
     async with postgres_checkpointer(database_url) as saver:
         asked = await ask_agent(build_graph(saver), Request(), run, deps)
     async with postgres_checkpointer(database_url) as saver:

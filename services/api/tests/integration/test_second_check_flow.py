@@ -40,7 +40,7 @@ def test_an_approval_does_not_outlive_its_assessment(db_client, db_app):
     # S9: the refused decision is audited once, and the action can't be approved again.
     assert event_types(db_app)[-1] == "ACTION_BLOCKED"
     saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
-    assert saved["action_status"] == "BLOCKED"
+    assert saved["action_status"] == "CANCELLED"  # it ends with its assessment
     again = approve(db_client, headers, action["approval_id"])
     assert again.status_code == 409 and db_app.state.parts["mcp"].jobs == []
 

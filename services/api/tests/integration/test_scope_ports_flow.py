@@ -75,7 +75,7 @@ def test_nmap_on_an_allowed_port_waits_for_approval(harness_client, harness_app)
         assessment_id,
         tool="NMAP",
         target="172.20.0.5",
-        arguments=["-sV", "-p", "22,443"],
+        arguments=["-Pn", "-sV", "-p", "22,443"],
     )
 
     assert response.status_code == 201, response.json()

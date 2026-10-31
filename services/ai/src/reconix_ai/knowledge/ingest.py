@@ -1,10 +1,12 @@
 """Load the knowledge into Qdrant.
 
-    uv run --package reconix-ai python -m reconix_ai.knowledge.ingest
+    uv run --package reconix-ai python -m reconix_ai.knowledge.ingest [folder] [--rebuild]
 
 Uses the full download in data/knowledge/ if it is there, else the committed
 sample. Needs Ollama with bge-m3 (`ollama pull bge-m3`) and Qdrant running.
-The collection is made again from scratch on every run.
+The public knowledge is replaced on every run; the add-ons people uploaded
+(USER_DOC, add_ons.py) stay. --rebuild drops the whole collection and makes it
+again, add-ons and all: use it when the vectors or indexes change.
 """
 
 import asyncio
@@ -25,8 +27,10 @@ async def ingest(
     guides_dir: Path = TOOL_GUIDES_DIR,
     client: AsyncQdrantClient | None = None,
     embed: EmbedTexts = embed_texts,
+    rebuild: bool = False,
 ) -> int:
-    """Load every item into a fresh collection and return how many pieces were saved."""
+    """Replace the public knowledge and return how many pieces were saved. rebuild: drop
+    the whole collection first, add-ons included."""
     chunks = make_chunks(load_items(data_dir, guides_dir))
     if not chunks:
         raise ValueError(f"No knowledge found in {data_dir}.")
@@ -34,7 +38,10 @@ async def ingest(
     vectors = await embed([chunk.title + "\n" + chunk.text for chunk in chunks])
     failure = None
     try:
-        await store.create_collection(client)
+        if rebuild:
+            await store.create_collection(client)
+        else:
+            await store.clear_public_knowledge(client)
         await store.save_chunks(client, chunks, vectors)
     except store.QDRANT_ERRORS as error:
         failure = store.knowledge_error(error)
@@ -44,7 +51,8 @@ async def ingest(
 
 
 if __name__ == "__main__":
-    folder = Path(sys.argv[1]) if len(sys.argv) > 1 else knowledge_data_dir()
+    folders = [arg for arg in sys.argv[1:] if arg != "--rebuild"]
+    folder = Path(folders[0]) if folders else knowledge_data_dir()
     print(f"Loading {folder} ...")
-    count = asyncio.run(ingest(folder))
+    count = asyncio.run(ingest(folder, rebuild="--rebuild" in sys.argv[1:]))
     print(f"Saved {count} pieces in Qdrant collection '{store.COLLECTION}'.")

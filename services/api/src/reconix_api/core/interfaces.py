@@ -105,12 +105,23 @@ class ApprovedScope(BaseModel):
     allowed_ports: list[int] = Field(default_factory=list)  # nmap's ports; empty: no limit
 
 
-class ChatScope(ApprovedScope):
-    """The scope a CHAT talks about: approved, or still a draft. Only the chat reads it;
-    check() never takes it, so a draft can never let a tool run."""
+class ChatScope(BaseModel):
+    """The scope a CHAT talks about: approved, or still a draft. Only the chat reads it.
+    It is not an ApprovedScope, so it can never be passed to check() by mistake and a
+    draft can never let a tool run."""
 
     assessment_id: UUID | None = None  # a draft has no assessment until it is submitted
     status: Literal["APPROVED", "DRAFT"]
+    ip_ranges: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    url_prefixes: list[str] = Field(default_factory=list)
+    repo_paths: list[str] = Field(default_factory=list)
+    excluded_targets: list[str] = Field(default_factory=list)
+    allowed_tools: list[ToolName] = Field(default_factory=list)
+    max_risk: RiskLevel = RiskLevel.LOW
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    allowed_ports: list[int] = Field(default_factory=list)
 
 
 class Action(BaseModel):
@@ -289,6 +300,8 @@ class AgentRequest(BaseModel):
     def scope_unless_chat(self) -> Self:
         if self.task != AgentTask.CHAT and (self.assessment_id is None or self.scope is None):
             raise ValueError(f"{self.task} needs the assessment and its approved scope")
+        if self.task == AgentTask.CHAT and self.resume is not None:
+            raise ValueError("a CHAT only answers: it never waits, so it is never resumed")
         return self
 
 

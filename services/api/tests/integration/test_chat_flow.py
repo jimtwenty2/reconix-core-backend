@@ -1,6 +1,10 @@
 """Chat with the agent: the message and the answer are saved masked, the agent sees the
 session's own scope and plan, and the chat changes nothing."""
 
+from uuid import UUID
+
+from reconix_api.core.interfaces import Operator
+from reconix_api.services import agent_runs
 from tests.integration.test_action_flow import active_assessment, event_types
 from tests.integration.test_plan_flow import plan, runs
 from tests.integration.test_scope_flow import DRAFT, open_session, scopes_path
@@ -140,3 +144,29 @@ def test_an_empty_message_is_refused(db_client):
     headers = open_session(db_client)
 
     assert chat(db_client, headers, "").status_code == 422
+
+
+def test_a_draft_scope_reaches_the_agent_masked(db_client, db_app):
+    """A draft can hold anything half written: its targets are masked too (S8)."""
+    headers = open_session(db_client)
+    leaky = {"type": "url", "value": "http://juice-shop:3000/login?password=hunter2-in-a-draft"}
+    draft = {**DRAFT, "targets": [*DRAFT["targets"], leaky]}
+    assert db_client.post(scopes_path(db_client, headers), json=draft, headers=headers).is_success
+
+    assert chat(db_client, headers, "Is the login page in scope?").status_code == 201
+
+    prefixes = last_request(db_app).chat_scope.url_prefixes
+    assert "hunter2-in-a-draft" not in " ".join(prefixes)
+    assert any("[MASKED" in prefix for prefix in prefixes)
+
+
+def test_one_chat_at_a_time_in_a_session(db_client, session_factory):
+    headers = open_session(db_client)
+    with session_factory() as db:  # a chat still waiting on the agent
+        operator = Operator(session_id=UUID(session_id(db_client, headers)), actor="test")
+        agent_runs.new_agent_run(db, operator, None, task="CHAT")
+        db.commit()
+
+    response = chat(db_client, headers, "And now?")
+
+    assert (response.status_code, response.json()["code"]) == (409, "CHAT_IN_PROGRESS")

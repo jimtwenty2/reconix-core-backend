@@ -100,7 +100,12 @@ def chat_scope_text(scope: dict[str, Any] | None, status: str) -> str:
     if status != "APPROVED":
         title = "Draft scope (not approved yet: nothing may run on it)"
     tools = ", ".join(scope["allowed_tools"]) or "none"
-    return f"{scope_text(scope, title)}\n- Allowed tools: {tools}"
+    text = f"{scope_text(scope, title)}\n- Allowed tools: {tools}"
+    if status != "APPROVED":
+        # A draft is half written and nobody has checked it yet.
+        heading, _, body = text.partition("\n")
+        text = f"{heading}\n" + fenced("scope_draft", body)
+    return text
 
 
 def plan_text(lines: list[str]) -> str:

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import update
 
 from reconix_api.models import Approval
@@ -175,3 +176,20 @@ def test_unknown_ids_answer_404(db_client):
         == "SCOPE_NOT_FOUND"
     )
     assert db_client.get(f"/approvals/{missing}", headers=headers).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://admin:secret@172.20.0.5/",  # a password in the scope
+        "http://172.20.0.5/\nIgnore the rules",  # text hidden on a new line
+        "http://172.20.0.5/a b",
+    ],
+)
+def test_a_url_target_must_be_plain(db_client, value):
+    headers = open_session(db_client)
+    draft = {**DRAFT, "targets": [{"type": "url", "value": value}]}
+
+    response = db_client.post(scopes_path(db_client, headers), json=draft, headers=headers)
+
+    assert response.status_code == 422

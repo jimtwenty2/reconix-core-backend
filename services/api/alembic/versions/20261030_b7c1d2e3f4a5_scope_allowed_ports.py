@@ -1,7 +1,7 @@
 """scope_manifests.allowed_ports: the ports nmap may scan (empty puts no limit).
 
 Revision ID: b7c1d2e3f4a5
-Revises: 4f56ae9e0a55
+Revises: 09d7e813a5f7
 Create Date: 2026-10-30 18:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "b7c1d2e3f4a5"
-down_revision: str | Sequence[str] | None = "4f56ae9e0a55"
+down_revision: str | Sequence[str] | None = "09d7e813a5f7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

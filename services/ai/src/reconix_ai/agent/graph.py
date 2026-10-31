@@ -238,10 +238,18 @@ def analyze_queries(findings: list[dict[str, Any]]) -> list[str]:
     return [query[:200] for query in queries[:MAX_ANALYZE_QUERIES]]
 
 
+# A CHAT's own earlier answers, as the API names them. They are not the person's
+# words: an answer that says it "can't skip the safety checks" must not block the chat.
+AGENT_SPEAKERS = ("Reconix: ", "Reconix note: ")
+
+
 def check_chat(messages: list[str]) -> None:
-    """The harness input check on each chat message the model will see, on the raw
-    text before it is cut, so a long message or a buried injection is caught."""
+    """The harness input check on each chat message the person wrote that the model will
+    see, on the raw text before it is cut, so a long message or a buried injection is
+    caught."""
     for message in messages:
+        if message.startswith(AGENT_SPEAKERS):
+            continue
         outcome = check_input(message)
         if outcome.decision == Decision.BLOCKED:
             raise AgentError("INPUT_BLOCKED", f"The chat was blocked: {outcome.reason}.")

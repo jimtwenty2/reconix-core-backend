@@ -1,5 +1,6 @@
 """Database access for scope_manifests and scope_targets."""
 
+from collections import defaultdict
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -75,3 +76,21 @@ def list_by_session(db: Db, session_id: UUID) -> list[ScopeManifest]:
         .order_by(ScopeManifest.version)
     )
     return list(db.scalars(query))
+
+
+def approved_targets(db: Db, assessment_ids: list[UUID]) -> dict[UUID, list[str]]:
+    """The approved scope's targets per assessment, excluded ones left out."""
+    query = (
+        select(ScopeManifest.assessment_id, ScopeTarget.value)
+        .join(ScopeTarget, ScopeTarget.manifest_id == ScopeManifest.manifest_id)
+        .where(
+            ScopeManifest.assessment_id.in_(assessment_ids),
+            ScopeManifest.manifests_status == ManifestStatus.APPROVED,
+            ScopeTarget.excluded.is_(False),
+        )
+        .order_by(ScopeTarget.value)
+    )
+    targets: dict[UUID, list[str]] = defaultdict(list)
+    for assessment_id, value in db.execute(query):
+        targets[assessment_id].append(value)
+    return targets

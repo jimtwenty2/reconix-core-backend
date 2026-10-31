@@ -1,4 +1,4 @@
-"""A plan as a draft: the person reads it first, then sends or discards it. Nothing is
+"""A plan as a draft: the person reads it first, then sends or cancels it. Nothing is
 sent or run until they send it, and then the step takes the same path as any step."""
 
 from tests.integration.test_action_flow import active_assessment, event_types
@@ -14,8 +14,8 @@ def send(client, headers, run_id):
     return client.post(f"/agent-runs/{run_id}/send", headers=headers)
 
 
-def discard(client, headers, run_id):
-    return client.post(f"/agent-runs/{run_id}/discard", headers=headers)
+def cancel(client, headers, run_id):
+    return client.post(f"/agent-runs/{run_id}/cancel", headers=headers)
 
 
 def actions(client, headers, assessment_id) -> list[dict]:
@@ -82,18 +82,20 @@ def test_a_draft_is_sent_only_once(db_client):
     assert len(actions(db_client, headers, assessment_id)) == 1
 
 
-def test_a_discarded_draft_never_runs(db_client, db_app):
+def test_a_cancelled_draft_never_runs(db_client, db_app):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)
     run_id = draft(db_client, headers, assessment_id).json()["agent_run"]["agent_run_id"]
 
-    assert discard(db_client, headers, run_id).status_code == 204
+    assert cancel(db_client, headers, run_id).status_code == 200
 
     assert runs(db_client, headers)[0]["agent_runs_status"] == "CANCELLED"
     assert send(db_client, headers, run_id).status_code == 409
     assert actions(db_client, headers, assessment_id) == []
     assert db_app.state.parts["mcp"].jobs == []
     assert event_types(db_app)[-1] == "AGENT_RUN_CANCELLED"
+    plan = db_client.get(f"/assessments/{assessment_id}/overview", headers=headers).json()
+    assert plan["plan_step_count"] == 0  # a dropped draft is not the assessment's plan
 
 
 def test_a_new_plan_replaces_an_unsent_draft(db_client):
@@ -135,4 +137,4 @@ def test_an_unknown_run_is_404(db_client):
 
     response = send(db_client, headers, "00000000-0000-0000-0000-000000000000")
 
-    assert (response.status_code, response.json()["code"]) == (404, "RUN_NOT_FOUND")
+    assert (response.status_code, response.json()["code"]) == (404, "AGENT_RUN_NOT_FOUND")

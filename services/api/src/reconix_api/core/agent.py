@@ -14,7 +14,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from reconix_ai import agent
 from reconix_ai.contracts import AgentAnswer
-from reconix_ai.providers import ProviderConfig
+from reconix_ai.providers import ProviderConfig, reconix_provider
+from reconix_ai.providers import ProviderType as AiProviderType
+from reconix_api.core import provider_keys
+from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import (
     Action,
@@ -28,12 +31,12 @@ from reconix_api.core.interfaces import (
     FindingInput,
     ReportInput,
 )
+from reconix_api.models import LlmProvider
+from reconix_api.models.enums import ProviderType
 
 OpenGraph = Callable[[], AbstractAsyncContextManager[CompiledStateGraph]]
-# The model settings (with the decrypted key) for the run a request belongs to.
-ProviderFor = Callable[[AgentRequest], ProviderConfig]
+ProviderForRun = Callable[[UUID], ProviderConfig]
 
-BUILT_IN_PROVIDER = "RECONIX"  # without a ProviderFor, only the built-in model is called
 # Agent error code -> HTTP status. Any other code is the agent or model failing: 502.
 AGENT_ERROR_STATUS = {
     "INPUT_BLOCKED": 422,
@@ -42,6 +45,8 @@ AGENT_ERROR_STATUS = {
     "RUN_NOT_WAITING": 409,
     "STEP_LIMIT": 422,  # the run stopped itself
     "TOKEN_BUDGET": 422,
+    "SCOPE_MISSING": 422,
+    "BAD_SCOPE_STATUS": 422,
     "MODEL_UNAVAILABLE": 503,  # the model is down: try again later
     # The provider's settings are wrong: fix them on the provider, then ask again.
     "PROVIDER_KEY_MISSING": 422,
@@ -74,6 +79,28 @@ class PlanInput:
     plan: list[str]
 
 
+def provider_config(settings: Settings, provider: LlmProvider, model_name: str) -> ProviderConfig:
+    """A provider row as the AI Service's model settings, key decrypted. model_name is
+    the run's copy."""
+    if provider.provider_type == ProviderType.RECONIX:
+        return reconix_provider()
+    api_key = None
+    if provider.api_key_encrypted:
+        api_key = provider_keys.decrypt(settings, provider.api_key_encrypted)
+    return ProviderConfig(
+        provider_type=AiProviderType(provider.provider_type.value),
+        model_name=model_name,
+        base_url=provider.base_url,
+        api_key=api_key,
+    )
+
+
+async def prepare_checkpoints(database_url: str) -> None:
+    """Make the agent's checkpoint tables. Once, when the API starts and before any
+    request: inside a request it would wait forever (see reconix_ai.agent.checkpoints)."""
+    await agent.setup_checkpoints(database_url)
+
+
 def postgres_graph(database_url: str) -> OpenGraph:
     """Opens the graph on the Postgres checkpointer, so a waiting run survives a restart."""
 
@@ -86,17 +113,13 @@ def postgres_graph(database_url: str) -> OpenGraph:
 
 
 def make_ask_agent(
-    open_graph: OpenGraph, deps: agent.AgentDeps, provider_for: ProviderFor | None = None
+    open_graph: OpenGraph, deps: agent.AgentDeps, provider_for_run: ProviderForRun
 ) -> AskAgent:
-    """provider_for gives each request its run's provider. The key goes only into the
-    AgentDeps of this one call, never into the request, the state or a checkpoint."""
+    """provider_for_run gives the model settings of the provider the run was started
+    with, so the model that is called is the one the run records."""
 
     async def ask_agent(request: AgentRequest) -> AgentResponse:
-        run_deps = deps
-        if provider_for is None:
-            check_provider(request)
-        else:
-            run_deps = replace(deps, provider=provider_for(request))
+        run_deps = replace(deps, provider=provider_for_run(request.agent_run_id))
         async with open_graph() as graph:
             try:
                 answer = await run_agent(graph, request, run_deps)
@@ -106,16 +129,6 @@ def make_ask_agent(
         return to_response(answer)
 
     return ask_agent
-
-
-def check_provider(request: AgentRequest) -> None:
-    if request.provider != BUILT_IN_PROVIDER or request.model is not None:
-        raise ApiError(
-            503,
-            "NOT_READY",
-            "Only the built-in RECONIX provider and its model are ready.",
-            {"part": "ai_providers"},
-        )
 
 
 async def run_agent(

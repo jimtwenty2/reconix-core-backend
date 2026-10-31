@@ -57,7 +57,8 @@ class AgentRun(Base):
         pg_enum(AgentRunStatus, "agent_runs_status"), server_default=AgentRunStatus.RUNNING
     )
     started_at: Mapped[datetime] = created_at()
-    plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    # None is stored as SQL NULL, not JSON null: a run with no plan is found by plan IS NULL.
+    plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.session_id"))
     # Empty before an assessment exists.

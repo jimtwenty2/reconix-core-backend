@@ -1,7 +1,8 @@
-"""The first ask on a new database sets up the agent's checkpointer, which waits for every
-open transaction to end. The API must not hold one open while it asks, or the two wait
-for each other: this hung the first live chat and the first plan."""
+"""A chat on a new database, set up as the API's startup does it: the API holds no
+transaction open while the agent answers (an open one would have hung the first live
+chat, before the checkpointer was set up at startup)."""
 
+import asyncio
 import dataclasses
 from datetime import UTC, datetime
 
@@ -18,10 +19,11 @@ from tests.unit.core.test_agent import PROVIDER, ScriptedModel, no_knowledge
 ANSWER = {"answer": "A version scan.", "references": []}
 
 
-def test_the_first_chat_on_a_new_database_does_not_hang(db_app, db_client, session_factory):
+def test_a_chat_holds_no_transaction_while_the_agent_answers(db_app, db_client, session_factory):
     with session_factory() as db:  # a new database: the checkpointer was never set up
         db.execute(text("DROP SCHEMA IF EXISTS langgraph CASCADE"))
         db.commit()
+    asyncio.run(agent.setup_checkpoints(TEST_DATABASE_URL))  # what startup does
     deps = agent.AgentDeps(
         provider=PROVIDER,
         complete=ScriptedModel(ANSWER).complete,
@@ -30,7 +32,7 @@ def test_the_first_chat_on_a_new_database_does_not_hang(db_app, db_client, sessi
     )
     db_app.state.interfaces = dataclasses.replace(
         db_app.state.interfaces,
-        ask_agent=make_ask_agent(postgres_graph(TEST_DATABASE_URL), deps),
+        ask_agent=make_ask_agent(postgres_graph(TEST_DATABASE_URL), deps, lambda _: PROVIDER),
     )
 
     def short_waits():

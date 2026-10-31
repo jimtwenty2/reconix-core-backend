@@ -1,5 +1,7 @@
 """Findings from a tool run (dedupe, sources, masked evidence): save, read and review."""
 
+import asyncio
+import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -9,16 +11,28 @@ from uuid import UUID
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.errors import ApiError
+from reconix_api.core.finding_memory import FindingMemory, MemoryUnavailable
 from reconix_api.core.interfaces import Operator, ToolName, WriteAudit
 from reconix_api.core.masking import MaskSecrets, mask_output
 from reconix_api.findings import json_mapping
 from reconix_api.findings import nmap as nmap_findings
 from reconix_api.findings.shape import NewFinding
-from reconix_api.models import Evidence, Finding, ToolRun
+from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
+from reconix_api.models.enums import FindingStatus
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as finding_repo
-from reconix_api.schemas.findings import EvidenceOut, FindingOut, FindingReview
+from reconix_api.schemas.findings import (
+    EvidenceOut,
+    FindingFilters,
+    FindingOut,
+    FindingReview,
+    ValidationRunIn,
+    ValidationRunOut,
+)
 from reconix_api.services.audit import audit
+
+logger = logging.getLogger(__name__)
+MEMORY_TIMEOUT_SECONDS = 30  # one embedding and one Qdrant write; the review is already saved
 
 # One reader per Kali tool name: masked output -> (findings, requests sent).
 # JSON tools share one reader through their mapping; the rest have their own.
@@ -70,13 +84,13 @@ def save_findings(
     return saved
 
 
-def list_findings(db: Db, assessment_id: UUID | None = None) -> list[FindingOut]:
-    """Every finding, or one assessment's."""
-    if assessment_id is None:
-        return [_finding_out(db, row) for row in finding_repo.list_all(db)]
-    if assessment_repo.get(db, assessment_id) is None:
+def list_findings(db: Db, filters: FindingFilters | None = None) -> list[FindingOut]:
+    """Every finding, or one assessment's; each filter given must match."""
+    filters = filters or FindingFilters()
+    if filters.assessment_id is not None and assessment_repo.get(db, filters.assessment_id) is None:
         raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
-    return [_finding_out(db, row) for row in finding_repo.list_by_assessment(db, assessment_id)]
+    rows = finding_repo.list_matching(db, **filters.model_dump())
+    return [_finding_out(db, row) for row in rows]
 
 
 def read_finding(db: Db, finding_id: UUID) -> FindingOut:
@@ -96,6 +110,70 @@ def review_finding(
     details = {"finding_id": str(finding_id), "from": before, "to": body.finding_status}
     audit(write_audit, "FINDING_REVIEWED", operator, finding.assessment_id, details)
     return _finding_out(db, finding)
+
+
+MANUAL_REVIEW = "manual_review"
+
+
+def check_finding(
+    db: Db,
+    write_audit: WriteAudit,
+    mask: MaskSecrets,
+    operator: Operator,
+    finding_id: UUID,
+    body: ValidationRunIn,
+) -> ValidationRunOut:
+    """A person checked a finding by hand. The check is saved as a validation run, and
+    the finding takes its result as its validation_status (the newest check wins)."""
+    finding = _get_finding(db, finding_id, lock=True)
+    run = ValidationRun(
+        method=MANUAL_REVIEW,
+        validation_status=body.validation_status,
+        reason=mask(body.reason)[0] if body.reason else None,
+        reviewed_by=operator.actor,
+        reviewed_at=datetime.now(UTC),
+        finding_id=finding_id,
+    )
+    finding_repo.add(db, run)
+    finding.validation_status = body.validation_status
+    db.commit()
+    details = {
+        "finding_id": str(finding_id),
+        "validation_run_id": str(run.validation_run_id),
+        "validation_status": body.validation_status,
+        "method": MANUAL_REVIEW,
+    }
+    audit(write_audit, "FINDING_CHECKED", operator, finding.assessment_id, details)
+    return ValidationRunOut.model_validate(run, from_attributes=True)
+
+
+def list_validation_runs(db: Db, finding_id: UUID) -> list[ValidationRunOut]:
+    _get_finding(db, finding_id)
+    return [
+        ValidationRunOut.model_validate(run, from_attributes=True)
+        for run in finding_repo.list_validation_runs(db, finding_id)
+    ]
+
+
+async def update_memory(memory: FindingMemory, finding: FindingOut) -> None:
+    """A finding a person reviewed as OPEN or FIXED is accepted and remembered by the AI;
+    FALSE_POSITIVE forgets it. Runs after the review is saved and answered: a memory that
+    is down (Qdrant or the embedding model) is logged by its code and never undoes or
+    blocks a person's decision. Any other error is a bug and is raised.
+
+    shortcut: a failed update, or two reviews of one finding at the same moment, can leave
+    the memory behind the database; add a re-sync from the findings table when CHAT reads it.
+    """
+    accepted = finding.finding_status != FindingStatus.FALSE_POSITIVE
+    code = None
+    try:
+        await asyncio.wait_for(memory(finding, accepted), MEMORY_TIMEOUT_SECONDS)
+    except MemoryUnavailable as error:
+        code = error.code
+    except TimeoutError:
+        code = "TIMEOUT"
+    if code is not None:
+        logger.warning("Finding %s is reviewed; the AI memory is down: %s", finding.code, code)
 
 
 def read_evidence(db: Db, evidence_id: UUID) -> EvidenceOut:
@@ -139,9 +217,14 @@ def _clean(mask: MaskSecrets, text: str) -> str:
 
 def _finding_out(db: Db, row: Finding) -> FindingOut:
     out = FindingOut.model_validate(row, from_attributes=True)
-    out.source_tool_run_ids = finding_repo.source_run_ids(db, row.finding_id)
+    runs = finding_repo.sources(db, row.finding_id)
+    out.source_tool_run_ids = [tool_run_id for tool_run_id, _ in runs]
+    out.tools = sorted({tool for _, tool in runs})
     out.evidence = [
         EvidenceOut.model_validate(evidence, from_attributes=True)
         for evidence in finding_repo.list_evidence(db, row.finding_id)
     ]
+    checks = finding_repo.list_validation_runs(db, row.finding_id)
+    if checks:
+        out.latest_validation = ValidationRunOut.model_validate(checks[0], from_attributes=True)
     return out

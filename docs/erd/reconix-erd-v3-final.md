@@ -92,6 +92,7 @@ The approved scope: what may be tested, and how.
 | | allowed_tools | JSONB | Y | [] | e.g. ["nmap", "nuclei", "zap"] |
 | | allowed_actions | JSONB | Y | [] | e.g. ["discovery", "scan"] |
 | | allowed_methods | JSONB | Y | [] | e.g. ["GET", "HEAD"] |
+| | allowed_ports | JSONB | Y | [] | e.g. [22, 80, 443]; empty puts no limit on ports |
 | | starts_at | TIMESTAMPTZ | | | Start of the test window |
 | | ends_at | TIMESTAMPTZ | | | End of the test window |
 | | limitations | TEXT | | | e.g. quiet hours |

@@ -10,6 +10,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import (
     AgentRequest,
     AgentTask,
@@ -25,6 +26,7 @@ from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import messages as message_repo
 from reconix_api.repositories import scopes as scope_repo
+from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.messages import ChatOut, MessageOut
 from reconix_api.services import agent_runs, messages
 from reconix_api.services.scopes import to_chat_scope
@@ -42,13 +44,20 @@ async def chat(
     content: str,
 ) -> ChatOut:
     """The message is saved first, so it is kept even when the agent fails. A failed
-    ask ends the CHAT run FAILED (one audit line) and its error is raised."""
+    ask ends the CHAT run FAILED (one audit line) and its error is raised. One chat per
+    session asks the agent at a time: 409 CHAT_IN_PROGRESS."""
     message = messages.add_message(db, interfaces.write_audit, mask, operator, session_id, content)
-    chat_scope = session_scope(db, session_id)
+    chat_scope = session_scope(db, session_id, mask)
     assessment_id = chat_scope.assessment_id if chat_scope else None
     if assessment_id is None:
         assessment = assessment_repo.get_by_session(db, session_id)
         assessment_id = assessment.assessment_id if assessment else None
+    # The session row is locked while the open chats are checked and the run is saved,
+    # so two chats can never both start.
+    session_repo.get_for_update(db, session_id)
+    if agent_run_repo.running_chat(db, session_id) is not None:
+        db.rollback()
+        raise ApiError(409, "CHAT_IN_PROGRESS", "The agent is still answering. Try again soon.")
     run = agent_runs.new_agent_run(db, operator, assessment_id, task="CHAT")
     db.commit()
     try:
@@ -79,6 +88,7 @@ async def answer(
         plan=plan_lines(db, run.assessment_id),
     )
     response = await agent_runs.ask_agent(db, interfaces, request)
+    session_repo.get_for_update(db, run.session_id)  # the next sequence_no is this one's
     reply = message_repo.add(
         db,
         Message(
@@ -105,12 +115,17 @@ async def answer(
     )
 
 
-def session_scope(db: Db, session_id: UUID) -> ChatScope | None:
-    """The session's newest scope, approved or a draft, or None before there is one."""
+def session_scope(db: Db, session_id: UUID, mask: MaskSecrets) -> ChatScope | None:
+    """The session's newest scope, approved or a draft, or None before there is one.
+    A draft can hold anything half written (a URL with a password in it), so every
+    target is masked before the agent sees it (S8)."""
     manifest = scope_repo.latest_in_session(db, session_id)
     if manifest is None:
         return None
-    return to_chat_scope(manifest, scope_repo.list_targets(db, manifest.manifest_id))
+    scope = to_chat_scope(manifest, scope_repo.list_targets(db, manifest.manifest_id))
+    lists = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_targets")
+    masked = {name: [mask(value)[0] for value in getattr(scope, name)] for name in lists}
+    return scope.model_copy(update=masked)
 
 
 def history(db: Db, session_id: UUID) -> list[ChatMessage]:

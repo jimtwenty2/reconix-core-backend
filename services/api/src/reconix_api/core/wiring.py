@@ -16,8 +16,8 @@ from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Action, CheckContext, CheckResult, Interfaces, WriteAudit
 from reconix_api.core.masking import MaskSecrets
-from reconix_api.core.run_provider import make_provider_for
 from reconix_api.core.session_tokens import SessionTokens
+from reconix_api.services.agent_runs import make_provider_for_run
 from reconix_api.services.scopes import make_get_approved_scope
 
 
@@ -57,13 +57,11 @@ def build_interfaces(
     if audit_log_path is not None:
         write_audit = harness.make_audit_writer(audit_log_path)
     _, ask_agent = _not_ready("ask_agent")
-    if database_url is not None:
-        # With the database and settings, each run calls the provider it was started
-        # with; without them, only the built-in RECONIX model.
-        provider_for = None
-        if session_factory is not None and settings is not None:
-            provider_for = make_provider_for(session_factory, settings)
-        ask_agent = make_ask_agent(postgres_graph(database_url), agent.AgentDeps(), provider_for)
+    # The agent needs the run's provider row, and settings to decrypt its key.
+    if database_url is not None and session_factory is not None and settings is not None:
+        provider_for_run = make_provider_for_run(session_factory, settings)
+        graph = postgres_graph(database_url)
+        ask_agent = make_ask_agent(graph, agent.AgentDeps(), provider_for_run)
     _, call_tool = _not_ready("call_tool")
     if mcp_url and mcp_access_key:
         call_tool = make_call_tool(mcp_url, mcp_access_key)

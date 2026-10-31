@@ -47,6 +47,11 @@ PORT_LIST = re.compile(r"^[0-9]{1,5}(-[0-9]{1,5})?(,[0-9]{1,5}(-[0-9]{1,5})?)*$"
 MAX_PORT = 65535
 # nmap options that pick their own ports, so they can reach ports outside the list.
 OWN_PORT_OPTIONS = {"--top-ports", "-F", "-p-"}
+# nmap options that probe ports the -p list never named: OS detection and traceroute
+# (-O, -A), and scripts that connect on their own (-sC, --script).
+OTHER_PORT_PROBES = {"-O", "-A", "-sC", "--script"}
+DEFAULT_PORTS = {"http": 80, "https": 443}
+WEB_TOOLS = {"NUCLEI", "ZAP"}
 
 
 class ScopeRules(Protocol):
@@ -72,6 +77,8 @@ class ScopeRules(Protocol):
     def window_start(self) -> datetime | None: ...
     @property
     def window_end(self) -> datetime | None: ...
+    @property
+    def allowed_ports(self) -> Sequence[int]: ...
 
 
 class TargetKind(StrEnum):
@@ -133,19 +140,30 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
     return ALLOWED
 
 
-def check_ports(tool: str, arguments: Sequence[str], scope: ScopeRules) -> CheckOutcome:
-    """With allowed ports in the scope, nmap scans only those: every -p value must be
-    inside them, and options that pick their own ports are blocked. A scope with no
-    allowed ports (an older scope, or a web or source scope) puts no limit on ports.
-    The other tools take their port from the target, which the scope check covers."""
-    allowed = set(getattr(scope, "allowed_ports", None) or ())
-    if not allowed or tool.upper() != "NMAP":
+def check_ports(
+    tool: str, target: str, arguments: Sequence[str], scope: ScopeRules
+) -> CheckOutcome:
+    """With allowed ports in the scope, a tool reaches only those. A scope with no
+    allowed ports (an older scope, or a source scope) puts no limit on ports.
+
+    nmap: every -p value must be inside them, -Pn is needed (host discovery probes 80
+    and 443 on its own), and options that pick or probe their own ports are blocked.
+    NUCLEI and ZAP: the target must be a URL whose port (written, or 80/443 from the
+    scheme) is allowed; a bare domain lets nuclei pick its own ports."""
+    allowed = set(scope.allowed_ports)
+    if not allowed:
+        return ALLOWED
+    name = tool.upper()
+    if name in WEB_TOOLS:
+        return check_url_port(target, allowed)
+    if name != "NMAP":
         return ALLOWED
     named = False
     for index, argument in enumerate(arguments):
-        if argument.partition("=")[0] in OWN_PORT_OPTIONS:  # also "--top-ports=100"
+        option = argument.partition("=")[0]  # also "--top-ports=100"
+        if option in OWN_PORT_OPTIONS or option in OTHER_PORT_PROBES:
             return blocked("PORTS_OUT_OF_SCOPE")
-        if argument.startswith("-p") and argument != "-p":
+        if argument.startswith("-p") and argument not in ("-p", "-Pn"):
             return blocked("BAD_PORTS")  # "-p22" or "-p-": only "-p", then its value
         if argument != "-p":
             continue
@@ -156,7 +174,20 @@ def check_ports(tool: str, arguments: Sequence[str], scope: ScopeRules) -> Check
         if not ports <= allowed:
             return blocked("PORTS_OUT_OF_SCOPE")
         named = True
-    return ALLOWED if named else blocked("PORTS_NOT_GIVEN")
+    if not named:
+        return blocked("PORTS_NOT_GIVEN")
+    return ALLOWED if "-Pn" in arguments else blocked("HOST_DISCOVERY_NOT_ALLOWED")
+
+
+def check_url_port(target: str, allowed: set[int]) -> CheckOutcome:
+    if not target.startswith(("http://", "https://")):
+        return blocked("PORTS_NOT_GIVEN")
+    parts = urlsplit(target)
+    try:
+        port = parts.port or DEFAULT_PORTS[parts.scheme]
+    except ValueError:
+        return blocked("BAD_PORTS")
+    return ALLOWED if port in allowed else blocked("PORTS_OUT_OF_SCOPE")
 
 
 def port_set(value: str) -> set[int] | None:

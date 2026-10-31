@@ -71,7 +71,7 @@ async def no_knowledge(query: str, limit: int = 5) -> list:
     return []
 
 
-def make_ask(model: ScriptedModel, provider_for=None, **deps_overrides):
+def make_ask(model: ScriptedModel, provider: ProviderConfig = PROVIDER, **deps_overrides):
     saver = InMemorySaver()  # shared by every call, like the Postgres tables
 
     @asynccontextmanager
@@ -84,7 +84,7 @@ def make_ask(model: ScriptedModel, provider_for=None, **deps_overrides):
         search=no_knowledge,
         now=lambda: datetime(2026, 10, 28, 10, tzinfo=UTC),
     )
-    return make_ask_agent(open_graph, replace(deps, **deps_overrides), provider_for)
+    return make_ask_agent(open_graph, replace(deps, **deps_overrides), lambda _run_id: provider)
 
 
 def plan_request(run_id: UUID, **overrides) -> AgentRequest:
@@ -256,35 +256,28 @@ async def test_a_spent_token_budget_is_a_422():
     assert error.value.code == "TOKEN_BUDGET"
 
 
-@pytest.mark.parametrize("overrides", [{"provider": "OPENAI"}, {"model": "gpt-x"}])
-async def test_other_providers_are_not_ready(overrides):
-    with pytest.raises(ApiError) as error:
-        await make_ask(ScriptedModel())(plan_request(uuid4(), **overrides))
-
-    assert error.value.status == 503
-    assert error.value.details == {"part": "ai_providers"}
-
-
-async def test_with_provider_for_each_call_uses_the_runs_own_provider():
+async def test_the_model_is_called_with_the_runs_provider():
+    openai = ProviderConfig(ProviderType.OPENAI, "gpt-4o", api_key="sk-fake-test-key-0000")
     model = ScriptedModel(UNDERSTOOD, PLANNED)
-    theirs = ProviderConfig(
-        ProviderType.OPENAI_API_COMPATIBLE,
-        "their-model",
-        base_url="https://llm.example.test/v1",
-        api_key="sk-fake-test-key-0000-abcd",  # noqa: S106
-    )
-    asked: list[AgentRequest] = []
+    run_id = uuid4()
+    asked_for = []
 
-    def provider_for(request: AgentRequest) -> ProviderConfig:
-        asked.append(request)
-        return theirs
+    def provider_for_run(agent_run_id: UUID) -> ProviderConfig:
+        asked_for.append(agent_run_id)
+        return openai
 
-    request = plan_request(uuid4(), provider="OPENAI_API_COMPATIBLE", model="their-model")
-    response = await make_ask(model, provider_for)(request)
+    deps = agent.AgentDeps(provider=PROVIDER, complete=model.complete, search=no_knowledge)
+    ask = make_ask_agent(lambda: _graph_on(InMemorySaver()), deps, provider_for_run)
 
-    assert response.waiting
-    assert asked == [request]
-    assert model.configs == [theirs, theirs]  # understand and plan
+    await ask(plan_request(run_id, provider="OPENAI", model="gpt-4o"))
+
+    assert asked_for == [run_id]
+    assert model.configs == [openai, openai]
+
+
+@asynccontextmanager
+async def _graph_on(saver: InMemorySaver) -> AsyncIterator:
+    yield agent.build_graph(saver)
 
 
 FTP_FINDING = FindingInput(
