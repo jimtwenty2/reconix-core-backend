@@ -1,5 +1,9 @@
 """API entry point."""
 
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from functools import partial
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +25,7 @@ from reconix_api.api import (
     sessions,
     system,
 )
+from reconix_api.core.agent import prepare_checkpoints
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_session_factory
 from reconix_api.core.errors import add_error_handlers
@@ -42,9 +47,18 @@ def create_app(
     mask_secrets: MaskSecrets | None = None,
     knowledge_store: KnowledgeStore | None = None,
     finding_memory: FindingMemory | None = None,
+    startup: Callable[[], Awaitable[None]] | None = None,
 ) -> FastAPI:
+    """startup runs once when the server starts, before any request is served."""
     settings = settings or get_settings()
-    app = FastAPI(title="Reconix API", version="0.0.0")
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if startup is not None:
+            await startup()
+        yield
+
+    app = FastAPI(title="Reconix API", version="0.0.0", lifespan=lifespan)
     app.state.interfaces = interfaces
     app.state.session_tokens = session_tokens or SessionTokens()
     app.state.mask_secrets = mask_secrets or build_mask_secrets()
@@ -96,6 +110,8 @@ app = create_app(
         _settings,
     ),
     session_tokens=_session_tokens,
+    # The agent's checkpoint tables are made here, never inside a request.
+    startup=partial(prepare_checkpoints, _settings.database_url),
 )
 
 

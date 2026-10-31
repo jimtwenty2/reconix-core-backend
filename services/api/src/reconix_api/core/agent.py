@@ -84,6 +84,12 @@ def provider_config(settings: Settings, provider: LlmProvider, model_name: str) 
     )
 
 
+async def prepare_checkpoints(database_url: str) -> None:
+    """Make the agent's checkpoint tables. Once, when the API starts and before any
+    request: inside a request it would wait forever (see reconix_ai.agent.checkpoints)."""
+    await agent.setup_checkpoints(database_url)
+
+
 def postgres_graph(database_url: str) -> OpenGraph:
     """Opens the graph on the Postgres checkpointer, so a waiting run survives a restart."""
 
