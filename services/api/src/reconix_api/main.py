@@ -16,6 +16,7 @@ from reconix_api.api import (
     assessments,
     evidence,
     findings,
+    knowledge,
     knowledge_add_ons,
     llm_providers,
     messages,
@@ -92,6 +93,7 @@ def create_app(
         evidence,
         llm_providers,
         knowledge_add_ons,
+        knowledge,
         timeline,
     ]
     for module in routers:

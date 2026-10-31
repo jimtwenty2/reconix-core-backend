@@ -52,3 +52,17 @@ class LlmProviderActivation(BaseModel):
 
     llm_provider: LlmProviderOut
     approval: ApprovalOut | None = None
+
+
+class LlmProviderTestOut(BaseModel):
+    """One fixed test prompt, with no Reconix data in it."""
+
+    ok: bool
+    model_name: str
+    latency_ms: int
+    code: str | None = None  # why it failed, e.g. MODEL_UNAVAILABLE
+    message: str | None = None
+
+
+class LlmProviderModelsOut(BaseModel):
+    models: list[str]  # e.g. ["reconix:latest", "bge-m3:latest"]

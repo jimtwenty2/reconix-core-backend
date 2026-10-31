@@ -2,15 +2,16 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import String, cast, func, insert, or_, select
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.orm import Session as Db
 
-from reconix_api.models import Action, Evidence, Finding, ToolRun, finding_sources
+from reconix_api.core.interfaces import ToolName
+from reconix_api.models import Action, Evidence, Finding, ToolRun, ValidationRun, finding_sources
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 
 
-def add(db: Db, row: Finding | Evidence) -> None:
+def add(db: Db, row: Finding | Evidence | ValidationRun) -> None:
     db.add(row)
     db.flush()
 
@@ -37,7 +38,7 @@ def add_source(db: Db, finding_id: UUID, tool_run_id: UUID) -> None:
 
 
 def list_by_assessment(db: Db, assessment_id: UUID) -> list[Finding]:
-    return list_matching(db, assessment_id)
+    return list_matching(db, assessment_id=assessment_id)
 
 
 def sources(db: Db, finding_id: UUID) -> list[tuple[UUID, str]]:
@@ -79,13 +80,17 @@ def get_evidence(db: Db, evidence_id: UUID) -> Evidence | None:
 
 def list_matching(
     db: Db,
+    *,
     assessment_id: UUID | None = None,
     severity_status: SeverityStatus | None = None,
     validation_status: ValidationStatus | None = None,
     finding_status: FindingStatus | None = None,
+    tool: ToolName | None = None,
+    target: str | None = None,
+    q: str | None = None,
 ) -> list[Finding]:
     """Every finding newest first, or one assessment's in the order they were found. Each
-    value given must match."""
+    filter given must match: tool is one that found it, target and q are parts of text."""
     query = select(Finding)
     if assessment_id is None:
         query = query.order_by(Finding.created_at.desc(), Finding.code)
@@ -98,7 +103,39 @@ def list_matching(
         query = query.where(Finding.validation_status == validation_status)
     if finding_status is not None:
         query = query.where(Finding.finding_status == finding_status)
+    if tool is not None:
+        found_by_tool = (
+            select(finding_sources.c.finding_id)
+            .join(ToolRun, ToolRun.tool_run_id == finding_sources.c.tool_run_id)
+            .join(Action, Action.action_id == ToolRun.action_id)
+            .where(Action.tool == tool)
+        )
+        query = query.where(Finding.finding_id.in_(found_by_tool))
+    if target:
+        query = query.where(Finding.target.ilike(contains(target), escape="\\"))
+    if q:
+        pattern = contains(q)
+        query = query.where(
+            or_(
+                *(
+                    column.ilike(pattern, escape="\\")
+                    for column in (
+                        Finding.code,
+                        Finding.title,
+                        Finding.target,
+                        Finding.description,
+                        cast(Finding.cwe_ids, String),
+                    )
+                )
+            )
+        )
     return list(db.scalars(query))
+
+
+def contains(text: str) -> str:
+    """A LIKE pattern for text anywhere; % and _ typed by a person match only themselves."""
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 def count_by(
@@ -116,3 +153,13 @@ def count_by(
     if without_false_positives:
         query = query.where(Finding.finding_status != FindingStatus.FALSE_POSITIVE)
     return [(row[0], row[1], row[2]) for row in db.execute(query)]
+
+
+def list_validation_runs(db: Db, finding_id: UUID) -> list[ValidationRun]:
+    """Newest first."""
+    query = (
+        select(ValidationRun)
+        .where(ValidationRun.finding_id == finding_id)
+        .order_by(ValidationRun.created_at.desc(), ValidationRun.validation_run_id.desc())
+    )
+    return list(db.scalars(query))

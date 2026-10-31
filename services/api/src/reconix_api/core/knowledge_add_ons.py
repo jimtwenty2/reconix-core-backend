@@ -15,7 +15,15 @@ from fastapi import Depends, Request
 from qdrant_client import AsyncQdrantClient
 
 from reconix_ai import knowledge
-from reconix_ai.knowledge import AddOn, EmbedTexts, KnowledgeError, split_passages
+from reconix_ai.knowledge import (
+    AddOn,
+    EmbedTexts,
+    KnowledgeError,
+    KnowledgeFilters,
+    KnowledgeHit,
+    Source,
+    split_passages,
+)
 from reconix_ai.providers import ProviderError, embed_texts
 from reconix_api.core.agent import AGENT_ERROR_STATUS
 from reconix_api.core.errors import ApiError
@@ -67,6 +75,18 @@ async def remove(store: KnowledgeStore, knowledge_add_on_id: str) -> None:
 async def remove_all(store: KnowledgeStore) -> None:
     with api_errors():
         await knowledge.remove_all_add_ons(store.client)
+
+
+async def search(
+    store: KnowledgeStore, query: str, sources: list[str], limit: int
+) -> list[KnowledgeHit]:
+    """The agent's own knowledge search: public knowledge and add-ons, by meaning and
+    exact words. The query is masked before it is embedded."""
+    filters = KnowledgeFilters(sources=[Source(name) for name in sources])
+    with api_errors():
+        return await knowledge.search_knowledge(
+            query, filters, limit, client=store.client, embed=store.embed
+        )
 
 
 @contextmanager
