@@ -21,7 +21,8 @@ from uuid import UUID
 from pydantic import ValidationError
 from sqlalchemy.orm import Session as Db
 
-from reconix_api.core import provider_keys, provider_urls
+from reconix_api.core import provider_checks, provider_keys, provider_urls
+from reconix_api.core.agent import provider_config
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Operator, WriteAudit
@@ -30,7 +31,13 @@ from reconix_api.models import Approval, LlmProvider
 from reconix_api.models.enums import ApprovalStatus, ProviderType
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import llm_providers as provider_repo
-from reconix_api.schemas.llm_providers import LlmProviderIn, LlmProviderOut, LlmProviderUpdate
+from reconix_api.schemas.llm_providers import (
+    LlmProviderIn,
+    LlmProviderModelsOut,
+    LlmProviderOut,
+    LlmProviderTestOut,
+    LlmProviderUpdate,
+)
 from reconix_api.services.approvals import expires_at, snapshot_hash
 from reconix_api.services.audit import audit
 
@@ -105,8 +112,12 @@ def update_provider(
     )
     new_key = "api_key" in changes.model_fields_set
     api_key = changes.api_key.get_secret_value() if changes.api_key else None
-    has_key = api_key is not None if new_key else provider.api_key_encrypted is not None
     base_url = merged.base_url or None
+    # A key was typed for one address: a new address never gets the old key.
+    moved = base_url != provider.base_url and not new_key and provider.api_key_encrypted
+    if moved:
+        new_key = True
+    has_key = api_key is not None if new_key else provider.api_key_encrypted is not None
     _refuse_secrets(mask, {"model_name": merged.model_name, "base_url": base_url})
     check_settings(provider.provider_type, base_url, has_key=has_key)
     provider.display_name = _masked_name(mask, merged.display_name)
@@ -373,6 +384,47 @@ def _ensure_editable(provider: LlmProvider) -> None:
             "PROVIDER_IS_ACTIVE",
             "Make another provider active before you change or remove this one.",
         )
+
+
+async def test_provider(
+    db: Db, write_audit: WriteAudit, settings: Settings, operator: Operator, llm_provider_id: UUID
+) -> LlmProviderTestOut:
+    """Send the provider's model one fixed prompt with no Reconix data. A custom address
+    off this computer must not resolve to a private network, so the test can never be
+    used to probe it. One audit line per test."""
+    provider = _get(db, llm_provider_id)
+    if provider.base_url and not is_local(provider.provider_type, provider.base_url):
+        provider_checks.ensure_public_host(provider.base_url)
+    config = provider_config(settings, provider, provider.model_name)
+    model_name, provider_type = provider.model_name, provider.provider_type
+    db.rollback()  # no transaction stays open while the model answers
+    result = await provider_checks.try_provider(config)
+    details = {
+        "llm_provider_id": str(llm_provider_id),
+        "provider_type": provider_type,
+        "ok": result.ok,
+        "code": result.code,
+    }
+    audit(write_audit, "LLM_PROVIDER_TESTED", operator, details=details)
+    return LlmProviderTestOut(model_name=model_name, **result.__dict__)
+
+
+async def list_models(db: Db, llm_provider_id: UUID) -> LlmProviderModelsOut:
+    """The models an Ollama on this computer has (RECONIX and OLLAMA providers only)."""
+    provider = _get(db, llm_provider_id)
+    if provider.provider_type not in OLLAMA_TYPES:
+        raise ApiError(
+            422,
+            "MODEL_LIST_NOT_SUPPORTED",
+            "Only Ollama providers can list their models. Type the model name instead.",
+        )
+    if not is_local(provider.provider_type, provider.base_url):
+        raise ApiError(
+            422, "MODEL_LIST_NOT_SUPPORTED", "Only an Ollama on this computer can list its models."
+        )
+    base_url = provider.base_url
+    db.rollback()
+    return LlmProviderModelsOut(models=await provider_checks.local_models(base_url))
 
 
 def _get(db: Db, llm_provider_id: UUID, lock: bool = False) -> LlmProvider:

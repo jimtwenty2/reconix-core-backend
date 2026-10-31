@@ -12,7 +12,9 @@ from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.schemas.llm_providers import (
     LlmProviderActivation,
     LlmProviderIn,
+    LlmProviderModelsOut,
     LlmProviderOut,
+    LlmProviderTestOut,
     LlmProviderUpdate,
 )
 from reconix_api.services import decisions, llm_providers
@@ -88,3 +90,25 @@ def activate_provider(
     )
     approval_out = decisions.approval_out(approval, ttl_minutes) if approval else None
     return LlmProviderActivation(llm_provider=provider, approval=approval_out)
+
+
+@router.post("/{llm_provider_id}/test")
+async def test_provider(
+    llm_provider_id: UUID,
+    db: Db,
+    operator: CurrentOperator,
+    interfaces: CurrentInterfaces,
+    settings: CurrentSettings,
+) -> LlmProviderTestOut:
+    """Send the model one fixed prompt with no Reconix data, and say whether it answered
+    and how fast. Changes nothing."""
+    return await llm_providers.test_provider(
+        db, interfaces.write_audit, settings, operator, llm_provider_id
+    )
+
+
+@router.get("/{llm_provider_id}/models")
+async def list_models(llm_provider_id: UUID, db: Db, _: CurrentOperator) -> LlmProviderModelsOut:
+    """The models a RECONIX or OLLAMA provider's Ollama has on this computer. Cloud
+    providers answer 422 MODEL_LIST_NOT_SUPPORTED."""
+    return await llm_providers.list_models(db, llm_provider_id)

@@ -8,6 +8,9 @@ back to the agent exactly once (claim_waiting), and the run is COMPLETED.
 
 One plan per assessment is open at a time. A run ends COMPLETED, FAILED or
 CANCELLED, and each end writes one audit line.
+
+The next step (SUGGEST) goes the same way, with the newest masked tool outputs: the
+agent reflects on them (ReflAct) and suggests what to run next.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -31,19 +34,21 @@ from reconix_api.core.interfaces import (
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import Action as ActionRow
 from reconix_api.models import AgentRun, Approval
-from reconix_api.models.enums import AgentRunStatus, ApprovalStatus
+from reconix_api.models.enums import ActionStatus, AgentRunStatus, ApprovalStatus
 from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import agent_runs as agent_run_repo
+from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import messages as message_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut
-from reconix_api.schemas.agent_runs import PlanOut
+from reconix_api.schemas.agent_runs import AgentRunOut, PlanOut
 from reconix_api.services import actions, agent_runs
 from reconix_api.services.approvals import expires_at
 from reconix_api.services.audit import audit
 
 Decision = Literal["APPROVED", "REJECTED"]
 STALE_MINUTES = 10  # a plan still RUNNING after this was cut off (e.g. the API stopped)
+TOOL_OUTPUTS = 3  # the next step reads the newest 3 tool outputs, masked when saved
 
 
 async def start_plan(
@@ -53,13 +58,23 @@ async def start_plan(
     settings: Settings,
     operator: Operator,
     assessment_id: UUID,
+    task: AgentTask = AgentTask.PLAN,
 ) -> PlanOut:
+    """PLAN: a plan and its first step. SUGGEST: the next step, from the newest tool
+    outputs."""
     actions.ensure_can_act(db, assessment_id)
+    tool_results = recent_outputs(db, assessment_id) if task == AgentTask.SUGGEST else []
+    if task == AgentTask.SUGGEST and not tool_results:
+        raise ApiError(
+            409, "NO_TOOL_RESULTS", "No tool has run yet. Ask for a plan, or run a step first."
+        )
     await settle_waiting_run(db, interfaces, operator, assessment_id, settings)
     scope = approved_scope(interfaces, assessment_id)
-    run = open_plan_run(db, interfaces, operator, assessment_id)
+    run = open_plan_run(db, interfaces, operator, assessment_id, task)
     try:
-        return await plan_and_send(db, interfaces, mask, settings, operator, run, scope)
+        return await plan_and_send(
+            db, interfaces, mask, settings, operator, run, scope, task, tool_results
+        )
     except Exception as error:
         agent_runs.fail(db, interfaces, operator, run, error)
         raise
@@ -73,22 +88,26 @@ async def plan_and_send(
     operator: Operator,
     run: AgentRun,
     scope: ApprovedScope,
+    task: AgentTask = AgentTask.PLAN,
+    tool_results: list[str] | None = None,
 ) -> PlanOut:
     provider, model = agent_runs.agent_provider(db, run)
     request = AgentRequest(
-        task=AgentTask.PLAN,
+        task=task,
         assessment_id=run.assessment_id,
         agent_run_id=run.agent_run_id,
         provider=provider,
         model=model,
         scope=scope,
         messages=chat(db, operator.session_id),
+        tool_results=tool_results or [],
     )
+    db.rollback()  # no transaction stays open while the agent answers
     response = await interfaces.ask_agent(request)
     text = mask(response.text)[0]
     plan = [step.model_copy(update={"title": mask(step.title)[0]}) for step in response.plan]
     run.plan = {
-        "task": "PLAN",
+        "task": task.value,
         "text": text,
         "steps": [step.model_dump(mode="json") for step in plan],
         "blocked": [step.model_dump(mode="json") for step in response.blocked],
@@ -97,7 +116,7 @@ async def plan_and_send(
     db.commit()
     audit(
         interfaces.write_audit,
-        "PLAN_CREATED",
+        "PLAN_CREATED" if task == AgentTask.PLAN else "STEP_SUGGESTED",
         operator,
         run.assessment_id,
         {"agent_run_id": str(run.agent_run_id), "steps": len(plan)},
@@ -158,7 +177,11 @@ async def send_suggested_step(
 
 
 def open_plan_run(
-    db: Db, interfaces: Interfaces, operator: Operator, assessment_id: UUID
+    db: Db,
+    interfaces: Interfaces,
+    operator: Operator,
+    assessment_id: UUID,
+    task: AgentTask = AgentTask.PLAN,
 ) -> AgentRun:
     """The new plan's run. The assessment row stays locked while the open plans are
     checked and the run is saved, so two plans can never both start."""
@@ -179,7 +202,7 @@ def open_plan_run(
             "Another plan for this assessment is still open.",
             {"agent_run_id": str(run.agent_run_id)},
         )
-    run = agent_runs.new_agent_run(db, operator, assessment_id, task="PLAN")
+    run = agent_runs.new_agent_run(db, operator, assessment_id, task=task.value)
     db.commit()
     return run
 
@@ -249,7 +272,7 @@ async def resume_claimed(
     try:
         provider, model = agent_runs.agent_provider(db, run)
         request = AgentRequest(
-            task=AgentTask.PLAN,
+            task=AgentTask((run.plan or {}).get("task", AgentTask.PLAN)),
             assessment_id=run.assessment_id,
             agent_run_id=run.agent_run_id,
             provider=provider,
@@ -271,6 +294,40 @@ async def resume_claimed(
     agent_runs.end(db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"decision": decision})
 
 
+def cancel_run(
+    db: Db, interfaces: Interfaces, operator: Operator, agent_run_id: UUID
+) -> AgentRunOut:
+    """Stop a plan or next-step run that waits for a person. Its waiting step is
+    CANCELLED and the approval EXPIRED, so the step can never run later. A run still
+    asking the agent cannot be stopped half way: 409."""
+    run = agent_run_repo.get(db, agent_run_id)
+    if run is None or (run.plan or {}).get("task") not in ("PLAN", "SUGGEST"):
+        raise ApiError(404, "AGENT_RUN_NOT_FOUND", "No plan or next-step run with this id.")
+    if run.agent_runs_status == AgentRunStatus.RUNNING:
+        raise ApiError(409, "RUN_IN_PROGRESS", "The agent is still answering. Try again soon.")
+    if not agent_run_repo.claim_waiting(db, agent_run_id):
+        raise ApiError(409, "RUN_FINISHED", "This run has already ended.")
+    details = {"reason": "CANCELLED_BY_PERSON"}
+    found = waiting_step(db, run)
+    if found is not None:
+        # The same locks as approving, in the same order: a decision made at this moment
+        # either finishes first (and the step stands) or waits and finds it cancelled.
+        approval = approval_repo.get_for_update(db, found[1].approval_id)
+        row = action_repo.get_for_update(db, found[0].action_id)
+        details["action_id"] = str(row.action_id)
+        if (
+            approval.approval_status == ApprovalStatus.PENDING
+            and row.action_status == ActionStatus.PENDING
+        ):
+            approval.approval_status = ApprovalStatus.EXPIRED
+            approval.reason = "RUN_CANCELLED"
+            row.action_status = ActionStatus.CANCELLED
+        else:
+            details["step"] = "ALREADY_DECIDED"
+    agent_runs.end(db, interfaces, operator, run, AgentRunStatus.CANCELLED, details)
+    return agent_runs.agent_run_out(run)
+
+
 def waiting_step(db: Db, run: AgentRun) -> tuple[ActionRow, Approval] | None:
     """The plan's own step that waits, and its approval."""
     for row in action_repo.list_by_agent_run(db, run.agent_run_id):
@@ -278,6 +335,13 @@ def waiting_step(db: Db, run: AgentRun) -> tuple[ActionRow, Approval] | None:
         if row.source == "agent" and approval is not None:
             return row, approval
     return None
+
+
+def recent_outputs(db: Db, assessment_id: UUID) -> list[str]:
+    """The newest tool outputs of the assessment, masked when they were saved."""
+    runs = action_repo.tool_runs_in_assessment(db, assessment_id)
+    outputs = [run.output_masked for run, _ in runs if run.output_masked]
+    return outputs[-TOOL_OUTPUTS:]
 
 
 def step_note(action: ActionOut | None) -> str:

@@ -31,12 +31,14 @@ def list_by_session(db: Db, session_id: UUID) -> list[AgentRun]:
     return list(db.scalars(query))
 
 
-def person_run(db: Db, assessment_id: UUID) -> AgentRun | None:
-    """The RUNNING run a person's actions share: the newest one with no plan."""
+def person_run(db: Db, assessment_id: UUID, session_id: UUID) -> AgentRun | None:
+    """The RUNNING run one session's own actions on an assessment share: the newest one
+    with no plan. Per session, so an action is never filed under another session's run."""
     query = (
         select(AgentRun)
         .where(
             AgentRun.assessment_id == assessment_id,
+            AgentRun.session_id == session_id,
             AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
             AgentRun.plan.is_(None),
         )
@@ -47,12 +49,12 @@ def person_run(db: Db, assessment_id: UUID) -> AgentRun | None:
 
 
 def open_plan_runs(db: Db, assessment_id: UUID) -> list[AgentRun]:
-    """Plan runs that are still asking the agent (RUNNING) or wait for a person."""
+    """Plan and next-step runs still asking the agent (RUNNING) or waiting for a person."""
     query = (
         select(AgentRun)
         .where(
             AgentRun.assessment_id == assessment_id,
-            AgentRun.plan["task"].astext == "PLAN",
+            AgentRun.plan["task"].astext.in_(["PLAN", "SUGGEST"]),
             AgentRun.agent_runs_status.in_(
                 [AgentRunStatus.RUNNING, AgentRunStatus.WAITING_APPROVAL]
             ),
@@ -80,3 +82,18 @@ def claim_waiting(db: Db, agent_run_id: UUID) -> bool:
 
 def active_provider(db: Db) -> LlmProvider | None:
     return db.scalar(select(LlmProvider).where(LlmProvider.is_active))
+
+
+def latest_plan(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """The newest PLAN run, whatever its status. Analysis runs keep their answer in
+    `plan` too ({"task": "ANALYZE"}), so the task is checked."""
+    query = (
+        select(AgentRun)
+        .where(
+            AgentRun.assessment_id == assessment_id,
+            AgentRun.plan["task"].astext == "PLAN",
+        )
+        .order_by(AgentRun.started_at.desc())
+        .limit(1)
+    )
+    return db.scalar(query)

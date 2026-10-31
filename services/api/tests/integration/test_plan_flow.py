@@ -8,7 +8,7 @@ from sqlalchemy import update
 
 from reconix_api.core.interfaces import Action, ToolName
 from reconix_api.models import Action as ActionRow
-from reconix_api.models import AgentRun, Approval
+from reconix_api.models import AgentRun, Approval, ScopeManifest
 from tests.integration.test_action_flow import active_assessment, event_types
 from tests.integration.test_scope_flow import open_session
 
@@ -245,3 +245,31 @@ def test_an_unexpected_error_never_leaves_a_run_running(db_client, db_app):
 
     [run] = runs(db_client, headers)
     assert run["agent_runs_status"] == "FAILED"
+
+
+def test_a_step_blocked_at_approval_frees_the_plan(db_client, db_app, session_factory):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    db_app.state.parts["agent"].suggest = NUCLEI_STEP
+    first = plan(db_client, headers, assessment_id).json()
+    with session_factory() as db:  # the scope no longer allows the suggested tool
+        db.execute(
+            update(ScopeManifest)
+            .where(ScopeManifest.assessment_id == assessment_id)
+            .values(allowed_tools=["NMAP", "ZAP"])
+        )
+        db.commit()
+    blocked = db_client.post(
+        f"/approvals/{first['action']['approval_id']}/approve", json={}, headers=headers
+    )
+    assert blocked.json()["code"] == "ACTION_BLOCKED"
+
+    again = plan(db_client, headers, assessment_id)  # not 409 RUN_IS_WAITING
+
+    assert again.status_code == 201, again.json()
+    first_id = first["agent_run"]["agent_run_id"]
+    [first_run] = [r for r in runs(db_client, headers) if r["agent_run_id"] == first_id]
+    assert first_run["agent_runs_status"] == "COMPLETED"
+    resumes = [r.resume.decision for r in db_app.state.parts["agent"].requests if r.resume]
+    assert resumes == ["REJECTED"]
+    assert db_app.state.parts["mcp"].jobs == []

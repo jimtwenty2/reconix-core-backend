@@ -10,14 +10,23 @@ from reconix_api.models import Approval, Report, report_assessments
 from reconix_api.models.enums import ReportStatus
 
 
-def add(db: Db, report: Report) -> None:
+def add(db: Db, report: Report, assessment_ids: list[UUID] | None = None) -> None:
+    """The report and the assessments it covers (its own, then any combined with it)."""
     db.add(report)
     db.flush()
-    db.execute(
-        insert(report_assessments).values(
-            report_id=report.report_id, assessment_id=report.assessment_id
+    for assessment_id in assessment_ids or [report.assessment_id]:
+        db.execute(
+            insert(report_assessments).values(
+                report_id=report.report_id, assessment_id=assessment_id
+            )
         )
+
+
+def covered_assessments(db: Db, report_id: UUID) -> list[UUID]:
+    query = select(report_assessments.c.assessment_id).where(
+        report_assessments.c.report_id == report_id
     )
+    return list(db.scalars(query))
 
 
 def get(db: Db, report_id: UUID, lock: bool = False) -> Report | None:
@@ -25,8 +34,14 @@ def get(db: Db, report_id: UUID, lock: bool = False) -> Report | None:
 
 
 def list_by_assessment(db: Db, assessment_id: UUID) -> list[Report]:
+    """Its own reports, newest version first, then combined reports that cover it."""
+    covers = select(report_assessments.c.report_id).where(
+        report_assessments.c.assessment_id == assessment_id
+    )
     query = (
-        select(Report).where(Report.assessment_id == assessment_id).order_by(Report.version.desc())
+        select(Report)
+        .where(Report.report_id.in_(covers))
+        .order_by((Report.assessment_id != assessment_id), Report.created_at.desc())
     )
     return list(db.scalars(query))
 
