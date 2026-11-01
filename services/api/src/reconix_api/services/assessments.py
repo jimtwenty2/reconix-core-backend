@@ -2,6 +2,7 @@
 views: the list rows and one assessment's overview."""
 
 from collections import defaultdict
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -76,6 +77,9 @@ def overview(db: Db, assessment_id: UUID, ttl_minutes: int) -> AssessmentOvervie
     runs = action_repo.tool_run_totals(db, assessment_id)
     step_count, step_done_count = plan_progress(db, assessment_id)
     pending = approval_repo.count_waiting(db, ids, still_open_after(ttl_minutes))
+    duration = seconds_between(runs.first_started_at, runs.last_finished_at) or 0
+    scope = scope_repo.get_approved(db, assessment_id)
+    window = seconds_between(scope.starts_at, scope.ends_at) if scope else None
     return AssessmentOverviewOut(
         assessment=_out(assessment),
         targets=scope_repo.approved_targets(db, ids).get(assessment_id, []),
@@ -92,7 +96,17 @@ def overview(db: Db, assessment_id: UUID, ttl_minutes: int) -> AssessmentOvervie
         pending_approval_count=pending.get(assessment_id, 0),
         first_started_at=runs.first_started_at,
         last_finished_at=runs.last_finished_at,
+        duration_seconds=duration,
+        time_window_seconds=window,
+        over_time_window=window is not None and duration > window,
     )
+
+
+def seconds_between(start: datetime | None, end: datetime | None) -> int | None:
+    """Whole seconds from start to end, never below 0. None when either is missing."""
+    if start is None or end is None:
+        return None
+    return max(0, int((end - start).total_seconds()))
 
 
 def update_assessment(

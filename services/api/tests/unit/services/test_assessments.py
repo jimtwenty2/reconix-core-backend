@@ -1,5 +1,7 @@
+from datetime import UTC, datetime, timedelta
+
 from reconix_api.models.enums import SeverityStatus, ValidationStatus
-from reconix_api.services.assessments import every, worst
+from reconix_api.services.assessments import every, seconds_between, worst
 
 
 def test_the_worst_severity_wins():
@@ -19,3 +21,11 @@ def test_every_value_is_a_key_in_order():
         "UNCONFIRMED": 0,
         "INCONCLUSIVE": 0,
     }
+
+
+def test_seconds_between_two_times():
+    start = datetime(2026, 10, 15, 16, 5, tzinfo=UTC)
+    assert seconds_between(start, start + timedelta(minutes=2, seconds=33)) == 153
+    assert seconds_between(start, start - timedelta(seconds=5)) == 0  # never below 0
+    assert seconds_between(None, start) is None
+    assert seconds_between(start, None) is None
