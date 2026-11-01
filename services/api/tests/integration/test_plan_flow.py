@@ -6,9 +6,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import update
 
+from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Action, ToolName
 from reconix_api.models import Action as ActionRow
 from reconix_api.models import AgentRun, Approval, ScopeManifest
+from reconix_api.services import plans
 from tests.integration.test_action_flow import active_assessment, event_types
 from tests.integration.test_scope_flow import open_session
 
@@ -273,3 +275,24 @@ def test_a_step_blocked_at_approval_frees_the_plan(db_client, db_app, session_fa
     resumes = [r.resume.decision for r in db_app.state.parts["agent"].requests if r.resume]
     assert resumes == ["REJECTED"]
     assert db_app.state.parts["mcp"].jobs == []
+
+
+def test_an_answer_after_the_run_was_cut_off_saves_nothing(db_client, session_factory):
+    """A slow model call can outlive the cut-off; a newer plan has started by then, so
+    the old run's answer must not be saved or sent."""
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    run_id = plan(db_client, headers, assessment_id).json()["agent_run"]["agent_run_id"]
+    with session_factory() as db:
+        db.execute(
+            update(AgentRun)
+            .where(AgentRun.agent_run_id == run_id)
+            .values(agent_runs_status="FAILED")
+        )
+        db.commit()
+        run = db.get(AgentRun, run_id)
+
+        with pytest.raises(ApiError) as error:
+            plans.ensure_still_running(db, run)
+
+    assert (error.value.status, error.value.code) == (409, "RUN_CUT_OFF")

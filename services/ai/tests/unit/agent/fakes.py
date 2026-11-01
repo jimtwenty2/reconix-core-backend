@@ -50,6 +50,15 @@ class Request:
     tool_results: list[str] = field(default_factory=list)
     findings: list[dict] = field(default_factory=list)
     report: object | None = None
+    chat_scope: object | None = None
+    plan: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ChatScope(Scope):
+    """Same fields as the shared ChatScope: a scope and whether it is approved yet."""
+
+    status: str = "DRAFT"
 
 
 class FakeModel:

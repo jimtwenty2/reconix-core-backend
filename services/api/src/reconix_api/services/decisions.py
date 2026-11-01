@@ -37,7 +37,13 @@ async def approve(
     if approval.kind == "scope":
         scopes.approve_scope(db, interfaces.write_audit, operator, approval)
     elif approval.kind == "action":
-        await actions.approve_action(db, interfaces, mask, settings, operator, approval)
+        try:
+            await actions.approve_action(db, interfaces, mask, settings, operator, approval)
+        except ApiError:
+            if approval.approval_status == ApprovalStatus.EXPIRED:
+                # The second check refused it: the plan hears REJECTED, nothing ran.
+                await plans.resume_after_decision(db, interfaces, operator, approval, "REJECTED")
+            raise
         await plans.resume_after_decision(db, interfaces, operator, approval, "APPROVED")
     elif approval.kind == "review":
         reports.approve_review(db, interfaces.write_audit, operator, approval)

@@ -47,3 +47,14 @@ def test_prompts_folder_has_no_other_files() -> None:
     names = sorted(path.name for path in PROMPTS_DIR.glob("*.md"))
 
     assert names == sorted(PROMPT_FILES)
+
+
+def test_every_task_is_told_it_changes_nothing() -> None:
+    """A model once wrote "Port 3389 is added to the scope" in a plan when the person
+    only asked for it in the chat. The rule is in the system message of every task."""
+    from reconix_ai.agent.prompts import system_message
+
+    text = system_message().content
+
+    assert "You change nothing." in text
+    assert "does not change it" in text

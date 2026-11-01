@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from reconix_api.core.agent import ProviderConfig, provider_config
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import Interfaces, Operator
+from reconix_api.core.interfaces import AgentRequest, AgentResponse, Interfaces, Operator
 from reconix_api.models import AgentRun, LlmProvider
 from reconix_api.models.enums import AgentRunStatus, ProviderType
 from reconix_api.repositories import agent_runs as agent_run_repo
@@ -21,7 +21,7 @@ from reconix_api.services.audit import audit
 
 
 def new_agent_run(
-    db: Db, operator: Operator, assessment_id: UUID, task: str | None = None
+    db: Db, operator: Operator, assessment_id: UUID | None, task: str | None = None
 ) -> AgentRun:
     """A RUNNING run with the active provider. task marks a plan, analysis or report run
     (plan = {"task": ...}); a run without one is shared by a person's actions. The
@@ -38,6 +38,13 @@ def new_agent_run(
     )
     agent_run_repo.add(db, agent_run)
     return agent_run
+
+
+async def ask_agent(db: Db, interfaces: Interfaces, request: AgentRequest) -> AgentResponse:
+    """Ask the agent with no transaction left open: a model call can take minutes, and
+    the locks and the connection this request holds must not wait on it."""
+    db.commit()
+    return await interfaces.ask_agent(request)
 
 
 def make_provider_for_run(

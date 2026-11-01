@@ -130,7 +130,7 @@ async def test_the_analysis_answer_may_be_longer_than_a_plan(graph) -> None:
 
     await ask_agent(graph, analyze_request(FTP), str(uuid4()), deps)
 
-    assert sent == [6000]
+    assert sent == [20_000]
 
 
 async def test_an_id_named_only_inside_a_hit_text_is_not_allowed(graph) -> None:

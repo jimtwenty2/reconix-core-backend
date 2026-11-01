@@ -26,10 +26,15 @@ async def start_plan(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
+    draft: bool = False,
 ) -> PlanOut:
     """The agent plans and suggests one step. The step goes through the same checks as
-    any action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id."""
-    return await plans.start_plan(db, interfaces, mask, settings, operator, assessment_id)
+    any action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id.
+    With draft=true nothing is sent yet: the person reads the plan first, then sends it
+    (POST /agent-runs/{id}/send) or drops it (POST /agent-runs/{id}/cancel)."""
+    return await plans.start_plan(
+        db, interfaces, mask, settings, operator, assessment_id, draft=draft
+    )
 
 
 @router.post("/assessments/{assessment_id}/next-step", status_code=status.HTTP_201_CREATED)
@@ -47,3 +52,16 @@ async def suggest_next_step(
     return await plans.start_plan(
         db, interfaces, mask, settings, operator, assessment_id, task=AgentTask.SUGGEST
     )
+
+
+@router.post("/agent-runs/{agent_run_id}/send")
+async def send_plan(
+    agent_run_id: UUID,
+    db: Db,
+    operator: CurrentOperator,
+    interfaces: CurrentInterfaces,
+    mask: CurrentMask,
+    settings: CurrentSettings,
+) -> PlanOut:
+    """Send a drafted plan's first step, through the same checks as any action."""
+    return await plans.send_draft(db, interfaces, mask, settings, operator, agent_run_id)

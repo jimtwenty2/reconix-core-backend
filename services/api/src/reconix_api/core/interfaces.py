@@ -19,10 +19,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # Shared values (UPPERCASE everywhere, as in ERD V3)
@@ -102,6 +102,26 @@ class ApprovedScope(BaseModel):
     max_risk: RiskLevel = RiskLevel.LOW
     window_start: datetime | None = None
     window_end: datetime | None = None
+    allowed_ports: list[int] = Field(default_factory=list)  # nmap's ports; empty: no limit
+
+
+class ChatScope(BaseModel):
+    """The scope a CHAT talks about: approved, or still a draft. Only the chat reads it.
+    It is not an ApprovedScope, so it can never be passed to check() by mistake and a
+    draft can never let a tool run."""
+
+    assessment_id: UUID | None = None  # a draft has no assessment until it is submitted
+    status: Literal["APPROVED", "DRAFT"]
+    ip_ranges: list[str] = Field(default_factory=list)
+    domains: list[str] = Field(default_factory=list)
+    url_prefixes: list[str] = Field(default_factory=list)
+    repo_paths: list[str] = Field(default_factory=list)
+    excluded_targets: list[str] = Field(default_factory=list)
+    allowed_tools: list[ToolName] = Field(default_factory=list)
+    max_risk: RiskLevel = RiskLevel.LOW
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    allowed_ports: list[int] = Field(default_factory=list)
 
 
 class Action(BaseModel):
@@ -159,6 +179,8 @@ class PlanStep(BaseModel):
     order: int
     title: str
     action: Action | None = None
+    phase: Literal["discovery", "scan", "validation"] | None = None
+    reason: str = ""  # why the agent wants this step; masked, shown on the approval card
 
 
 class ChatMessage(BaseModel):
@@ -256,12 +278,14 @@ class AgentRequest(BaseModel):
     """What the backend sends to the AI Service. Everything in it is already masked.
 
     With resume set, the waiting run gets the person's decision instead of a new task.
+    CHAT may come before there is an assessment or an approved scope: it reads
+    chat_scope and plan instead, and only answers.
     """
 
     task: AgentTask
-    assessment_id: UUID
+    assessment_id: UUID | None = None  # every task but CHAT needs it
     agent_run_id: UUID  # agent_runs.agent_run_id; the LangGraph thread
-    scope: ApprovedScope
+    scope: ApprovedScope | None = None  # every task but CHAT needs it
     provider: str = "RECONIX"
     model: str | None = None
     messages: list[ChatMessage] = Field(default_factory=list)  # oldest first
@@ -269,6 +293,16 @@ class AgentRequest(BaseModel):
     findings: list[FindingInput] = Field(default_factory=list)  # ANALYZE
     report: ReportInput | None = None  # REPORT
     resume: ResumeInput | None = None
+    chat_scope: ChatScope | None = None  # CHAT: the scope the person talks about
+    plan: list[str] = Field(default_factory=list)  # CHAT: the current plan, one line a step
+
+    @model_validator(mode="after")
+    def scope_unless_chat(self) -> Self:
+        if self.task != AgentTask.CHAT and (self.assessment_id is None or self.scope is None):
+            raise ValueError(f"{self.task} needs the assessment and its approved scope")
+        if self.task == AgentTask.CHAT and self.resume is not None:
+            raise ValueError("a CHAT only answers: it never waits, so it is never resumed")
+        return self
 
 
 class AgentResponse(BaseModel):

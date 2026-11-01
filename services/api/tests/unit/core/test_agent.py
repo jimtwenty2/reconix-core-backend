@@ -352,3 +352,30 @@ async def test_report_without_its_locked_copy_is_a_422():
 
     assert error.value.status == 422
     assert error.value.code == "NO_REPORT_DATA"
+
+
+async def test_chat_names_each_speaker_and_answers_without_a_step():
+    model = ScriptedModel({"answer": "It finds service versions.", "references": []})
+    request = AgentRequest(
+        task=AgentTask.CHAT,
+        agent_run_id=uuid4(),
+        messages=[
+            ChatMessage(role="user", content_masked="What is -sV?"),
+            ChatMessage(role="assistant", content_masked="A version scan."),
+            ChatMessage(role="user", content_masked="Is it loud?"),
+        ],
+    )
+
+    response = await make_ask(model)(request)
+
+    assert response.text == "It finds service versions."
+    assert response.proposed_action is None and not response.waiting
+    sent = model.sent_text()
+    assert "Person: What is -sV?" in sent and "Reconix: A version scan." in sent
+
+
+def test_every_task_but_chat_needs_the_assessment_and_scope():
+    with pytest.raises(ValueError, match="needs the assessment"):
+        AgentRequest(task=AgentTask.PLAN, agent_run_id=uuid4())
+
+    assert AgentRequest(task=AgentTask.CHAT, agent_run_id=uuid4()).scope is None

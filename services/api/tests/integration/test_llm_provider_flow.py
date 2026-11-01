@@ -401,3 +401,38 @@ def test_a_provider_that_agent_runs_used_stays(db_client, session_factory):
     assert refused.json()["code"] == "PROVIDER_IN_USE"
     with session_factory() as db:
         assert db.scalar(select(LlmProvider).where(LlmProvider.llm_provider_id == provider_id))
+
+
+def test_moving_a_provider_drops_its_key(db_client, session_factory):
+    """A key is never sent to an address it wasn't given for: send it again."""
+    headers = open_session(db_client)
+    compatible = add(
+        db_client,
+        headers,
+        {
+            "provider_type": "OPENAI_API_COMPATIBLE",
+            "display_name": "Lab model",
+            "model_name": "qwen",
+            "base_url": "https://llm.example.com/v1",
+            "api_key": FAKE_API_KEY,
+        },
+    )
+    provider_id = compatible["llm_provider_id"]
+
+    moved = db_client.patch(
+        f"/llm-providers/{provider_id}",
+        json={"base_url": "https://other.example.com/v1"},
+        headers=headers,
+    )
+
+    assert moved.status_code == 200, moved.json()
+    assert moved.json()["api_key_last4"] is None
+    assert saved(session_factory, provider_id).api_key_encrypted is None
+    # A cloud service needs its key, so moving one without it is refused.
+    openai = add(db_client, headers, OPENAI)
+    refused = db_client.patch(
+        f"/llm-providers/{openai['llm_provider_id']}",
+        json={"base_url": "https://api.example.com/v1"},
+        headers=headers,
+    )
+    assert refused.json()["code"] == "PROVIDER_KEY_MISSING"

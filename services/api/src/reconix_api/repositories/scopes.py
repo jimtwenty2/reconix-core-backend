@@ -58,6 +58,17 @@ def replace_targets(db: Db, manifest_id: UUID, targets: list[ScopeTarget]) -> No
     db.flush()
 
 
+def latest_in_session(db: Db, session_id: UUID) -> ScopeManifest | None:
+    """The session's newest scope version: the one a person works on now."""
+    query = (
+        select(ScopeManifest)
+        .where(ScopeManifest.session_id == session_id)
+        .order_by(ScopeManifest.version.desc())
+        .limit(1)
+    )
+    return db.scalar(query)
+
+
 def list_by_session(db: Db, session_id: UUID) -> list[ScopeManifest]:
     query = (
         select(ScopeManifest)

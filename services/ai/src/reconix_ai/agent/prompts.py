@@ -80,6 +80,41 @@ def analyze_messages(state: AgentState) -> list[Message]:
     return [system_message(), Message("user", "\n\n".join(parts))]
 
 
+def chat_messages(state: AgentState) -> list[Message]:
+    parts = [
+        read_markdown(PROMPTS_DIR / "chat.md"),
+        chat_scope_text(state.get("scope"), state.get("scope_status", "NONE")),
+        plan_text(state.get("plan_lines", [])),
+    ]
+    if state.get("findings"):
+        parts.append(findings_text(state["findings"]))
+    parts.append(knowledge_text(state.get("knowledge", [])))
+    parts.append(chat_text(state.get("messages", [])))
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
+def chat_scope_text(scope: dict[str, Any] | None, status: str) -> str:
+    if scope is None:
+        return "## Scope\nNo scope has been written yet."
+    title = "Approved scope"
+    if status != "APPROVED":
+        title = "Draft scope (not approved yet: nothing may run on it)"
+    tools = ", ".join(scope["allowed_tools"]) or "none"
+    text = f"{scope_text(scope, title)}\n- Allowed tools: {tools}"
+    if status != "APPROVED":
+        # A draft is half written and nobody has checked it yet.
+        heading, _, body = text.partition("\n")
+        text = f"{heading}\n" + fenced("scope_draft", body)
+    return text
+
+
+def plan_text(lines: list[str]) -> str:
+    if not lines:
+        return "## Plan\n(no plan yet)"
+    # The agent wrote the plan earlier, from data an attacker may have written.
+    return "## Plan\n" + fenced("plan", "\n".join(lines))
+
+
 MAX_REPORT_PROMPT_ROWS = 50
 
 
@@ -119,8 +154,8 @@ def findings_text(findings: list[dict[str, Any]]) -> str:
     return "## Findings\n" + fenced("findings", json.dumps(findings, indent=1))
 
 
-def scope_text(scope: dict[str, Any]) -> str:
-    lines = ["## Approved scope"]
+def scope_text(scope: dict[str, Any], title: str = "Approved scope") -> str:
+    lines = [f"## {title}"]
     for name, label in (
         ("ip_ranges", "IP ranges"),
         ("domains", "Domains"),
@@ -129,6 +164,8 @@ def scope_text(scope: dict[str, Any]) -> str:
         ("excluded_targets", "Never touch"),
     ):
         lines.append(f"- {label}: {', '.join(scope[name]) or 'none'}")
+    ports = scope.get("allowed_ports") or []
+    lines.append(f"- Allowed ports: {', '.join(map(str, ports)) or 'any'}")
     lines.append(f"- Highest risk allowed: {scope['max_risk']}")
     return "\n".join(lines)
 

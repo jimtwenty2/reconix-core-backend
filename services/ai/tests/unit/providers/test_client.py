@@ -59,7 +59,7 @@ async def test_every_call_caps_the_answer_length(model: FakeModel) -> None:
     await complete(QUESTION, reconix_provider())
     await complete(QUESTION, short)
 
-    assert model.calls[0]["max_tokens"] == 2000
+    assert model.calls[0]["max_tokens"] == 16_000
     assert model.calls[1]["max_tokens"] == 300
 
 
@@ -218,6 +218,23 @@ async def test_empty_answer_raises(model: FakeModel) -> None:
         await complete(QUESTION, reconix_provider())
 
     assert raised.value.code == "EMPTY_RESPONSE"
+
+
+async def test_an_answer_cut_off_by_the_length_says_so(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def all_thinking(**kwargs: object) -> litellm.ModelResponse:
+        return litellm.ModelResponse(
+            choices=[{"message": {"role": "assistant", "content": ""}, "finish_reason": "length"}]
+        )
+
+    monkeypatch.setattr(client.litellm, "acompletion", all_thinking)
+
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, reconix_provider())
+
+    assert raised.value.code == "ANSWER_CUT_OFF"
+    assert "16000" in raised.value.message
 
 
 @pytest.mark.parametrize(

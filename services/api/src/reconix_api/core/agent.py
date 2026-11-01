@@ -23,8 +23,11 @@ from reconix_api.core.interfaces import (
     Action,
     AgentRequest,
     AgentResponse,
+    AgentTask,
     ApprovedScope,
     AskAgent,
+    ChatMessage,
+    ChatScope,
     FindingInput,
     ReportInput,
 )
@@ -42,6 +45,8 @@ AGENT_ERROR_STATUS = {
     "RUN_NOT_WAITING": 409,
     "STEP_LIMIT": 422,  # the run stopped itself
     "TOKEN_BUDGET": 422,
+    "SCOPE_MISSING": 422,
+    "BAD_SCOPE_STATUS": 422,
     "MODEL_UNAVAILABLE": 503,  # the model is down: try again later
     # The provider's settings are wrong: fix them on the provider, then ask again.
     "PROVIDER_KEY_MISSING": 422,
@@ -55,17 +60,23 @@ AGENT_ERROR_STATUS = {
 }
 
 
+# How each messages.role is named to the model in a CHAT.
+SPEAKERS = {"user": "Person", "assistant": "Reconix", "system": "Reconix note"}
+
+
 @dataclass(frozen=True)
 class PlanInput:
-    """The fields the agent reads for PLAN, SUGGEST, ANALYZE and REPORT."""
+    """The fields the agent reads for PLAN, SUGGEST, ANALYZE, REPORT and CHAT."""
 
     task: str
-    assessment_id: UUID
-    scope: ApprovedScope
+    assessment_id: UUID | None
+    scope: ApprovedScope | None
     messages: list[str]
     tool_results: list[str]
     findings: list[FindingInput]
     report: ReportInput | None
+    chat_scope: ChatScope | None
+    plan: list[str]
 
 
 def provider_config(settings: Settings, provider: LlmProvider, model_name: str) -> ProviderConfig:
@@ -152,18 +163,30 @@ async def check_resume(graph: CompiledStateGraph, request: AgentRequest) -> None
 
 
 def plan_input(request: AgentRequest) -> PlanInput:
-    # Until the agent takes ChatMessage, only the person's words are sent, so an
-    # earlier answer of the agent is never read as something the person wrote.
-    person_messages = [m.content_masked for m in request.messages if m.role == "user"]
     return PlanInput(
         task=request.task,
         assessment_id=request.assessment_id,
         scope=request.scope,
-        messages=person_messages,
+        messages=agent_messages(request),
         tool_results=list(request.tool_results),
         findings=list(request.findings),
         report=request.report,
+        chat_scope=request.chat_scope,
+        plan=list(request.plan),
     )
+
+
+def agent_messages(request: AgentRequest) -> list[str]:
+    """A CHAT gets the whole conversation, each line named by its speaker, so an
+    earlier answer of the agent is never read as something the person wrote. The
+    other tasks get only the person's own words."""
+    if request.task == AgentTask.CHAT:
+        return [speaker_line(message) for message in request.messages]
+    return [m.content_masked for m in request.messages if m.role == "user"]
+
+
+def speaker_line(message: ChatMessage) -> str:
+    return f"{SPEAKERS[message.role]}: {message.content_masked}"
 
 
 def to_response(answer: AgentAnswer) -> AgentResponse:
