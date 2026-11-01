@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.12.*"
 
 [manifest]
@@ -1801,6 +1801,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "cryptography" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -1822,6 +1823,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "cryptography", specifier = ">=44" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.25" },
 ]
