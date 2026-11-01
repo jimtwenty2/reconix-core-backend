@@ -11,6 +11,7 @@ from .. import browser, store, theme
 from ..models import Choice
 from ..screens import ChoiceScreen
 from ..screens.choice import details_body
+from ..widgets.findings import mask
 
 
 class DialogsMixin:
@@ -48,7 +49,7 @@ class DialogsMixin:
         current = (store.TRIAGE_STATUS.index(finding.status)
                    if finding.status in store.TRIAGE_STATUS else 0)
         self.open_dialog(ChoiceScreen(f"TRIAGE · {fid}", f"Set the status of {fid} · "
-                                      f"{finding.title}:", choices, default=current,
+                                      f"{mask(finding.title)}:", choices, default=current,
                                       chip="Triage"),
                          partial(self._triaged, fid))
 
