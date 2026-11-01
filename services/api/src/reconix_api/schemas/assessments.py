@@ -47,3 +47,6 @@ class AssessmentOverviewOut(BaseModel):
     pending_approval_count: int
     first_started_at: datetime | None  # the first tool run's start
     last_finished_at: datetime | None  # the last tool run's end
+    duration_seconds: int  # last_finished_at - first_started_at; 0 before a tool run ends
+    time_window_seconds: int | None  # approved scope's ends_at - starts_at; None: no window
+    over_time_window: bool  # duration_seconds is longer than time_window_seconds

@@ -662,6 +662,10 @@
           "assessment": {
             "$ref": "#/components/schemas/AssessmentOut"
           },
+          "duration_seconds": {
+            "title": "Duration Seconds",
+            "type": "integer"
+          },
           "finding_count": {
             "title": "Finding Count",
             "type": "integer"
@@ -724,6 +728,10 @@
             "title": "Masked Count",
             "type": "integer"
           },
+          "over_time_window": {
+            "title": "Over Time Window",
+            "type": "boolean"
+          },
           "pending_approval_count": {
             "title": "Pending Approval Count",
             "type": "integer"
@@ -747,6 +755,17 @@
             "title": "Targets",
             "type": "array"
           },
+          "time_window_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Window Seconds"
+          },
           "tool_run_count": {
             "title": "Tool Run Count",
             "type": "integer"
@@ -767,7 +786,10 @@
           "masked_count",
           "pending_approval_count",
           "first_started_at",
-          "last_finished_at"
+          "last_finished_at",
+          "duration_seconds",
+          "time_window_seconds",
+          "over_time_window"
         ],
         "title": "AssessmentOverviewOut",
         "type": "object"

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import update
 
 from reconix_api.models import Approval
-from tests.integration.test_action_flow import active_assessment, send
+from tests.integration.test_action_flow import SCOPE, active_assessment, send
 from tests.integration.test_analyze_flow import analyze
 from tests.integration.test_findings_flow import findings, run_nmap
 from tests.integration.test_plan_flow import plan
@@ -148,6 +148,30 @@ def test_the_overview_counts_everything_in_one_call(db_client):
     assert first_started_at == datetime.fromisoformat(first["started_at"])
     assert overview["plan_step_count"] == 0  # no plan was asked for
     assert overview["plan_step_done_count"] == 0
+    last_finished_at = datetime.fromisoformat(overview["last_finished_at"])
+    assert overview["duration_seconds"] == int(
+        (last_finished_at - first_started_at).total_seconds()
+    )
+    assert overview["time_window_seconds"] is None  # the scope has no time window
+    assert overview["over_time_window"] is False
+
+
+def test_the_overview_measures_the_time_against_the_scope_window(db_client):
+    headers = open_session(db_client)
+    now = datetime.now(UTC)
+    window = {
+        "starts_at": (now - timedelta(hours=1)).isoformat(),
+        "ends_at": (now + timedelta(hours=1)).isoformat(),
+    }
+    assessment_id = active_assessment(db_client, headers, {**SCOPE, **window})
+
+    before = get(db_client, headers, f"/assessments/{assessment_id}/overview")
+    run_nmap(db_client, headers, assessment_id)
+    after = get(db_client, headers, f"/assessments/{assessment_id}/overview")
+
+    assert before["duration_seconds"] == 0  # no tool has run yet
+    assert after["time_window_seconds"] == 2 * 60 * 60
+    assert after["over_time_window"] is False
 
 
 def test_the_overview_of_an_unknown_assessment_is_404(db_client):
