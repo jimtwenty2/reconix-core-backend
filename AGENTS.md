@@ -164,7 +164,7 @@ uv run --package reconix-api pytest services/api/tests/security -q
 uv run --package reconix-api pytest services/api/tests/contract -q
 
 # database (alembic.ini lives in services/api/)
-cd services/api && uv run alembic upgrade head && cd -
+uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
 
 # local web
 cd apps/web && npm ci && npm run lint && npm run test    # e2e: npm run e2e

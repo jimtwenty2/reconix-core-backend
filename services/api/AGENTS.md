@@ -123,7 +123,7 @@ uv run --package reconix-api pytest                              # all API tests
 uv run --package reconix-api pytest services/api/tests/unit -q
 uv run --package reconix-api pytest services/api/tests/security -q
 
-cd services/api && uv run alembic upgrade head && cd -           # migrate
+uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head         # migrate
 uv run --package reconix-api python -m reconix_api.main          # http://127.0.0.1:8000/docs
 ```
 

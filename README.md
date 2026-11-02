@@ -126,7 +126,7 @@ What `deploy/dev.sh` does, in order:
 Press `Ctrl+C` to stop the API. To stop the Docker services too:
 
 ```bash
-docker compose -f deploy/docker-compose.yml --env-file .env down
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env down
 ```
 
 The steps below do the same thing by hand.
@@ -190,7 +190,7 @@ curl -i http://127.0.0.1:8000/api/v1/sessions/x     # 401: routes need a session
 
 | Problem | Fix |
 |---|---|
-| `password authentication failed for user "reconix"` | Postgres keeps the password from its first start. Make `RECONIX_DATABASE_URL` match `RECONIX_DB_PASSWORD`, or reset the volume: `docker compose -f deploy/docker-compose.yml --env-file .env down -v` (deletes all data). |
+| `password authentication failed for user "reconix"` | Postgres keeps the password from its first start. Make `RECONIX_DATABASE_URL` match `RECONIX_DB_PASSWORD`, or reset the volume: `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env down -v` (deletes all data). |
 | `Can't locate revision identified by '...'` | The database was migrated from another branch. Switch back to that branch, or reset the volume as above and migrate again. |
 | `address already in use` on port 8000 | The API is already running in another terminal. Stop it first. |
 | A port is already taken | Change `RECONIX_MCP_PORT` and `RECONIX_KALI_MCP_URL` in `.env`, or stop the other container. |
