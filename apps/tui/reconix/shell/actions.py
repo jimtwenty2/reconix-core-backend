@@ -89,6 +89,10 @@ class ActionsMixin:
         self.refresh_view()
         if result == "started":
             self.controller.resume()
+        elif result == "ask":                    # no target: the offline mock answers
+            self.notify("Thinking…", timeout=2)
+            self.run_worker(lambda: self._llm_answer(text), thread=True,
+                            group="llm", exit_on_error=False)
         return True
 
     def _llm_answer(self, text: str) -> None:
@@ -220,7 +224,7 @@ class ActionsMixin:
         """Start over on a fresh assessment (earlier ones stay listed); optionally on `target`."""
         self.cancel_agent()                 # stop a running agent turn on the run we leave
         self.controller.stop()
-        store.new_assessment()
+        created = store.new_assessment()    # False: the current one is still empty; keep it
         self.agent_mode = False
         self.agent_request = ""
         self.selected_finding = ""
@@ -228,6 +232,9 @@ class ActionsMixin:
         self.goto("start")
         if target and target.strip():
             self.submit_request(target)
+        elif not created:
+            self.notify("You're already on a new assessment — type a target to begin.",
+                        title="New assessment")
 
     def switch_assessment(self, index: int) -> None:
         """Reopen another assessment where it stands; a run that was playing plays on."""

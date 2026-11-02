@@ -81,5 +81,7 @@ COMMANDS = (
             arg="OPTIONAL", arg_name="provider/model"),
     Command("web", "Open the web dashboard in your browser (starts it if needed)",
             lambda app, arg: app.open_web_dashboard(), aliases=("dashboard",)),
+    Command("tests", "Evaluator checklist: every flow and case, mark Pass/Fail/Skip",
+            lambda app, arg: app.open_test_guide(), aliases=("test-guide",)),
     Command("quit", "Quit Reconix", lambda app, arg: app.exit(), aliases=("exit",)),
 )

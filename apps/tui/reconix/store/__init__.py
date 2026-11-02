@@ -14,7 +14,7 @@ from .approvals import (
 )
 from .assessment import (
     MAX_REQUEST_LENGTH, AssessmentCard, add_request, assessment_label, assessment_status,
-    get_assessment, list_assessments, list_requests, switch_assessment,
+    get_assessment, is_empty_assessment, list_assessments, list_requests, switch_assessment,
 )
 from .errors import StoreValidationError
 from .findings import (
@@ -37,11 +37,13 @@ from .openapi import (
 )
 from .persist import autosave, close_session, web_dashboard_url
 from .plan import gated_count, plan_overview
+from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
+from .plan_order import movable as movable_checks
 from .providers import (
-    activate, active_llm_settings, active_model, active_remote_label, get_provider,
-    list_providers, set_provider, test_provider, unset_provider,
+    activate, active_is_mock, active_llm_settings, active_model, active_remote_label,
+    get_provider, list_providers, set_provider, test_provider, unset_provider, use_mock,
 )
-from .progress import step_states
+from .progress import StepStatus, step_states, step_status
 from .report import (
     assessment_summary, generate_report, list_report_formats, list_report_sections,
     report_data,
@@ -55,12 +57,18 @@ from .run import (
 )
 from .scope import (
     approve_scope, blocked_count, check_request, edit_scope, get_scope, is_scope_approved,
-    list_verdicts,
+    list_verdicts, scope_editable,
 )
+from .scope_ask import ScopeChoices, answer_scope_change, wants_scope_change
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
-from .targets import TargetCheck, check_target, looks_like_target, validate_target
+from .step_intent import asks_about_decision, decision_reply, wants_decision, wants_view
+from .step_text import approval_text, plan_text, scope_text, template_text
+from .targets import (
+    DASH_RANGE_UNSUPPORTED, TargetCheck, check_target, looks_like_target, validate_target,
+)
 from .templates import get_template, list_templates, select_template, selected_template
+from .thinking import block_seconds, group_stream, stream
 from .transcript import last_exchange, list_activity, list_chat
 from .tools import tool_login, tools_login
 from .vault import (
@@ -77,9 +85,10 @@ __all__ = [
     # assessment and requests
     "get_assessment", "assessment_label", "list_requests", "add_request",
     "list_assessments", "switch_assessment", "assessment_status", "AssessmentCard",
+    "is_empty_assessment",
     # the run
     "submit_prompt", "start_run", "check_target", "say_to_assistant", "say_operator_line",
-    "TargetCheck", "looks_like_target", "validate_target",
+    "TargetCheck", "looks_like_target", "validate_target", "DASH_RANGE_UNSUPPORTED",
     "llm_answer", "new_assessment",
     "advance", "peek", "gate_state", "stop_run",
     "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",
@@ -89,7 +98,13 @@ __all__ = [
     "list_templates", "get_template", "select_template", "selected_template",
     "get_scope", "approve_scope", "edit_scope", "is_scope_approved", "reject_scope",
     "describe_scope", "check_request", "run_plan", "is_plan_started",
-    "list_verdicts", "blocked_count",
+    "list_verdicts", "blocked_count", "scope_editable",
+    # the chat inside a step ("Chat about this"): its content as text, scope change asks
+    "scope_text", "plan_text", "approval_text", "template_text",
+    "wants_scope_change", "answer_scope_change", "ScopeChoices",
+    "wants_decision", "asks_about_decision", "wants_view", "decision_reply",
+    "wants_plan_reorder", "answer_plan_reorder", "reorder_gated", "movable_checks",
+    "step_status", "StepStatus",
     "provide_auth", "current_auth_challenge", "has_test_account",
     "is_authenticated", "is_code_verified", "vault_scope",
     "login_kind", "login_tools", "login_done", "code_needed", "tool_login", "tools_login",
@@ -107,11 +122,13 @@ __all__ = [
     "retest", "severity_trend", "compare_findings", "previous_assessment",
     # transcript, audit, history
     "list_chat", "last_exchange", "list_activity",
+    "stream", "group_stream", "block_seconds",
     "current_operator", "log_event", "list_events", "add_feedback", "list_feedback",
     "add_history", "list_history",
     # flexible LLM: providers and the active model
     "list_providers", "get_provider", "set_provider", "unset_provider", "test_provider",
     "activate", "active_model", "active_llm_settings", "active_remote_label",
+    "active_is_mock", "use_mock",
     # the saved copy the web dashboard reads
     "autosave", "close_session", "web_dashboard_url",
     # the API template's OpenAPI spec

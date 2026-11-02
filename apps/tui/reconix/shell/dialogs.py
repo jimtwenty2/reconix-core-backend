@@ -9,12 +9,18 @@ from rich.text import Text
 
 from .. import browser, store, theme
 from ..models import Choice
-from ..screens import ChoiceScreen
+from ..screens import ChoiceScreen, TestGuideScreen
 from ..screens.choice import details_body
+from ..widgets.findings import mask
 
 
 class DialogsMixin:
     """Mixed into ReconixApp."""
+
+    # --- /tests: the evaluator checklist (an overlay; the assessment is untouched) -------------
+    def open_test_guide(self) -> None:
+        if not isinstance(self.screen, TestGuideScreen):
+            self.push_screen(TestGuideScreen())
 
     # --- assessments ----------------------------------------------------------------------------
     def open_assessments(self) -> None:
@@ -48,7 +54,7 @@ class DialogsMixin:
         current = (store.TRIAGE_STATUS.index(finding.status)
                    if finding.status in store.TRIAGE_STATUS else 0)
         self.open_dialog(ChoiceScreen(f"TRIAGE · {fid}", f"Set the status of {fid} · "
-                                      f"{finding.title}:", choices, default=current,
+                                      f"{mask(finding.title)}:", choices, default=current,
                                       chip="Triage"),
                          partial(self._triaged, fid))
 

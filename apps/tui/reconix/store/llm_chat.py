@@ -8,7 +8,7 @@ history, calls the model, checks the reply, shows it and writes both rows to the
 
 from typing import List, Tuple
 
-from ..llm import client, crypto, db, guardrail
+from ..llm import catalog, client, crypto, db, guardrail, mock
 from ..models import ActiveModel
 from ..models.base import utc_now
 from .assessment import get_assessment
@@ -23,14 +23,18 @@ _SPEAKER_ROLE = {"you": "user", "reconix": "assistant"}
 
 def reply(text: str, active: ActiveModel) -> str:
     """Call the active model, display its reply and persist the exchange. Raises LLMError."""
-    row = db.get_provider_row(active.provider_id)
-    key = crypto.decrypt(row["api_key_enc"]) if row and row["api_key_enc"] else None
-    base = (row["base_url"] if row else "") or None
-
-    context, used_sources = _context_with_knowledge(text)
-    messages = guardrail.build_messages(context, _history(), text)
-    raw = client.complete(active.provider_id, active.model, messages,
-                          api_key=key, api_base=base)
+    entry = catalog.get(active.provider_id)
+    if entry is not None and entry.is_mock:
+        # The offline mock: a prepared answer filled with this assessment's own facts.
+        raw, used_sources = mock.reply(redact(text), mock_facts()), []
+    else:
+        row = db.get_provider_row(active.provider_id)
+        key = crypto.decrypt(row["api_key_enc"]) if row and row["api_key_enc"] else None
+        base = (row["base_url"] if row else "") or None
+        context, used_sources = _context_with_knowledge(text)
+        messages = guardrail.build_messages(context, _history(), text)
+        raw = client.complete(active.provider_id, active.model, messages,
+                              api_key=key, api_base=base)
     checked = guardrail.check_response(raw)
 
     entry = add_chat("text", "reconix", checked)
@@ -73,6 +77,7 @@ def _history() -> List[Tuple[str, str]]:
 def _context() -> str:
     """A short description of the assessment state, built from store getters."""
     from .findings import list_findings
+    from .progress import step_status
     from .run import display_phase, get_run, is_finished, waiting_gate
     from .scope import get_scope
     from .templates import selected_template
@@ -89,6 +94,7 @@ def _context() -> str:
         f"- phase: {display_phase()}",
         f"- waiting gate: {waiting_gate() or 'none'}",
     ]
+    lines += step_lines(step_status())
     if is_finished():
         state = "stopped" if get_run().stopped else "completed"
         lines.append(f"- run state: finished ({state}); nothing more will run. The operator "
@@ -106,6 +112,73 @@ def _context() -> str:
         for d in decisions:
             lines.append(f"    {d.request_id}: {d.decision}")
     return "\n".join(lines)
+
+
+def mock_facts() -> dict:
+    """The facts the offline mock model fills its answers with (see `llm/mock.py`)."""
+    from .findings import list_findings
+    from .plan import plan_overview
+    from .progress import step_status
+    from .scope import get_scope
+
+    a = get_assessment()
+    scope = get_scope()
+    return {
+        "target": (scope.target_url if scope else "") or a.target or "",
+        "scope": _scope_line(scope) if scope else "",
+        "step": _step_sentence(step_status()) if a.run.started else "",
+        "plan": "; ".join(_plan_row(row) for row in plan_overview()),
+        "findings": [
+            {"id": f.fid, "severity": f.effective_severity, "title": f.title,
+             "impact": f.impact, "remediation": f.remediation, "status": status_word(f.status)}
+            for f in list_findings()
+        ],
+    }
+
+
+def status_word(status: str) -> str:
+    """A triage status as the data model writes it: false-positive -> FALSE_POSITIVE."""
+    return (status or "open").upper().replace("-", "_")
+
+
+def _scope_line(scope) -> str:
+    from .scope_view import join_and
+
+    state = "approved and locked" if scope.status == "APPROVED" else "a draft that waits for you"
+    parts = [f"{scope.assessment_type}, {state}"]
+    if scope.kind == "network":
+        parts.append(f"ports {join_and(scope.allowed_ports) or 'none'}")
+    else:
+        parts.append(f"methods {join_and(scope.allowed_methods)}")
+    if scope.excluded_paths:
+        parts.append(f"never touches {join_and(scope.excluded_paths)}")
+    parts.append(f"tools {join_and(scope.tools)}")
+    parts.append(f"time limit {scope.time_limit_minutes} min")
+    return "; ".join(parts)
+
+
+def _step_sentence(status) -> str:
+    choices = status.choices.split(" Order:")[0].rstrip(". ")
+    return f"Now at {status.step}: {status.state}. Next: {choices}."
+
+
+def _plan_row(row) -> str:
+    text = f"{row.num}. {row.label}"
+    if row.gate == "approve":
+        text += f" ({row.risk}, needs your approval)"
+    if row.status != "pending":
+        text += f" [{row.status}]"
+    return text
+
+
+def step_lines(status) -> List[str]:
+    """Where the flow is, in words: the model must not run ahead of it."""
+    return [
+        f"- current step: {status.step} ({status.state})",
+        f"- the operator moves on only with the app's menu: {status.choices}. The app shows "
+        "the scope card and the menu itself; don't repeat the scope as a list, and never "
+        "say a step is approved, run or done unless this context says so.",
+    ]
 
 
 def _context_with_knowledge(text: str) -> Tuple[str, List[str]]:

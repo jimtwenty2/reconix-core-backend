@@ -1,10 +1,12 @@
 """Frame 06 — Findings list (filterable, sortable, arrow-key selectable; triage)."""
 
-from typing import Optional
+from typing import List, Optional
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.events import Resize
 from textual.widgets import DataTable, Static
 from textual.widgets.data_table import RowDoesNotExist
 
@@ -13,7 +15,14 @@ from .choice import ChoiceScreen
 from .. import store, theme
 from ..models import Choice
 from ..widgets import SeverityStrip
-from ..widgets.findings import reference_text, severity_text, triage_text, validation_text
+from ..widgets.findings import (
+    for_display, reference_text, severity_text, triage_text, validation_text,
+)
+
+# Triage (STATUS) and VALIDATION sit right after TITLE so they stay visible without scrolling
+# right on a narrow terminal; PATH / TOOL / CVE can scroll off to the right.
+_COLUMNS = ("ID", "SEVERITY", "TITLE", "STATUS", "VALIDATION", "PATH / COMPONENT",
+            "TOOL", "CVE / CWE")
 
 
 def _status_label() -> str:
@@ -47,8 +56,7 @@ class FindingsListScreen(ReconixScreen):
         yield SeverityStrip(id="sev-strip")
         yield Static(id="view-line", classes="muted")
         table = DataTable(id="findings-table", cursor_type="row", zebra_stripes=True)
-        table.add_columns("ID", "SEVERITY", "TITLE", "PATH / COMPONENT", "TOOL", "CVE / CWE",
-                          "VALIDATION", "STATUS")
+        table.add_columns(*_COLUMNS)
         yield table
         yield Static(id="findings-empty", classes="panel-note")
         yield Static(Text("↑/↓ select · ↵ open · f filter · s sort · t triage · c chat · "
@@ -72,14 +80,19 @@ class FindingsListScreen(ReconixScreen):
         table = self.query_one("#findings-table", DataTable)
         if keep is None:
             keep = self._cursor_key()
-        table.clear()
+        # Re-add the columns each fill so an auto-sized column shrinks back when titles get
+        # shorter (DataTable grows a column to its widest cell but never shrinks it on clear).
+        table.clear(columns=True)
+        table.add_columns(*_COLUMNS)
         findings = store.list_findings()
         rows = store.find_findings(self.app.findings_filter, self.app.findings_sort)
-        for f in rows:
+        display = [for_display(f) for f in rows]     # mask every shown field (display only)
+        titles = self._title_cells(table, display)   # capped with … only when they wouldn't fit
+        for f, d, title in zip(rows, display, titles):
             table.add_row(
-                Text(f.fid, style=theme.KEY), severity_text(f), Text(f.title),
-                Text(f.path, style=theme.MUTED), Text(f.tool, style=theme.TEAL),
-                reference_text(f), validation_text(f), triage_text(f), key=f.fid,
+                Text(d.fid, style=theme.KEY), severity_text(d), title,
+                triage_text(d), validation_text(d), Text(d.path, style=theme.MUTED),
+                Text(d.tool, style=theme.TEAL), reference_text(d), key=f.fid,
             )
         confirmed = sum(1 for f in findings if not f.needs_review)
         self.query_one("#findings-label", Static).update(Text.assemble(
@@ -105,6 +118,37 @@ class FindingsListScreen(ReconixScreen):
         if rows:
             self._move_to(keep)
             table.focus()
+
+    def on_resize(self, event: Resize) -> None:
+        """Re-fit the title column to the new width (it is capped only when it wouldn't fit)."""
+        if self.is_mounted:
+            self._fill()
+
+    def _title_cells(self, table: DataTable, display: list) -> List[Text]:
+        """The TITLE cells, each cut with `…` only when ID+SEVERITY+TITLE+STATUS+VALIDATION
+        would overflow the visible width, so triage and validation never scroll off the right.
+
+        The full (already-masked) title is kept wherever it fits (and always on the detail).
+        """
+        titles = [d.title for d in display]
+        cells = [Text(t) for t in titles]            # plain Text: the title is never markup
+        visible = table.scrollable_content_region.width
+        if visible <= 0 or not titles:
+            return cells                             # not laid out yet: on_resize re-fits
+        pad = table.cell_padding * 2
+
+        def column(header: str, values: List[str]) -> int:
+            return max([len(header)] + [cell_len(v) for v in values]) + pad
+
+        fixed = (column("ID", [d.fid for d in display])
+                 + column("SEVERITY", [severity_text(d).plain for d in display])
+                 + column("STATUS", [triage_text(d).plain for d in display])
+                 + column("VALIDATION", [validation_text(d).plain for d in display]))
+        budget = visible - fixed - pad               # characters left for the title content
+        if max(cell_len(t) for t in titles) <= budget:
+            return cells                             # every title fits: nothing to cut
+        budget = max(budget, 1)
+        return [Text(t if cell_len(t) <= budget else t[:budget - 1] + "…") for t in titles]
 
     def _cursor_key(self) -> Optional[str]:
         table = self.query_one("#findings-table", DataTable)

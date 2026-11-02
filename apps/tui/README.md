@@ -14,29 +14,38 @@ run and are decided here, in the TUI.
 
 ## Run it
 
-Needs **Python 3.9+** and, for the web dashboard, **Node.js 20+** (with npm) and Git.
+Needs **Python 3.9+**; the local web (`/web`) also needs **Node.js 20+** with npm. The TUI
+lives in `apps/tui` of the Reconix-Core repo.
+
+**Evaluating the static version?** Start at
+[docs/evaluator/README.md](docs/evaluator/README.md): setup per OS (with a setup script), the
+flows one at a time, every test case, and the `/tests` checklist inside the app.
 
 **Linux / macOS**
 
 ```bash
-git clone https://github.com/SokpisethNhoeun/Reconnix_Terminal.git
-cd Reconnix_Terminal
+git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
+cd reconix-core-backend/apps/tui
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-python -m reconix          # or: python run.py
+reconix                    # or: python -m reconix
 ```
 
 **Windows 10 / 11** (PowerShell; use Windows Terminal for the TUI)
 
 ```powershell
-git clone https://github.com/SokpisethNhoeun/Reconnix_Terminal.git
-cd Reconnix_Terminal
+git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
+cd reconix-core-backend\apps\tui
 py -m venv .venv               # or: python -m venv .venv
 .venv\Scripts\Activate.ps1     # if scripts are blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 python -m pip install -e .
-python -m reconix
+reconix
 ```
+
+At the first start Reconix asks **"Set an AI provider?"**: choose **Use the mock model
+(offline)** to chat without a model or a network (`reconix-mock-1`, prepared answers), or
+Skip.
 
 Tests (Textual Pilot, no terminal needed):
 
@@ -137,7 +146,11 @@ The dashboard has no terminal of its own: run assessments and decide their gates
    action runs (see Approval).
 4. **Execution** — the live run: each task queued, running, paused or done (no
    percentages: a backend can't know how far a scan has got), a spinner with what
-   Reconix is on and for how long, and the live output (time · who · message). The
+   Reconix is on and for how long, and the live output. It reads like Claude's thinking:
+   what you typed and what Reconix tells you stay as lines; the steps between them (tool,
+   policy and AI lines, time · who · message) fold into one block, "✓ Worked for 9s · 7
+   steps · 1 blocked ▸". A running block shows a spinner and its newest step; click a
+   block (or Space on it) to open it, `Ctrl+O` opens or closes them all. The
    output follows new lines while you're at the bottom; scroll up to read and it stays
    put until `End`. It pauses
    when a step needs you: the **target login** opens a secure form, and each **gated
@@ -177,7 +190,7 @@ command suggestions, and `?` shows the keys for the screen you are on.
 | `d` | approval details (scope limits, exact request, audit trail) |
 | `PgUp` / `PgDn` | scroll a long dialog |
 | `Ctrl+R` | search prompt history (on the Start prompt) |
-| `Ctrl+O` | expand / collapse the steps Reconix finished, under its spinner line |
+| `Ctrl+O` | expand / collapse the steps Reconix finished (on Execution: every thinking block; click one to open it) |
 | `End` | Execution: jump to the newest line of the live output and follow it again |
 | `Ctrl+C` | stop the run (on Execution, after a confirmation) |
 | `f` / `s` / `t` | Findings: filter / cycle the sort (severity, validation) / triage |
@@ -212,6 +225,7 @@ Type `/`, keep typing to filter, `↑`/`↓` to pick, `Tab` to complete, `Enter`
 | `/assess <target>` | run a real assessment with the AI agent (needs a `/model`; alias `/agent`) |
 | `/add-on [path]` | add reference files for the AI; no argument opens a menu (alias `/addon`) |
 | `/web` | open the web dashboard (it starts it first if needed; alias `/dashboard`) |
+| `/tests` | the evaluator checklist: every flow and case, mark Pass/Fail/Skip, export (alias `/test-guide`) |
 | `/quit` | quit (alias `/exit`) |
 
 `/scope` is now `/template`.
@@ -243,7 +257,7 @@ LLM_MODEL=your-model-id
 When a `/model` is active, `/assess <target>` (or just typing a target) hands the **whole
 assessment** to the AI agent in `backend/` instead of the scripted demo. The agent plans,
 runs real Kali tools through the MCP server, and analyzes findings; its progress streams
-into the chat and `/audit` (a reasoning model's chain-of-thought shows muted as "thinking…").
+into the chat and `/audit` (a reasoning model's chain-of-thought is a step, folded into the thinking block).
 The agent's LLM is Reconix's active `/model`, so you can switch
 provider or model **mid-assessment** and its conversation context is preserved (one `Agent`
 keeps its history; only the client is swapped). When the agent needs a login it pops a

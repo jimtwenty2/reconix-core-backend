@@ -11,9 +11,10 @@ from .report import ReportScreen
 from .help import HelpScreen
 from .choice import ChoiceScreen
 from .command_bar import CommandBarScreen
+from .test_guide import TestGuideScreen
 
 __all__ = [
     "StartScreen", "TemplateScreen", "PlanScreen", "ApprovalScreen",
     "ExecutionScreen", "FindingsListScreen", "FindingDetailScreen",
-    "ReportScreen", "HelpScreen", "ChoiceScreen", "CommandBarScreen",
+    "ReportScreen", "HelpScreen", "ChoiceScreen", "CommandBarScreen", "TestGuideScreen",
 ]

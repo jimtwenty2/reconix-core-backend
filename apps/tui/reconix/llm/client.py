@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 import litellm
 
-from . import catalog, config
+from . import catalog, config, mock
 
 # Keys must never reach the console or log files.
 litellm.suppress_debug_info = True
@@ -41,6 +41,10 @@ def _map_error(exc: Exception) -> str:
         return "bad API key (unauthorized)"
     if status == 404:
         return "model not found"
+    if status == 400:
+        return "the server refused the request (HTTP 400)"
+    if isinstance(status, int) and status >= 500:
+        return f"the model server failed (HTTP {status})"
     text = str(exc).lower()
     if status == 401 or "unauthor" in text or "invalid api key" in text or "api key" in text:
         return "bad API key (unauthorized)"
@@ -59,6 +63,9 @@ def complete(provider_id: str, model: str, messages: List[dict], *,
     entry = catalog.get(provider_id)
     if entry is None:
         raise LLMError("unknown provider")
+    if entry.is_mock:          # prepared answers, no network (the store passes the facts)
+        last = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+        return mock.reply(last)
     try:
         response = litellm.completion(
             model=entry.model_string(model),
@@ -66,7 +73,7 @@ def complete(provider_id: str, model: str, messages: List[dict], *,
             api_key=api_key,
             api_base=api_base,
             timeout=config.TIMEOUT,
-            num_retries=1,
+            num_retries=0,      # LiteLLM's retry needs tenacity (not installed)
         )
     except Exception as exc:  # noqa: BLE001 — any LiteLLM/transport error maps to LLMError
         raise LLMError(_map_error(exc)) from None
@@ -94,6 +101,10 @@ def ping(provider_id: str, model: str, *, api_key: Optional[str] = None,
     entry = catalog.get(provider_id)
     if entry is None:
         return False, "unknown provider"
+    if entry.is_mock:
+        if model != mock.MOCK_MODEL:
+            return False, "model not found"
+        return True, f"{mock.MOCK_MODEL} (offline)"
     try:
         if entry.id == "ollama":
             return _ping_ollama(api_base or entry.default_base_url, model)

@@ -1,6 +1,6 @@
 {
   "source": "reconix/commands/builtin.py",
-  "count": 19,
+  "count": 20,
   "groups": [
     {
       "id": "start",
@@ -225,6 +225,17 @@
       "id": "session",
       "title": "Session",
       "commands": [
+        {
+          "name": "tests",
+          "aliases": [
+            "test-guide"
+          ],
+          "description": "Evaluator checklist: every flow and case, mark Pass/Fail/Skip",
+          "takes_argument": false,
+          "ask": false,
+          "question": "",
+          "empty": ""
+        },
         {
           "name": "quit",
           "aliases": [

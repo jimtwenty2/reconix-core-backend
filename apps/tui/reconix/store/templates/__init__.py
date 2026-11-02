@@ -39,6 +39,8 @@ def get_template(template_id: str) -> Template:
     template = next((t for t in catalog() if t.id == template_id), None)
     if template is None:
         raise StoreValidationError(f"Unknown template {template_id}.")
+    if not template.available:
+        raise StoreValidationError(f"The {template.name} template is not in the demo.")
     return template
 
 
@@ -68,8 +70,7 @@ def apply_template(template_id: str, *, auto: bool = False) -> Template:
     already known: the operator picked it with /template, or (`auto`) the target's shape
     left no doubt. The Scope Manifest gate follows in every case.
     """
-    if template_id not in MODULES:
-        raise StoreValidationError(f"Unknown template {template_id}.")
+    get_template(template_id)              # refuses an unknown or unavailable template
     assessment = lists.current()
     if assessment.selected_template:
         raise StoreValidationError("This assessment already has a template.")

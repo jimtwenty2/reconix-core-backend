@@ -22,7 +22,7 @@ from .shell import (
     ActionsMixin, AgentMixin, DialogsMixin, KnowledgeMixin, LlmMixin, NavigationMixin,
     RunHostMixin, WebDashboardMixin,
 )
-from .widgets import ActivityStatus
+from .widgets import ActivityStatus, RunLog
 
 
 class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, DialogsMixin,
@@ -70,6 +70,7 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
 
     def on_mount(self) -> None:
         self.push_screen(StartScreen())
+        self.call_after_refresh(self.ask_provider_on_start)   # until a model is active
 
     def on_unmount(self) -> None:
         # Quitting ends the session: mark the saved copies so the web dashboard shows an
@@ -90,6 +91,8 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
         self.activity_expanded = not self.activity_expanded
         for status in self.screen.query(ActivityStatus):
             status.set_expanded(self.activity_expanded)
+        for log in self.screen.query(RunLog):          # the live output's thinking blocks
+            log.set_expanded(self.activity_expanded)
 
     def action_command_bar(self) -> None:
         self.open_dialog(CommandBarScreen(), self._on_command_bar)

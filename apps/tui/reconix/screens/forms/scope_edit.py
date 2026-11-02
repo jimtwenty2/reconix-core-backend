@@ -49,8 +49,11 @@ class ScopeEditForm(FormScreen):
         return fields
 
     def note(self) -> Optional[Text]:
-        return Text(f"Target {self._scope.target_url} is fixed for this assessment. Edit the "
-                    "limits below; commas separate list items.", style=theme.MUTED)
+        target = (f"Target {self._scope.target_url}: change the API base URL with the OpenAPI "
+                  "spec choice." if self._scope.kind == "api"
+                  else f"Target {self._scope.target_url} is fixed for this assessment.")
+        return Text(f"{target} Edit the limits below; commas separate list items.",
+                    style=theme.MUTED)
 
     def footer(self) -> str:
         return "Saved changes go back to the manifest for approval · Esc to cancel"

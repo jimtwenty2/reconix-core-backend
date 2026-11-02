@@ -19,7 +19,7 @@ GLOBAL_ROWS: List[Row] = [
     ("1 … 8", "jump to a screen (when not typing or in a menu)"),
     ("/", "command suggestions (any screen)"),
     ("?", "toggle this help"),
-    ("^O", "expand / collapse the steps Reconix finished"),
+    ("^O", "expand / collapse the steps Reconix finished (click one to open it)"),
     ("^Q", "quit"),
 ]
 
@@ -114,7 +114,8 @@ class HelpScreen(ModalScreen):
             yield from (self._row(keys, desc) for keys, desc in GLOBAL_ROWS)
             yield Static("")
             yield Static(
-                f"[{theme.DIM}]in-memory demo data · ? or Esc closes this[/]",
+                f"[{theme.DIM}]in-memory demo data · /tests: the evaluator checklist · "
+                f"? or Esc closes this[/]",
                 markup=True,
             )
 

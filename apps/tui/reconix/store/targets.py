@@ -139,7 +139,27 @@ def _git_ref(ref: str) -> str:
 
 
 # --- one finder per template ----------------------------------------------------------------
+DASH_RANGE_UNSUPPORTED = ("Dash ranges aren't supported by the scope yet — use CIDR, "
+                          "e.g. 10.0.0.0/27.")
+
+
+# A range written with a dash (also spaced, en/em dash), "..", or "to" between two addresses.
+_ANY_RANGE = re.compile(r"(\d+(?:\.\d+){3})\s*(?:-|\u2013|\u2014|\.\.|\bto\b)\s*"
+                        r"(\d+(?:\.\d+){3}|\d+)\b", re.IGNORECASE)
+
+
+def _refuse_dash_range(text: str) -> None:
+    """A dash range (10.0.0.1-10.0.0.20, or spaced, with an en dash, "..", "to") anywhere in
+    `text` raises: the scope takes one address or a CIDR range, and reading only the first
+    address would test less than was typed."""
+    dash = _ANY_RANGE.search(text)
+    if dash:
+        check = _dash_range(dash.group(1), dash.group(2))
+        raise StoreValidationError(check.error or DASH_RANGE_UNSUPPORTED)
+
+
 def network_target(text: str) -> Optional[ParsedTarget]:
+    _refuse_dash_range(text)
     found = IPV4_LIKE.search(text)
     if found:
         value = ipv4(_clean(found.group(0)))
@@ -160,6 +180,7 @@ def web_target(text: str, kind: str = "web_url") -> Optional[ParsedTarget]:
     url = URL.search(text)
     if url:
         return url_target(url.group(0), kind)
+    _refuse_dash_range(text)
     found = IPV4_LIKE.search(text)
     if found and "/" not in found.group(0):                # a range is not a site
         return url_target(f"https://{ipv4(_clean(found.group(0)))}", kind)
@@ -209,9 +230,10 @@ def needs(template_id: str) -> str:
 
 def check_target(template_id: str, text: str) -> ParsedTarget:
     """The target in `text`, validated for `template_id`; raises with what to type instead."""
-    finder = FINDERS.get(template_id)
-    if finder is None:
-        raise StoreValidationError(f"Unknown template {template_id}.")
+    from .templates import get_template      # (imported here: this module stays a leaf)
+
+    get_template(template_id)                 # unknown or not in the demo: refused
+    finder = FINDERS[template_id]
     if not text.strip():
         raise StoreValidationError(needs(template_id))
     found = finder(clean_request(text))
@@ -390,4 +412,5 @@ __all__ = [
     "looks_api", "url_target", "network_target", "web_target", "api_target", "source_target",
     "FINDERS", "needs", "check_target", "TARGET_KINDS", "MAX_RANGE_ADDRESSES",
     "SUPPORTED_FORMATS", "TargetCheck", "looks_like_target", "validate_target",
+    "DASH_RANGE_UNSUPPORTED",
 ]

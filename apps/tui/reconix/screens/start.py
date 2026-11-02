@@ -40,8 +40,8 @@ QUICKSTART = (
 PLACEHOLDER = "Type a target (URL, IPv4, repo or path), a question, or / for commands"
 READING = "reconix is reading the target…"
 EMPTY_HINT = "Type a target, a question, or / for commands."
-DASH_RANGE_UNSUPPORTED = ("Dash ranges aren't supported by the scope yet — use CIDR, "
-                          "e.g. 10.0.0.0/27.")
+# The store refuses dash ranges with the same words (store/targets.py).
+DASH_RANGE_UNSUPPORTED = store.DASH_RANGE_UNSUPPORTED
 
 
 def _quickstart_steps() -> Table:
@@ -195,7 +195,11 @@ class StartScreen(ReconixScreen):
         if working:
             status.show([e.text for e in replies])
         else:
+            conversation = self.query_one("#start-conversation", VerticalScroll)
+            at_end = conversation.is_vertical_scroll_end
             reply.update(_answer(replies))
+            if at_end:                      # a streamed reply grows: keep its end in view
+                conversation.call_after_refresh(conversation.scroll_end, animate=False)
 
     # --- keys and the prompt -----------------------------------------------------------------
     def action_begin(self) -> None:

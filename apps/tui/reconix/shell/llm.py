@@ -18,6 +18,48 @@ _VERBS = {"set", "update", "test", "unset"}
 class LlmMixin:
     """Mixed into ReconixApp."""
 
+    # At start, while no model is active, ask which provider to use (tests switch it off).
+    ASK_PROVIDER_ON_START = True
+
+    # --- start-up: "Set an AI provider?" ------------------------------------------------------
+    def ask_provider_on_start(self) -> None:
+        """Offer the offline mock, a real provider or no model, until a model is active."""
+        if not self.ASK_PROVIDER_ON_START or store.active_model() is not None:
+            return
+        choices = [
+            Choice("mock", "Use the mock model (offline)",
+                   "Prepared answers on this computer, for testing: reconix-mock-1, no network",
+                   recommended=True),
+            Choice("provider", "Set a provider…",
+                   "OpenAI, Anthropic, DeepSeek, Ollama or a custom endpoint (/provider)"),
+            Choice("skip", "Skip (built-in replies only)",
+                   "No model for now. Reconix asks again at the next start.", separated=True),
+        ]
+        self.open_dialog(
+            ChoiceScreen("◆ SET AN AI PROVIDER", "Set an AI provider?", choices,
+                         chip="Provider"),
+            self._start_provider_chosen)
+
+    def _start_provider_chosen(self, choice: Optional[str]) -> None:
+        if choice == "mock":
+            self.open_dialog(ProviderForm("mock"), self._mock_saved)
+        elif choice == "provider":
+            self.open_provider_menu()
+
+    def _mock_saved(self, result: Optional[str]) -> None:
+        """The mock's form closed: when saved, test it and make it the active model."""
+        if result != "saved":
+            self.refresh_view()
+            return
+        try:
+            store.test_provider("mock")      # the form saved it: test, then make it active
+            active = store.activate("mock", store.get_provider("mock").models[0])
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
+        self.refresh_view()
+        self.notify(f"Active model: {active.label} · {active.model}", markup=False)
+
     # --- /provider ----------------------------------------------------------------------------
     def provider_command(self, arg: Optional[str]) -> None:
         arg = (arg or "").strip()

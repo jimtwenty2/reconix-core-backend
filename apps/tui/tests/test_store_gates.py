@@ -1,5 +1,7 @@
 """The store is the authority at each gate: template, scope, policy, vault and approvals."""
 
+import dataclasses
+
 import pytest
 
 from reconix import store
@@ -258,3 +260,34 @@ def test_edit_network_scope_validates_ports():
     import pytest as _pytest
     with _pytest.raises(store.StoreValidationError):
         store.edit_scope(allowed_ports=["99999"])
+
+
+def test_a_failed_edit_changes_no_field():
+    """All or nothing: a bad field after good ones leaves the whole scope as it was."""
+    run_to("scope")
+    before = dataclasses.replace(store.get_scope())
+    for bad in (dict(allowed_methods=["GET"], time_limit_minutes=9999),
+                dict(excluded_paths=["/admin"], tools=["Nuclei", "rm -rf"]),
+                dict(tools=["Nuclei"], allowed_ports=["80", "70000"])):
+        with pytest.raises(store.StoreValidationError):
+            store.edit_scope(**bad)
+        assert store.get_scope() == before
+
+
+@pytest.mark.parametrize("request_text, methods, tools", [
+    ("scan 10.0.0.0/24 for open ports", ["tcp CONNECT"], ["NMAP", "testssl"]),
+    ("review repo github.com/acme/app", ["READ"], ["semgrep", "Gitleaks", "pip-audit"]),
+])
+def test_edit_checks_methods_and_tools_for_every_kind(request_text, methods, tools):
+    from .support import play_until_gate
+    store.start_run(request_text)
+    assert play_until_gate() == "scope"
+    default_tools = list(store.get_scope().tools)
+    store.edit_scope(tools=default_tools)                       # the template's own tools pass
+    store.edit_scope(allowed_methods=methods, tools=tools)      # named the scope's way
+    scope = store.get_scope()
+    assert scope.allowed_methods in (["TCP connect"], ["read"])
+    assert scope.tools[0] in ("nmap", "Semgrep")
+    for bad in (dict(allowed_methods=["DELETE"]), dict(tools=["metasploit"])):
+        with pytest.raises(store.StoreValidationError):
+            store.edit_scope(**bad)

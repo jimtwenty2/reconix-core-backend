@@ -124,8 +124,9 @@ def test_widen_scope_tools_lists_the_agent_toolset():
     assert len(tools) >= len(before)
 
 
-def test_reasoning_event_renders_as_muted_thinking():
+def test_reasoning_event_is_a_thought_that_folds_into_a_thinking_block():
     agent_run.record_event({"type": "reasoning", "text": "step 1 recon, step 2 decide"})
     last = store.list_chat()[-1]
-    assert last.speaker == "reconix" and last.tone == "muted"
-    assert "thinking" in last.text and "step 1 recon" in last.text
+    assert (last.kind, last.speaker, last.tone) == ("thought", "reconix", "muted")
+    assert last.text == "step 1 recon, step 2 decide"
+    assert store.group_stream([last], "running")[-1].verb == "Thought"

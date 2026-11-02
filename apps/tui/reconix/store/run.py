@@ -20,7 +20,7 @@ from ..models.parser import ParsedTarget
 from . import lists, seed
 from .activity import log_event
 from .approvals import approvals_count, decision_for, get_approval
-from .assessment import add_request, clean_request, get_assessment
+from .assessment import add_request, clean_request, get_assessment, is_empty_assessment
 from .errors import StoreValidationError
 from .findings import finding_exists, findings_line, list_findings
 from .parser import parse_request
@@ -73,12 +73,14 @@ def get_run() -> RunState:
 
 # --- starting and resetting -------------------------------------------------------------
 def submit_prompt(text: str) -> str:
-    """A line typed at the prompt. Returns "started" (a run began) or "answered".
+    """A line typed at the prompt. Returns "started" (a run began), "answered", or "ask".
 
     Before a run, a line that names a target starts the run on it; anything else (a
     greeting, a question, "scan my network" without an address) gets a short answer and
-    nothing starts. A malformed target (10.0.0.300) raises, so the operator can fix it.
-    During a run the line goes to the assistant.
+    nothing starts. With the offline mock model active that answer is the mock's: "ask" tells
+    the app to call `llm_answer` off the UI thread (a real provider keeps the built-in reply
+    here, so nothing typed before a run leaves this computer). A malformed target (10.0.0.300)
+    raises, so the operator can fix it. During a run the line goes to the assistant.
     """
     if get_run().started:
         say_to_assistant(text)
@@ -86,7 +88,11 @@ def submit_prompt(text: str) -> str:
     text = clean_request(text)
     parsed = parse_request(text)
     if parsed is None:
+        from .providers import active_is_mock
+
         add_chat("text", "you", text)
+        if active_is_mock():
+            return "ask"                    # the app asks the mock (llm_answer) in a worker
         add_chat("text", "reconix", reply_to(text), tone="muted")
         return "answered"
     _start(text, parsed, picked=False)
@@ -172,7 +178,10 @@ def llm_answer(text: str) -> None:
         except LLMError as exc:
             add_chat("text", "reconix",
                      f"LLM unavailable ({exc}). Showing the built-in reply.", tone="muted")
-    builtin = reply_after_run if is_finished() else reply_while_running
+    if not get_run().started:
+        builtin = reply_to                  # a question before any target
+    else:
+        builtin = reply_after_run if is_finished() else reply_while_running
     add_chat("text", "reconix", builtin(text), tone="muted")
 
 
@@ -182,13 +191,20 @@ def say_to_assistant(text: str) -> None:
     llm_answer(answer)
 
 
-def new_assessment() -> None:
-    """Throw away the current run and load a fresh one. The audit trail and history stay."""
+def new_assessment() -> bool:
+    """Load a fresh assessment (earlier ones stay listed); the audit trail and history stay.
+
+    False, and nothing changes, when the current one is still empty: it already is a fresh
+    one, so no empty assessment is left behind and the numbering never skips.
+    """
     from .persist import autosave       # (imported here: persist depends on this module)
 
+    if is_empty_assessment():
+        return False
     autosave()                          # keep the one we leave up to date on disk
     seed.load_run_data()
     log_event("assessment.new")
+    return True
 
 
 # --- gates -----------------------------------------------------------------------------------

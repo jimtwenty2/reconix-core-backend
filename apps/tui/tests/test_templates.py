@@ -87,3 +87,17 @@ def test_suggested_template_follows_the_parsed_target():
     play_until_gate()
     suggested = [t for t in store.list_templates() if t.suggested]
     assert [t.id for t in suggested] == ["network"]
+
+
+def test_an_unavailable_template_is_refused_by_the_store(monkeypatch):
+    """A template shown "not in demo" can't be drafted, whatever calls the store."""
+    from dataclasses import replace
+
+    from reconix.store.templates import MODULES
+    monkeypatch.setattr(MODULES["api"], "SPEC", replace(MODULES["api"].SPEC, available=False))
+    for call in (lambda: store.get_template("api"),
+                 lambda: store.check_target("api", "https://api.example.com"),
+                 lambda: store.start_run("https://api.example.com", "api")):
+        with pytest.raises(store.StoreValidationError):
+            call()
+    assert not store.get_run().started and lists.current().scope is None

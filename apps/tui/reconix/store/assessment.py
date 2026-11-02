@@ -63,6 +63,17 @@ def list_assessments() -> List[AssessmentCard]:
     return cards
 
 
+def is_empty_assessment() -> bool:
+    """The current assessment is still as built: no target, template, scope or run, and
+    nothing the operator typed, decided or found. A new one would only repeat it."""
+    a = lists.current()
+    return (not a.target and not a.template_id and not a.selected_template
+            and not a.run.started and a.scope is None and a.api_spec is None
+            and not (a.requests or a.findings or a.approvals or a.decisions or a.vault)
+            and all(entry.speaker != "you" for entry in a.chat)
+            and all(entry.source != "USER" for entry in a.activity))
+
+
 def switch_assessment(index: int) -> None:
     """Make another assessment the current one (reopen a past one)."""
     from .persist import autosave       # (imported here: persist depends on this module)

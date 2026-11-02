@@ -21,13 +21,16 @@ BASE_READONLY = "readonly"   # comes from .env, operator cannot change (Reconix)
 BASE_OPTIONAL = "optional"   # frontier providers; passed only if given
 BASE_DEFAULT = "default"     # a sensible default, editable (Ollama)
 BASE_REQUIRED = "required"   # must be supplied (custom OpenAI-compatible)
+BASE_NONE = "none"           # no address at all (the offline mock model)
+
+MOCK_ID = "mock"             # the offline mock provider (llm/mock.py)
 
 
 @dataclass(frozen=True)
 class Provider:
     id: str
     label: str
-    kind: str                 # reconix | frontier | local
+    kind: str                 # reconix | frontier | local | mock
     key_requirement: str      # REQUIRED | OPTIONAL | NONE
     multi_model: bool         # frontier holds many; the rest exactly one
     base_mode: str            # BASE_* above
@@ -38,6 +41,10 @@ class Provider:
     @property
     def needs_key(self) -> bool:
         return self.key_requirement == REQUIRED
+
+    @property
+    def is_mock(self) -> bool:
+        return self.kind == "mock"
 
     @property
     def uses_api_base(self) -> bool:
@@ -63,6 +70,9 @@ _CATALOG: Tuple[Provider, ...] = (
              default_base_url=config.OLLAMA_BASE_URL),
     Provider("openai_compatible", "Custom OpenAI-compatible", "local", OPTIONAL, False,
              BASE_REQUIRED, "openai"),
+    # Prepared answers, on this computer only: for testing without a model or a network.
+    Provider(MOCK_ID, "Reconix mock (offline)", "mock", OPTIONAL, False, BASE_NONE, "mock",
+             default_models=("reconix-mock-1",)),
 )
 
 _BY_ID = {p.id: p for p in _CATALOG}
