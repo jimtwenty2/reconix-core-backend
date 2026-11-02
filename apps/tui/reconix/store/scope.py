@@ -85,6 +85,7 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
     """
     if not scope_editable():
         raise StoreValidationError("The scope can only be edited while it waits for approval.")
+    scope = get_scope()
     changes = {}
 
     if allowed_methods is not None:
