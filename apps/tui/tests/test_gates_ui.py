@@ -204,7 +204,8 @@ async def test_approval_without_a_waiting_action_lists_the_decisions(app):
 async def test_scope_text_with_markup_is_shown_literally(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope")
-        store.edit_scope(tools=["[/oops] ZAP", "[bold]x"])
+        # edit_scope refuses unknown tools; set them directly to check the display still escapes
+        store.lists.current().scope.tools = ["[/oops] ZAP", "[bold]x"]
         await pass_gate(app, pilot)                             # approve
         await pass_gate(app, pilot)                             # run the plan
         await pilot.press("escape")                             # leave the login for later
