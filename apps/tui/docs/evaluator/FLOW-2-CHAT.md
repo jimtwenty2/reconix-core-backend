@@ -2,13 +2,8 @@
 
 # Flow 2 · Chat (mock model and the step rules)
 
-Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
+ Mark each case in the app with `/tests` (p / f / s).
 
-## 2a Chat: general questions (mock model)
-
-Set the mock model first (PROV-01).
-Type at the Start prompt, or inside a step with Chat about this. The mock gives prepared answers filled with this assessment's own data. It is not a real AI.
-It never says a step is approved or done, never asks "Shall we proceed?", writes no Markdown and never shows a secret.
 
 #### CHAT-01 · Who are you?
 

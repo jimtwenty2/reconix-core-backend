@@ -2,34 +2,10 @@
 
 # Flow 1 · The main flow, one template at a time
 
-Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
+with `/tests` 
 
 Every template walks the same gates, in this order:
 
-| Gate | What you see and choose |
-|---|---|
-| Scope review | "Approve this scope manifest?" → Approve scope / Edit manifest / Reject (API also: Attach OpenAPI spec). Edit manifest is all or nothing; after Approve the scope is locked. |
-| Plan | "Run this plan?" → Run plan / Edit steps / Cancel. Rows 1–5 run on their own; 3a (MEDIUM) and 3b (HIGH) wait for you. |
-| Target login | Only when the scope's tools need one (Web URL: account + one-time code; API: session cookie). What you type is never shown or saved. |
-| MEDIUM approval | "Run <action> on <target>?" → Approve & run / Reject / View details / Edit params. |
-| HIGH approval | The same menu, then "◆ HIGH-RISK · second confirmation"; its default is No, go back. |
-| Execution | One request outside the scope is proposed and blocked: "Blocked: … Not executed." Ctrl+C asks "Stop this assessment?". |
-| Findings and report | 3 findings per template (Enter open, f filter, s sort, t triage); on the Report screen p PDF, j JSON, w DOCX once the run is complete (saved in apps/tui/reports/). |
-
-**Test values:** any password (it never shows) and the one-time code `123456`. Type `/new` before each case.
-
-## 1.1 Web URL (a website)
-
-A URL like https://shop.example.com picks Web URL at once. A bare hostname asks "Which kind of target is it?".
-
-| What this template sets up | |
-|---|---|
-| Scope | methods GET and POST; never touches /admin; tools Nuclei and OWASP ZAP; time limit 30 min |
-| Login | email/username + password, then a 6-digit one-time code (OWASP ZAP needs it) |
-| MEDIUM | Baseline request (read-only) · GET /api/orders/10482 |
-| HIGH | limited_validation · GET /api/orders/10483 (test account B) |
-| Blocked in the run | Blocked: GET /admin · Path outside approved scope. Not executed. |
-| Findings | 001 MEDIUM Broken object-level authorization · 002 MEDIUM Reflected input in search page · 003 LOW Session cookie missing SameSite |
 
 #### MF-WEB-01 · The whole flow, approve everything
 

@@ -2,7 +2,7 @@
 
 # Flow 3 · Commands and settings
 
-Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
+Mark each case in the app with `/tests` (p / f / s).
 
 ## 3 Commands and settings
 
