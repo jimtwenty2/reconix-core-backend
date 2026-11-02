@@ -19,7 +19,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Any, Literal, Protocol, Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
@@ -370,8 +370,19 @@ GetApprovedScope = Callable[[UUID], ApprovedScope]
 WriteAudit = Callable[[AuditEvent], None]
 """Writes exactly one audit line."""
 
-AskAgent = Callable[[AgentRequest], Awaitable[AgentResponse]]
-"""Asks the AI agent to plan, suggest, analyze, report or chat."""
+OnPiece = Callable[[str], Awaitable[None]]
+"""Gets a CHAT answer in masked pieces while the model writes it. Only for showing: the
+answer in AgentResponse is the one that is saved, and it may differ from the pieces."""
+
+
+class AskAgent(Protocol):
+    """Asks the AI agent to plan, suggest, analyze, report or chat. With on_piece, a CHAT
+    answer is also streamed to it in masked pieces; the other tasks ignore it."""
+
+    def __call__(
+        self, request: AgentRequest, on_piece: OnPiece | None = None
+    ) -> Awaitable[AgentResponse]: ...
+
 
 CallTool = Callable[[ToolJob], Awaitable[ToolResult]]
 """Runs one tool in the Kali container through MCP."""

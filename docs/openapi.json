@@ -6114,6 +6114,61 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/chat/stream": {
+      "post": {
+        "description": "POST /chat, with the answer streamed as Server-Sent Events while the agent writes:\n\n- `event: PIECE`, `data: {\"text\": \"...\"}`: the next masked piece of the answer.\n- `event: DONE`, `data:` the same ChatOut as POST /chat. Show its reply in place of\n  the pieces: it is the saved answer, and the last words come only here.\n- `event: ERROR`, `data: {\"code\", \"message\", \"details\"}`: the ask failed.\n\nA wrong session or a chat already running fails before the stream starts, with the\nusual error and status. If the client leaves, the answer is still saved.",
+        "operationId": "chat_stream_api_v1_sessions__session_id__chat_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Chat Stream",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
     "/api/v1/sessions/{session_id}/close": {
       "post": {
         "operationId": "close_session_api_v1_sessions__session_id__close_post",
@@ -6375,6 +6430,58 @@
         "summary": "Create Scope",
         "tags": [
           "scope manifests"
+        ]
+      }
+    },
+    "/api/v1/stream": {
+      "get": {
+        "description": "Server-Sent Events: one message per audit event, as it is written.\n\nEach message is `event: <EVENT_TYPE>` and `data: {event_type, assessment_id,\nsession_id, actor, at, details}` (masked). A `: ping` comment comes every few seconds.\nWith ?assessment_id=, only that assessment's events are sent.\n\nSend the token as a Bearer header (read with fetch, not EventSource). The stream ends\nwhen the session is closed; reconnect and reload your lists to catch up.",
+        "operationId": "read_stream_api_v1_stream_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "assessment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assessment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Stream",
+        "tags": [
+          "stream"
         ]
       }
     }

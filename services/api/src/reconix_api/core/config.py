@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Approvals
     approval_ttl_minutes: int = 30
 
+    # GET /stream sends a ping this often, and checks the session is still open
+    stream_heartbeat_seconds: float = 15
+
     @field_validator("host")
     @classmethod
     def host_must_be_loopback(cls, value: str) -> str:
