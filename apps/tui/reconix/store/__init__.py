@@ -14,7 +14,7 @@ from .approvals import (
 )
 from .assessment import (
     MAX_REQUEST_LENGTH, AssessmentCard, add_request, assessment_label, assessment_status,
-    get_assessment, list_assessments, list_requests, switch_assessment,
+    get_assessment, is_empty_assessment, list_assessments, list_requests, switch_assessment,
 )
 from .errors import StoreValidationError
 from .findings import (
@@ -83,6 +83,7 @@ __all__ = [
     # assessment and requests
     "get_assessment", "assessment_label", "list_requests", "add_request",
     "list_assessments", "switch_assessment", "assessment_status", "AssessmentCard",
+    "is_empty_assessment",
     # the run
     "submit_prompt", "start_run", "check_target", "say_to_assistant", "say_operator_line",
     "TargetCheck", "looks_like_target", "validate_target",

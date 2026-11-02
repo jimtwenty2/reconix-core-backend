@@ -96,3 +96,34 @@ async def test_reopening_a_running_assessment_resumes_it(app):
         # The run played on to the next (MEDIUM) gate, which opened its screen.
         assert store.waiting_gate() == "approval:approval-001"
         assert isinstance(app.screen, ApprovalScreen)
+
+
+# --- /new on an assessment that is still empty -------------------------------------------------
+def test_a_fresh_assessment_is_empty_until_something_is_recorded():
+    assert store.is_empty_assessment()
+    store.add_request("check the login page")      # something the operator typed
+    assert not store.is_empty_assessment()
+
+
+def test_new_on_an_empty_assessment_keeps_it(monkeypatch):
+    from reconix.store import persist
+
+    saves = []
+    monkeypatch.setattr(persist, "autosave", lambda: saves.append(1) or True)
+    first = store.get_assessment().label
+    events = len(store.list_events())
+    for _ in range(3):
+        assert store.new_assessment() is False
+    assert store.get_assessment().label == first
+    assert len(store.list_assessments()) == 1
+    assert len(store.list_events()) == events and saves == []
+
+
+def test_new_after_a_target_creates_the_next_id():
+    run_to("scope")
+    first = store.get_assessment().label
+    assert not store.is_empty_assessment()
+    assert store.new_assessment() is True
+    cards = store.list_assessments()
+    assert [card.label for card in cards] == [first, store.get_assessment().label]
+    assert cards[1].label == first[:-3] + f"{int(first[-3:]) + 1:03d}"   # numbering never skips
