@@ -64,7 +64,7 @@ class ScopeTarget(Base):
     __tablename__ = "scope_targets"
 
     scope_target_id: Mapped[uuid.UUID] = uuid_pk()
-    type: Mapped[str] = mapped_column(String(20))  # domain, ip, cidr or url
+    type: Mapped[str] = mapped_column(String(20))  # domain, ip, cidr, url or path
     value: Mapped[str] = mapped_column(Text)
     excluded: Mapped[bool] = mapped_column(Boolean, server_default=false())
     manifest_id: Mapped[uuid.UUID] = mapped_column(

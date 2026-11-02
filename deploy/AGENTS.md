@@ -16,7 +16,7 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 
 | File | Holds |
 |---|---|
-| `docker-compose.yml` | The local stack: `postgres` (16), `qdrant`, `ollama`, `kali-mcp`, plus the one-off `nuclei-templates` (profile `setup`) that fills the read-only templates volume `kali-mcp` uses |
+| `docker-compose.yml` | The local stack: `postgres` (16), `qdrant`, `ollama`, `kali-mcp`, plus the one-off `nuclei-templates` (profile `setup`) that fills the read-only templates volume `kali-mcp` uses. `kali-mcp` also mounts `../data/code` (the API's `RECONIX_CODE_DIR`) read-only at `/workspace/code`; create it with `mkdir -p data/code` before the first `up`, or Docker makes it owned by root and the API cannot write there |
 | `docker-compose.dev.yml` | Dev only: while the API runs on the host, a small relay (`kali-mcp-relay`) publishes the Kali MCP port on `127.0.0.1` (`RECONIX_MCP_PORT`). Kali itself keeps no published port: Docker drops ports on a container with only internal networks. Drop the file once the API runs in Compose |
 | `lab/` | Test targets: OWASP Juice Shop and a small repo with known bugs and a fake secret (empty, to build) |
 | `seed.sql` | Sample data matching ERD V3; `apps/sample-data/` is built from it (placeholder) |

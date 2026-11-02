@@ -37,6 +37,22 @@ def add_source(db: Db, finding_id: UUID, tool_run_id: UUID) -> None:
         db.execute(insert(finding_sources).values(finding_id=finding_id, tool_run_id=tool_run_id))
 
 
+def list_by_agent_run(db: Db, agent_run_id: UUID) -> list[Finding]:
+    """The findings the tool runs of one agent run found, in the order they were found."""
+    found_by_run = (
+        select(finding_sources.c.finding_id)
+        .join(ToolRun, ToolRun.tool_run_id == finding_sources.c.tool_run_id)
+        .join(Action, Action.action_id == ToolRun.action_id)
+        .where(Action.agent_run_id == agent_run_id)
+    )
+    query = (
+        select(Finding)
+        .where(Finding.finding_id.in_(found_by_run))
+        .order_by(Finding.created_at, Finding.code)
+    )
+    return list(db.scalars(query))
+
+
 def list_by_assessment(db: Db, assessment_id: UUID) -> list[Finding]:
     return list_matching(db, assessment_id=assessment_id)
 

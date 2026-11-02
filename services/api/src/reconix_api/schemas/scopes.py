@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from reconix_api.core.code_files import check_code_path
 from reconix_api.core.interfaces import ToolName
 from reconix_api.models.enums import AssessmentStatus, ManifestStatus, RiskLevel
 
@@ -18,7 +19,7 @@ MAX_PORTS = 1000
 
 
 class ScopeTargetIn(BaseModel):
-    type: Literal["domain", "ip", "cidr", "url"]
+    type: Literal["domain", "ip", "cidr", "url", "path"]  # path: uploaded source code
     value: str = Field(min_length=1, max_length=2048)
     excluded: bool = False
 
@@ -32,6 +33,8 @@ class ScopeTargetIn(BaseModel):
             check_url(self.value)
         elif self.type == "domain" and not DOMAIN.match(self.value):
             raise ValueError("not a valid domain")
+        elif self.type == "path":
+            check_code_path(self.value)
         return self
 
 

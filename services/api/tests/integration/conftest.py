@@ -21,7 +21,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from reconix_api.core.config import Settings, get_settings
-from reconix_api.core.db import get_db
+from reconix_api.core.db import get_db, get_session_factory
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.main import create_app
 from reconix_api.models import Base
@@ -86,6 +86,7 @@ def db_app(session_factory):
             yield db
 
     app.dependency_overrides[get_db] = test_db
+    app.dependency_overrides[get_session_factory] = lambda: session_factory  # background work
     app.dependency_overrides[get_settings] = lambda: settings
     app.state.parts = parts
     return app
@@ -94,3 +95,20 @@ def db_app(session_factory):
 @pytest.fixture
 def db_client(db_app):
     return TestClient(db_app, base_url="http://127.0.0.1/api/v1")
+
+
+@pytest.fixture
+def code_dir(db_app, tmp_path) -> Path:
+    """Code sent from VS Code goes to a temporary folder, never to the repo's data/code.
+    The upload limit is 1 MB here, so the size check is cheap to test."""
+    settings = db_app.dependency_overrides[get_settings]()
+    changed = settings.model_copy(update={"code_dir": str(tmp_path), "max_upload_mb": 1})
+    db_app.dependency_overrides[get_settings] = lambda: changed
+    return tmp_path
+
+
+@pytest.fixture
+def code_client(db_app, code_dir):
+    """A client kept open for the whole test, so its event loop runs background code scans."""
+    with TestClient(db_app, base_url="http://127.0.0.1/api/v1") as client:
+        yield client

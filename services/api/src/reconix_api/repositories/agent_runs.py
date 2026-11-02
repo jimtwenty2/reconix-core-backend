@@ -64,6 +64,16 @@ def open_plan_runs(db: Db, assessment_id: UUID) -> list[AgentRun]:
     return list(db.scalars(query))
 
 
+def running_code_scan(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """A CODE_SCAN run of this assessment still scanning its code."""
+    query = select(AgentRun).where(
+        AgentRun.assessment_id == assessment_id,
+        AgentRun.plan["task"].astext == "CODE_SCAN",
+        AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
+    )
+    return db.scalar(query.limit(1))
+
+
 def running_chat(db: Db, session_id: UUID) -> AgentRun | None:
     """A CHAT run of this session still asking the agent."""
     query = select(AgentRun).where(
