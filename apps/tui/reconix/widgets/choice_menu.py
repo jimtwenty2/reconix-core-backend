@@ -68,12 +68,13 @@ class ChoiceMenu(OptionList):
 
     def __init__(
         self, choices: Sequence[Choice] = (), *, default: int = 0,
-        numbered: Optional[bool] = None,
+        numbered: Optional[bool] = None, inline: bool = False,
         id: Optional[str] = None, classes: Optional[str] = None,
     ) -> None:
         self._choices: List[Choice] = list(choices)
         self._default = default
         self._numbered = self.NUMBERED if numbered is None else numbered
+        self._inline = inline           # keep each choice on one line (hint beside the label)
         self._pointer: Optional[int] = None
         self._draft = ""                # text typed into the input row
         self._armed_at = 0.0            # when picks start to count (see ARM_DELAY)
@@ -193,7 +194,10 @@ class ChoiceMenu(OptionList):
             line.append("  ")
             line.append_text(theme.chip(choice.tag, "cyan"))
         if choice.hint:
-            line.append("\n" + " " * (2 + len(number)) + choice.hint, style=theme.MUTED)
+            if self._inline:        # one line per choice: the hint sits beside the label
+                line.append(f"  {choice.hint}", style=theme.MUTED)
+            else:
+                line.append("\n" + " " * (2 + len(number)) + choice.hint, style=theme.MUTED)
         return line
 
     def _move_pointer(self, index: Optional[int]) -> None:
