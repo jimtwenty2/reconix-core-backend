@@ -5,7 +5,10 @@ the Reconix backend later, keep these function names and signatures and change
 their bodies to call the API; the screens do not need to change.
 """
 
-from .activity import add_feedback, current_operator, list_events, list_feedback, log_event
+from .activity import (
+    add_feedback, current_events, current_feedback, current_operator, list_events,
+    list_feedback, log_event,
+)
 from .api_form import save_api_form
 from .approvals import (
     approvals_count, approve, can_edit, decision_for, decline_confirmation, edit_approval,
@@ -26,6 +29,7 @@ from .findings_view import (
     severity_counts, sort_label,
 )
 from .history import add_history, list_history
+from .llm_chat import Draft, build_draft, record_draft
 from . import knowledge
 from .knowledge import add_source, list_sources, remove_source
 from .knowledge import clear as clear_knowledge
@@ -122,10 +126,12 @@ __all__ = [
     "list_chat", "last_exchange", "list_activity",
     "stream", "group_stream", "block_seconds",
     "current_operator", "log_event", "list_events", "add_feedback", "list_feedback",
+    "current_events", "current_feedback",
     "add_history", "list_history",
     # flexible LLM: providers and the active model
     "list_providers", "get_provider", "set_provider", "unset_provider", "test_provider",
     "activate", "active_model", "active_llm_settings", "active_remote_label",
+    "Draft", "build_draft", "record_draft",
     # the saved copy the web dashboard reads
     "autosave", "close_session", "web_dashboard_url",
     # the API template's OpenAPI spec

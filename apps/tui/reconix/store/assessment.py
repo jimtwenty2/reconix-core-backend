@@ -12,6 +12,13 @@ MAX_REQUEST_LENGTH = 500
 
 
 def get_assessment() -> Assessment:
+    """The current assessment itself, live.
+
+    This is the store's internal mutation seam (with `run.get_run()`): the store changes the
+    assessment through it, so it is not a copy. The list getters built on it —
+    `list_assessments()`, `list_findings()`, `get_finding()`, `list_activity()`,
+    `list_events()` — do return copies, and screens read those.
+    """
     return lists.current()
 
 

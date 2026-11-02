@@ -12,6 +12,9 @@ class AuditEvent:
     operator: str
     detail: str = ""
     created_at: datetime = field(default_factory=utc_now)
+    # The assessment this happened in (its label, e.g. "RCX-DEMO-002"), so the trail of one
+    # run never shows under another. "" for a row logged before any assessment existed.
+    assessment: str = ""
 
 
 @dataclass
@@ -30,3 +33,4 @@ class Feedback:
     text: str
     operator: str
     created_at: datetime = field(default_factory=utc_now)
+    assessment: str = ""       # the assessment it was typed in (its label)
