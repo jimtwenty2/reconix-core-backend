@@ -106,12 +106,37 @@ repo talks to it only through MCP and pulls its image by tag.
 - Docker with Compose
 - Node.js 20+ and npm (only for the local web)
 
+### Quick start
+
+```bash
+git clone git@github.com:14th-Generation-Advanced-Course/reconix-core-backend.git
+cd reconix-core-backend
+git checkout Main
+./deploy/dev.sh        # first run creates .env; fill it in, then run it again
+```
+
+What `deploy/dev.sh` does, in order:
+
+1. Creates `.env` from `.env.example` if it is missing, then stops so you can fill it in.
+2. Installs the Python packages (`uv sync`).
+3. Starts Postgres, Qdrant, Ollama and the Kali MCP container, and waits for Postgres.
+4. Migrates the database.
+5. Runs the API at http://127.0.0.1:8000 (Swagger UI at `/docs`).
+
+Press `Ctrl+C` to stop the API. To stop the Docker services too:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file .env down
+```
+
+The steps below do the same thing by hand.
+
 ### 1. Clone and install
 
 ```bash
 git clone git@github.com:14th-Generation-Advanced-Course/reconix-core-backend.git
 cd reconix-core-backend
-git checkout Develop
+git checkout Main
 uv sync
 ```
 
@@ -145,10 +170,30 @@ docker compose -f deploy/docker-compose.yml --env-file .env run --rm nuclei-temp
 
 ### 4. Migrate and run the API
 
+Run both from the repo root, so they read the root `.env`:
+
 ```bash
-cd services/api && uv run alembic upgrade head && cd -
+uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
 uv run --package reconix-api python -m reconix_api.main
 ```
+
+### 5. Check it works
+
+All routes live under `/api/v1`:
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health           # {"status":"OK"}
+curl -i http://127.0.0.1:8000/api/v1/sessions/x     # 401: routes need a session token
+```
+
+### Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `password authentication failed for user "reconix"` | Postgres keeps the password from its first start. Make `RECONIX_DATABASE_URL` match `RECONIX_DB_PASSWORD`, or reset the volume: `docker compose -f deploy/docker-compose.yml --env-file .env down -v` (deletes all data). |
+| `Can't locate revision identified by '...'` | The database was migrated from another branch. Switch back to that branch, or reset the volume as above and migrate again. |
+| `address already in use` on port 8000 | The API is already running in another terminal. Stop it first. |
+| A port is already taken | Change `RECONIX_MCP_PORT` and `RECONIX_KALI_MCP_URL` in `.env`, or stop the other container. |
 
 ### Local addresses
 
