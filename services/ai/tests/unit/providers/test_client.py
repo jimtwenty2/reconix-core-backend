@@ -341,3 +341,39 @@ def test_provider_keys_and_addresses_in_the_environment_are_removed() -> None:
     import os
 
     assert not any(name in os.environ for name in client.PROVIDER_ENV)
+
+
+LONG_ANSWER = "Port 3000 runs a web app on the host and answers every request. " * 8
+
+
+async def test_on_piece_streams_the_answer_masked(model: FakeModel) -> None:
+    model.answer = LONG_ANSWER + "password=hunter2-not-real " + LONG_ANSWER
+    pieces: list[str] = []
+
+    async def on_piece(piece: str) -> None:
+        pieces.append(piece)
+
+    completion = await complete(QUESTION, reconix_provider(), on_piece=on_piece)
+
+    shown = "".join(pieces)
+    assert shown
+    assert "hunter2" not in shown
+    assert completion.text.startswith(shown)
+    assert "hunter2" not in completion.text
+    assert model.calls[0]["stream"] is True
+
+
+async def test_on_piece_errors_still_hide_the_provider_text(monkeypatch) -> None:
+    async def down(**_: object) -> None:
+        raise litellm.exceptions.APIConnectionError(
+            message="secret-url-not-real", llm_provider="ollama", model="reconix"
+        )
+
+    async def on_piece(_: str) -> None:
+        pass
+
+    monkeypatch.setattr(client.litellm, "acompletion", down)
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, reconix_provider(), on_piece=on_piece)
+    assert raised.value.code == "MODEL_UNAVAILABLE"
+    assert "secret-url" not in raised.value.message

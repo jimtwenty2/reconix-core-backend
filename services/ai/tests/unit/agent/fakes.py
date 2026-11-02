@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from reconix_ai.agent import AgentDeps
 from reconix_ai.knowledge import KnowledgeError, KnowledgeHit, Source
-from reconix_ai.providers import Completion, Message, ProviderConfig, ProviderType
+from reconix_ai.providers import Completion, Message, OnPiece, ProviderConfig, ProviderType
 
 NOW = datetime.fromisoformat("2026-10-27T10:00:00+00:00")
 
@@ -67,16 +67,26 @@ class FakeModel:
     def __init__(self, *answers: object) -> None:
         self.answers = list(answers)
         self.prompts: list[list[Message]] = []
+        self.streamed = 0  # answers sent through on_piece
 
     async def complete(
-        self, messages: list[Message], config: ProviderConfig, json_answer: bool = False
+        self,
+        messages: list[Message],
+        config: ProviderConfig,
+        json_answer: bool = False,
+        on_piece: OnPiece | None = None,
     ) -> Completion:
+        """With on_piece, the answer goes out 7 characters at a time first, as a stream."""
         assert json_answer
         self.prompts.append(messages)
         answer = self.answers.pop(0)
         if isinstance(answer, Exception):
             raise answer
         text = answer if isinstance(answer, str) else json.dumps(answer)
+        if on_piece is not None:
+            self.streamed += 1
+            for start in range(0, len(text), 7):
+                await on_piece(text[start : start + 7])
         return Completion(text, config.provider_type, config.model_name, 100, 20, 0)
 
     def sent_text(self) -> str:

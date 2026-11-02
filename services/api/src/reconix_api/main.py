@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from functools import partial
 
 import uvicorn
@@ -27,6 +28,7 @@ from reconix_api.api import (
     reports,
     scopes,
     sessions,
+    stream,
     system,
     timeline,
 )
@@ -37,6 +39,7 @@ from reconix_api.core.errors import add_error_handlers
 from reconix_api.core.finding_memory import FindingMemory, ai_finding_memory
 from reconix_api.core.interfaces import Interfaces
 from reconix_api.core.knowledge_add_ons import KnowledgeStore
+from reconix_api.core.live_events import LiveEvents
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
@@ -64,7 +67,11 @@ def create_app(
         yield
 
     app = FastAPI(title="Reconix API", version="0.0.0", lifespan=lifespan)
-    app.state.interfaces = interfaces
+    # Every audit event also goes to GET /stream, once its line is written.
+    app.state.live_events = LiveEvents()
+    app.state.interfaces = replace(
+        interfaces, write_audit=app.state.live_events.publishing(interfaces.write_audit)
+    )
     app.state.session_tokens = session_tokens or SessionTokens()
     app.state.mask_secrets = mask_secrets or build_mask_secrets()
     app.state.knowledge_store = knowledge_store or KnowledgeStore()
@@ -101,6 +108,7 @@ def create_app(
         knowledge_add_ons,
         knowledge,
         timeline,
+        stream,
     ]
     for module in routers:
         app.include_router(module.router, prefix=API_PREFIX)

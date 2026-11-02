@@ -6,6 +6,10 @@ session's own rows (the newest scope, approved or a draft, and the newest plan),
 never from the request, and everything sent to it is already masked.
 """
 
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
@@ -17,6 +21,7 @@ from reconix_api.core.interfaces import (
     ChatMessage,
     ChatScope,
     Interfaces,
+    OnPiece,
     Operator,
 )
 from reconix_api.core.masking import MaskSecrets
@@ -30,9 +35,23 @@ from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.messages import ChatOut, MessageOut
 from reconix_api.services import agent_runs, messages
 from reconix_api.services.scopes import to_chat_scope
+from reconix_api.services.stream import sse
+
+logger = logging.getLogger(__name__)
 
 ASSISTANT = "assistant"  # messages.role of the agent's answer
 CHAT_ROLES = ("user", "assistant")
+
+# Streamed asks still running: kept here so one is never dropped half way when its
+# client leaves (the answer is still saved and the run still ends).
+_asks: set[asyncio.Task] = set()
+
+
+@dataclass(frozen=True)
+class StartedChat:
+    message: MessageOut  # the person's message, saved
+    run: AgentRun  # the CHAT run, RUNNING
+    chat_scope: ChatScope | None
 
 
 async def chat(
@@ -43,8 +62,20 @@ async def chat(
     session_id: UUID,
     content: str,
 ) -> ChatOut:
-    """The message is saved first, so it is kept even when the agent fails. A failed
-    ask ends the CHAT run FAILED (one audit line) and its error is raised. One chat per
+    """Saves the message, asks the agent and saves its answer (see start and finish)."""
+    started = start(db, interfaces, mask, operator, session_id, content)
+    return await finish(db, interfaces, mask, operator, started)
+
+
+def start(
+    db: Db,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    operator: Operator,
+    session_id: UUID,
+    content: str,
+) -> StartedChat:
+    """The message is saved first, so it is kept even when the agent fails. One chat per
     session asks the agent at a time: 409 CHAT_IN_PROGRESS."""
     message = messages.add_message(db, interfaces.write_audit, mask, operator, session_id, content)
     chat_scope = session_scope(db, session_id, mask)
@@ -60,11 +91,97 @@ async def chat(
         raise ApiError(409, "CHAT_IN_PROGRESS", "The agent is still answering. Try again soon.")
     run = agent_runs.new_agent_run(db, operator, assessment_id, task="CHAT")
     db.commit()
+    return StartedChat(message, run, chat_scope)
+
+
+async def finish(
+    db: Db,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    operator: Operator,
+    started: StartedChat,
+    on_piece: OnPiece | None = None,
+) -> ChatOut:
+    """Asks the agent and saves its answer. A failed or cancelled ask ends the CHAT run
+    FAILED (one audit line) and its error is raised, so no run is left RUNNING. on_piece
+    gets the answer in masked pieces."""
     try:
-        return await answer(db, interfaces, mask, operator, run, message, chat_scope)
-    except Exception as error:
-        agent_runs.fail(db, interfaces, operator, run, error)
+        return await answer(
+            db,
+            interfaces,
+            mask,
+            operator,
+            started.run,
+            started.message,
+            started.chat_scope,
+            on_piece,
+        )
+    except (Exception, asyncio.CancelledError) as error:
+        agent_runs.fail(db, interfaces, operator, started.run, error)
         raise
+
+
+@dataclass(frozen=True)
+class StreamedAsk:
+    task: asyncio.Task  # gives the saved ChatOut
+    pieces: asyncio.Queue[str]  # masked pieces of the answer
+
+
+def ask_in_background(
+    db: Db, interfaces: Interfaces, mask: MaskSecrets, operator: Operator, started: StartedChat
+) -> StreamedAsk:
+    """Starts finish() as its own task, before any response is sent, so the answer is
+    saved and the run ends even if the client leaves at once. The task opens its own
+    database session on the same engine: the request's session closes when the
+    response ends, and a session is never shared between two tasks."""
+    pieces: asyncio.Queue[str] = asyncio.Queue()
+
+    async def on_piece(piece: str) -> None:
+        # Masked by the agent already; masked again here, as the saved answer is.
+        await pieces.put(mask(piece)[0])
+
+    async def run() -> ChatOut:
+        with Db(bind=db.get_bind(), expire_on_commit=False) as own_db:
+            run = agent_run_repo.get(own_db, started.run.agent_run_id)
+            own = StartedChat(started.message, run, started.chat_scope)
+            return await finish(own_db, interfaces, mask, operator, own, on_piece)
+
+    task = asyncio.ensure_future(run())
+    _asks.add(task)
+    task.add_done_callback(_asks.discard)
+    return StreamedAsk(task, pieces)
+
+
+async def stream_events(ask: StreamedAsk) -> AsyncIterator[str]:
+    """The ask as Server-Sent Events: PIECE {"text"} while the agent writes, then DONE
+    with the saved ChatOut, or ERROR with the error shape. Show DONE's reply in place of
+    the pieces: it is the saved answer, masked once more, and may differ from them.
+    Leaving early only stops the events; the ask carries on."""
+    while not (ask.task.done() and ask.pieces.empty()):
+        next_piece = asyncio.ensure_future(ask.pieces.get())
+        try:
+            await asyncio.wait({next_piece, ask.task}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            if not next_piece.done():
+                next_piece.cancel()
+        if next_piece.done() and not next_piece.cancelled():
+            yield sse("PIECE", {"text": next_piece.result()})
+    yield end_event(ask.task)
+
+
+def end_event(task: asyncio.Task) -> str:
+    error = None if task.cancelled() else task.exception()
+    if not task.cancelled() and error is None:
+        return sse("DONE", task.result().model_dump(mode="json"))
+    if isinstance(error, ApiError):
+        return sse(
+            "ERROR", {"code": error.code, "message": error.message, "details": error.details}
+        )
+    if error is not None:
+        logger.error("Unexpected error in a streamed chat", exc_info=error)
+    return sse(
+        "ERROR", {"code": "INTERNAL_ERROR", "message": "Something went wrong.", "details": {}}
+    )
 
 
 async def answer(
@@ -75,6 +192,7 @@ async def answer(
     run: AgentRun,
     message: MessageOut,
     chat_scope: ChatScope | None,
+    on_piece: OnPiece | None = None,
 ) -> ChatOut:
     provider, model = agent_runs.agent_provider(db, run)
     request = AgentRequest(
@@ -87,7 +205,7 @@ async def answer(
         chat_scope=chat_scope,
         plan=plan_lines(db, run.assessment_id),
     )
-    response = await agent_runs.ask_agent(db, interfaces, request)
+    response = await agent_runs.ask_agent(db, interfaces, request, on_piece)
     session_repo.get_for_update(db, run.session_id)  # the next sequence_no is this one's
     reply = message_repo.add(
         db,

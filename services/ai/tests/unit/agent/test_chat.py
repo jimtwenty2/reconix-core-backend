@@ -1,5 +1,6 @@
 """CHAT: one answer to the person's last message, with the scope and plan as context."""
 
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
@@ -144,3 +145,51 @@ async def test_other_tasks_still_need_the_approved_scope(graph) -> None:
         await ask_agent(graph, Request(scope=None), str(uuid4()), make_deps(FakeModel()))
 
     assert error.value.code == "SCOPE_MISSING"
+
+
+LONG_TEXT = "nmap -sV probes each open port and reports the service and its version. " * 6
+
+
+def streaming_deps(model: FakeModel, pieces: list[str]):
+    async def on_piece(piece: str) -> None:
+        pieces.append(piece)
+
+    return replace(make_deps(model), on_piece=on_piece)
+
+
+async def test_chat_streams_the_answer_text_not_the_json(graph) -> None:
+    model = FakeModel({"answer": LONG_TEXT + "\nDone.", "references": []})
+    pieces: list[str] = []
+
+    answer = await ask_agent(graph, chat_request(), str(uuid4()), streaming_deps(model, pieces))
+
+    shown = "".join(pieces)
+    assert shown and answer.text.startswith(shown)
+    assert '"answer"' not in shown and "{" not in shown
+
+
+async def test_chat_pieces_hide_a_secret_behind_a_json_escape(graph) -> None:
+    text = LONG_TEXT + 'Use password="hunter2-not-real" to log in. ' + LONG_TEXT
+    model = FakeModel({"answer": text, "references": []})
+    pieces: list[str] = []
+
+    await ask_agent(graph, chat_request(), str(uuid4()), streaming_deps(model, pieces))
+
+    assert "hunter2" not in "".join(pieces)
+
+
+async def test_a_retried_answer_is_not_streamed(graph) -> None:
+    model = FakeModel("not json at all", {"answer": LONG_TEXT, "references": []})
+    pieces: list[str] = []
+
+    answer = await ask_agent(graph, chat_request(), str(uuid4()), streaming_deps(model, pieces))
+
+    assert answer.text == LONG_TEXT.strip()
+    assert model.streamed == 1  # only the first, bad attempt
+    assert pieces == []
+
+
+async def test_other_tasks_never_stream(graph) -> None:
+    model = FakeModel(ANSWER)
+    await ask_agent(graph, chat_request(), str(uuid4()), make_deps(model))
+    assert model.streamed == 0
