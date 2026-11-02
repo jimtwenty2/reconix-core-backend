@@ -17,7 +17,7 @@ const card = (title: string, docsHref: string, meta?: string) =>
 /** The card's help link alone (its own attributes, not the whole card's markup). */
 const helpLink = (html: string) => html.match(/<a [^>]*aria-label="How to read [^>]*>/)![0];
 
-const findings = card("Findings by Severity", DOCS.findings, "3 findings");
+const findings = card("Findings by Severity", DOCS.panelFindingsBySeverity, "3 findings");
 
 describe("a dashboard card's help link", () => {
   it("is named for what it explains and says it opens the documentation", () => {
@@ -26,8 +26,9 @@ describe("a dashboard card's help link", () => {
   });
 
   it("links the docs address the card was given", () => {
-    expect(helpLink(findings)).toContain(`href="${DOCS.findings}"`);
-    expect(DOCS.findings).toBe("/docs/reports#understanding-findings");
+    expect(helpLink(findings)).toContain(`href="${DOCS.panelFindingsBySeverity}"`);
+    // the section that explains this panel, not the general findings guide
+    expect(DOCS.panelFindingsBySeverity).toBe("/docs/reports#panels-findings-by-severity");
   });
 
   it("shows the help icon, hidden from screen readers, and no out-of-page arrow", () => {

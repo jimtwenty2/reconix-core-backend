@@ -207,6 +207,33 @@ describe("the DOCS link map", () => {
     for (const [key, href] of Object.entries(DOCS)) expect(isDocsAddress(href), `DOCS.${key}: ${href}`).toBe(true);
   });
 
+  /* isDocsAddress only checks a section anchor's shape, so check here that the section is real:
+     every DOCS address must be a page of its group or a DocSection that page renders. A typo or
+     a renamed section fails this, which the shape check alone would let through. */
+  it("every entry resolves to a page or to a section that page renders", () => {
+    for (const [key, href] of Object.entries(DOCS)) {
+      const [route, anchor] = href.split("#", 2);
+      if (anchor === undefined) continue;
+      const group = docsGroupOf(route)!.id;
+      const pages = docsSearchIndex().filter((e) => e.group === group);
+      const hit = pages.some((e) => e.anchor === anchor || e.headings.some((h) => h.id === anchor));
+      expect(hit, `DOCS.${key}: ${href} names no page or section`).toBe(true);
+    }
+  });
+
+  it("gives every dashboard panel its own section, and a shape-only anchor is not enough", () => {
+    const panels = Object.entries(DOCS).filter(([key]) => key.startsWith("panel"));
+    expect(panels.length).toBe(9);
+    const headings = docsSearchIndex().find((e) => e.group === "reports" && e.anchor === "panels")!.headings;
+    for (const [key, href] of panels) {
+      const anchor = href.split("#", 2)[1];
+      expect(headings.some((h) => h.id === anchor), `DOCS.${key}: ${href}`).toBe(true);
+    }
+    // the shape check alone would pass this; the content check above is what catches it
+    expect(isDocsAddress("/docs/reports#panels-no-such-panel")).toBe(true);
+    expect(headings.some((h) => h.id === "panels-no-such-panel")).toBe(false);
+  });
+
   it("has no Configuration entry (the rail's Settings item is gone)", () => {
     expect(Object.keys(DOCS)).not.toContain("configuration");
   });
