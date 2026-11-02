@@ -4472,7 +4472,7 @@
     },
     "/api/v1/assessments/{assessment_id}/code-scans": {
       "post": {
-        "description": "Runs SEMGREP, then GITLEAKS, on the code sent to the assessment's session, then\n(with analyze) the agent's analysis. Answers at once; poll GET /code-scans/{id}. Each\ntool goes through the safety checks like any action, so the scope needs a \"path\"\ntarget for that code. 422 NO_CODE, 409 SCAN_RUNNING.",
+        "description": "Runs SEMGREP, then GITLEAKS, on the code sent to the assessment's session, then\n(with analyze) the agent's analysis. Answers at once; poll GET /code-scans/{id}. Each\ntool goes through the safety checks like any action, so the scope needs a \"path\"\ntarget for that code. Excluded \"path\" targets inside it (e.g. \".../node_modules\")\nare deleted from the stored code before the scan, so the tools never read them.\n422 NO_CODE, 422 CODE_EXCLUDED (the whole folder is excluded), 409 SCAN_RUNNING.",
         "operationId": "start_code_scan_api_v1_assessments__assessment_id__code_scans_post",
         "parameters": [
           {
@@ -6945,7 +6945,7 @@
     },
     "/api/v1/sessions/{session_id}/code/sync": {
       "post": {
-        "description": "Send every file the workspace has now (path, size, SHA-256). Stored files that are\nnot in the list are deleted; `missing` lists the ones to upload next. Only your own\nopen session (403 NOT_YOUR_SESSION, 409 SESSION_CLOSED).",
+        "description": "Send every file the workspace has now (path, size, SHA-256). Stored files that are\nnot in the list are deleted; `missing` lists the ones to upload next. Once the scope\nis approved, files in its excluded folders are never asked for or stored. Only your\nown open session (403 NOT_YOUR_SESSION, 409 SESSION_CLOSED).",
         "operationId": "sync_code_api_v1_sessions__session_id__code_sync_post",
         "parameters": [
           {

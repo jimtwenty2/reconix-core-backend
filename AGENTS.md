@@ -314,8 +314,9 @@ Keep this list true; remove an item in the PR that closes it.
 - **An excluded path does not stop a tool on the folder around it.** The harness scope check
   blocks a target *inside* an excluded path, but not one that *contains* it, so a manual
   SEMGREP or GITLEAKS action on `/workspace/code/<s>` still reads `/workspace/code/<s>/secrets`
-  when only that subfolder is excluded. Code scans refuse such a scope
-  (`EXCLUDED_PATH_NOT_SUPPORTED`); the harness fix belongs in `harness/checks/scope.py`.
+  when only that subfolder is excluded. Code scans are safe: they delete the excluded
+  folders from the stored code first, and sync and upload never store them once the scope
+  is approved. The harness fix belongs in `harness/checks/scope.py`.
 - **A code scan left RUNNING by an API restart stays RUNNING** (the scan is an in-process task).
   Cancel it with `POST /code-scans/{id}/cancel`.
 

@@ -33,7 +33,9 @@ async def start_code_scan(
     """Runs SEMGREP, then GITLEAKS, on the code sent to the assessment's session, then
     (with analyze) the agent's analysis. Answers at once; poll GET /code-scans/{id}. Each
     tool goes through the safety checks like any action, so the scope needs a "path"
-    target for that code. 422 NO_CODE, 409 SCAN_RUNNING."""
+    target for that code. Excluded "path" targets inside it (e.g. ".../node_modules")
+    are deleted from the stored code before the scan, so the tools never read them.
+    422 NO_CODE, 422 CODE_EXCLUDED (the whole folder is excluded), 409 SCAN_RUNNING."""
     return await code_scans.start_scan(
         db, session_factory, interfaces, mask, settings, operator, assessment_id, body
     )

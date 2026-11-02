@@ -11,7 +11,7 @@ from reconix_api.services.code_scans import (
     _int,
     _line,
     _proof,
-    ensure_no_excluded_folder,
+    excluded_folders,
     may_hold_secret,
     relative_path,
 )
@@ -76,17 +76,20 @@ def test_lines_that_may_be_a_secret_get_no_snippet(tools, rule_id, cwe_ids, expe
     assert may_hold_secret(tools, rule_id, cwe_ids) is expected
 
 
-def test_a_scope_that_excludes_a_folder_inside_the_code_is_refused():
+def test_excluded_folders_are_made_relative_to_the_code():
     target = "/workspace/code/abc"
-    inside = ApprovedScope(
-        assessment_id=uuid4(), repo_paths=[target], excluded_targets=[f"{target}/secrets"]
-    )
-    elsewhere = ApprovedScope(
+    scope = ApprovedScope(
         assessment_id=uuid4(),
         repo_paths=[target],
-        excluded_targets=["/workspace/code/abcd", "10.0.0.1"],
+        excluded_targets=[f"{target}/node_modules", f"{target}/.git", "/workspace/code/abcd"],
     )
+    assert excluded_folders(scope, target) == [".git", "node_modules"]
+
+
+@pytest.mark.parametrize("excluded", ["/workspace/code/abc", "/workspace/code/abc/"])
+def test_a_scope_that_excludes_the_whole_code_is_refused(excluded):
+    target = "/workspace/code/abc"
+    scope = ApprovedScope(assessment_id=uuid4(), repo_paths=[target], excluded_targets=[excluded])
     with pytest.raises(ApiError) as error:
-        ensure_no_excluded_folder(inside, target)
-    assert error.value.code == "EXCLUDED_PATH_NOT_SUPPORTED"
-    ensure_no_excluded_folder(elsewhere, target)
+        excluded_folders(scope, target)
+    assert error.value.code == "CODE_EXCLUDED"

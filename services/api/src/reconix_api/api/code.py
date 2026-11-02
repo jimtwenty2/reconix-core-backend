@@ -39,8 +39,9 @@ def sync_code(
     settings: CurrentSettings,
 ) -> CodeSyncOut:
     """Send every file the workspace has now (path, size, SHA-256). Stored files that are
-    not in the list are deleted; `missing` lists the ones to upload next. Only your own
-    open session (403 NOT_YOUR_SESSION, 409 SESSION_CLOSED)."""
+    not in the list are deleted; `missing` lists the ones to upload next. Once the scope
+    is approved, files in its excluded folders are never asked for or stored. Only your
+    own open session (403 NOT_YOUR_SESSION, 409 SESSION_CLOSED)."""
     return code.sync_code(db, interfaces.write_audit, settings, operator, session_id, body.files)
 
 
