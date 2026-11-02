@@ -51,11 +51,12 @@ async def create_knowledge_add_on(
     mask: CurrentMask,
     store: CurrentKnowledgeStore,
 ) -> KnowledgeAddOnOut:
-    """multipart/form-data with a .txt .md .json .yaml .yml .docx or .pdf file of at most
-    10 MB, and interface (web or cli). name (optional) is the name to show, and its
-    extension picks the type; without it, the file's own name. The text is masked, cut
-    into passages and saved in the knowledge search, where the agent finds it from then
-    on. No copy of the file is kept. Needs Qdrant and the embedding model: 503 without."""
+    """Adds your own file to the knowledge search. Send it as multipart/form-data: a .txt, .md,
+    .json, .yaml, .yml, .docx or .pdf file of at most 10 MB, plus interface (web or cli). The
+    optional name is the name to show, and its extension decides the file type; without it, the
+    file's own name is used. The text is masked, cut into passages and saved in the knowledge
+    search, where the agent finds it from then on. No copy of the file itself is kept. This
+    needs Qdrant and the embedding model, and returns 503 without them."""
     check_upload_size(request)
     async with request.form(max_files=1, max_fields=2) as form:
         upload = form.get("file")
@@ -73,7 +74,7 @@ async def create_knowledge_add_on(
 async def list_knowledge_add_ons(
     _: CurrentOperator, store: CurrentKnowledgeStore
 ) -> list[KnowledgeAddOnOut]:
-    """Oldest first."""
+    """Lists your knowledge add-ons, oldest first."""
     return await knowledge_add_ons.list_add_ons(store)
 
 
@@ -84,6 +85,8 @@ async def delete_knowledge_add_on(
     interfaces: CurrentInterfaces,
     store: CurrentKnowledgeStore,
 ) -> None:
+    """Deletes one add-on, and removes its text from the knowledge search. Returns 404
+    KNOWLEDGE_ADD_ON_NOT_FOUND if there is no add-on with this id."""
     await knowledge_add_ons.remove(store, interfaces.write_audit, operator, knowledge_add_on_id)
 
 
@@ -91,7 +94,8 @@ async def delete_knowledge_add_on(
 async def delete_all_knowledge_add_ons(
     operator: CurrentOperator, interfaces: CurrentInterfaces, store: CurrentKnowledgeStore
 ) -> KnowledgeAddOnsCleared:
-    """Every add-on. The public knowledge (CVE, CWE, OWASP, ATT&CK, tool guides) stays."""
+    """Deletes every add-on. The public knowledge (CVE, CWE, OWASP, ATT&CK and the tool guides)
+    stays."""
     removed_count = await knowledge_add_ons.remove_all(store, interfaces.write_audit, operator)
     return KnowledgeAddOnsCleared(removed_count=removed_count)
 

@@ -26,7 +26,8 @@ def list_approvals(
     status: ApprovalStatus = ApprovalStatus.PENDING,
     kind: ApprovalKind | None = None,
 ) -> list[ApprovalOut]:
-    """Waiting approvals by default; filter by status and kind."""
+    """Lists the approvals that are waiting for a person. Filter by status and kind to see others,
+    such as the ones already decided."""
     return decisions.list_approvals(db, settings.approval_ttl_minutes, status, kind)
 
 
@@ -34,6 +35,8 @@ def list_approvals(
 def read_approval(
     approval_id: UUID, db: Db, _: CurrentOperator, settings: CurrentSettings
 ) -> ApprovalOut:
+    """Returns one approval, whether it is still waiting or already decided, together with the time
+    it expires. Returns 404 APPROVAL_NOT_FOUND if there is no approval with this id."""
     return decisions.read_approval(db, approval_id, settings.approval_ttl_minutes)
 
 
@@ -47,7 +50,8 @@ async def approve(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> ApprovalOut:
-    """Approving an action also runs it; read the action afterwards for its tool run."""
+    """Approves a waiting approval. Approving an action also runs it, so read the action afterwards
+    to see its tool run."""
     return await decisions.approve(db, interfaces, mask, settings, operator, approval_id, body)
 
 
@@ -60,6 +64,9 @@ async def reject(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> ApprovalOut:
+    """Rejects a waiting approval. Send a reason so the audit log shows why. A rejected action
+    never runs. Returns 409 APPROVAL_ALREADY_DECIDED if someone already decided it, or 409
+    APPROVAL_EXPIRED if it is older than its time limit."""
     return await decisions.reject(
         db, interfaces, operator, settings.approval_ttl_minutes, approval_id, body
     )
