@@ -5,7 +5,7 @@ Pure functions, so they are easy to test. The database layer stores the fields b
 
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel
@@ -35,6 +35,11 @@ def snapshot_hash(snapshot: dict[str, Any]) -> str:
 
 def expires_at(created_at: datetime, ttl_minutes: int) -> datetime:
     return created_at + timedelta(minutes=ttl_minutes)
+
+
+def still_open_after(ttl_minutes: int) -> datetime:
+    """A PENDING approval asked for before this has expired (see expires_at)."""
+    return datetime.now(UTC) - timedelta(minutes=ttl_minutes)
 
 
 def ensure_can_decide(approval: ApprovalState, now: datetime, typed_target: str | None) -> None:

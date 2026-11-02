@@ -12,6 +12,10 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
+    "pypdf>=6.0",  # knowledge add-ons: PDF page text
+    "python-docx>=1.2",  # knowledge add-ons: Word paragraphs and tables
+    "python-multipart>=0.0.20",  # FastAPI file uploads (knowledge add-ons)
+    "pyyaml>=6.0",  # knowledge add-ons: YAML, safe loading only
     "reconix-ai",
     "sqlalchemy>=2.0.36",
     "uvicorn>=0.34",

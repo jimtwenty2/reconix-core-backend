@@ -3,7 +3,7 @@
 import ipaddress
 from functools import lru_cache
 
-from pydantic import SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,8 +18,12 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://reconix:reconix@127.0.0.1:5432/reconix"
 
-    # Kali MCP container
-    mcp_url: str = "http://127.0.0.1:8765/mcp"
+    # Kali MCP container. RECONIX_MCP_URL is the old name, still read until v1.0.0, so an
+    # old .env does not quietly fall back to the default port and send the access key there.
+    kali_mcp_url: str = Field(
+        "http://127.0.0.1:8765/mcp",
+        validation_alias=AliasChoices("RECONIX_KALI_MCP_URL", "RECONIX_MCP_URL"),
+    )
     mcp_access_key: SecretStr = SecretStr("")
     job_token_secret: SecretStr = SecretStr("")
     job_token_ttl_seconds: int = 300
@@ -32,6 +36,11 @@ class Settings(BaseSettings):
 
     # Report files (PDF, DOCX, JSON), one folder per assessment and version
     reports_dir: str = "data/reports"
+
+    # Source code from the VS Code extension, one folder per session. The Kali container
+    # mounts this folder read-only at /workspace/code (deploy/docker-compose.yml).
+    code_dir: str = "data/code"
+    max_upload_mb: int = 100  # per upload, counted both packed and unpacked
 
     # Approvals
     approval_ttl_minutes: int = 30

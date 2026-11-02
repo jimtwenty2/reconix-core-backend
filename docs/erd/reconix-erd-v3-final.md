@@ -39,12 +39,12 @@ The database has **16 tables** and **13 enums**.
 
 ### 2.1 sessions
 
-One chat session from the web or the CLI.
+One chat session from the web, the CLI or VS Code.
 
 | Key | Column | Type | Req | Default | Notes |
 |---|---|---|---|---|---|
 | PK | session_id | UUID | Y | | |
-| | interface | VARCHAR(20) | Y | | web or cli |
+| | interface | VARCHAR(20) | Y | | web, cli or vscode |
 | | session_status | ENUM (session_status) | Y | ACTIVE | |
 | | created_at | TIMESTAMPTZ | Y | now() | |
 | | closed_at | TIMESTAMPTZ | | | Set when the session closes |
@@ -92,6 +92,7 @@ The approved scope: what may be tested, and how.
 | | allowed_tools | JSONB | Y | [] | e.g. ["nmap", "nuclei", "zap"] |
 | | allowed_actions | JSONB | Y | [] | e.g. ["discovery", "scan"] |
 | | allowed_methods | JSONB | Y | [] | e.g. ["GET", "HEAD"] |
+| | allowed_ports | JSONB | Y | [] | e.g. [22, 80, 443]; empty puts no limit on ports |
 | | starts_at | TIMESTAMPTZ | | | Start of the test window |
 | | ends_at | TIMESTAMPTZ | | | End of the test window |
 | | limitations | TEXT | | | e.g. quiet hours |
@@ -108,7 +109,7 @@ The targets inside a scope manifest.
 | Key | Column | Type | Req | Default | Notes |
 |---|---|---|---|---|---|
 | PK | scope_target_id | UUID | Y | | |
-| | type | VARCHAR(20) | Y | | domain, ip, cidr or url |
+| | type | VARCHAR(20) | Y | | domain, ip, cidr, url or path (a source code folder under /workspace/code) |
 | | value | TEXT | Y | | e.g. shop.acme.test |
 | | excluded | BOOLEAN | Y | false | true = must not be tested |
 | FK | manifest_id | UUID | Y | | → scope_manifests |

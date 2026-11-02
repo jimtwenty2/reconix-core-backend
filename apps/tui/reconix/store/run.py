@@ -20,7 +20,7 @@ from ..models.parser import ParsedTarget
 from . import lists, seed
 from .activity import log_event
 from .approvals import approvals_count, decision_for, get_approval
-from .assessment import add_request, clean_request, get_assessment
+from .assessment import add_request, clean_request, get_assessment, is_empty_assessment
 from .errors import StoreValidationError
 from .findings import finding_exists, findings_line, list_findings
 from .parser import parse_request
@@ -201,13 +201,20 @@ def say_to_assistant(text: str) -> None:
     llm_answer(answer)
 
 
-def new_assessment() -> None:
-    """Throw away the current run and load a fresh one. The audit trail and history stay."""
+def new_assessment() -> bool:
+    """Load a fresh assessment (earlier ones stay listed); the audit trail and history stay.
+
+    False, and nothing changes, when the current one is still empty: it already is a fresh
+    one, so no empty assessment is left behind and the numbering never skips.
+    """
     from .persist import autosave       # (imported here: persist depends on this module)
 
+    if is_empty_assessment():
+        return False
     autosave()                          # keep the one we leave up to date on disk
     seed.load_run_data()
     log_event("assessment.new")
+    return True
 
 
 # --- gates -----------------------------------------------------------------------------------

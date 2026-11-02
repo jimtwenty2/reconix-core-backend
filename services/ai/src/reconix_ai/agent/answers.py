@@ -18,7 +18,11 @@ MAX_REFLECTION_CHARS = 300
 MAX_SUMMARY_CHARS = 2000
 MAX_PLAN_STEPS = 5
 MAX_TITLE_CHARS = 200
+MAX_REASON_CHARS = 300
+PHASES = {"discovery", "scan", "validation"}  # scope_manifests.allowed_actions values
 MAX_ARGUMENTS = 20
+MAX_ANSWER_CHARS = 4000
+MAX_CHAT_REFERENCES = 10
 NO_TOOL = {"", "NONE", "NULL"}
 
 
@@ -95,13 +99,34 @@ def read_step(raw: Any) -> dict[str, Any] | None:
     title = raw.get("title")
     if not isinstance(title, str) or not title.strip():
         return None
+    step = {
+        "title": title.strip()[:MAX_TITLE_CHARS],
+        "phase": read_phase(raw.get("phase")),
+        "reason": read_reason(raw.get("reason")),
+    }
     tool = raw.get("tool")
     if tool is None or (isinstance(tool, str) and tool.strip().upper() in NO_TOOL):
-        return {"title": title.strip()[:MAX_TITLE_CHARS], "action": None}
+        return {**step, "action": None}
     action = read_action(tool, raw.get("target"), raw.get("arguments", []))
     if action is None:
         return None
-    return {"title": title.strip()[:MAX_TITLE_CHARS], "action": action}
+    return {**step, "action": action}
+
+
+def read_phase(phase: Any) -> str | None:
+    """Only a known phase is kept; anything else is no phase, never a guess."""
+    if isinstance(phase, str) and phase.strip().lower() in PHASES:
+        return phase.strip().lower()
+    return None
+
+
+def read_reason(reason: Any) -> str:
+    if not isinstance(reason, str):
+        return ""
+    # One line without control characters: it is shown on the approval card.
+    line = reason.strip().splitlines()[0] if reason.strip() else ""
+    line = "".join(char for char in line if unicodedata.category(char) != "Cc")
+    return line.strip()[:MAX_REASON_CHARS]
 
 
 def read_action(tool: Any, target: Any, arguments: Any) -> dict[str, Any] | None:
@@ -119,3 +144,20 @@ def read_action(tool: Any, target: Any, arguments: Any) -> dict[str, Any] | None
         "arguments": list(arguments),
         "is_validation": False,
     }
+
+
+def read_chat(data: dict[str, Any]) -> tuple[str, list[str]]:
+    """The chat answer and the ids it names. Only line breaks and tabs are kept of the
+    control characters, because the answer is shown in the terminal app and the web."""
+    answer = data.get("answer")
+    if not isinstance(answer, str):
+        raise BadAnswer("no answer")
+    text = "".join(c for c in answer if c in "\n\t" or unicodedata.category(c) != "Cc")
+    text = text.strip()[:MAX_ANSWER_CHARS]
+    if not text:
+        raise BadAnswer("no answer")
+    named = data.get("references")
+    references = []
+    if isinstance(named, list):
+        references = [item.strip() for item in named if isinstance(item, str) and item.strip()]
+    return text, references[:MAX_CHAT_REFERENCES]

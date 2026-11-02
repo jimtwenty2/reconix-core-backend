@@ -48,6 +48,8 @@ class PlanStep:
     order: int
     title: str
     action: ProposedAction | None = None
+    phase: str | None = None  # discovery, scan or validation; None if the model gave none
+    reason: str = ""  # why the agent wants this step, for the person who approves it
 
 
 @dataclass(frozen=True)

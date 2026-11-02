@@ -287,6 +287,10 @@ Question.danger .chip {
     margin: 1 0;
 }
 
+/* The approval gate is the densest screen; drop the hint's bottom spacer so the full
+   layout fits at 120x24 and up (the compact layout at 80x24 is built in approval.py). */
+ApprovalScreen .menu-hint { margin-bottom: 0; }
+
 DataTable {
     background: $surface;
     height: auto;

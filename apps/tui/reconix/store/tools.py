@@ -19,6 +19,19 @@ TOOL_LOGIN: Dict[str, str] = {
 # the stronger login covers the weaker one
 LOGIN_RANK = ("", "cookie", "password")
 
+# the templates' default tools the request parser does not name (see parser.TOOL_NAMES)
+TEMPLATE_TOOLS = ("Postman", "ZAP API scan", "Semgrep", "gitleaks", "pip-audit")
+
+
+def known_tool(name: str) -> str:
+    """How the scope names `name` ("zap" -> "OWASP ZAP"), or "" when Reconix doesn't know it."""
+    from .parser import TOOL_NAMES     # the parser imports the templates, so not at the top
+
+    known = {canonical.lower(): canonical for canonical in TOOL_NAMES.values()}
+    known.update(TOOL_NAMES)
+    known.update((tool.lower(), tool) for tool in TEMPLATE_TOOLS)
+    return known.get(name.strip().lower(), "")
+
 
 def tool_login(tool: str) -> str:
     """The login `tool` needs: "" (none), "cookie" or "password"."""

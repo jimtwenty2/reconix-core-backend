@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session as Db
 from sqlalchemy.orm import sessionmaker
 
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import ApprovedScope, GetApprovedScope, Operator, WriteAudit
+from reconix_api.core.interfaces import (
+    ApprovedScope,
+    ChatScope,
+    GetApprovedScope,
+    Operator,
+    WriteAudit,
+)
 from reconix_api.models import Approval, Assessment, ScopeManifest, ScopeTarget
 from reconix_api.models.enums import ApprovalStatus, AssessmentStatus, ManifestStatus
 from reconix_api.repositories import approvals as approval_repo
@@ -102,6 +108,7 @@ def read_scope(db: Db, manifest_id: UUID) -> ScopeOut:
         manifests_status=manifest.manifests_status,
         max_risk=manifest.max_risk,
         allowed_tools=manifest.allowed_tools,
+        allowed_ports=manifest.allowed_ports or [],
         allowed_actions=manifest.allowed_actions,
         allowed_methods=manifest.allowed_methods,
         starts_at=manifest.starts_at,
@@ -171,8 +178,9 @@ def submit(
 
 
 def scope_snapshot(manifest: ScopeManifest, targets: list[ScopeTarget]) -> dict[str, Any]:
-    """What a person approves. Any change to it changes the hash."""
-    return {
+    """What a person approves. Any change to it changes the hash. allowed_ports is in it
+    only when set, so a scope submitted before ports existed keeps its hash."""
+    snapshot = {
         "manifest_id": str(manifest.manifest_id),
         "version": manifest.version,
         "max_risk": manifest.max_risk,
@@ -187,6 +195,9 @@ def scope_snapshot(manifest: ScopeManifest, targets: list[ScopeTarget]) -> dict[
             key=lambda t: (t["excluded"], t["type"], t["value"]),
         ),
     }
+    if manifest.allowed_ports:
+        snapshot["allowed_ports"] = sorted(manifest.allowed_ports)
+    return snapshot
 
 
 def next_engagement_code(latest: str | None, year: int) -> str:
@@ -270,23 +281,52 @@ def make_get_approved_scope(session_factory: sessionmaker[Db]) -> GetApprovedSco
 
 
 def to_approved_scope(manifest: ScopeManifest, targets: list[ScopeTarget]) -> ApprovedScope:
-    scope = ApprovedScope(
+    return ApprovedScope(
         assessment_id=manifest.assessment_id,
         allowed_tools=manifest.allowed_tools,
+        allowed_ports=manifest.allowed_ports or [],
         max_risk=manifest.max_risk,
         window_start=manifest.starts_at,
         window_end=manifest.ends_at,
+        **target_lists(targets),
     )
+
+
+def to_chat_scope(manifest: ScopeManifest, targets: list[ScopeTarget]) -> ChatScope:
+    """The scope as the chat sees it. Anything not APPROVED is a draft to the agent."""
+    approved = manifest.manifests_status == ManifestStatus.APPROVED
+    return ChatScope(
+        assessment_id=manifest.assessment_id,
+        status="APPROVED" if approved else "DRAFT",
+        allowed_tools=manifest.allowed_tools,
+        allowed_ports=manifest.allowed_ports or [],
+        max_risk=manifest.max_risk,
+        window_start=manifest.starts_at,
+        window_end=manifest.ends_at,
+        **target_lists(targets),
+    )
+
+
+def target_lists(targets: list[ScopeTarget]) -> dict[str, list[str]]:
+    lists: dict[str, list[str]] = {
+        "excluded_targets": [],
+        "ip_ranges": [],
+        "domains": [],
+        "url_prefixes": [],
+        "repo_paths": [],
+    }
     for target in targets:
         if target.excluded:
-            scope.excluded_targets.append(target.value)
+            lists["excluded_targets"].append(target.value)
         elif target.type in ("ip", "cidr"):
-            scope.ip_ranges.append(str(ipaddress.ip_network(target.value, strict=False)))
+            lists["ip_ranges"].append(str(ipaddress.ip_network(target.value, strict=False)))
         elif target.type == "domain":
-            scope.domains.append(target.value)
+            lists["domains"].append(target.value)
         elif target.type == "url":
-            scope.url_prefixes.append(target.value)
-    return scope
+            lists["url_prefixes"].append(target.value)
+        elif target.type == "path":
+            lists["repo_paths"].append(target.value)
+    return lists
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +357,7 @@ def _ensure_editable(manifest: ScopeManifest) -> None:
 def _apply_draft(manifest: ScopeManifest, draft: ScopeDraft) -> None:
     manifest.max_risk = draft.max_risk
     manifest.allowed_tools = [tool.value for tool in draft.allowed_tools]
+    manifest.allowed_ports = sorted(set(draft.allowed_ports))
     manifest.allowed_actions = draft.allowed_actions
     manifest.allowed_methods = draft.allowed_methods
     manifest.starts_at = draft.starts_at

@@ -12,8 +12,9 @@ from tests.fakes import build_fake_interfaces
 
 WEB_ORIGIN = "http://127.0.0.1:3000"
 ANY_ID = "00000000-0000-0000-0000-000000000001"
-# The only endpoints that answer without a session token. POST /sessions gives one out.
-OPEN = {("GET", "/health"), ("POST", "/sessions")}
+# The only endpoints that answer without a session token. POST /sessions gives one out, and
+# POST /sessions/web-sign-in gives one out for a one-time code (it checks the code instead).
+OPEN = {("GET", "/health"), ("POST", "/sessions"), ("POST", "/sessions/web-sign-in")}
 
 
 def every_endpoint() -> list[tuple[str, str]]:
@@ -91,6 +92,13 @@ def test_the_list_holds_every_endpoint():
     assert ("GET", f"/reports/{ANY_ID}/download") in ENDPOINTS
 
 
+def test_an_upload_is_not_read_before_the_token_check(client):
+    # 1001 files would be refused while the form is read (400); 401 means it never was.
+    files = [("file", (f"part{n}.txt", b"x")) for n in range(1001)]
+    response = client.post("/knowledge-add-ons", files=files, data={"interface": "cli"})
+    assert response.status_code == 401
+
+
 @pytest.mark.parametrize(("method", "path"), ENDPOINTS)
 def test_no_token_gets_401(client, method, path):
     response = client.request(method, path, json={})
@@ -102,3 +110,11 @@ def test_no_token_gets_401(client, method, path):
 def test_a_wrong_token_gets_401(client, method, path):
     headers = {"Authorization": "Bearer wrong"}
     assert client.request(method, path, headers=headers, json={}).status_code == 401
+
+
+@pytest.mark.parametrize("code", ["wrong", "x" * 43])
+def test_web_sign_in_refuses_a_code_it_did_not_give_out(client, code):
+    response = client.post("/sessions/web-sign-in", json={"code": code})
+    assert response.status_code == 401
+    assert response.json()["code"] == "INVALID_SIGN_IN_CODE"
+    assert "token" not in response.json()

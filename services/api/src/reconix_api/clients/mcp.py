@@ -1,6 +1,6 @@
 """The real call_tool: runs one tool in the Kali container through MCP.
 
-The Kali MCP server speaks JSON-RPC over Streamable HTTP at `RECONIX_MCP_URL`:
+The Kali MCP server speaks JSON-RPC over Streamable HTTP at `RECONIX_KALI_MCP_URL`:
 initialize -> notifications/initialized -> tools/call. It checks the shared
 access key in the Authorization header.
 

@@ -138,6 +138,9 @@ MAPPINGS: dict[str, JsonMapping] = {
         },
         description="extra.message",
         cwe="extra.metadata.cwe",
+        # "extra" holds the matched source lines and metavariable values, which can be
+        # the secret itself; the message and CWE are kept on the finding.
+        hidden=("extra",),
     ),
     "gitleaks": JsonMapping(
         kind="gitleaks_leak",

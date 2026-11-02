@@ -43,6 +43,8 @@ class ScopeManifest(Base):
         pg_enum(RiskLevel, "risk_level"), server_default=RiskLevel.LOW
     )
     allowed_tools: Mapped[list[str]] = mapped_column(JSONB, server_default=json_default("[]"))
+    # The ports nmap may scan; empty puts no limit on ports.
+    allowed_ports: Mapped[list[int]] = mapped_column(JSONB, server_default=json_default("[]"))
     allowed_actions: Mapped[list[str]] = mapped_column(JSONB, server_default=json_default("[]"))
     allowed_methods: Mapped[list[str]] = mapped_column(JSONB, server_default=json_default("[]"))
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -62,7 +64,7 @@ class ScopeTarget(Base):
     __tablename__ = "scope_targets"
 
     scope_target_id: Mapped[uuid.UUID] = uuid_pk()
-    type: Mapped[str] = mapped_column(String(20))  # domain, ip, cidr or url
+    type: Mapped[str] = mapped_column(String(20))  # domain, ip, cidr, url or path
     value: Mapped[str] = mapped_column(Text)
     excluded: Mapped[bool] = mapped_column(Boolean, server_default=false())
     manifest_id: Mapped[uuid.UUID] = mapped_column(

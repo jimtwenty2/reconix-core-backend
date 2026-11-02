@@ -1,7 +1,9 @@
 """Fakes for get_operator, check, get_approved_scope and write_audit."""
 
 import ipaddress
+import posixpath
 import re
+from pathlib import PurePosixPath
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from reconix_api.core.interfaces import (
@@ -78,7 +80,14 @@ def _in_scope(target: str, scope: ApprovedScope) -> bool:
         pass
     if target in scope.domains:
         return True
-    return any(target.startswith(prefix) for prefix in scope.url_prefixes + scope.repo_paths)
+    if any(target.startswith(prefix) for prefix in scope.url_prefixes):
+        return True
+    # Like the real check: a path is in scope only inside a whole scoped folder, so
+    # "/workspace/code/a-x" is not inside "/workspace/code/a".
+    path = PurePosixPath(posixpath.normpath(target))
+    return target.startswith("/") and any(
+        path.is_relative_to(folder) for folder in scope.repo_paths
+    )
 
 
 def fake_check(action: Action, context: CheckContext) -> CheckResult:

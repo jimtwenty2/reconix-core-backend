@@ -45,6 +45,8 @@ def test_plan_step_is_normalised() -> None:
         {
             "title": "Scan",
             "order": 1,
+            "phase": None,
+            "reason": "",
             "action": {
                 "tool": "NMAP",
                 "target": "172.20.0.5",
@@ -53,6 +55,27 @@ def test_plan_step_is_normalised() -> None:
             },
         }
     ]
+
+
+def test_a_known_phase_and_one_line_reason_are_kept() -> None:
+    raw = step(phase=" Discovery ", reason="Find what runs first.\nrm -rf /\x1b[31m")
+
+    _, [kept] = read_plan({"steps": [raw]})
+
+    assert (kept["phase"], kept["reason"]) == ("discovery", "Find what runs first.")
+
+
+@pytest.mark.parametrize("phase", ["exploit", 3, None, ""])
+def test_an_unknown_phase_is_no_phase(phase) -> None:
+    _, [kept] = read_plan({"steps": [step(phase=phase)]})
+
+    assert kept["phase"] is None
+
+
+def test_a_long_reason_is_cut() -> None:
+    _, [kept] = read_plan({"steps": [step(reason="x" * 1000)]})
+
+    assert len(kept["reason"]) == 300
 
 
 def test_arguments_as_one_string_are_dropped_not_split() -> None:

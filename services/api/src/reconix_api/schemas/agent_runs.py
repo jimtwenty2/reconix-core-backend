@@ -23,11 +23,20 @@ class AgentRunOut(BaseModel):
     assessment_id: UUID | None
 
 
+class AgentRunDetailOut(AgentRunOut):
+    """A run and the actions filed under it: a plan or next-step run files its one
+    suggested step, so actions[0] shows that step's status."""
+
+    actions: list[ActionOut] = Field(default_factory=list)
+
+
 class PlanOut(BaseModel):
     """A plan and its first step.
 
     action is the step the agent suggested, after the API's own check: BLOCKED,
     run already (LOW), or waiting for the approval in action.approval_id.
+    A draft has no action yet: nothing was sent until a person sends it with
+    POST /agent-runs/{id}/send (or drops it with POST /agent-runs/{id}/cancel).
     """
 
     agent_run: AgentRunOut
@@ -35,6 +44,7 @@ class PlanOut(BaseModel):
     plan: list[PlanStep] = Field(default_factory=list)
     blocked: list[BlockedStep] = Field(default_factory=list)  # steps the agent's check refused
     action: ActionOut | None = None
+    draft: bool = False
 
 
 class AnalysisOut(BaseModel):

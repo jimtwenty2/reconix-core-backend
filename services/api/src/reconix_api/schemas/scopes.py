@@ -3,19 +3,23 @@
 import ipaddress
 import re
 from datetime import datetime
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from reconix_api.core.code_files import check_code_path
 from reconix_api.core.interfaces import ToolName
 from reconix_api.models.enums import AssessmentStatus, ManifestStatus, RiskLevel
 
 DOMAIN = re.compile(r"^(\*\.)?([a-z0-9-]+\.)*[a-z0-9-]+$", re.IGNORECASE)
+Port = Annotated[int, Field(ge=1, le=65535)]
+MAX_PORTS = 1000
 
 
 class ScopeTargetIn(BaseModel):
-    type: Literal["domain", "ip", "cidr", "url"]
+    type: Literal["domain", "ip", "cidr", "url", "path"]  # path: uploaded source code
     value: str = Field(min_length=1, max_length=2048)
     excluded: bool = False
 
@@ -25,11 +29,24 @@ class ScopeTargetIn(BaseModel):
             ipaddress.ip_address(self.value)
         elif self.type == "cidr":
             ipaddress.ip_network(self.value, strict=False)
-        elif self.type == "url" and not self.value.startswith(("http://", "https://")):
-            raise ValueError("a url target must start with http:// or https://")
+        elif self.type == "url":
+            check_url(self.value)
         elif self.type == "domain" and not DOMAIN.match(self.value):
             raise ValueError("not a valid domain")
+        elif self.type == "path":
+            check_code_path(self.value)
         return self
+
+
+def check_url(value: str) -> None:
+    """The scope goes to the model and the safety checks as written: no spaces or control
+    characters (text hidden on a new line), and no user:password in it."""
+    if not value.startswith(("http://", "https://")):
+        raise ValueError("a url target must start with http:// or https://")
+    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("a url target cannot hold spaces or control characters")
+    if "@" in urlsplit(value).netloc:
+        raise ValueError("a url target cannot hold a user name or password")
 
 
 class ScopeTargetOut(ScopeTargetIn):
@@ -41,6 +58,8 @@ class ScopeDraft(BaseModel):
 
     max_risk: RiskLevel = RiskLevel.LOW
     allowed_tools: list[ToolName] = Field(min_length=1)
+    # The ports nmap may scan. Empty puts no limit on ports.
+    allowed_ports: list[Port] = Field(default_factory=list, max_length=MAX_PORTS)
     allowed_actions: list[Literal["discovery", "scan", "validation"]] = Field(default_factory=list)
     allowed_methods: list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] = (
         Field(default_factory=list)
@@ -62,6 +81,7 @@ class ScopeUpdate(BaseModel):
 
     max_risk: RiskLevel | None = None
     allowed_tools: list[ToolName] | None = None
+    allowed_ports: list[Port] | None = Field(default=None, max_length=MAX_PORTS)
     allowed_actions: list[Literal["discovery", "scan", "validation"]] | None = None
     allowed_methods: (
         list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] | None
@@ -85,6 +105,7 @@ class ScopeOut(BaseModel):
     manifests_status: ManifestStatus
     max_risk: RiskLevel
     allowed_tools: list[str]
+    allowed_ports: list[int]
     allowed_actions: list[str]
     allowed_methods: list[str]
     starts_at: datetime | None
