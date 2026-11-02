@@ -67,6 +67,8 @@ class PlanTask:
     key: str
     label: str
     status: str = "pending"
+    detail: str = ""                  # what it does for this target ("" = the phase's default)
+    tools: Tuple[str, ...] = ()       # the scope tools it uses (an AI-drafted plan names them)
 
 
 @dataclass

@@ -56,7 +56,19 @@ FooterKey:hover {
 /* The operator's sent request: a highlighted bar, like Claude Code. */
 .user-msg   { color: $text; background: $raised; padding: 0 1; margin-bottom: 1; }
 /* Echo of free-text feedback typed at a question. */
-.feedback-echo { height: auto; margin-bottom: 1; }
+
+/* ------------------------------------------- the chat inside a step (StepChat) */
+.step-chat { height: auto; margin-top: 1; }
+.chat-line { height: auto; margin-bottom: 1; }
+.chat-bar { dock: bottom; height: auto; padding: 0 1; background: $bg; }
+.chat-bar .menu-hint { margin: 0; }
+.tick-list {
+    height: auto;
+    border: round $border-strong;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+.tick-list SelectionList { height: auto; max-height: 14; background: $surface; }
 .ai-label   { color: $dim; margin-bottom: 1; }
 .muted      { color: $muted; }
 .dim        { color: $dim; }
@@ -323,7 +335,7 @@ DataTable > .datatable--even-row {
 }
 
 /* --------------------------------------------------------------- log */
-RichLog {
+RichLog, RunLog {
     background: $surface2;
     border: round $border;
     border-title-color: $muted;
@@ -337,6 +349,43 @@ RichLog {
 #live-log {
     height: 1fr;
     min-height: 6;
+}
+
+/* The live output reads like a conversation: messages, with the steps between folded. */
+.message-line {
+    height: auto;
+}
+
+.thinking {
+    height: auto;
+}
+
+.thinking-title {
+    height: 1;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
+.thinking-title:hover {
+    background: $raised;
+}
+
+.thinking-title:focus {
+    background: $cyan-bg;
+}
+
+.thinking-latest {
+    height: 1;
+    padding-left: 2;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+
+.thinking-body {
+    height: auto;
+    padding-left: 2;
+    border-left: vkey $border-strong;
+    margin-left: 1;
 }
 
 /* ------------------------------------------------------- start screen */

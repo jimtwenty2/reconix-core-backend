@@ -172,7 +172,10 @@ def llm_answer(text: str) -> None:
         except LLMError as exc:
             add_chat("text", "reconix",
                      f"LLM unavailable ({exc}). Showing the built-in reply.", tone="muted")
-    builtin = reply_after_run if is_finished() else reply_while_running
+    if not get_run().started:
+        builtin = reply_to                  # a question before any target
+    else:
+        builtin = reply_after_run if is_finished() else reply_while_running
     add_chat("text", "reconix", builtin(text), tone="muted")
 
 
