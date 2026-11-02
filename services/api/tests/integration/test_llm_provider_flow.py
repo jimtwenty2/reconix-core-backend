@@ -255,7 +255,7 @@ def test_rejecting_keeps_the_active_provider(db_client, db_app):
     assert event_types(db_app)[-1] == "APPROVAL_REJECTED"
 
 
-def test_a_provider_changed_after_the_request_is_refused(db_client):
+def test_a_provider_changed_after_the_request_is_refused(db_client, db_app):
     headers = open_session(db_client)
     openai = add(db_client, headers, OPENAI)
     provider_id = openai["llm_provider_id"]
@@ -273,6 +273,10 @@ def test_a_provider_changed_after_the_request_is_refused(db_client):
     assert refused.status_code == 409
     assert refused.json()["code"] == "PROVIDER_CHANGED"
     assert active(db_client, headers) == ["RECONIX"]
+    # The refusal spends the approval at once and is recorded.
+    old = db_client.get(f"/approvals/{first['approval_id']}", headers=headers).json()
+    assert (old["approval_status"], old["reason"]) == ("EXPIRED", "PROVIDER_CHANGED")
+    assert event_types(db_app)[-1] == "APPROVAL_EXPIRED"
     # Asking again closes the old approval and opens one for the new settings.
     second = activate(db_client, headers, provider_id)["approval"]
     assert second["subject_snapshot"]["base_url"] == "https://llm.example.com"

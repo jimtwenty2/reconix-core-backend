@@ -31,7 +31,7 @@ from reconix_api.schemas.scopes import (
     ScopeTargetOut,
     ScopeUpdate,
 )
-from reconix_api.services.approvals import snapshot_hash
+from reconix_api.services.approvals import expires_at, snapshot_hash
 from reconix_api.services.audit import audit
 
 ENGAGEMENT_PREFIX = "RCX"
@@ -141,7 +141,12 @@ def read_assessment(db: Db, assessment_id: UUID) -> AssessmentOut:
 
 
 def submit(
-    db: Db, write_audit: WriteAudit, operator: Operator, manifest_id: UUID, body: ScopeSubmit
+    db: Db,
+    write_audit: WriteAudit,
+    operator: Operator,
+    manifest_id: UUID,
+    body: ScopeSubmit,
+    ttl_minutes: int,
 ) -> ScopeSubmitted:
     """Creates (or reuses) the session's DRAFT assessment and a scope approval."""
     manifest = _get_manifest(db, manifest_id, lock=True)
@@ -150,7 +155,9 @@ def submit(
     if not any(not t.excluded for t in targets):
         raise ApiError(422, "SCOPE_HAS_NO_TARGETS", "Add at least one target that is not excluded.")
 
-    assessment = _draft_assessment(db, operator, manifest.session_id, body)
+    assessment = _draft_assessment(
+        db, write_audit, operator, manifest_id, manifest.session_id, body, ttl_minutes
+    )
     manifest.assessment_id = assessment.assessment_id
     snapshot = scope_snapshot(manifest, targets)
     approval = approval_repo.add(
@@ -372,8 +379,49 @@ def _targets(manifest_id: UUID, draft: ScopeDraft) -> list[ScopeTarget]:
     ]
 
 
+def _free_if_expired(
+    db: Db,
+    write_audit: WriteAudit,
+    operator: Operator,
+    waiting: ScopeManifest,
+    ttl_minutes: int,
+) -> None:
+    """One manifest per assessment. A scope whose approval is still open keeps it (409).
+    One whose approval expired gives it up and becomes an editable draft again."""
+    approval = approval_repo.latest_for_manifest(db, waiting.manifest_id)
+    still_open = approval is not None and approval.approval_status == ApprovalStatus.PENDING
+    if still_open and datetime.now(UTC) < expires_at(approval.requested_at, ttl_minutes):
+        raise ApiError(
+            409,
+            "SCOPE_PENDING",
+            "Another scope of this session is waiting for approval. Approve or reject it first.",
+            {"manifest_id": str(waiting.manifest_id)},
+        )
+    waiting.assessment_id = None
+    db.flush()  # free the unique assessment_id before the new manifest takes it
+    if still_open:  # past its 30 minutes but never touched: save it as EXPIRED
+        approval.approval_status = ApprovalStatus.EXPIRED
+        audit(
+            write_audit,
+            "APPROVAL_EXPIRED",
+            operator,
+            details={
+                "approval_id": str(approval.approval_id),
+                "kind": "scope",
+                "reason": "EXPIRED",
+                "manifest_id": str(waiting.manifest_id),
+            },
+        )
+
+
 def _draft_assessment(
-    db: Db, operator: Operator, session_id: UUID, body: ScopeSubmit
+    db: Db,
+    write_audit: WriteAudit,
+    operator: Operator,
+    manifest_id: UUID,
+    session_id: UUID,
+    body: ScopeSubmit,
+    ttl_minutes: int,
 ) -> Assessment:
     """One assessment per session. A resubmit after a rejection reuses it."""
     assessment = assessment_repo.get_by_session(db, session_id)
@@ -385,6 +433,9 @@ def _draft_assessment(
                 "This session's assessment already has an approved scope.",
                 {"assessment_id": str(assessment.assessment_id)},
             )
+        waiting = scope_repo.get_by_assessment(db, assessment.assessment_id)
+        if waiting is not None and waiting.manifest_id != manifest_id:
+            _free_if_expired(db, write_audit, operator, waiting, ttl_minutes)
         assessment.name = body.name
         assessment.type = body.type
         return assessment
