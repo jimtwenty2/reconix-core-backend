@@ -118,7 +118,7 @@ export interface ProviderOption {
 }
 
 /** The preset's name in the list: "Ollama (local)", "Custom (OpenAI-compatible)". */
-export const presetLabel = (preset: Preset) => (preset.kind === "local" ? `${preset.label} (local)` : preset.kind === "custom" ? "Custom (OpenAI-compatible)" : preset.label);
+export const presetLabel = (preset: Preset) => (preset.id === "mock" ? preset.label : preset.kind === "local" ? `${preset.label} (local)` : preset.kind === "custom" ? "Custom (OpenAI-compatible)" : preset.label);
 
 /** The Provider select: the presets in their order, every one usable (a cloud one sends the
     questions off this machine: the form says so under it). */
@@ -129,7 +129,7 @@ export const providerOptions = (): ProviderOption[] => PRESETS.map((p) => ({ id:
 export const firstPreset = (): Preset => PRESETS.find((p) => p.kind === "local") ?? presetOf("custom");
 
 /** Only Custom and the local presets take an address; a cloud preset's is fixed. */
-export const showsUrl = (preset: Preset) => preset.kind !== "cloud";
+export const showsUrl = (preset: Preset) => preset.kind !== "cloud" && preset.id !== "mock"; // the mock's is fixed too
 
 export interface Credentials {
   baseUrl: string; // as typed (only Custom and the local presets show the field)

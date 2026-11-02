@@ -17,6 +17,8 @@ export const PRESETS = [
   { id: "groq", label: "Groq", baseUrl: "https://api.groq.com/openai/v1", key: "required", kind: "cloud" },
   { id: "ollama", label: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", key: "none", kind: "local" },
   { id: "lmstudio", label: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1", key: "none", kind: "local" },
+  // Prepared answers on this machine (models/mock.ts): its address is never called.
+  { id: "mock", label: "Reconix mock (offline)", baseUrl: "http://127.0.0.1/reconix-mock/v1", key: "optional", kind: "local" },
   { id: "custom", label: "Custom", baseUrl: "", key: "optional", kind: "custom" },
 ] as const;
 
@@ -28,6 +30,9 @@ export const PRESET_IDS = PRESETS.map((p) => p.id) as [PresetId, ...PresetId[]];
 
 /** The preset `id` names (Custom for anything else). */
 export const presetOf = (id: string): Preset => PRESETS.find((p) => p.id === id) ?? PRESETS[PRESETS.length - 1];
+
+/** What the server says when the mock preset is sent with another address. */
+export const MOCK_FIXED = "The mock model's address is fixed; use Custom for another address.";
 
 /** What the server says when a cloud preset is sent with another address. */
 export const CLOUD_FIXED = "A cloud provider's address is fixed; use Custom for another address.";
@@ -44,6 +49,7 @@ const originOf = (url: string): string | null => {
 /** Whether a provider at `baseUrl` may carry `preset`'s name: a cloud preset only at its own
     base URL's origin (scheme, host and port), any other preset at any address. */
 export function fitsPreset(preset: Preset, baseUrl: string): boolean {
+  if (preset.id === "mock") return baseUrl.trim().replace(/\/+$/, "") === preset.baseUrl; // its address only
   if (preset.kind !== "cloud") return true;
   const origin = originOf(baseUrl);
   return origin !== null && origin === originOf(preset.baseUrl);
