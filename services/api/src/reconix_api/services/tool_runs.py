@@ -1,5 +1,6 @@
 """Running one action: new tool run -> one-time job token -> call_tool (MCP) -> masked result."""
 
+import re
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -17,7 +18,11 @@ from reconix_api.models.enums import ActionStatus, ToolRunStatus
 from reconix_api.repositories import actions as action_repo
 from reconix_api.services.approvals import approval_state, ensure_can_use
 from reconix_api.services.audit import audit
-from reconix_api.services.findings import parse_run, save_findings
+from reconix_api.services.findings import CONTROL, parse_run, save_findings
+
+# Terminal colour and cursor codes, e.g. gitleaks's "\x1b[90m2:45AM\x1b[0m". Cut out
+# whole, before the control characters, so no "[90m" is left behind.
+TERMINAL_CODES = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 async def run_action(
@@ -101,7 +106,8 @@ async def run_action(
 def _save_result(run: ToolRun, row: ActionRow, mask: MaskSecrets, result: ToolResult) -> None:
     # The tool's own result file is what the parsers read; stdout is the fallback.
     output, hidden = mask_output(mask, result.output_file or result.stdout)
-    stderr, hidden_in_stderr = mask(result.stderr)
+    # stderr is shown in the TUI and the web: no terminal codes from the tool reach them.
+    stderr, hidden_in_stderr = mask(CONTROL.sub("", TERMINAL_CODES.sub("", result.stderr)))
     run.output_masked = output
     run.masked_count = hidden + hidden_in_stderr
     run.exit_code = result.exit_code

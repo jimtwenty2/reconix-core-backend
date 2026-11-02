@@ -63,7 +63,9 @@ MASK_RULES = [
     # The whole value of a Cookie or Set-Cookie header.
     MaskRule(
         "token",
-        re.compile(r"^(?:Set-)?Cookie:[ \t]*(?P<secret>[^\r\n]+)", re.IGNORECASE | re.MULTILINE),
+        re.compile(
+            r"^[ \t]*(?:Set-)?Cookie:[ \t]*(?P<secret>[^\r\n]+)", re.IGNORECASE | re.MULTILINE
+        ),
         "secret",
     ),
     MaskRule(
