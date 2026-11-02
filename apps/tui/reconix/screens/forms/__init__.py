@@ -8,6 +8,7 @@ from .login import LoginForm
 from .openapi_spec import OpenApiForm
 from .provider import ProviderForm
 from .scope_edit import ScopeEditForm
+from .test_note import TestNoteForm
 
 __all__ = ["AddOnForm", "ApprovalEditForm", "FormField", "FormScreen", "CredentialForm",
-           "LoginForm", "OpenApiForm", "ProviderForm", "ScopeEditForm"]
+           "LoginForm", "OpenApiForm", "ProviderForm", "ScopeEditForm", "TestNoteForm"]

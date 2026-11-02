@@ -89,6 +89,10 @@ class ActionsMixin:
         self.refresh_view()
         if result == "started":
             self.controller.resume()
+        elif result == "ask":                    # no target: the offline mock answers
+            self.notify("Thinking…", timeout=2)
+            self.run_worker(lambda: self._llm_answer(text), thread=True,
+                            group="llm", exit_on_error=False)
         return True
 
     def _llm_answer(self, text: str) -> None:

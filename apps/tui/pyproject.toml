@@ -26,11 +26,12 @@ packages = [
     "reconix", "reconix.commands", "reconix.flow", "reconix.knowledge", "reconix.llm",
     "reconix.models",
     "reconix.screens", "reconix.screens.forms", "reconix.shell", "reconix.store",
-    "reconix.store.knowledge", "reconix.store.templates", "reconix.widgets",
+    "reconix.store.knowledge", "reconix.store.templates", "reconix.store.test_guide",
+    "reconix.widgets",
 ]
 
 [tool.setuptools.package-data]
-reconix = ["reconix.tcss"]
+reconix = ["reconix.tcss", "llm/mock_replies.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

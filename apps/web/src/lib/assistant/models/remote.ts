@@ -12,6 +12,7 @@ import "server-only";
 import { z } from "zod";
 
 import type { ModelConfig } from "../config";
+import { isMockAddress, MOCK_MODEL } from "./mock";
 import { MODEL_NAME } from "./schema";
 
 const TIMEOUT_MS = 10_000;
@@ -68,6 +69,9 @@ async function boundedText(response: Response): Promise<string | null> {
 
 /** One short, non-streamed chat completion: does the model answer at all? */
 export async function testConnection(config: ModelConfig): Promise<ProbeOutcome> {
+  if (isMockAddress(config.baseUrl)) {
+    return config.model === MOCK_MODEL ? { ok: true, detail: `Connected: ${MOCK_MODEL} answered (offline, nothing was sent).` } : { ok: false, detail: `The mock model is ${MOCK_MODEL}.` };
+  }
   let response: Response;
   try {
     response = await call(`${config.baseUrl}/chat/completions`, {
@@ -96,6 +100,7 @@ const unlisted = (detail: string): FetchOutcome => ({ ok: false, detail, unliste
 
 /** The model names the server lists (GET {base}/models), those a model name may be, sorted. */
 export async function fetchModels(config: ModelConfig): Promise<FetchOutcome> {
+  if (isMockAddress(config.baseUrl)) return { ok: true, models: [MOCK_MODEL] }; // nothing fetched
   let response: Response;
   try {
     response = await call(`${config.baseUrl}/models`, { method: "GET", headers: headersFor(config, "application/json") });

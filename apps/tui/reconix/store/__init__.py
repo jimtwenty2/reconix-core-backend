@@ -40,8 +40,8 @@ from .plan import gated_count, plan_overview
 from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
 from .plan_order import movable as movable_checks
 from .providers import (
-    activate, active_llm_settings, active_model, active_remote_label, get_provider,
-    list_providers, set_provider, test_provider, unset_provider,
+    activate, active_is_mock, active_llm_settings, active_model, active_remote_label,
+    get_provider, list_providers, set_provider, test_provider, unset_provider, use_mock,
 )
 from .progress import StepStatus, step_states, step_status
 from .report import (
@@ -64,7 +64,9 @@ from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
 from .step_intent import asks_about_decision, decision_reply, wants_decision, wants_view
 from .step_text import approval_text, plan_text, scope_text, template_text
-from .targets import TargetCheck, check_target, looks_like_target, validate_target
+from .targets import (
+    DASH_RANGE_UNSUPPORTED, TargetCheck, check_target, looks_like_target, validate_target,
+)
 from .templates import get_template, list_templates, select_template, selected_template
 from .thinking import block_seconds, group_stream, stream
 from .transcript import last_exchange, list_activity, list_chat
@@ -86,7 +88,7 @@ __all__ = [
     "is_empty_assessment",
     # the run
     "submit_prompt", "start_run", "check_target", "say_to_assistant", "say_operator_line",
-    "TargetCheck", "looks_like_target", "validate_target",
+    "TargetCheck", "looks_like_target", "validate_target", "DASH_RANGE_UNSUPPORTED",
     "llm_answer", "new_assessment",
     "advance", "peek", "gate_state", "stop_run",
     "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",
@@ -126,6 +128,7 @@ __all__ = [
     # flexible LLM: providers and the active model
     "list_providers", "get_provider", "set_provider", "unset_provider", "test_provider",
     "activate", "active_model", "active_llm_settings", "active_remote_label",
+    "active_is_mock", "use_mock",
     # the saved copy the web dashboard reads
     "autosave", "close_session", "web_dashboard_url",
     # the API template's OpenAPI spec

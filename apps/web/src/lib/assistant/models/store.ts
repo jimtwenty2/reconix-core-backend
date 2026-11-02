@@ -18,7 +18,7 @@ import { cleanTitle } from "../history-schema";
 import { assistantDir, code, type Folder, inFolder, openFolder, readText, serial, tempSuffix, writeAtomic } from "../secure-fs";
 import { ensureKey, hasKey, open, readKey, seal } from "./crypto";
 import { folderFault, MODELS_FAIL, ModelsError } from "./errors";
-import { CLOUD_FIXED, fitsPreset, type PresetId, presetOf } from "./presets";
+import { CLOUD_FIXED, fitsPreset, MOCK_FIXED, type PresetId, presetOf } from "./presets";
 import type { AddProvider, UpdateProvider } from "./requests";
 import { type Active, EMPTY_MODELS, MAX_FILE_BYTES, MAX_NAME, MAX_PROVIDERS, type ModelsFile, ModelsFileSchema, type SavedProvider } from "./schema";
 import type { ProviderView } from "./view";
@@ -161,7 +161,7 @@ function addressFor(baseUrl: string, withKey: boolean): string {
 /** A cloud preset names its own address only (the origin of its base URL): another address is
     saved as Custom. */
 function checkPreset(preset: PresetId, baseUrl: string): void {
-  if (!fitsPreset(presetOf(preset), baseUrl)) throw bad(CLOUD_FIXED);
+  if (!fitsPreset(presetOf(preset), baseUrl)) throw bad(preset === "mock" ? MOCK_FIXED : CLOUD_FIXED);
 }
 
 const hostOf = (url: string) => {
