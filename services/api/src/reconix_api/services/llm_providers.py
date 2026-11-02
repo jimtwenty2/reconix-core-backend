@@ -199,6 +199,11 @@ def approve_activation(
     Approving uses it."""
     provider = _get(db, UUID(approval.config_change["llm_provider_id"]), lock=True)
     if activation_hash(provider) != approval.subject_hash:
+        # Not what the person was shown: this approval is spent, and a new one is needed.
+        approval.approval_status = ApprovalStatus.EXPIRED
+        approval.reason = "PROVIDER_CHANGED"
+        db.commit()
+        _audit(write_audit, "APPROVAL_EXPIRED", operator, provider, approval, "PROVIDER_CHANGED")
         raise ApiError(
             409,
             "PROVIDER_CHANGED",
@@ -447,12 +452,15 @@ def _audit(
     operator: Operator,
     provider: LlmProvider,
     approval: Approval | None = None,
+    reason: str | None = None,
 ) -> None:
-    """Never the key or the address: only which provider, and which approval."""
+    """Never the key or the address: only which provider, which approval, and why."""
     details = {
         "llm_provider_id": str(provider.llm_provider_id),
         "provider_type": str(provider.provider_type),
     }
     if approval is not None:
         details["approval_id"] = str(approval.approval_id)
+    if reason is not None:
+        details["reason"] = reason
     audit(write_audit, event_type, operator, details=details)

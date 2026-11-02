@@ -124,7 +124,7 @@ def test_medium_action_waits_then_runs_once_approved(db_client, db_app):
     assert again.json()["code"] == "APPROVAL_ALREADY_DECIDED"
 
 
-def test_high_action_needs_the_typed_target(db_client):
+def test_high_action_needs_the_typed_target(db_client, db_app):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)
     target = "http://juice-shop:3000/"
@@ -134,6 +134,10 @@ def test_high_action_needs_the_typed_target(db_client):
 
     wrong = db_client.post(path, json={"typed_target": "juice-shop"}, headers=headers)
     assert wrong.json()["code"] == "TARGET_CONFIRMATION_MISMATCH"
+    # A typo is recorded, but the approval stays open for the right target.
+    assert event_types(db_app).count("APPROVAL_REFUSED") == 1
+    approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
+    assert approval["approval_status"] == "PENDING"
 
     right = db_client.post(path, json={"typed_target": target}, headers=headers)
     assert right.status_code == 200
@@ -156,7 +160,7 @@ def test_rejected_action_never_runs(db_client, db_app):
     assert db_app.state.parts["mcp"].jobs == []
 
 
-def test_expired_action_approval_is_refused(db_client, session_factory):
+def test_expired_action_approval_is_refused(db_client, db_app, session_factory):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)
     action = send(
@@ -174,6 +178,37 @@ def test_expired_action_approval_is_refused(db_client, session_factory):
         f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
     )
     assert response.json()["code"] == "APPROVAL_EXPIRED"
+    assert event_types(db_app).count("APPROVAL_EXPIRED") == 1
+
+
+def test_an_action_changed_after_sending_is_refused_and_ended(db_client, db_app, session_factory):
+    """Someone edits the saved action: approving refuses it, ends it and records it once."""
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    action = send(
+        db_client, headers, assessment_id, tool="NUCLEI", target="http://juice-shop:3000/"
+    ).json()
+    with session_factory() as db:
+        db.execute(
+            update(Action)
+            .where(Action.action_id == action["action_id"])
+            .values(target="http://172.20.0.5/")
+        )
+        db.commit()
+
+    response = db_client.post(
+        f"/approvals/{action['approval_id']}/approve", json={}, headers=headers
+    )
+
+    assert (response.status_code, response.json()["code"]) == (409, "ACTION_CHANGED")
+    assert db_app.state.parts["mcp"].jobs == []
+    saved = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert (saved["action_status"], saved["tool_runs"]) == ("BLOCKED", [])
+    approval = db_client.get(f"/approvals/{action['approval_id']}", headers=headers).json()
+    assert (approval["approval_status"], approval["reason"]) == ("EXPIRED", "ACTION_CHANGED")
+    assert event_types(db_app).count("ACTION_BLOCKED") == 1
+    again = db_client.post(f"/approvals/{action['approval_id']}/approve", json={}, headers=headers)
+    assert again.json()["code"] == "APPROVAL_ALREADY_DECIDED"
 
 
 def test_action_needs_an_active_assessment(db_client):
