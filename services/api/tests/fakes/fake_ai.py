@@ -1,14 +1,18 @@
 """Fake of ask_agent: plans one nmap step on the first allowed IP range, then waits.
 
+CHAT answers the person's last message by repeating it, and never suggests a step.
+
 ANALYZE gives back each finding unchanged, marked for a person to decide. Like the
 real agent, it answers a resume with the person's decision and no new step, and gives
-the same errors: only PLAN, SUGGEST and ANALYZE, only the built-in RECONIX provider, one
-decision per waiting run, and a decision only for the action the run waits on.
+the same errors: only PLAN, SUGGEST, ANALYZE and CHAT, one decision per waiting run, and a
+decision only for the action the run waits on. Any provider is called, as the real
+ask_agent does with the run's own provider.
 """
 
 from uuid import UUID
 
 from reconix_api.core.errors import ApiError
+from reconix_api.core.finding_memory import MemoryUnavailable
 from reconix_api.core.interfaces import (
     Action,
     AgentRequest,
@@ -20,8 +24,15 @@ from reconix_api.core.interfaces import (
     RiskLevel,
     ToolName,
 )
+from reconix_api.schemas.findings import FindingOut
 
-SUPPORTED_TASKS = {AgentTask.PLAN, AgentTask.SUGGEST, AgentTask.ANALYZE, AgentTask.REPORT}
+SUPPORTED_TASKS = {
+    AgentTask.PLAN,
+    AgentTask.SUGGEST,
+    AgentTask.ANALYZE,
+    AgentTask.REPORT,
+    AgentTask.CHAT,
+}
 
 
 class FakeAgent:
@@ -38,8 +49,6 @@ class FakeAgent:
             raise self.error
         if self.down:
             raise ApiError(503, "MODEL_UNAVAILABLE", "The RECONIX model could not answer.")
-        if request.provider != "RECONIX" or request.model is not None:
-            raise ApiError(503, "NOT_READY", "Only the built-in RECONIX provider is ready.")
         if request.resume is not None:
             return self.resume(request)
         if request.task not in SUPPORTED_TASKS:
@@ -50,7 +59,16 @@ class FakeAgent:
             return self.analyze(request)
         if request.task == AgentTask.REPORT:
             return self.report(request)
+        if request.task == AgentTask.CHAT:
+            return self.chat(request)
         return self.plan(request)
+
+    def chat(self, request: AgentRequest) -> AgentResponse:
+        person = [m.content_masked for m in request.messages if m.role == "user"]
+        return AgentResponse(
+            text=f"Fake answer to: {person[-1] if person else ''}",
+            agent_run_id=request.agent_run_id,
+        )
 
     def analyze(self, request: AgentRequest) -> AgentResponse:
         if not request.findings:
@@ -84,7 +102,15 @@ class FakeAgent:
         self.waiting[run_id] = (request.assessment_id, action)
         return AgentResponse(
             text="Start with a service scan.",
-            plan=[PlanStep(order=1, title="Find open ports and services", action=action)],
+            plan=[
+                PlanStep(
+                    order=1,
+                    title="Find open ports and services",
+                    action=action,
+                    phase="discovery",
+                    reason="Start with what runs before looking for weaknesses.",
+                )
+            ],
             proposed_action=action,
             risk=RiskLevel.MEDIUM,  # the real harness rates -sV as MEDIUM
             agent_run_id=run_id,
@@ -122,3 +148,16 @@ def unsure_analysis(finding: FindingInput) -> FindingAnalysis:
         next_step=None,
         unsure="Fake analysis: a person decides.",
     )
+
+
+class FakeFindingMemory:
+    """Stands in for the AI's finding memory (Qdrant): keeps what it was told."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, bool]] = []  # (finding code, accepted)
+        self.down = False  # set by a test: Qdrant or the embedding model is not running
+
+    async def update(self, finding: FindingOut, accepted: bool) -> None:
+        if self.down:
+            raise MemoryUnavailable("KNOWLEDGE_UNAVAILABLE")
+        self.calls.append((finding.code, accepted))

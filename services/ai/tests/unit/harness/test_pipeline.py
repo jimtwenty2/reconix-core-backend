@@ -24,6 +24,7 @@ class Scope:
     max_risk: str = "HIGH"
     window_start: datetime | None = None
     window_end: datetime | None = None
+    allowed_ports: list[int] = field(default_factory=list)  # empty: no limit
 
 
 @dataclass(frozen=True)
@@ -217,3 +218,17 @@ def test_hidden_characters_in_arguments_are_blocked(arguments: list[str]) -> Non
     result = check(Action(arguments=arguments), Context())
     assert result.decision == Decision.BLOCKED
     assert result.blocked_by == CheckName.COMMAND
+
+
+def test_a_port_outside_the_scope_is_a_scope_block() -> None:
+    context = replace(Context(), scope=Scope(allowed_ports=[80, 443]))
+    action = Action(arguments=["-Pn", "-sV", "-p", "80,3389"])
+
+    assert blocked(check(action, context)) == (CheckName.SCOPE, "PORTS_OUT_OF_SCOPE")
+
+
+def test_ports_inside_the_scope_pass_the_scope_check() -> None:
+    action = Action(arguments=["-Pn", "-sV", "-p", "80,443"])
+    result = check(action, replace(Context(), scope=Scope(allowed_ports=[80, 443])))
+
+    assert result.decision == Decision.ALLOW

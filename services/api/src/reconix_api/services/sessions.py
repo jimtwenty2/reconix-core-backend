@@ -21,16 +21,46 @@ MAX_ACTOR = 100  # decided_by, reviewed_by, created_by ... are String(100)
 
 
 def open_session(
-    db: Db, tokens: SessionTokens, write_audit: WriteAudit, interface: str
+    db: Db,
+    tokens: SessionTokens,
+    write_audit: WriteAudit,
+    interface: str,
+    issued_by: UUID | None = None,
 ) -> tuple[Session, Operator, str]:
     """Opens a session for the person at this computer. There are no roles: the token
-    may do everything."""
+    may do everything. issued_by is the session whose sign-in code opened this one."""
     session = session_repo.add(db, Session(interface=interface))
     db.commit()
     operator = Operator(session_id=session.session_id, actor=local_actor())
     token = tokens.issue(operator)
-    audit(write_audit, "SESSION_OPENED", operator, details={"interface": interface})
+    details = {"interface": interface}
+    if issued_by is not None:
+        details["issued_by_session"] = str(issued_by)
+    audit(write_audit, "SESSION_OPENED", operator, details=details)
     return session, operator, token
+
+
+def issue_web_sign_in_code(
+    tokens: SessionTokens, write_audit: WriteAudit, operator: Operator
+) -> tuple[str, datetime]:
+    """A one-time code for the web sign-in link. Only a signed-in person can ask for one."""
+    code, expires_at = tokens.issue_sign_in_code(operator, datetime.now(UTC))
+    audit(write_audit, "WEB_SIGN_IN_CODE_ISSUED", operator)
+    return code, expires_at
+
+
+def open_web_session(
+    db: Db, tokens: SessionTokens, write_audit: WriteAudit, code: str
+) -> tuple[Session, Operator, str]:
+    """Trades a sign-in code for a new web session and its token. Each code works once,
+    and only while the session that asked for it is open."""
+    try:
+        issued_by = tokens.use_sign_in_code(code, datetime.now(UTC))
+    except PermissionError as error:
+        raise ApiError(
+            401, "INVALID_SIGN_IN_CODE", "This sign-in link is not valid. Run /web again."
+        ) from error
+    return open_session(db, tokens, write_audit, "web", issued_by)
 
 
 def list_sessions(db: Db) -> list[SessionRead]:

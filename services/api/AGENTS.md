@@ -29,9 +29,9 @@ api/ (routes) → services/ (rules) → repositories/ (queries) → models/ (tab
 | Folder | Holds |
 |---|---|
 | `main.py` | `create_app()`: middleware (Host check, CORS), error handlers, routers |
-| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones), `agent.py` (the real `ask_agent`), `report_files.py`, `provider_urls.py` (AI provider address check), `provider_keys.py` (Fernet for API keys). Only `core/` imports `reconix_ai` |
-| `api/` | Routes, one file per resource: `system`, `sessions`, `messages`, `scopes`, `assessments`, `actions`, `approvals`, `findings`, `evidence`, `plans`, `analysis`, `agent_runs`, `reports`, `llm_providers` |
-| `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, messages, plans, analysis, agent runs, reports, AI providers, audit |
+| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones), `agent.py` (the real `ask_agent`), `report_files.py`, `provider_urls.py` (AI provider address check), `provider_keys.py` (Fernet for API keys), `knowledge_add_ons.py` (add-ons in Qdrant), `knowledge_files.py` (an uploaded file's text), `provider_checks.py` (test a provider, list a local Ollama's models), `timeline.py` (calls the harness's `read_timeline`). Only `core/` imports `reconix_ai` |
+| `api/` | Routes, one file per resource: `system`, `sessions`, `messages`, `scopes`, `assessments`, `actions`, `approvals`, `findings`, `evidence`, `plans`, `analysis`, `agent_runs`, `reports`, `llm_providers`, `knowledge_add_ons`, `knowledge`, `timeline` |
+| `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, messages, plans, analysis, agent runs, reports, AI providers, knowledge add-ons, audit |
 | `repositories/` | Database queries only |
 | `models/` | SQLAlchemy tables from ERD V3 (all 16; the 2 join tables are plain `Table`s); enums in `models/enums.py` |
 | `schemas/` | Pydantic requests and responses |
@@ -47,10 +47,11 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
   errors from `core/errors.py`; never return `None` to hide a failure.
 - **Network:** the API binds to `127.0.0.1` only, rejects an unknown `Host`, and allows CORS only
   for the local web (`RECONIX_WEB_ORIGINS`).
-- **Session token:** every endpoint except `/health` and `POST /sessions` uses `CurrentOperator`,
-  so a request without a valid token gets 401. There are no roles: a valid token may do
+- **Session token:** every endpoint except `/health`, `POST /sessions` and
+  `POST /sessions/web-sign-in` (it checks a one-time code instead) uses `CurrentOperator`, so
+  a request without a valid token gets 401. There are no roles: a valid token may do
   everything. `tests/security/test_api_protections.py` reads every route from the app and
-  checks each one gets 401 without a token; only the two above are in its `OPEN` set.
+  checks each one gets 401 without a token; only the three above are in its `OPEN` set.
 - **Audit:** every decision and state change writes exactly one audit event with `assessment_id`,
   `session_id` and `actor`.
 - **Actions:** run the harness `check()` first. `BLOCKED` → 422, `LOW` → run now,
@@ -63,7 +64,8 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
   `add-approval-flow` skill.
 - **Scope flow:** submitting a scope creates a `scope` approval and a `DRAFT` assessment with a code
   like `RCX-2026-0001`; approving it makes the assessment `ACTIVE`.
-- **Tool runs:** after approval, check the action did not change, save a new tool run, sign a
+- **Tool runs:** after approval, check the action did not change and run `ensure_can_act` and
+  `check()` again (S2; a refusal ends the action and the approval), save a new tool run, sign a
   one-time job token, call the tool, and save the masked output, the masked-secret count, the
   request count and the final status. Then hand the output to `parsers/` and `findings/`.
 - **Tools** are called only through `clients/mcp.py` with a fresh one-time job token
@@ -84,12 +86,12 @@ Keep this table true; update the row in the PR that changes it.
 | Models + one Alembic migration | 1 | Done: all 16 tables, upgrade and downgrade work, no model drift |
 | Sessions, messages, scopes (draft, edit, submit, approve) | 1 | Done |
 | `POST /assessments/{id}/actions`, approvals, tool run through MCP, findings saved | 1 | Done |
-| `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST, ANALYZE and resume, built-in RECONIX provider only (`core/agent.py`) |
+| `ask_agent` wired to the real AI Service (LangGraph checkpoints in Postgres) | 1 | Done: PLAN, SUGGEST, ANALYZE and resume, with the run's own provider (`core/agent.py`) |
 | Planning endpoint and AI runs (running → waiting for approval → completed, failed or cancelled) | 2 | Done: `POST /assessments/{id}/plan` (the step goes through `send_action`), resume after the decision, `GET /sessions/{id}/agent-runs` |
 | Read endpoints: actions and findings done; finding detail, masked evidence, check runs, AI runs | 2 | Partly done: check runs to do. Also done: `POST /assessments/{id}/analyze` (suggestions saved in the run) |
-| 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | Done: `/llm-providers` list, add, read, edit, remove and `/activate`. A provider on this computer is active at once, any other after its `configuration` approval. Each agent request carries its run's provider and model; `core/agent.py` answers 503 `NOT_READY` for any provider but RECONIX until the saved settings reach the model calls |
+| 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | Done: `/llm-providers` list, add, read, edit, remove and `/activate`. A provider on this computer is active at once, any other after its `configuration` approval. Each agent request carries its run's provider and model, and `core/agent.py` calls the agent with that run's settings (`services/agent_runs.make_provider_for_run`, key decrypted). A run whose provider is no longer active gets 409 `PROVIDER_CHANGED`, because an inactive row can be edited with no approval |
 | Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | Done except multi-assessment: one assessment per report, files in `RECONIX_REPORTS_DIR`, `review` sign-off before download |
-| Pojim's parts in the API: disclosure, limit settings, timeline, web sign-in | 2 | To do. There are no roles (decided 30 Oct), so the web sign-in issues a normal session token |
+| Pojim's parts in the API: disclosure, limit settings, timeline, web sign-in | 2 | Web sign-in done: `POST /sessions/web-sign-in-codes` (needs a token) gives a one-time code that works for 2 minutes, and `POST /sessions/web-sign-in` (open) trades it for a normal `web` session token. Disclosure, limit settings and timeline to do |
 | API in Docker Compose, `install.sh`, uv install steps | 2 | To do: API runs on the host; `install.sh` is a placeholder |
 | Full flow test on Sat 31 Oct, final `openapi.json` on Mon 2 Nov | 2 | To do (`run-full-flow-test` skill) |
 | Terminal WebSocket (the handshake checks the token and `Origin`; the Host middleware does not cover WebSockets), `GET /stream` live updates | 3 | To do |

@@ -35,6 +35,7 @@ test("the docs open in the dashboard's frame, with Documentation marked and no C
     "assistant",
     "assessments",
     "findings",
+    "log",
     "reports",
   ]);
   await expect(views.getByRole("link", { name: "Scope" })).toHaveCount(0);

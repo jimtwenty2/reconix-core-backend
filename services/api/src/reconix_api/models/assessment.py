@@ -43,6 +43,8 @@ class ScopeManifest(Base):
         pg_enum(RiskLevel, "risk_level"), server_default=RiskLevel.LOW
     )
     allowed_tools: Mapped[list[str]] = mapped_column(JSONB, server_default=json_default("[]"))
+    # The ports nmap may scan; empty puts no limit on ports.
+    allowed_ports: Mapped[list[int]] = mapped_column(JSONB, server_default=json_default("[]"))
     allowed_actions: Mapped[list[str]] = mapped_column(JSONB, server_default=json_default("[]"))
     allowed_methods: Mapped[list[str]] = mapped_column(JSONB, server_default=json_default("[]"))
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

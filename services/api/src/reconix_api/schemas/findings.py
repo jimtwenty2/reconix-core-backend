@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from reconix_api.core.interfaces import ToolName
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 
 
@@ -16,6 +17,25 @@ class EvidenceOut(BaseModel):
     location: str | None
     created_at: datetime
     tool_run_id: UUID
+
+
+class ValidationRunOut(BaseModel):
+    validation_run_id: UUID
+    method: str  # manual_review for a person's check
+    validation_status: ValidationStatus
+    reason: str | None  # masked
+    reviewed_by: str | None
+    reviewed_at: datetime | None
+    created_at: datetime
+    finding_id: UUID
+    tool_run_id: UUID | None  # empty for a person's check
+
+
+class ValidationRunIn(BaseModel):
+    """A person's own check of a finding."""
+
+    validation_status: ValidationStatus
+    reason: str | None = Field(default=None, max_length=4000)  # what was checked; masked
 
 
 class FindingOut(BaseModel):
@@ -38,10 +58,25 @@ class FindingOut(BaseModel):
     created_at: datetime
     assessment_id: UUID
     source_tool_run_ids: list[UUID] = Field(default_factory=list)  # the runs that found it
+    tools: list[str] = Field(default_factory=list)  # their tools, e.g. ["NMAP"]
     evidence: list[EvidenceOut] = Field(default_factory=list)
+    latest_validation: ValidationRunOut | None = None  # the newest check, if any
 
 
 class FindingReview(BaseModel):
     """A person's review of a finding."""
 
     finding_status: FindingStatus
+
+
+class FindingFilters(BaseModel):
+    """GET /findings filters; each one given must match."""
+
+    assessment_id: UUID | None = None
+    severity_status: SeverityStatus | None = None
+    validation_status: ValidationStatus | None = None
+    finding_status: FindingStatus | None = None
+    tool: ToolName | None = None  # one of the tools that found it
+    target: str | None = Field(default=None, max_length=200)  # part of the target
+    q: str | None = Field(default=None, max_length=200)  # part of the code, title, target,
+    # description or a CWE id

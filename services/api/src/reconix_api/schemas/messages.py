@@ -17,3 +17,11 @@ class MessageOut(BaseModel):
     content_masked: str
     created_at: datetime
     session_id: UUID
+
+
+class ChatOut(BaseModel):
+    """The person's message as saved, and the agent's answer to it. Both are masked."""
+
+    message: MessageOut
+    reply: MessageOut
+    agent_run_id: UUID  # the CHAT run: the model that answered, its status and end

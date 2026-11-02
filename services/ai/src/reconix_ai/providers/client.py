@@ -121,8 +121,15 @@ async def complete(
 
     if not response.choices:
         raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
-    text, answer_count = mask_secrets(response.choices[0].message.content or "")
+    choice = response.choices[0]
+    text, answer_count = mask_secrets(choice.message.content or "")
     if not text.strip():
+        if choice.finish_reason == "length":
+            # A reasoning model can spend the whole length on thinking.
+            raise ProviderError(
+                "ANSWER_CUT_OFF",
+                f"The model reached its {config.max_tokens}-token limit before it answered.",
+            )
         raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
     usage = getattr(response, "usage", None)
     return Completion(

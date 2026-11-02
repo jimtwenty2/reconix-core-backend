@@ -51,11 +51,13 @@ class ScriptedModel:
     def __init__(self, *answers: object) -> None:
         self.answers = list(answers)
         self.prompts: list[list[Message]] = []
+        self.configs: list[ProviderConfig] = []
 
     async def complete(
         self, messages: list[Message], config: ProviderConfig, json_answer: bool = False
     ) -> Completion:
         self.prompts.append(messages)
+        self.configs.append(config)
         answer = self.answers.pop(0)
         if isinstance(answer, Exception):
             raise answer
@@ -69,7 +71,7 @@ async def no_knowledge(query: str, limit: int = 5) -> list:
     return []
 
 
-def make_ask(model: ScriptedModel, **deps_overrides):
+def make_ask(model: ScriptedModel, provider: ProviderConfig = PROVIDER, **deps_overrides):
     saver = InMemorySaver()  # shared by every call, like the Postgres tables
 
     @asynccontextmanager
@@ -82,7 +84,7 @@ def make_ask(model: ScriptedModel, **deps_overrides):
         search=no_knowledge,
         now=lambda: datetime(2026, 10, 28, 10, tzinfo=UTC),
     )
-    return make_ask_agent(open_graph, replace(deps, **deps_overrides))
+    return make_ask_agent(open_graph, replace(deps, **deps_overrides), lambda _run_id: provider)
 
 
 def plan_request(run_id: UUID, **overrides) -> AgentRequest:
@@ -254,13 +256,28 @@ async def test_a_spent_token_budget_is_a_422():
     assert error.value.code == "TOKEN_BUDGET"
 
 
-@pytest.mark.parametrize("overrides", [{"provider": "OPENAI"}, {"model": "gpt-x"}])
-async def test_other_providers_are_not_ready(overrides):
-    with pytest.raises(ApiError) as error:
-        await make_ask(ScriptedModel())(plan_request(uuid4(), **overrides))
+async def test_the_model_is_called_with_the_runs_provider():
+    openai = ProviderConfig(ProviderType.OPENAI, "gpt-4o", api_key="sk-fake-test-key-0000")
+    model = ScriptedModel(UNDERSTOOD, PLANNED)
+    run_id = uuid4()
+    asked_for = []
 
-    assert error.value.status == 503
-    assert error.value.details == {"part": "ai_providers"}
+    def provider_for_run(agent_run_id: UUID) -> ProviderConfig:
+        asked_for.append(agent_run_id)
+        return openai
+
+    deps = agent.AgentDeps(provider=PROVIDER, complete=model.complete, search=no_knowledge)
+    ask = make_ask_agent(lambda: _graph_on(InMemorySaver()), deps, provider_for_run)
+
+    await ask(plan_request(run_id, provider="OPENAI", model="gpt-4o"))
+
+    assert asked_for == [run_id]
+    assert model.configs == [openai, openai]
+
+
+@asynccontextmanager
+async def _graph_on(saver: InMemorySaver) -> AsyncIterator:
+    yield agent.build_graph(saver)
 
 
 FTP_FINDING = FindingInput(
@@ -335,3 +352,30 @@ async def test_report_without_its_locked_copy_is_a_422():
 
     assert error.value.status == 422
     assert error.value.code == "NO_REPORT_DATA"
+
+
+async def test_chat_names_each_speaker_and_answers_without_a_step():
+    model = ScriptedModel({"answer": "It finds service versions.", "references": []})
+    request = AgentRequest(
+        task=AgentTask.CHAT,
+        agent_run_id=uuid4(),
+        messages=[
+            ChatMessage(role="user", content_masked="What is -sV?"),
+            ChatMessage(role="assistant", content_masked="A version scan."),
+            ChatMessage(role="user", content_masked="Is it loud?"),
+        ],
+    )
+
+    response = await make_ask(model)(request)
+
+    assert response.text == "It finds service versions."
+    assert response.proposed_action is None and not response.waiting
+    sent = model.sent_text()
+    assert "Person: What is -sV?" in sent and "Reconix: A version scan." in sent
+
+
+def test_every_task_but_chat_needs_the_assessment_and_scope():
+    with pytest.raises(ValueError, match="needs the assessment"):
+        AgentRequest(task=AgentTask.PLAN, agent_run_id=uuid4())
+
+    assert AgentRequest(task=AgentTask.CHAT, agent_run_id=uuid4()).scope is None

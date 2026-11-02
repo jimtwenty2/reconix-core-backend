@@ -1,8 +1,8 @@
 """The steps of the agent: understand, find, reflect (only with tool results),
 plan, suggest and wait for PLAN and SUGGEST; find and analyze for ANALYZE;
-report for REPORT.
+report for REPORT; find and chat for CHAT.
 
-Only understand, reflect, plan, analyze and report call the model. suggest runs
+Only understand, reflect, plan, analyze, report and chat call the model. suggest runs
 the harness check() on each planned step and offers the first one it allows; the API runs check()
 again, with the full context, before anything runs. wait pauses the graph
 until a person approves or rejects the step.
@@ -21,12 +21,14 @@ from reconix_ai.agent.answers import (
     MAX_QUERY_CHARS,
     BadAnswer,
     json_object,
+    read_chat,
     read_plan,
     read_reflection,
     read_understanding,
 )
 from reconix_ai.agent.prompts import (
     analyze_messages,
+    chat_messages,
     plan_messages,
     reflect_messages,
     report_messages,
@@ -52,11 +54,13 @@ from reconix_ai.reports.answers import read_report
 
 ATTEMPTS = 2  # a bad answer is asked once more
 # Tokens one ask may spend in total, prompts and answers together. A plan uses a few thousand.
-DEFAULT_TOKEN_BUDGET = 20_000
+# A reasoning model spends a few thousand on thinking per call, so a plan with a few
+# reflections needs more than the 20,000 a model without thinking used.
+DEFAULT_TOKEN_BUDGET = 60_000
 HITS_PER_QUERY = 3
 # An analysis answers for up to 10 findings at once, so it may write more than a plan.
-ANALYZE_MAX_TOKENS = 6000
-REPORT_MAX_TOKENS = 3000
+ANALYZE_MAX_TOKENS = 20_000  # thinking included, as for every call
+REPORT_MAX_TOKENS = 16_000
 MAX_HITS = 6
 MAX_REFLECTIONS = 5
 MAX_KNOWLEDGE_HITS = 12  # find's hits plus what reflect looks up
@@ -233,6 +237,25 @@ async def report(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, An
     }
 
 
+async def chat(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
+    """One answer to the person's last message. It only answers: no step, no wait."""
+    answer, usage = await ask_json(
+        runtime.context, chat_messages(state), read_chat, tokens_used(state)
+    )
+    if answer is None:
+        raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable answer.")
+    text, named = answer
+    # The knowledge index's own ids and the findings' codes; any other id was made up.
+    known = {hit["ref_id"] for hit in state.get("knowledge", [])} | {
+        finding["code"] for finding in state.get("findings", [])
+    }
+    return {
+        "answer": text,
+        "chat_references": [ref for ref in named if ref in known],
+        **added(state, usage),
+    }
+
+
 def checked_next_step(analysis: dict[str, Any], context: "CheckInput") -> dict[str, Any]:
     """A next step the harness blocks is dropped, and the person is told why."""
     step = analysis["next_step"]
@@ -263,12 +286,12 @@ def wait(state: AgentState) -> dict[str, Any]:
 
 def start_task(state: AgentState) -> str:
     task = state.get("task")
-    return {"ANALYZE": "analyze", "REPORT": "report"}.get(task, "plan")
+    return {"ANALYZE": "analyze", "REPORT": "report", "CHAT": "chat"}.get(task, "plan")
 
 
 def after_find(state: AgentState) -> str:
-    if start_task(state) == "analyze":
-        return "analyze"
+    if start_task(state) in ("analyze", "chat"):
+        return start_task(state)
     return "reflect" if state.get("tool_results") else "plan"
 
 

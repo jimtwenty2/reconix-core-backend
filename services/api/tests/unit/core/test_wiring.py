@@ -32,6 +32,13 @@ def test_parts_not_merged_yet_say_so():
     assert error.value.details == {"part": "write_audit"}
 
 
+async def test_the_agent_needs_settings_to_read_provider_keys():
+    interfaces = build_interfaces(session_factory=object(), database_url="postgresql://unused")
+    with pytest.raises(ApiError) as error:
+        await interfaces.ask_agent(None)
+    assert error.value.details == {"part": "ask_agent"}
+
+
 def test_check_is_the_real_harness():
     scope = ApprovedScope(
         assessment_id=uuid4(),

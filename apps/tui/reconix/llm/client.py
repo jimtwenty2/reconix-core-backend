@@ -41,6 +41,10 @@ def _map_error(exc: Exception) -> str:
         return "bad API key (unauthorized)"
     if status == 404:
         return "model not found"
+    if status == 400:
+        return "the server refused the request (HTTP 400)"
+    if isinstance(status, int) and status >= 500:
+        return f"the model server failed (HTTP {status})"
     text = str(exc).lower()
     if status == 401 or "unauthor" in text or "invalid api key" in text or "api key" in text:
         return "bad API key (unauthorized)"
@@ -66,7 +70,7 @@ def complete(provider_id: str, model: str, messages: List[dict], *,
             api_key=api_key,
             api_base=api_base,
             timeout=config.TIMEOUT,
-            num_retries=1,
+            num_retries=0,      # LiteLLM's retry needs tenacity (not installed)
         )
     except Exception as exc:  # noqa: BLE001 — any LiteLLM/transport error maps to LLMError
         raise LLMError(_map_error(exc)) from None

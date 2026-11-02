@@ -15,11 +15,11 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import Static
 
-from .base import ReconixScreen
+from .base import Decision, ReconixScreen
 from .choice import ChoiceScreen, details_body
 from .. import store, theme
 from ..models import GATE_APPROVAL_PREFIX, ApprovalRequest, Choice
-from ..widgets import ChoiceMenu, Question, menu_hint
+from ..widgets import Question, menu_hint
 
 
 def waiting_request() -> Optional[ApprovalRequest]:
@@ -88,21 +88,23 @@ class ApprovalScreen(ReconixScreen):
             yield Static(Text.assemble(("$ ", f"bold {theme.GREEN}"), (req.command, theme.TEXT),
                                        ("   ", ""), (req.command_hash[:23] + "…", theme.DIM)),
                          classes="panel-note")
-        yield Question(
-            "Approval", f"Run {req.action} on {store.get_assessment().target}?",
-            [
-                Choice("approve", "Approve & run",
-                       "HIGH risk: you double-check the exact request first." if self._high
-                       else "Runs this one request now."),
-                Choice("reject", "Reject",
-                       "Not executed. The assessment stops; nothing else runs.", "danger"),
-                Choice("details", "View details", "Scope limits, exact request and audit trail."),
-                self._edit_choice(req),
-            ],
-            default=2, hint=menu_hint("decide later"), menu_id="approval-menu",
-        )
+        decision = self._waiting_decision(req)
+        yield Question(decision.chip, decision.question, decision.choices,
+                       default=decision.default, hint=menu_hint("decide later"),
+                       menu_id="approval-menu")
         yield Static(Text(f"logged to audit · operator: {store.current_operator()}",
                           style=theme.DIM))
+
+    def _waiting_decision(self, req: ApprovalRequest) -> Decision:
+        return Decision("Approval", f"Run {req.action} on {store.get_assessment().target}?", [
+            Choice("approve", "Approve & run",
+                   "HIGH risk: you double-check the exact request first." if self._high
+                   else "Runs this one request now."),
+            Choice("reject", "Reject",
+                   "Not executed. The assessment stops; nothing else runs.", "danger"),
+            Choice("details", "View details", "Scope limits, exact request and audit trail."),
+            self._edit_choice(req),
+        ], default=2)
 
     @staticmethod
     def _edit_choice(req: ApprovalRequest) -> Choice:
@@ -153,19 +155,24 @@ class ApprovalScreen(ReconixScreen):
         self.focus_menu("approval-menu")
 
     # --- choices -----------------------------------------------------------------------------
-    def on_choice_menu_chosen(self, event: ChoiceMenu.Chosen) -> None:
-        event.stop()
+    def decision(self) -> Optional[Decision]:
+        return self._waiting_decision(self._request) if self._request else None
+
+    def decide(self, choice: str) -> None:
         handlers = {"approve": self.action_approve, "reject": self.action_reject,
                     "details": self.action_details, "edit": self.action_edit,
-                    "chat": self.chat_about,
+                    "chat": self.chat_in_step,
                     "execution": lambda: self.app.goto("execution"),
                     "plan": lambda: self.app.goto("plan")}
-        handlers[event.choice_id]()
+        handlers[choice]()
 
     def chat_topic(self) -> str:
         if self._request is None:
             return "the approvals"
         return f"{self._request.action} on {store.get_assessment().target}"
+
+    def step_content(self) -> str:
+        return store.approval_text(self._request.request_id) if self._request else ""
 
     # --- approve: one step, or a double check for HIGH risk ----------------------------------
     def action_approve(self) -> None:

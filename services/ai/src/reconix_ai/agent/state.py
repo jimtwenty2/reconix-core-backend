@@ -5,7 +5,7 @@ nothing secret: messages and tool results are masked when they come in, and the
 provider settings (with the API key) are passed beside the state, never in it.
 """
 
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime
 from typing import Any, Protocol, TypedDict
 
@@ -19,9 +19,11 @@ SCOPE_LISTS = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_t
 
 
 class AgentState(TypedDict, total=False):
-    task: str  # PLAN, SUGGEST, ANALYZE or REPORT
+    task: str  # PLAN, SUGGEST, ANALYZE, REPORT or CHAT
     assessment_id: str
-    scope: dict[str, Any]  # the approved scope, see scope_to_dict()
+    scope: dict[str, Any] | None  # the approved scope, see scope_to_dict(); CHAT: maybe none
+    scope_status: str  # CHAT: APPROVED, DRAFT or NONE
+    plan_lines: list[str]  # CHAT: the current plan, masked, written by the agent earlier
     messages: list[str]  # masked chat, oldest first
     tool_results: list[str]  # masked raw output of earlier runs
     goal: str
@@ -42,6 +44,8 @@ class AgentState(TypedDict, total=False):
     report: dict[str, Any]  # REPORT: the masked locked copy, see contracts.ReportInput
     executive_summary: str
     methodology: str
+    answer: str  # CHAT
+    chat_references: list[str]  # CHAT: ids the answer relies on, only known ones
     # Totals for the current ask; ask_agent() starts them again.
     prompt_tokens: int
     completion_tokens: int
@@ -75,6 +79,7 @@ class AgentScope:
     max_risk: str
     window_start: datetime | None
     window_end: datetime | None
+    allowed_ports: list[int] = field(default_factory=list)  # empty: no limit on ports
 
 
 def scope_to_dict(scope: ScopeLike) -> dict[str, Any]:
@@ -85,6 +90,7 @@ def scope_to_dict(scope: ScopeLike) -> dict[str, Any]:
     data["max_risk"] = str(scope.max_risk).upper()
     data["window_start"] = scope.window_start.isoformat() if scope.window_start else None
     data["window_end"] = scope.window_end.isoformat() if scope.window_end else None
+    data["allowed_ports"] = [int(port) for port in getattr(scope, "allowed_ports", None) or []]
     return data
 
 
@@ -95,6 +101,7 @@ def scope_from_dict(data: dict[str, Any]) -> AgentScope:
         max_risk=data["max_risk"],
         window_start=parse_time(data["window_start"]),
         window_end=parse_time(data["window_end"]),
+        allowed_ports=list(data.get("allowed_ports", [])),  # a checkpoint from before ports
     )
 
 

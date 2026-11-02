@@ -1,7 +1,7 @@
 """Fakes of the 6 shared functions. Use them until the real parts are merged."""
 
 from reconix_api.core.interfaces import Interfaces
-from tests.fakes.fake_ai import FakeAgent
+from tests.fakes.fake_ai import FakeAgent, FakeFindingMemory
 from tests.fakes.fake_core import (
     OPERATOR_TOKEN,
     FakeAudit,
@@ -29,6 +29,7 @@ def build_fake_interfaces() -> tuple[Interfaces, dict]:
         call_tool=mcp.call_tool,
     )
     parts = {"operators": operators, "scopes": scopes, "audit": audit, "agent": agent, "mcp": mcp}
+    parts["memory"] = FakeFindingMemory()  # not one of the 6: the AI's finding memory
     return interfaces, parts
 
 
@@ -36,6 +37,7 @@ __all__ = [
     "OPERATOR_TOKEN",
     "FakeAgent",
     "FakeAudit",
+    "FakeFindingMemory",
     "FakeMcp",
     "FakeOperators",
     "FakeScopes",

@@ -8,7 +8,8 @@ A target is allowed only if it is inside the approved scope:
 
 Excluded targets are always blocked, any ".." is blocked, and the tool and the
 time window must be allowed too. Each tool only takes its own kinds of target
-(nmap never gets a repo path).
+(nmap never gets a repo path). When the scope lists allowed ports, nmap must
+name its ports with -p and every one must be allowed (check_ports).
 
 The tool runs the target string exactly as given, so a target must already be
 in its plain form: ASCII only (punycode for international names), lower case,
@@ -42,6 +43,15 @@ HOST_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*
 BAD_TARGET_CHARACTERS = re.compile(r"[\s\\\x00-\x1f\x7f]")
 # Path parts some web servers read differently from this check.
 TRICKY_URL_PATH = re.compile(r"//|;|%(2f|5c|2e|3b|25|00)|(^|/)\.(/|$)", re.IGNORECASE)
+PORT_LIST = re.compile(r"^[0-9]{1,5}(-[0-9]{1,5})?(,[0-9]{1,5}(-[0-9]{1,5})?)*$")
+MAX_PORT = 65535
+# nmap options that pick their own ports, so they can reach ports outside the list.
+OWN_PORT_OPTIONS = {"--top-ports", "-F", "-p-"}
+# nmap options that probe ports the -p list never named: OS detection and traceroute
+# (-O, -A), and scripts that connect on their own (-sC, --script).
+OTHER_PORT_PROBES = {"-O", "-A", "-sC", "--script"}
+DEFAULT_PORTS = {"http": 80, "https": 443}
+WEB_TOOLS = {"NUCLEI", "ZAP"}
 
 
 class ScopeRules(Protocol):
@@ -67,6 +77,8 @@ class ScopeRules(Protocol):
     def window_start(self) -> datetime | None: ...
     @property
     def window_end(self) -> datetime | None: ...
+    @property
+    def allowed_ports(self) -> Sequence[int]: ...
 
 
 class TargetKind(StrEnum):
@@ -126,6 +138,70 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
     if not is_in_scope(parsed, scope):
         return blocked("TARGET_OUT_OF_SCOPE")
     return ALLOWED
+
+
+def check_ports(
+    tool: str, target: str, arguments: Sequence[str], scope: ScopeRules
+) -> CheckOutcome:
+    """With allowed ports in the scope, a tool reaches only those. A scope with no
+    allowed ports (an older scope, or a source scope) puts no limit on ports.
+
+    nmap: every -p value must be inside them, -Pn is needed (host discovery probes 80
+    and 443 on its own), and options that pick or probe their own ports are blocked.
+    NUCLEI and ZAP: the target must be a URL whose port (written, or 80/443 from the
+    scheme) is allowed; a bare domain lets nuclei pick its own ports."""
+    allowed = set(scope.allowed_ports)
+    if not allowed:
+        return ALLOWED
+    name = tool.upper()
+    if name in WEB_TOOLS:
+        return check_url_port(target, allowed)
+    if name != "NMAP":
+        return ALLOWED
+    named = False
+    for index, argument in enumerate(arguments):
+        option = argument.partition("=")[0]  # also "--top-ports=100"
+        if option in OWN_PORT_OPTIONS or option in OTHER_PORT_PROBES:
+            return blocked("PORTS_OUT_OF_SCOPE")
+        if argument.startswith("-p") and argument not in ("-p", "-Pn"):
+            return blocked("BAD_PORTS")  # "-p22" or "-p-": only "-p", then its value
+        if argument != "-p":
+            continue
+        value = arguments[index + 1] if index + 1 < len(arguments) else ""
+        ports = port_set(value)
+        if ports is None:
+            return blocked("BAD_PORTS")
+        if not ports <= allowed:
+            return blocked("PORTS_OUT_OF_SCOPE")
+        named = True
+    if not named:
+        return blocked("PORTS_NOT_GIVEN")
+    return ALLOWED if "-Pn" in arguments else blocked("HOST_DISCOVERY_NOT_ALLOWED")
+
+
+def check_url_port(target: str, allowed: set[int]) -> CheckOutcome:
+    if not target.startswith(("http://", "https://")):
+        return blocked("PORTS_NOT_GIVEN")
+    parts = urlsplit(target)
+    try:
+        port = parts.port or DEFAULT_PORTS[parts.scheme]
+    except ValueError:
+        return blocked("BAD_PORTS")
+    return ALLOWED if port in allowed else blocked("PORTS_OUT_OF_SCOPE")
+
+
+def port_set(value: str) -> set[int] | None:
+    """ "22,80,8000-8010" as a set of ports, or None if it is not written that way."""
+    if not PORT_LIST.match(value):
+        return None
+    ports: set[int] = set()
+    for part in value.split(","):
+        first, _, last = part.partition("-")
+        low, high = int(first), int(last or first)
+        if not 1 <= low <= high <= MAX_PORT:
+            return None
+        ports.update(range(low, high + 1))
+    return ports
 
 
 def has_path_traversal(target: str) -> bool:

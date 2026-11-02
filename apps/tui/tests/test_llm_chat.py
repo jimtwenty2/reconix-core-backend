@@ -85,7 +85,7 @@ def test_context_lists_findings_and_decisions(two_models):
     store.activate("openai", "gpt-4o-mini")
     store.say_operator_line("summarize")
     store.llm_answer("summarize")
-    context = two_models[-1]["messages"][1]["content"]
+    context = two_models[-1]["messages"][0]["content"]
     assert store.list_findings()[0].fid in context
     assert "findings" in context
 
@@ -110,7 +110,8 @@ def test_system_prompt_identical_across_models(two_models):
     store.activate("openai", "gpt-4o-mini")
     store.say_to_assistant("b")
     system_b = two_models[-1]["messages"][0]["content"]
-    assert system_a == system_b == guardrail.SYSTEM_PROMPT
+    assert system_a.startswith(guardrail.SYSTEM_PROMPT)
+    assert system_b.startswith(guardrail.SYSTEM_PROMPT)
 
 
 def test_secret_typed_in_chat_is_redacted(two_models):
@@ -150,3 +151,36 @@ def test_llm_error_falls_back_with_a_note(two_models, monkeypatch):
     store.say_to_assistant("are you there?")
     replies = [c.text for c in store.list_chat() if c.speaker == "reconix"]
     assert any("LLM unavailable" in r for r in replies)
+
+
+def test_picking_a_model_without_the_harness_does_not_crash(two_models):
+    from reconix.store import agent_run
+
+    store.activate("openai", "gpt-4o-mini")
+    assert agent_run.switch_model() is False        # no agent: nothing to switch
+
+
+def test_the_model_knows_the_step_and_that_nothing_has_run(two_models):
+    run_to("scope")
+    store.activate("openai", "gpt-4o-mini")
+    store.say_to_assistant("what happens next?")
+    context = two_models[-1]["messages"][0]["content"]
+    assert "current step: Template · scope review" in context
+    assert "nothing is approved and nothing has run" in context
+    assert "Approve scope, Edit manifest or Reject in the menu" in context
+    prompt = guardrail.SYSTEM_PROMPT
+    assert "never ask the operator to confirm in chat" in prompt and "no Markdown" in prompt
+
+
+def test_markdown_in_a_reply_is_shown_as_plain_text():
+    reply = guardrail.check_response("**Approved Scope:**\n## Plan\n1. __Host__ discovery")
+    assert reply == "Approved Scope:\nPlan\n1. Host discovery"
+
+
+def test_at_the_plan_the_model_knows_what_can_move(two_models):
+    run_to("plan")
+    store.activate("openai", "gpt-4o-mini")
+    store.say_to_assistant("can 3a run first?")
+    context = two_models[-1]["messages"][0]["content"]
+    assert "can never move to position 1 or before another phase" in context
+    assert "swapping the gated checks with each other" in context
