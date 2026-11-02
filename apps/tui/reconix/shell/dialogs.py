@@ -9,7 +9,7 @@ from rich.text import Text
 
 from .. import browser, store, theme
 from ..models import Choice
-from ..screens import ChoiceScreen
+from ..screens import ChoiceScreen, TestGuideScreen
 from ..screens.choice import details_body
 from ..widgets.findings import mask
 
@@ -20,6 +20,11 @@ STATUS_COLORS = {"Completed": theme.GREEN, "Stopped": theme.CRITICAL,
 
 class DialogsMixin:
     """Mixed into ReconixApp."""
+
+    # --- /tests: the evaluator checklist (an overlay; the assessment is untouched) -------------
+    def open_test_guide(self) -> None:
+        if not isinstance(self.screen, TestGuideScreen):
+            self.push_screen(TestGuideScreen())
 
     # --- assessments ----------------------------------------------------------------------------
     def open_assessments(self) -> None:

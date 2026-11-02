@@ -14,29 +14,38 @@ run and are decided here, in the TUI.
 
 ## Run it
 
-Needs **Python 3.9+** and, for the web dashboard, **Node.js 20+** (with npm) and Git.
+Needs **Python 3.9+**; the local web (`/web`) also needs **Node.js 20+** with npm. The TUI
+lives in `apps/tui` of the Reconix-Core repo.
+
+**Evaluating the static version?** Start at
+[docs/evaluator/README.md](docs/evaluator/README.md): setup per OS (with a setup script), the
+flows one at a time, every test case, and the `/tests` checklist inside the app.
 
 **Linux / macOS**
 
 ```bash
-git clone https://github.com/SokpisethNhoeun/Reconnix_Terminal.git
-cd Reconnix_Terminal
+git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
+cd reconix-core-backend/apps/tui
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-python -m reconix          # or: python run.py
+reconix                    # or: python -m reconix
 ```
 
 **Windows 10 / 11** (PowerShell; use Windows Terminal for the TUI)
 
 ```powershell
-git clone https://github.com/SokpisethNhoeun/Reconnix_Terminal.git
-cd Reconnix_Terminal
+git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
+cd reconix-core-backend\apps\tui
 py -m venv .venv               # or: python -m venv .venv
 .venv\Scripts\Activate.ps1     # if scripts are blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 python -m pip install -e .
-python -m reconix
+reconix
 ```
+
+At the first start Reconix asks **"Set an AI provider?"**: choose **Use the mock model
+(offline)** to chat without a model or a network (`reconix-mock-1`, prepared answers), or
+Skip.
 
 Tests (Textual Pilot, no terminal needed):
 
@@ -216,6 +225,7 @@ Type `/`, keep typing to filter, `↑`/`↓` to pick, `Tab` to complete, `Enter`
 | `/assess <target>` | run a real assessment with the AI agent (needs a `/model`; alias `/agent`) |
 | `/add-on [path]` | add reference files for the AI; no argument opens a menu (alias `/addon`) |
 | `/web` | open the web dashboard (it starts it first if needed; alias `/dashboard`) |
+| `/tests` | the evaluator checklist: every flow and case, mark Pass/Fail/Skip, export (alias `/test-guide`) |
 | `/quit` | quit (alias `/exit`) |
 
 `/scope` is now `/template`.

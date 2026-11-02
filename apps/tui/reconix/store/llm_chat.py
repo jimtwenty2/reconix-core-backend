@@ -14,7 +14,7 @@ reply can never land in a run the operator switched to while the model was answe
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from ..llm import LLMError, client, crypto, db, guardrail
+from ..llm import LLMError, catalog, client, crypto, db, guardrail, mock
 from ..models import ActiveModel
 from ..models.base import utc_now
 from .assessment import get_assessment
@@ -82,7 +82,11 @@ def record_draft(draft: Draft) -> None:
 
 
 def _complete(text: str, active: ActiveModel) -> Tuple[str, List[str]]:
-    """Call the model and check its reply. Raises LLMError; records nothing."""
+    """Call the model (or the offline mock) and check the reply. Raises LLMError; no records."""
+    entry = catalog.get(active.provider_id)
+    if entry is not None and entry.is_mock:
+        # The offline mock: a prepared answer filled with this assessment's own facts.
+        return guardrail.check_response(mock.reply(redact(text), mock_facts())), []
     row = db.get_provider_row(active.provider_id)
     key = crypto.decrypt(row["api_key_enc"]) if row and row["api_key_enc"] else None
     base = (row["base_url"] if row else "") or None
@@ -171,6 +175,63 @@ def _context() -> str:
         for d in decisions:
             lines.append(f"    {d.request_id}: {d.decision}")
     return "\n".join(lines)
+
+
+def mock_facts() -> dict:
+    """The facts the offline mock model fills its answers with (see `llm/mock.py`)."""
+    from .findings import list_findings
+    from .plan import plan_overview
+    from .progress import step_status
+    from .scope import get_scope
+
+    a = get_assessment()
+    scope = get_scope()
+    return {
+        "target": (scope.target_url if scope else "") or a.target or "",
+        "scope": _scope_line(scope) if scope else "",
+        "step": _step_sentence(step_status()) if a.run.started else "",
+        "plan": "; ".join(_plan_row(row) for row in plan_overview()),
+        "findings": [
+            {"id": f.fid, "severity": f.effective_severity, "title": f.title,
+             "impact": f.impact, "remediation": f.remediation, "status": status_word(f.status)}
+            for f in list_findings()
+        ],
+    }
+
+
+def status_word(status: str) -> str:
+    """A triage status as the data model writes it: false-positive -> FALSE_POSITIVE."""
+    return (status or "open").upper().replace("-", "_")
+
+
+def _scope_line(scope) -> str:
+    from .scope_view import join_and
+
+    state = "approved and locked" if scope.status == "APPROVED" else "a draft that waits for you"
+    parts = [f"{scope.assessment_type}, {state}"]
+    if scope.kind == "network":
+        parts.append(f"ports {join_and(scope.allowed_ports) or 'none'}")
+    else:
+        parts.append(f"methods {join_and(scope.allowed_methods)}")
+    if scope.excluded_paths:
+        parts.append(f"never touches {join_and(scope.excluded_paths)}")
+    parts.append(f"tools {join_and(scope.tools)}")
+    parts.append(f"time limit {scope.time_limit_minutes} min")
+    return "; ".join(parts)
+
+
+def _step_sentence(status) -> str:
+    choices = status.choices.split(" Order:")[0].rstrip(". ")
+    return f"Now at {status.step}: {status.state}. Next: {choices}."
+
+
+def _plan_row(row) -> str:
+    text = f"{row.num}. {row.label}"
+    if row.gate == "approve":
+        text += f" ({row.risk}, needs your approval)"
+    if row.status != "pending":
+        text += f" [{row.status}]"
+    return text
 
 
 def step_lines(status) -> List[str]:

@@ -19,6 +19,7 @@ import { addQuestion, HistoryError, keptQuestion, readConversation } from "@/lib
 import { scopeOf } from "@/lib/assistant/insights";
 import { readIntent } from "@/lib/assistant/intent";
 import { searchKnowledge } from "@/lib/assistant/knowledge";
+import { isMockAddress, mockFactsFor } from "@/lib/assistant/models/mock";
 import { activeModel } from "@/lib/assistant/models/resolve";
 import { fenceTag, systemPrompt } from "@/lib/assistant/prompt";
 import { NDJSON } from "@/lib/assistant/protocol";
@@ -84,7 +85,9 @@ export async function POST(request: Request) {
       ...earlierTurns(conversation.messages, asked.id),
       { role: "user" as const, content: asked.content },
     ];
-    const stream = replyStream({ config: setup.config, turns, conversation, asked, cards, knowledge: knowledge.sources, signal: request.signal, release });
+    // the offline mock answers from the chosen run, else the newest saved one
+    const facts = isMockAddress(setup.config.baseUrl) ? mockFactsFor(library.assessments.map(assessmentView), run ? assessmentView(run) : null) : undefined;
+    const stream = replyStream({ config: setup.config, turns, conversation, asked, cards, knowledge: knowledge.sources, facts, signal: request.signal, release });
     streaming = true;
     return new Response(stream, {
       headers: { ...NO_STORE, "Content-Type": NDJSON, "X-Content-Type-Options": "nosniff", "X-Conversation-Id": conversation.id },

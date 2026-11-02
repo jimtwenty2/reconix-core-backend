@@ -30,7 +30,7 @@ GROUPS = (
     ("data", "Assessments & data", ("assessments", "audit")),
     ("ai", "AI models & agent", ("assess", "add-on", "provider", "model")),
     ("dashboard", "Dashboard", ("web",)),
-    ("session", "Session", ("quit",)),
+    ("session", "Session", ("tests", "quit")),
 )
 
 
