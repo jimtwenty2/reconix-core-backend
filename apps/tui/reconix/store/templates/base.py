@@ -8,7 +8,7 @@ play only if the approved scope's tools need a login (see `store/tools.py`).
 """
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from ...models import (
     GATE_ACCOUNT, GATE_CODE, GATE_PLAN, GATE_SCOPE, GATE_TEMPLATE, ApprovalRequest, Finding,
@@ -87,9 +87,15 @@ DEFAULT_PLAN: Tuple[Tuple[str, str], ...] = (
 )
 
 
-def make_plan(pairs: Tuple[Tuple[str, str], ...]) -> List[PlanTask]:
-    """Build the ordered plan tasks (status starts pending; the run drives it)."""
-    return [PlanTask(key, label) for key, label in (pairs or DEFAULT_PLAN)]
+def make_plan(pairs: Tuple[Tuple[str, str], ...],
+              tools: Optional[Dict[str, Tuple[str, ...]]] = None) -> List[PlanTask]:
+    """Build the ordered plan tasks (status starts pending; the run drives it).
+
+    `tools`: phase key -> the scope tools that phase uses (none for a phase not listed).
+    """
+    tools = tools or {}
+    return [PlanTask(key, label, tools=tools.get(key, ()))
+            for key, label in (pairs or DEFAULT_PLAN)]
 
 
 def _progress(bar: str, percent: int, requests: int = 0) -> List[RunStep]:

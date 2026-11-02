@@ -58,6 +58,13 @@ def _approval_rows(prefix: str) -> List[PlanRow]:
     return rows
 
 
+def scoped_tools(task: PlanTask) -> List[str]:
+    """The task's tools that the scope still allows (a tool removed from it drops out)."""
+    scope = lists.current().scope
+    allowed = {tool.casefold() for tool in scope.tools} if scope else set()
+    return [tool for tool in task.tools if tool.casefold() in allowed]
+
+
 def plan_overview() -> List[PlanRow]:
     """The plan as the Plan screen lists it (empty before a template is chosen)."""
     tasks: List[PlanTask] = plan_tasks()
@@ -66,8 +73,11 @@ def plan_overview() -> List[PlanRow]:
     needs_login = bool(login_kind())
     rows: List[PlanRow] = []
     for n, task in enumerate(tasks, start=1):
-        rows.append(PlanRow(str(n), task.label, PHASE_DETAIL.get(task.key, ""), "LOW", "auto",
-                            task.status))
+        detail = task.detail or PHASE_DETAIL.get(task.key, "")
+        tools = scoped_tools(task)
+        if tools:
+            detail = f"{detail} · {', '.join(tools)}"
+        rows.append(PlanRow(str(n), task.label, detail, "LOW", "auto", task.status))
         if task.key == "scanning" and needs_login:
             rows.append(_login_row(f"{n}a"))
         if task.key == "validation":
