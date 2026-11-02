@@ -2,11 +2,8 @@
 
 # Flow 4 · Local web from the TUI
 
-Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
+Mark each case in the app with `/tests` (p / f / s).
 
-## 4a Local web from the TUI
-
-Needs Node.js 20+ and npm. /web starts the web on 127.0.0.1:3100 (the first time it runs npm install, which takes a few minutes) and opens it with a sign-in link.
 
 #### WEB-01 · Open the web
 
