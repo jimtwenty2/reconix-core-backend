@@ -32,14 +32,15 @@ async def read_stream(
     settings: CurrentSettings,
     assessment_id: UUID | None = None,
 ) -> StreamingResponse:
-    """Server-Sent Events: one message per audit event, as it is written.
+    """Sends every audit event live, as Server-Sent Events, the moment it is written.
 
-    Each message is `event: <EVENT_TYPE>` and `data: {event_type, assessment_id,
-    session_id, actor, at, details}` (masked). A `: ping` comment comes every few seconds.
-    With ?assessment_id=, only that assessment's events are sent.
+    Each message is `event: <EVENT_TYPE>` with `data: {event_type, assessment_id, session_id,
+    actor, at, details}`, and the data is masked. A `: ping` comment arrives every few seconds
+    to keep the connection open. With ?assessment_id=, you only get that assessment's events.
 
-    Send the token as a Bearer header (read with fetch, not EventSource). The stream ends
-    when the session is closed; reconnect and reload your lists to catch up."""
+    Send the token as a Bearer header, which means reading the stream with fetch rather than
+    EventSource. The stream ends when the session is closed; reconnect and reload your lists to
+    catch up."""
     live: LiveEvents = request.app.state.live_events
 
     async def body() -> AsyncIterator[str]:

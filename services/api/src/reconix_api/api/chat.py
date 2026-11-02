@@ -23,8 +23,8 @@ async def chat(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> ChatOut:
-    """Saves the person's message and gives back the agent's answer. The agent only
-    answers: it never changes the scope, the plan or an approval, and runs no tool."""
+    """Saves the person's message and returns the agent's answer. The agent only answers: it never
+    changes the scope, the plan or an approval, and it never runs a tool."""
     return await chat_service.chat(db, interfaces, mask, operator, session_id, body.content)
 
 
@@ -41,15 +41,19 @@ async def chat_stream(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> StreamingResponse:
-    """POST /chat, with the answer streamed as Server-Sent Events while the agent writes:
+    """Works like POST /chat, but streams the answer as Server-Sent Events while the agent writes
+    it. You get three kinds of events:
 
-    - `event: PIECE`, `data: {"text": "..."}`: the next masked piece of the answer.
-    - `event: DONE`, `data:` the same ChatOut as POST /chat. Show its reply in place of
-      the pieces: it is the saved answer, and the last words come only here.
-    - `event: ERROR`, `data: {"code", "message", "details"}`: the ask failed.
+    - `event: PIECE`, `data: {"text": "..."}`: the next part of the answer, already masked.
 
-    A wrong session or a chat already running fails before the stream starts, with the
-    usual error and status. If the client leaves, the answer is still saved."""
+    - `event: DONE`, `data:` the same ChatOut as POST /chat. Show its reply in place of the
+      pieces: it is the answer that was saved, and the last words arrive only here.
+
+    - `event: ERROR`, `data: {"code", "message", "details"}`: the question could not be
+      answered.
+
+    A wrong session, or a chat that is already running, fails before the stream starts, with the
+    usual error and status code. If the client goes away, the answer is still saved."""
     started = chat_service.start(db, interfaces, mask, operator, session_id, body.content)
     ask = chat_service.ask_in_background(db, interfaces, mask, operator, started)
     events = chat_service.stream_events(ask)

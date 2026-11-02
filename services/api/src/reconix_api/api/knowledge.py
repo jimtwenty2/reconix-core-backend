@@ -20,7 +20,7 @@ async def search_knowledge(
     source: Annotated[list[KnowledgeSource] | None, Query(max_length=7)] = None,
     limit: Annotated[int, Query(ge=1, le=20)] = 5,
 ) -> list[KnowledgeHitOut]:
-    """The best pieces for q, by meaning and by exact words; an exact CVE, CWE, ATT&CK or
-    OWASP id comes first. Repeat ?source= to search only those. Needs Qdrant and the
-    embedding model: 503 without them."""
+    """Searches the knowledge base for q, both by meaning and by exact words, and returns the best
+    passages. An exact CVE, CWE, ATT&CK or OWASP id comes first. Repeat ?source= to search only
+    those sources. This needs Qdrant and the embedding model, and returns 503 without them."""
     return await knowledge_add_ons.search(store, q, source or [], limit)

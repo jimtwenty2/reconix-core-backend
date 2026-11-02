@@ -30,10 +30,11 @@ async def start_code_scan(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> CodeScanOut:
-    """Runs SEMGREP, then GITLEAKS, on the code sent to the assessment's session, then
-    (with analyze) the agent's analysis. Answers at once; poll GET /code-scans/{id}. Each
-    tool goes through the safety checks like any action, so the scope needs a "path"
-    target for that code. 422 NO_CODE, 409 SCAN_RUNNING."""
+    """Scans the code sent to the assessment's session with SEMGREP and then GITLEAKS. If you ask
+    for analyze, the agent also analyses the results afterwards. The call answers at once, so
+    poll GET /code-scans/{id} to follow it. Each tool goes through the same safety checks as any
+    action, so the scope needs a "path" target for that code. Returns 422 NO_CODE if no code was
+    sent, or 409 SCAN_RUNNING if a scan is already running."""
     return await code_scans.start_scan(
         db, session_factory, interfaces, mask, settings, operator, assessment_id, body
     )
@@ -41,7 +42,8 @@ async def start_code_scan(
 
 @router.get("/code-scans/{agent_run_id}")
 def read_code_scan(agent_run_id: UUID, db: Db, _: CurrentOperator) -> CodeScanOut:
-    """Status, stage, progress and the counts per severity of the findings so far."""
+    """Returns a code scan's status, stage and progress, and how many findings of each severity it
+    has found so far."""
     return code_scans.read_scan(db, agent_run_id)
 
 
@@ -49,7 +51,8 @@ def read_code_scan(agent_run_id: UUID, db: Db, _: CurrentOperator) -> CodeScanOu
 def cancel_code_scan(
     agent_run_id: UUID, db: Db, operator: CurrentOperator, interfaces: CurrentInterfaces
 ) -> CodeScanOut:
-    """The scan is CANCELLED at once and stops before its next step. 409 SCAN_ENDED."""
+    """Cancels the scan at once; it stops before its next step. Returns 409 SCAN_ENDED if the scan
+    has already ended."""
     return code_scans.cancel_scan(db, interfaces, operator, agent_run_id)
 
 
@@ -57,6 +60,6 @@ def cancel_code_scan(
 def list_code_scan_findings(
     agent_run_id: UUID, db: Db, _: CurrentOperator, mask: CurrentMask, settings: CurrentSettings
 ) -> list[CodeFindingOut]:
-    """The findings this scan found, with path (relative), line, rule and a masked
-    snippet, in the order they were found."""
+    """Lists the findings this scan found, in the order they were found. Each one has its relative
+    path, line, rule and a masked code snippet."""
     return code_scans.list_scan_findings(db, settings, mask, agent_run_id)
