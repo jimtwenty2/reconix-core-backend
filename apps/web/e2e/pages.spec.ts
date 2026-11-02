@@ -299,9 +299,13 @@ test("one run's PDF that fails shows why and offers Retry, and one that can't be
   expect(calls).toBe(2);
 });
 
-test("a card opens its documentation", async ({ page }) => {
+test("a card's help icon opens its documentation", async ({ page }) => {
   await signIn(page);
-  await page.getByRole("link", { name: "Open Findings by Severity documentation" }).click();
+  const help = page.getByRole("link", { name: "How to read Findings by Severity (documentation)" }).first();
+  // hovering says what it does before the click, so the docs page is no surprise
+  await help.hover();
+  await expect(page.locator(".dash-tooltip")).toHaveText(/How to read Findings by Severity/);
+  await help.click();
   // the card links the part of the Reports page that explains it, and the page opens there
   await expect(page).toHaveURL(/\/docs\/reports#understanding-findings$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Reports");
