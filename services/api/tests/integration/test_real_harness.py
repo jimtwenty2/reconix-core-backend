@@ -112,3 +112,25 @@ def test_approving_after_the_scope_window_ended_runs_nothing(
     assert harness_app.state.parts["mcp"].jobs == []
     events = [line["event_type"] for line in audit_lines(harness_app)]
     assert events.count("ACTION_BLOCKED") == 1
+
+
+def test_source_tools_reach_only_the_scoped_code_folder(harness_client, harness_app):
+    """A "path" target becomes repo_paths: semgrep may read that session's code, and
+    nothing else, not even another session's code folder."""
+    headers = open_session(harness_client)
+    session_id = harness_client.get("/operator", headers=headers).json()["session_id"]
+    code = f"/workspace/code/{session_id}"
+    source_scope = {
+        "max_risk": "LOW",
+        "allowed_tools": ["SEMGREP", "GITLEAKS"],
+        "targets": [{"type": "path", "value": code}],
+    }
+    assessment_id = active_assessment(harness_client, headers, source_scope)
+
+    allowed = send(harness_client, headers, assessment_id, tool="SEMGREP", target=f"{code}/src")
+    assert allowed.status_code == 201, allowed.json()
+    assert allowed.json()["risk_level"] == "LOW"
+    for target in ("/workspace/code/other-session", f"{code}/../other-session", "/etc"):
+        blocked = send(harness_client, headers, assessment_id, tool="GITLEAKS", target=target)
+        assert blocked.status_code == 422, target
+    assert [job.target for job in harness_app.state.parts["mcp"].jobs] == [f"{code}/src"]

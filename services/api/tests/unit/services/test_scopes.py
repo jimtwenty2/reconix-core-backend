@@ -48,6 +48,7 @@ def test_approved_scope_sorts_targets_by_type():
             target("cidr", "172.21.0.0/24"),
             target("domain", "shop.acme.test"),
             target("url", "http://juice-shop:3000/"),
+            target("path", "/workspace/code/abc"),
             target("ip", "172.20.0.9", excluded=True),
         ],
     )
@@ -55,6 +56,7 @@ def test_approved_scope_sorts_targets_by_type():
     assert scope.ip_ranges == ["172.20.0.5/32", "172.21.0.0/24"]
     assert scope.domains == ["shop.acme.test"]
     assert scope.url_prefixes == ["http://juice-shop:3000/"]
+    assert scope.repo_paths == ["/workspace/code/abc"]
     assert scope.excluded_targets == ["172.20.0.9"]
     assert scope.allowed_tools == [ToolName.NMAP, ToolName.NUCLEI]
     assert scope.max_risk == RiskLevel.MEDIUM

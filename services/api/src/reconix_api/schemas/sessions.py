@@ -8,9 +8,11 @@ from pydantic import BaseModel, Field
 
 from reconix_api.models.enums import SessionStatus
 
+Interface = Literal["web", "cli", "vscode"]
+
 
 class SessionCreate(BaseModel):
-    interface: Literal["web", "cli"]
+    interface: Interface
 
 
 class SessionRead(BaseModel):

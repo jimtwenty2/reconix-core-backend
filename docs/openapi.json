@@ -999,6 +999,463 @@
         "title": "CheckName",
         "type": "string"
       },
+      "CodeFileIn": {
+        "description": "One file the workspace has now.",
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "CodeFileIn",
+        "type": "object"
+      },
+      "CodeFindingOut": {
+        "description": "A finding with where it is in the session's code, for the editor.",
+        "properties": {
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "cve_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cve Ids",
+            "type": "array"
+          },
+          "cvss_score": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Score"
+          },
+          "cwe_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cwe Ids",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "end_line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Line"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceOut"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "file_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Sha256"
+          },
+          "finding_id": {
+            "format": "uuid",
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "finding_status": {
+            "$ref": "#/components/schemas/FindingStatus"
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact"
+          },
+          "latest_validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValidationRunOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "owasp_id": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owasp Id",
+            "type": "array"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "remediation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Id"
+          },
+          "severity_status": {
+            "$ref": "#/components/schemas/SeverityStatus"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "source_tool_run_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Source Tool Run Ids",
+            "type": "array"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "validation_status": {
+            "$ref": "#/components/schemas/ValidationStatus"
+          }
+        },
+        "required": [
+          "finding_id",
+          "code",
+          "title",
+          "target",
+          "description",
+          "severity_status",
+          "cvss_score",
+          "cwe_ids",
+          "owasp_id",
+          "cve_ids",
+          "impact",
+          "remediation",
+          "validation_status",
+          "finding_status",
+          "reviewed_by",
+          "reviewed_at",
+          "created_at",
+          "assessment_id",
+          "path",
+          "line",
+          "end_line",
+          "rule_id",
+          "snippet",
+          "file_sha256"
+        ],
+        "title": "CodeFindingOut",
+        "type": "object"
+      },
+      "CodeScanIn": {
+        "properties": {
+          "analyze": {
+            "default": true,
+            "title": "Analyze",
+            "type": "boolean"
+          }
+        },
+        "title": "CodeScanIn",
+        "type": "object"
+      },
+      "CodeScanOut": {
+        "description": "A code scan is an agent run with plan = {\"task\": \"CODE_SCAN\", ...}. Poll it with\nGET /code-scans/{agent_run_id} until agent_runs_status is no longer RUNNING.",
+        "properties": {
+          "agent_run_id": {
+            "format": "uuid",
+            "title": "Agent Run Id",
+            "type": "string"
+          },
+          "agent_runs_status": {
+            "$ref": "#/components/schemas/AgentRunStatus"
+          },
+          "analysis_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Run Id"
+          },
+          "assessment_id": {
+            "format": "uuid",
+            "title": "Assessment Id",
+            "type": "string"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SeverityStatus"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "SCANNING",
+              "ANALYZING",
+              "DONE"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_run_id",
+          "agent_runs_status",
+          "stage",
+          "progress",
+          "started_at",
+          "finished_at",
+          "session_id",
+          "assessment_id",
+          "counts",
+          "notes",
+          "error",
+          "analysis_run_id"
+        ],
+        "title": "CodeScanOut",
+        "type": "object"
+      },
+      "CodeSync": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/CodeFileIn"
+            },
+            "maxItems": 20000,
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "CodeSync",
+        "type": "object"
+      },
+      "CodeSyncOut": {
+        "properties": {
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "missing",
+          "target"
+        ],
+        "title": "CodeSyncOut",
+        "type": "object"
+      },
+      "CodeUploadOut": {
+        "properties": {
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "files",
+          "size_bytes",
+          "target"
+        ],
+        "title": "CodeUploadOut",
+        "type": "object"
+      },
       "CombinedReportIn": {
         "description": "1 to 4 more assessments, each with an approved scope, to cover in one report.",
         "properties": {
@@ -2482,7 +2939,8 @@
               "domain",
               "ip",
               "cidr",
-              "url"
+              "url",
+              "path"
             ],
             "title": "Type",
             "type": "string"
@@ -2518,7 +2976,8 @@
               "domain",
               "ip",
               "cidr",
-              "url"
+              "url",
+              "path"
             ],
             "title": "Type",
             "type": "string"
@@ -2684,7 +3143,8 @@
           "interface": {
             "enum": [
               "web",
-              "cli"
+              "cli",
+              "vscode"
             ],
             "title": "Interface",
             "type": "string"
@@ -4010,6 +4470,65 @@
         ]
       }
     },
+    "/api/v1/assessments/{assessment_id}/code-scans": {
+      "post": {
+        "description": "Runs SEMGREP, then GITLEAKS, on the code sent to the assessment's session, then\n(with analyze) the agent's analysis. Answers at once; poll GET /code-scans/{id}. Each\ntool goes through the safety checks like any action, so the scope needs a \"path\"\ntarget for that code. 422 NO_CODE, 409 SCAN_RUNNING.",
+        "operationId": "start_code_scan_api_v1_assessments__assessment_id__code_scans_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "assessment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Assessment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeScanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Start Code Scan",
+        "tags": [
+          "code scans"
+        ]
+      }
+    },
     "/api/v1/assessments/{assessment_id}/combined-reports": {
       "post": {
         "description": "One report over this assessment and 1 to 4 more (2 to 5 in all), each with an\napproved scope. Filed under this one, listed under each; finding codes get their\nassessment's code in front. Signed off and downloaded like any report.",
@@ -4405,6 +4924,157 @@
         "summary": "Read Timeline",
         "tags": [
           "assessments"
+        ]
+      }
+    },
+    "/api/v1/code-scans/{agent_run_id}": {
+      "get": {
+        "description": "Status, stage, progress and the counts per severity of the findings so far.",
+        "operationId": "read_code_scan_api_v1_code_scans__agent_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Code Scan",
+        "tags": [
+          "code scans"
+        ]
+      }
+    },
+    "/api/v1/code-scans/{agent_run_id}/cancel": {
+      "post": {
+        "description": "The scan is CANCELLED at once and stops before its next step. 409 SCAN_ENDED.",
+        "operationId": "cancel_code_scan_api_v1_code_scans__agent_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Cancel Code Scan",
+        "tags": [
+          "code scans"
+        ]
+      }
+    },
+    "/api/v1/code-scans/{agent_run_id}/findings": {
+      "get": {
+        "description": "The findings this scan found, with path (relative), line, rule and a masked\nsnippet, in the order they were found.",
+        "operationId": "list_code_scan_findings_api_v1_code_scans__agent_run_id__findings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CodeFindingOut"
+                  },
+                  "title": "Response List Code Scan Findings Api V1 Code Scans  Agent Run Id  Findings Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Code Scan Findings",
+        "tags": [
+          "code scans"
         ]
       }
     },
@@ -5817,7 +6487,47 @@
     },
     "/api/v1/sessions": {
       "get": {
+        "description": "Newest first. `?interface=vscode&session_status=ACTIVE` lists only the open\nVS Code sessions.",
         "operationId": "list_sessions_api_v1_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "interface",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "web",
+                    "cli",
+                    "vscode"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Interface"
+            }
+          },
+          {
+            "in": "query",
+            "name": "session_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SessionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Status"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5832,6 +6542,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -6116,6 +6836,7 @@
     },
     "/api/v1/sessions/{session_id}/close": {
       "post": {
+        "description": "Its token stops working, and any source code sent to it is deleted.",
         "operationId": "close_session_api_v1_sessions__session_id__close_post",
         "parameters": [
           {
@@ -6159,6 +6880,125 @@
         "summary": "Close Session",
         "tags": [
           "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/code": {
+      "put": {
+        "description": "The body is a tar.gz of the missing files, with relative paths. It must be at most\nRECONIX_MAX_UPLOAD_MB packed and unpacked (413 UPLOAD_TOO_LARGE, 422\nINVALID_CODE_UPLOAD). Links, devices, absolute paths and `..` are refused, and a\nrefused upload changes nothing.",
+        "operationId": "upload_code_api_v1_sessions__session_id__code_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/gzip": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeUploadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Upload Code",
+        "tags": [
+          "code"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/code/sync": {
+      "post": {
+        "description": "Send every file the workspace has now (path, size, SHA-256). Stored files that are\nnot in the list are deleted; `missing` lists the ones to upload next. Only your own\nopen session (403 NOT_YOUR_SESSION, 409 SESSION_CLOSED).",
+        "operationId": "sync_code_api_v1_sessions__session_id__code_sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeSync"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeSyncOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Sync Code",
+        "tags": [
+          "code"
         ]
       }
     },

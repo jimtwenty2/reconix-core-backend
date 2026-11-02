@@ -63,6 +63,9 @@ services:
       # The image has no nuclei templates and this container has no internet to fetch
       # them, so they come from the nuclei-templates volume, read-only.
       - nuclei-templates:/root/.local/nuclei-templates:ro
+      # Source code from the VS Code extension (RECONIX_CODE_DIR, written by the API on
+      # this computer). Read-only: semgrep and gitleaks only read it.
+      - ../data/code:/workspace/code:ro
     networks: [tools, lab]
 
   # One-off: downloads the nuclei templates into the nuclei-templates volume. Run it once

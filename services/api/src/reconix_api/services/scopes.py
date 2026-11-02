@@ -313,6 +313,7 @@ def target_lists(targets: list[ScopeTarget]) -> dict[str, list[str]]:
         "ip_ranges": [],
         "domains": [],
         "url_prefixes": [],
+        "repo_paths": [],
     }
     for target in targets:
         if target.excluded:
@@ -323,6 +324,8 @@ def target_lists(targets: list[ScopeTarget]) -> dict[str, list[str]]:
             lists["domains"].append(target.value)
         elif target.type == "url":
             lists["url_prefixes"].append(target.value)
+        elif target.type == "path":
+            lists["repo_paths"].append(target.value)
     return lists
 
 

@@ -16,7 +16,7 @@ class Session(Base):
     __tablename__ = "sessions"
 
     session_id: Mapped[uuid.UUID] = uuid_pk()
-    interface: Mapped[str] = mapped_column(String(20))  # web or cli
+    interface: Mapped[str] = mapped_column(String(20))  # web, cli or vscode
     session_status: Mapped[SessionStatus] = mapped_column(
         pg_enum(SessionStatus, "session_status"), server_default=SessionStatus.ACTIVE
     )

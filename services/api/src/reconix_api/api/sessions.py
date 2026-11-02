@@ -5,10 +5,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
 
+from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.core.session_tokens import SessionTokens
+from reconix_api.models.enums import SessionStatus
 from reconix_api.schemas.sessions import (
+    Interface,
     SessionCreate,
     SessionCreated,
     SessionRead,
@@ -63,8 +66,15 @@ def web_sign_in(
 
 
 @router.get("")
-def list_sessions(db: Db, _: CurrentOperator) -> list[SessionRead]:
-    return sessions.list_sessions(db)
+def list_sessions(
+    db: Db,
+    _: CurrentOperator,
+    interface: Interface | None = None,
+    session_status: SessionStatus | None = None,
+) -> list[SessionRead]:
+    """Newest first. `?interface=vscode&session_status=ACTIVE` lists only the open
+    VS Code sessions."""
+    return sessions.list_sessions(db, interface, session_status)
 
 
 @router.get("/{session_id}")
@@ -79,5 +89,9 @@ def close_session(
     operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> SessionRead:
-    return sessions.close_session(db, tokens, interfaces.write_audit, operator, session_id)
+    """Its token stops working, and any source code sent to it is deleted."""
+    return sessions.close_session(
+        db, tokens, interfaces.write_audit, operator, session_id, settings.code_dir
+    )

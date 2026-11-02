@@ -15,6 +15,8 @@ from reconix_api.api import (
     approvals,
     assessments,
     chat,
+    code,
+    code_scans,
     evidence,
     findings,
     knowledge,
@@ -81,6 +83,8 @@ def create_app(
     routers = [
         system,
         sessions,
+        code,
+        code_scans,
         messages,
         chat,
         scopes,

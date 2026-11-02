@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     # Report files (PDF, DOCX, JSON), one folder per assessment and version
     reports_dir: str = "data/reports"
 
+    # Source code from the VS Code extension, one folder per session. The Kali container
+    # mounts this folder read-only at /workspace/code (deploy/docker-compose.yml).
+    code_dir: str = "data/code"
+    max_upload_mb: int = 100  # per upload, counted both packed and unpacked
+
     # Approvals
     approval_ttl_minutes: int = 30
 
