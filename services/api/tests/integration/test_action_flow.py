@@ -40,6 +40,22 @@ def event_types(db_app) -> list[str]:
     return [event.event_type for event in db_app.state.parts["audit"].events]
 
 
+def test_terminal_codes_in_stderr_are_not_saved(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    # gitleaks's own log line, as it writes it
+    db_app.state.parts[
+        "mcp"
+    ].stderr = "\x1b[90m3:22AM\x1b[0m \x1b[32mINF\x1b[0m \x1b[1mscanned ~253 bytes\x1b[0m\n\x07"
+
+    action = send(
+        db_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+    ).json()
+
+    [run] = action["tool_runs"]
+    assert run["error"] == "3:22AM INF scanned ~253 bytes\n"
+
+
 def test_low_action_runs_right_away(db_client, db_app):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)
