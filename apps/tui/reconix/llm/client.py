@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 import litellm
 
-from . import catalog, config
+from . import catalog, config, mock
 
 # Keys must never reach the console or log files.
 litellm.suppress_debug_info = True
@@ -63,6 +63,9 @@ def complete(provider_id: str, model: str, messages: List[dict], *,
     entry = catalog.get(provider_id)
     if entry is None:
         raise LLMError("unknown provider")
+    if entry.is_mock:          # prepared answers, no network (the store passes the facts)
+        last = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+        return mock.reply(last)
     try:
         response = litellm.completion(
             model=entry.model_string(model),
@@ -98,6 +101,10 @@ def ping(provider_id: str, model: str, *, api_key: Optional[str] = None,
     entry = catalog.get(provider_id)
     if entry is None:
         return False, "unknown provider"
+    if entry.is_mock:
+        if model != mock.MOCK_MODEL:
+            return False, "model not found"
+        return True, f"{mock.MOCK_MODEL} (offline)"
     try:
         if entry.id == "ollama":
             return _ping_ollama(api_base or entry.default_base_url, model)

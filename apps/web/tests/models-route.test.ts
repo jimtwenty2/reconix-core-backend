@@ -204,11 +204,13 @@ describe("the providers", () => {
       ["groq", "required", "cloud"],
       ["ollama", "none", "local"],
       ["lmstudio", "none", "local"],
+      ["mock", "optional", "local"],
       ["custom", "optional", "custom"],
     ]);
     for (const p of presets) {
       if (p.kind === "cloud") expect(p.baseUrl).toMatch(/^https:\/\//);
-      if (p.kind === "local") expect(p.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+      if (p.kind === "local" && p.id !== "mock") expect(p.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+      if (p.id === "mock") expect(p.baseUrl).toBe("http://127.0.0.1/reconix-mock/v1"); // never called
     }
   });
   it("allow the cloud presets by default (no server switch), whatever LLM_ALLOW_REMOTE says", async () => {

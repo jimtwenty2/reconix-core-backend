@@ -401,6 +401,21 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
       { message: "Open it in your browser: <link>", meaning: "The dashboard runs but no browser could be launched here." },
     ],
   },
+  tests: {
+    purpose: "Opens the evaluator checklist: every flow and test case, to mark Pass, Fail or Skip.",
+    when: "While testing Reconix against the evaluator guide (apps/tui/docs/evaluator).",
+    syntax: "/tests",
+    example: "/tests",
+    behaviour: (
+      <>
+        An overlay over the current screen; the assessment underneath is not changed. ↑/↓ picks a case, <Mono>p</Mono>,{" "}
+        <Mono>f</Mono> and <Mono>s</Mono> mark it (the same key again clears it), <Mono>n</Mono> adds a note (a secret typed in
+        it is masked), <Mono>e</Mono> exports <Mono>results-&lt;date&gt;.md</Mono> and <Mono>.json</Mono> to{" "}
+        <Mono>~/.reconix/test-results</Mono>, Esc closes it. Marks are saved at once.
+      </>
+    ),
+    errors: [],
+  },
   quit: {
     purpose: "Quits Reconix.",
     when: "When you are done. Same as Ctrl+Q.",

@@ -70,6 +70,7 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
 
     def on_mount(self) -> None:
         self.push_screen(StartScreen())
+        self.call_after_refresh(self.ask_provider_on_start)   # until a model is active
 
     def on_unmount(self) -> None:
         # Quitting ends the session: mark the saved copies so the web dashboard shows an

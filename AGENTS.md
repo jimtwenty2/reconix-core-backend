@@ -316,6 +316,10 @@ Keep this list true; remove an item in the PR that closes it.
   SEMGREP or GITLEAKS action on `/workspace/code/<s>` still reads `/workspace/code/<s>/secrets`
   when only that subfolder is excluded. Code scans refuse such a scope
   (`EXCLUDED_PATH_NOT_SUPPORTED`); the harness fix belongs in `harness/checks/scope.py`.
+- **ZAP runs give no findings yet.** The ZAP reader reads SARIF (`findings/sarif.py`), but
+  Reconix-Kali-MCP's `zap_scan` returns a text summary and `zap_report` only returns the path
+  of the SARIF file inside the container. Until Kali returns the JSON, a ZAP run is kept with
+  an `OUTPUT_UNREADABLE` note.
 - **A code scan left RUNNING by an API restart stays RUNNING** (the scan is an in-process task).
   Cancel it with `POST /code-scans/{id}/cancel`.
 

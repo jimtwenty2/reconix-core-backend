@@ -21,6 +21,8 @@ RUNNING = ("I can't take new instructions in this demo while an assessment runs.
 AFTER_RUN = ("The assessment is finished. With a model set (/model) you can ask about its "
              "findings; otherwise use /findings, /report, or /new to start another.")
 
+NO_MODEL = "No AI model is set: /provider sets one (the offline mock needs no key)."
+
 _GREETING = re.compile(r"^\W*(?:hi|hello|hey|hiya|howdy|yo|greetings|"
                        r"good (?:morning|afternoon|evening))\b", re.IGNORECASE)
 _THANKS = re.compile(r"\b(?:thanks|thank you|thx|cheers)\b", re.IGNORECASE)
@@ -41,7 +43,8 @@ def reply_to(text: str) -> str:
     if _GREETING.search(text):
         return f"Hi! {START}"
     if _HELP.search(text):
-        return f"I run authorized security tests and ask before every risky step. {START}"
+        return (f"I run authorized security tests and ask before every risky step. {START} "
+                f"{NO_MODEL}")
     return f"I didn't find a target in that. {START}"
 
 

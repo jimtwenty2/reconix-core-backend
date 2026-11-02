@@ -159,6 +159,8 @@ GITLAB_TOKEN = "glpat-" + "x1Y2" * 5
         # cookie headers
         ("Cookie: session=abc; theme=dark", "Cookie: [MASKED:token]"),
         ("set-cookie: sid=abc123; HttpOnly", "set-cookie: [MASKED:token]"),
+        # indented, as in nmap's http-headers output
+        ("  Set-Cookie: sid=abc123; Path=/", "  Set-Cookie: [MASKED:token]"),
     ],
 )
 def test_more_secret_shapes_are_masked(text: str, expected: str) -> None:

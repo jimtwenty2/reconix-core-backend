@@ -125,7 +125,7 @@ describe("removing a model", () => {
 describe("Set the provider", () => {
   it("offers every preset in the plan's order, the cloud ones included; it starts on the first local one", () => {
     const options = providerOptions();
-    expect(options.map((o) => o.label)).toEqual(["OpenAI", "Anthropic", "DeepSeek", "OpenRouter", "Groq", "Ollama (local)", "LM Studio (local)", "Custom (OpenAI-compatible)"]);
+    expect(options.map((o) => o.label)).toEqual(["OpenAI", "Anthropic", "DeepSeek", "OpenRouter", "Groq", "Ollama (local)", "LM Studio (local)", "Reconix mock (offline)", "Custom (OpenAI-compatible)"]);
     expect(options.every((o) => Object.keys(o).sort().join() === "id,label")).toBe(true); // nothing is disabled
     expect(firstPreset().id).toBe("ollama");
   });
