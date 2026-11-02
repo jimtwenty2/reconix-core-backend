@@ -25,3 +25,4 @@ data/
 services/ai/data/*
 !services/ai/data/knowledge-sample/
 !services/ai/data/tool-guides/
+!services/ai/data/README.md
