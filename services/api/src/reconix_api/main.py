@@ -30,6 +30,7 @@ from reconix_api.api import (
     sessions,
     stream,
     system,
+    terminal,
     timeline,
 )
 from reconix_api.core.agent import prepare_checkpoints
@@ -66,6 +67,10 @@ suggests is checked first: its input, its scope, its command, its risk and wheth
 itself. A `LOW` risk action runs right away. A `MEDIUM` or `HIGH` one waits until a person
 approves it. Anything riskier than the scope allows is `BLOCKED` with a 422. An approval
 expires after 30 minutes and can be used only once.
+
+**Terminal.** `WS /api/v1/terminal` opens the terminal app for the web Terminal page (WebSockets
+are not listed below). Send the token as the subprotocol `token.<token>` next to
+`reconix.terminal`; only the local web's Origin is accepted, and one terminal per session.
 
 **Errors.** Every error has the same shape:
 `{"code": "UPPER_CASE", "message": "...", "details": {...}}`. Secrets are masked in every
@@ -218,6 +223,7 @@ def create_app(
         knowledge,
         timeline,
         stream,
+        terminal,
     ]
     for module in routers:
         app.include_router(module.router, prefix=API_PREFIX)
@@ -244,7 +250,8 @@ app = create_app(
 
 def run() -> None:
     settings = get_settings()
-    uvicorn.run("reconix_api.main:app", host=settings.host, port=settings.port)
+    # ws_max_size: the terminal takes at most 64 KiB of keys a message, so never buffer more.
+    uvicorn.run("reconix_api.main:app", host=settings.host, port=settings.port, ws_max_size=131072)
 
 
 if __name__ == "__main__":
