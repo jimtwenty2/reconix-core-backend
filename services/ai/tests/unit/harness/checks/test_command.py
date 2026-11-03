@@ -21,7 +21,8 @@ def test_tools_with_a_rule_are_allowed(tool: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "tool", ["run_command", "proxychains", "msfconsole", "smbclient", "impacket", "zap_start"]
+    "tool",
+    ["run_command", "proxychains", "msfconsole", "smbclient", "impacket", "zap_start", "nikto"],
 )
 def test_catalog_tools_without_a_rule_are_not_supported(tool: str) -> None:
     assert reason(tool) == "TOOL_NOT_SUPPORTED"
@@ -58,6 +59,9 @@ def test_normal_values_are_allowed() -> None:
 def test_listed_options_are_allowed() -> None:
     assert reason("NMAP", arguments=["-sV", "-Pn", "-p", "22,80", "--script", "vuln"]) is None
     assert reason("NMAP", arguments=["--top-ports=100"]) is None
+    assert reason("WPSCAN", arguments=["-e", "vp,u1-5", "--plugins-detection=mixed"]) is None
+    assert reason("DNSRECON", arguments=["-t", "std,srv"]) is None
+    assert reason("SEMGREP", arguments=["--exclude", "tests/*", "--severity", "ERROR"]) is None
 
 
 @pytest.mark.parametrize(
@@ -66,7 +70,16 @@ def test_listed_options_are_allowed() -> None:
         ("NMAP", ["-oN", "scan.out"]),  # not listed
         ("NMAP", ["-sV", "8.8.8.8"]),  # a second target as a bare word
         ("NMAP", ["-iL", "hosts.txt"]),  # a file of targets
-        ("NIKTO", ["-host", "10.9.9.9", "-port", "22"]),
+        ("WPSCAN", ["-e", "--url=169.254.169.254"]),  # a value never starts with "-"
+        ("WPSCAN", ["--proxy", "evil:8080"]),
+        ("NMAP", ["--script", "/workspace/code/s1/evil.nse"]),  # a script file
+        ("NMAP", ["--script", "evil.nse"]),
+        ("NMAP", ["--script=safe,exploit"]),  # a blocked category
+        ("NMAP", ["--script", "broadcast"]),
+        ("DNSRECON", ["-t", "tld"]),  # every TLD: domains outside the scope
+        ("DNSRECON", ["-t", "crt,axfr"]),
+        ("SQLMAP", ["--level", "9"]),
+        ("SEMGREP", ["--include", "../../etc/*"]),
         ("WHATWEB", ["http://169.254.169.254/"]),
         ("SQLMAP", ["-u", "http://evil.example/"]),
         ("NUCLEI", ["-severity"]),  # an option missing its value

@@ -16,7 +16,7 @@ class Scope:
     url_prefixes: list[str] = field(default_factory=lambda: ["http://172.20.0.5:8000/"])
     repo_paths: list[str] = field(default_factory=list)
     excluded_targets: list[str] = field(default_factory=lambda: ["http://172.20.0.5:8000/admin"])
-    allowed_tools: list[str] = field(default_factory=lambda: ["NMAP", "NUCLEI", "SQLMAP"])
+    allowed_tools: list[str] = field(default_factory=lambda: ["NMAP", "NUCLEI", "SEMGREP"])
     allowed_ports: list[int] = field(default_factory=list)
     window_start: datetime | None = None
     window_end: datetime | None = None
@@ -41,26 +41,27 @@ def test_values_that_name_no_host_are_allowed(arguments: list[str]) -> None:
     assert reason("NMAP", arguments) is None
 
 
+# Most option values cannot hold a host at all (their patterns refuse dots and colons).
+# A glob value can, so it is what reaches this second check.
+
+
 @pytest.mark.parametrize(
-    ("tool", "arguments", "code"),
+    ("value", "code"),
     [
-        ("NUCLEI", ["-id", "http://10.9.9.9/"], "TARGET_OUT_OF_SCOPE"),
-        ("NUCLEI", ["-tags", "cve,evil.example"], "TARGET_OUT_OF_SCOPE"),
-        ("NUCLEI", ["-tags=8.8.8.8"], "TARGET_OUT_OF_SCOPE"),
-        ("NUCLEI", ["-id", "http://172.20.0.5:8000/admin"], "TARGET_EXCLUDED"),
-        ("NMAP", ["--script", "juice-shop.lab:22"], None),
+        ("8.8.8.8", "TARGET_OUT_OF_SCOPE"),
+        ("evil.example", "TARGET_OUT_OF_SCOPE"),
+        ("juice-shop.lab", None),
+        ("172.20.0.9", None),
+        ("src/*.py", None),
     ],
 )
-def test_hosts_in_values_must_be_in_scope(tool: str, arguments: list[str], code) -> None:
-    assert reason(tool, arguments) == code
+def test_hosts_in_values_must_be_in_scope(value: str, code: str | None) -> None:
+    assert reason("SEMGREP", ["--include", value]) == code
 
 
-def test_a_url_in_a_value_must_use_an_allowed_port() -> None:
-    prefixes = ["http://172.20.0.5:8000/", "http://172.20.0.5/"]  # 80 is in scope, not allowed
-    scope = replace(SCOPE, allowed_ports=[8000], url_prefixes=prefixes)
-    assert reason("NUCLEI", ["-id", "http://172.20.0.5:8000/x"], scope) is None
-    assert reason("NUCLEI", ["-id", "http://172.20.0.5/"], scope) == "PORTS_OUT_OF_SCOPE"
-    assert reason("NUCLEI", ["-id", "172.20.0.5"], scope) == "PORTS_NOT_SUPPORTED"
+def test_a_host_in_a_value_is_blocked_when_ports_are_limited() -> None:
+    scope = replace(SCOPE, allowed_ports=[8000])
+    assert reason("SEMGREP", ["--include=172.20.0.5"], scope) == "PORTS_NOT_SUPPORTED"
 
 
 @pytest.mark.parametrize(
@@ -69,12 +70,14 @@ def test_a_url_in_a_value_must_use_an_allowed_port() -> None:
 )
 def test_metadata_addresses_are_never_a_target(target: str) -> None:
     # Even when a scope range or domain covers them.
-    scope = replace(
-        SCOPE, domains=["metadata.google.internal"], url_prefixes=["http://169.254.169.254/"]
-    )
+    prefixes = ["http://169.254.169.254/"]
+    scope = replace(SCOPE, domains=["metadata.google.internal"], url_prefixes=prefixes)
     outcome = check_scope("NUCLEI" if "://" in target else "NMAP", target, scope, datetime.now(UTC))
     assert outcome.reason == "TARGET_NOT_ALLOWED"
-    assert reason("NUCLEI", ["-id", target], scope) == "TARGET_NOT_ALLOWED"
+
+
+def test_a_metadata_address_in_a_value_is_blocked() -> None:
+    assert reason("SEMGREP", ["--include", "169.254.169.254"]) == "TARGET_NOT_ALLOWED"
 
 
 def test_a_catalog_tool_without_a_rule_is_not_supported() -> None:

@@ -54,7 +54,8 @@ def tool_call(job: ToolJob) -> tuple[str, dict[str, Any]]:
         raise McpError(f"TOOL_TAKES_NO_OPTIONS: {job.tool}")  # never drop approved arguments
     args: dict[str, Any] = {tool_rule.target_param: job.target}
     if "opts" in props:
-        args["opts"] = shlex.join(job.arguments)
+        # The tool's forced arguments (e.g. no redirects) always come after the approved ones.
+        args["opts"] = shlex.join([*job.arguments, *tool_rule.forced])
     if "timeout" in props:
         args["timeout"] = job.timeout_seconds
     return name, args
