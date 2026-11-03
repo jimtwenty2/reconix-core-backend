@@ -317,6 +317,10 @@ Keep this list true; remove an item in the PR that closes it.
   when only that subfolder is excluded. Code scans are safe: they delete the excluded
   folders from the stored code first, and sync and upload never store them once the scope
   is approved. The harness fix belongs in `harness/checks/scope.py`.
+- **ZAP runs give no findings yet.** The ZAP reader reads SARIF (`findings/sarif.py`), but
+  Reconix-Kali-MCP's `zap_scan` returns a text summary and `zap_report` only returns the path
+  of the SARIF file inside the container. Until Kali returns the JSON, a ZAP run is kept with
+  an `OUTPUT_UNREADABLE` note.
 - **A code scan left RUNNING by an API restart stays RUNNING** (the scan is an in-process task).
   Cancel it with `POST /code-scans/{id}/cancel`.
 

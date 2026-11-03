@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import Interfaces, Operator
+from reconix_api.core.interfaces import Interfaces, Operator, WriteAudit
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import Approval
 from reconix_api.models.enums import ApprovalStatus
@@ -16,6 +16,7 @@ from reconix_api.repositories import approvals as approval_repo
 from reconix_api.schemas.approvals import ApprovalDecision, ApprovalOut
 from reconix_api.services import actions, llm_providers, plans, reports, scopes
 from reconix_api.services.approvals import approval_state, ensure_can_decide, expires_at
+from reconix_api.services.audit import audit
 
 
 async def approve(
@@ -30,10 +31,16 @@ async def approve(
     """An approved action runs right away, inside this request, and the plan that
     suggested it (if any) gets the decision."""
     ttl_minutes = settings.approval_ttl_minutes
-    approval = _get_pending(db, approval_id, ttl_minutes)
-    ensure_can_decide(
-        approval_state(approval, ttl_minutes), datetime.now(UTC), decision.typed_target
-    )
+    write_audit = interfaces.write_audit
+    approval = _get_pending(db, write_audit, operator, approval_id, ttl_minutes)
+    try:
+        ensure_can_decide(
+            approval_state(approval, ttl_minutes), datetime.now(UTC), decision.typed_target
+        )
+    except ApiError as error:
+        # The approval stays PENDING (a typo is not a rejection), but the refusal is recorded.
+        audit(write_audit, "APPROVAL_REFUSED", operator, details=_details(approval, error.code))
+        raise
     if approval.kind == "scope":
         scopes.approve_scope(db, interfaces.write_audit, operator, approval)
     elif approval.kind == "action":
@@ -62,7 +69,7 @@ async def reject(
     approval_id: UUID,
     decision: ApprovalDecision,
 ) -> ApprovalOut:
-    approval = _get_pending(db, approval_id, ttl_minutes)
+    approval = _get_pending(db, interfaces.write_audit, operator, approval_id, ttl_minutes)
     if approval.kind == "scope":
         scopes.reject_scope(db, interfaces.write_audit, operator, approval, decision.reason)
     elif approval.kind == "action":
@@ -122,16 +129,30 @@ def _get(db: Db, approval_id: UUID, lock: bool = False) -> Approval:
     return approval
 
 
-def _get_pending(db: Db, approval_id: UUID, ttl_minutes: int) -> Approval:
-    """Locks the approval. A PENDING one past its expiry is saved as EXPIRED first."""
+def _get_pending(
+    db: Db, write_audit: WriteAudit, operator: Operator, approval_id: UUID, ttl_minutes: int
+) -> Approval:
+    """Locks the approval. A PENDING one past its expiry is saved as EXPIRED first, with
+    one audit line."""
     approval = _get(db, approval_id, lock=True)
     if approval.approval_status != ApprovalStatus.PENDING:
         raise ApiError(409, "APPROVAL_ALREADY_DECIDED", "This approval was already decided.")
     if datetime.now(UTC) >= expires_at(approval.requested_at, ttl_minutes):
         approval.approval_status = ApprovalStatus.EXPIRED
         db.commit()
+        audit(write_audit, "APPROVAL_EXPIRED", operator, details=_details(approval, "EXPIRED"))
         raise ApiError(409, "APPROVAL_EXPIRED", "This approval expired. Submit it again.")
     return approval
+
+
+def _details(approval: Approval, reason: str) -> dict[str, str]:
+    """Which approval, what it was for, and why: never the snapshot itself."""
+    details = {"approval_id": str(approval.approval_id), "kind": approval.kind, "reason": reason}
+    for name in ("action_id", "manifest_id", "report_id"):
+        value = getattr(approval, name)
+        if value is not None:
+            details[name] = str(value)
+    return details
 
 
 def _not_supported(approval: Approval) -> None:

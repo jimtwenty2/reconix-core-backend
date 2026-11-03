@@ -245,8 +245,12 @@ async def approve_action(
             {"action_status": row.action_status},
         )
     action = to_action(row)
-    ensure_unchanged(approval.subject_hash, action)
     write_audit = interfaces.write_audit
+    try:
+        ensure_unchanged(approval.subject_hash, action)
+    except ApiError as error:
+        # Not what the person was shown: it never runs, and this approval is spent.
+        _refuse_at_approval(db, write_audit, operator, row, approval, ActionStatus.BLOCKED, error)
     try:
         ensure_can_act(db, row.assessment_id)
     except ApiError as error:

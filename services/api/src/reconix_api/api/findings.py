@@ -34,11 +34,11 @@ def list_findings(
     target: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=200),
 ) -> list[FindingOut]:
-    """Every finding newest first, or one assessment's with ?assessment_id= in the order
-    they were found. Filter with ?severity_status=, ?validation_status=,
-    ?finding_status=, ?tool= (a tool that found it), ?target= (part of the target) and
-    ?q= (part of the code, title, target, description or a CWE id); each one given must
-    match."""
+    """Lists every finding, newest first. With ?assessment_id=, it lists only that assessment's
+    findings, in the order they were found. You can filter with ?severity_status=,
+    ?validation_status=, ?finding_status=, ?tool= (a tool that found it), ?target= (part of the
+    target) and ?q= (part of the code, title, target, description or a CWE id). Every filter you
+    give must match."""
     filters = FindingFilters(
         assessment_id=assessment_id,
         severity_status=severity_status,
@@ -53,6 +53,8 @@ def list_findings(
 
 @router.get("/{finding_id}")
 def read_finding(finding_id: UUID, db: Db, _: CurrentOperator) -> FindingOut:
+    """Returns one finding with its severity, CVSS score, CWE and CVE ids, how to fix it, and its
+    review status. Returns 404 FINDING_NOT_FOUND if there is no finding with this id."""
     return findings.read_finding(db, finding_id)
 
 
@@ -66,8 +68,8 @@ def review_finding(
     memory: CurrentFindingMemory,
     background: BackgroundTasks,
 ) -> FindingOut:
-    """Mark a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED are accepted, and the
-    AI remembers them."""
+    """Marks a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED count as accepted, and the AI
+    remembers them for later."""
     reviewed = findings.review_finding(db, interfaces.write_audit, operator, finding_id, body)
     # After the response: a slow memory never holds the person or a database connection.
     background.add_task(findings.update_memory, memory, reviewed)
@@ -83,12 +85,12 @@ def check_finding(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> ValidationRunOut:
-    """A person's own check: CONFIRMED, UNCONFIRMED or INCONCLUSIVE, with what was checked.
-    The finding takes this newest result as its validation_status."""
+    """Records a person's own check of a finding: CONFIRMED, UNCONFIRMED or INCONCLUSIVE, together
+    with what was checked. The finding takes this newest result as its validation_status."""
     return findings.check_finding(db, interfaces.write_audit, mask, operator, finding_id, body)
 
 
 @router.get("/{finding_id}/validation-runs")
 def list_validation_runs(finding_id: UUID, db: Db, _: CurrentOperator) -> list[ValidationRunOut]:
-    """Every check of the finding, newest first."""
+    """Lists every check of the finding, newest first."""
     return findings.list_validation_runs(db, finding_id)

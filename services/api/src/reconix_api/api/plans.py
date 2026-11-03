@@ -28,10 +28,10 @@ async def start_plan(
     settings: CurrentSettings,
     draft: bool = False,
 ) -> PlanOut:
-    """The agent plans and suggests one step. The step goes through the same checks as
-    any action: BLOCKED, run now (LOW), or wait for the approval in action.approval_id.
-    With draft=true nothing is sent yet: the person reads the plan first, then sends it
-    (POST /agent-runs/{id}/send) or drops it (POST /agent-runs/{id}/cancel)."""
+    """Asks the agent to plan the test and suggest one step. The step goes through the same checks
+    as any action: it is BLOCKED, runs now (LOW), or waits for the approval in
+    action.approval_id. With draft=true nothing is sent yet: the person reads the plan first,
+    then sends it (POST /agent-runs/{id}/send) or drops it (POST /agent-runs/{id}/cancel)."""
     return await plans.start_plan(
         db, interfaces, mask, settings, operator, assessment_id, draft=draft
     )
@@ -46,9 +46,9 @@ async def suggest_next_step(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> PlanOut:
-    """After a step has run: the agent reads the newest tool outputs (masked), thinks
-    again (ReflAct) and suggests the next step, which goes through the same checks as
-    any action. 409 NO_TOOL_RESULTS before any tool has run."""
+    """Asks the agent for the next step after a step has run. The agent reads the newest tool
+    outputs (masked), thinks again (ReflAct) and suggests the next step, which goes through the
+    same checks as any action. Returns 409 NO_TOOL_RESULTS if no tool has run yet."""
     return await plans.start_plan(
         db, interfaces, mask, settings, operator, assessment_id, task=AgentTask.SUGGEST
     )
@@ -63,5 +63,5 @@ async def send_plan(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> PlanOut:
-    """Send a drafted plan's first step, through the same checks as any action."""
+    """Sends the first step of a drafted plan, through the same checks as any action."""
     return await plans.send_draft(db, interfaces, mask, settings, operator, agent_run_id)

@@ -16,6 +16,8 @@ from reconix_api.core.interfaces import Operator, ToolName, WriteAudit
 from reconix_api.core.masking import MaskSecrets, mask_output
 from reconix_api.findings import json_mapping
 from reconix_api.findings import nmap as nmap_findings
+from reconix_api.findings import osv as osv_findings
+from reconix_api.findings import sarif as sarif_findings
 from reconix_api.findings.shape import NewFinding
 from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
 from reconix_api.models.enums import FindingStatus
@@ -38,6 +40,9 @@ MEMORY_TIMEOUT_SECONDS = 30  # one embedding and one Qdrant write; the review is
 # JSON tools share one reader through their mapping; the rest have their own.
 READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     "nmap": nmap_findings.read,
+    "osv_scanner": osv_findings.read,
+    # ZAP's report is SARIF (zap_report, template sarif-json).
+    "zap": partial(sarif_findings.read, "zap_alert"),
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
 }
 

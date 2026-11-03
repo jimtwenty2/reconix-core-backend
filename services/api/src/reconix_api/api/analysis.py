@@ -21,6 +21,6 @@ async def analyze(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> AnalysisOut:
-    """Suggestions for each OPEN finding, 10 at a time. Nothing changes a finding until
-    a person accepts a suggestion with PATCH /findings/{id}."""
+    """Asks the agent for suggestions on each OPEN finding, 10 findings at a time. Nothing about a
+    finding changes until a person accepts a suggestion with PATCH /findings/{id}."""
     return await analysis.analyze(db, interfaces, mask, operator, assessment_id)

@@ -14,4 +14,6 @@ router = APIRouter(prefix="/evidence", tags=["evidence"])
 
 @router.get("/{evidence_id}")
 def read_evidence(evidence_id: UUID, db: Db, _: CurrentOperator) -> EvidenceOut:
+    """Returns one piece of evidence that supports a finding. Any secret in it was masked before it
+    was saved. Returns 404 EVIDENCE_NOT_FOUND if there is no evidence with this id."""
     return findings.read_evidence(db, evidence_id)

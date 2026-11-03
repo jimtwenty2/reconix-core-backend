@@ -20,6 +20,7 @@ from reconix_api.core.interfaces import (
     AgentTask,
     FindingAnalysis,
     FindingInput,
+    OnPiece,
     PlanStep,
     RiskLevel,
     ToolName,
@@ -42,8 +43,12 @@ class FakeAgent:
         self.suggest: Action | None = None  # set by a test: the step the next plan suggests
         self.down = False  # set by a test: the model is not running
         self.error: Exception | None = None  # set by a test: a bug, not an ApiError
+        self.fail_after_pieces = False  # set by a test: a CHAT fails after it streamed
 
-    async def ask_agent(self, request: AgentRequest) -> AgentResponse:
+    async def ask_agent(
+        self, request: AgentRequest, on_piece: OnPiece | None = None
+    ) -> AgentResponse:
+        """With on_piece, a CHAT answer is first sent one word at a time."""
         self.requests.append(request)
         if self.error is not None:
             raise self.error
@@ -60,7 +65,13 @@ class FakeAgent:
         if request.task == AgentTask.REPORT:
             return self.report(request)
         if request.task == AgentTask.CHAT:
-            return self.chat(request)
+            response = self.chat(request)
+            if on_piece is not None:
+                for word in response.text.split(" "):
+                    await on_piece(word + " ")
+            if self.fail_after_pieces:
+                raise ApiError(503, "MODEL_UNAVAILABLE", "The model stopped half way.")
+            return response
         return self.plan(request)
 
     def chat(self, request: AgentRequest) -> AgentResponse:

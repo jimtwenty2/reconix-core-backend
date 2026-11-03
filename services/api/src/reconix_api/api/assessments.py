@@ -22,13 +22,16 @@ CurrentSettings = Annotated[Settings, Depends(get_settings)]
 def list_assessments(
     db: Db, _: CurrentOperator, settings: CurrentSettings, status: AssessmentStatus | None = None
 ) -> list[AssessmentRowOut]:
-    """Newest first, each with its approved targets, finding count, worst severity and
-    pending approvals. False positives are left out of the count and the severity."""
+    """Lists the assessments, newest first. Each one comes with its approved targets, its finding
+    count, its worst severity and its pending approvals. False positives are left out of the
+    count and the severity."""
     return assessments.list_assessments(db, status, settings.approval_ttl_minutes)
 
 
 @router.get("/{assessment_id}")
 def read_assessment(assessment_id: UUID, db: Db, _: CurrentOperator) -> AssessmentOut:
+    """Returns one assessment with its name, type and status. Returns 404 ASSESSMENT_NOT_FOUND if
+    there is no assessment with this id."""
     return scopes.read_assessment(db, assessment_id)
 
 
@@ -36,8 +39,8 @@ def read_assessment(assessment_id: UUID, db: Db, _: CurrentOperator) -> Assessme
 def read_overview(
     assessment_id: UUID, db: Db, _: CurrentOperator, settings: CurrentSettings
 ) -> AssessmentOverviewOut:
-    """The run overview's counts in one call: findings by severity, validation and status,
-    actions by status, plan progress, tool run totals and pending approvals. Only
+    """Returns all the counts for the run overview in one call: findings by severity, validation
+    and status, actions by status, plan progress, tool run totals and pending approvals. Only
     findings_by_status counts false positives; the other finding counts leave them out."""
     return assessments.overview(db, assessment_id, settings.approval_ttl_minutes)
 
@@ -50,7 +53,8 @@ def update_assessment(
     operator: CurrentOperator,
     interfaces: CurrentInterfaces,
 ) -> AssessmentOut:
-    """Rename it, or set assessment_status to COMPLETED when the work is done."""
+    """Renames the assessment, or marks it COMPLETED (with assessment_status) when the work is
+    done."""
     return assessments.update_assessment(db, interfaces.write_audit, operator, assessment_id, body)
 
 
@@ -58,5 +62,5 @@ def update_assessment(
 def cancel_assessment(
     assessment_id: UUID, db: Db, operator: CurrentOperator, interfaces: CurrentInterfaces
 ) -> AssessmentOut:
-    """Cancels the assessment (status CANCELLED). Nothing is erased."""
+    """Cancels the assessment by setting its status to CANCELLED. Nothing is erased."""
     return assessments.cancel_assessment(db, interfaces.write_audit, operator, assessment_id)

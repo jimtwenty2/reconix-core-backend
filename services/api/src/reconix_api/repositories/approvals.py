@@ -27,6 +27,17 @@ def get_for_update(db: Db, approval_id: UUID) -> Approval | None:
     return db.scalar(select(Approval).where(Approval.approval_id == approval_id).with_for_update())
 
 
+def latest_for_manifest(db: Db, manifest_id: UUID) -> Approval | None:
+    """The newest scope approval asked for this manifest, locked until commit."""
+    return db.scalar(
+        select(Approval)
+        .where(Approval.manifest_id == manifest_id)
+        .order_by(Approval.requested_at.desc())
+        .limit(1)
+        .with_for_update()
+    )
+
+
 def list_by_status(db: Db, status: ApprovalStatus, kind: str | None = None) -> list[Approval]:
     query = (
         select(Approval)
