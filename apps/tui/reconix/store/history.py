@@ -4,15 +4,18 @@ from typing import List
 
 from ..models import HistoryEntry
 from . import lists
-from .assessment import MAX_REQUEST_LENGTH
+from .assessment import MAX_REQUEST_LENGTH, fold_line
 from .errors import StoreValidationError
+from .redact import redact
 
 MAX_HISTORY = 100
 
 
 def add_history(text: str) -> HistoryEntry:
-    """Remember a submitted request or command (consecutive repeats are kept once)."""
-    text = " ".join(text.split())
+    """Remember a submitted request or command (consecutive repeats are kept once).
+
+    Masked like a recorded request, so ↑ can never bring back a typed password or token."""
+    text = redact(fold_line(text))
     if not text:
         raise StoreValidationError("Nothing to add to the history.")
     if len(text) > MAX_REQUEST_LENGTH:

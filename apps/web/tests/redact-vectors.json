@@ -22,5 +22,6 @@
   ["eyJ-eyJ-eyJ-eyJ-eyJ-eyJ-eyJ-eyJ-", "eyJ-eyJ-eyJ-eyJ-eyJ-eyJ-eyJ-eyJ-"],
   ["jwt=\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.c2lnbmF0dXJlLXZhbHVl\"", "jwt=\"•••• (JWT)\""],
   ["Location: /cb#id_token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.c2lnbmF0dXJlLXZhbHVl;state=1", "Location: /cb#id_token=•••• (JWT);state=1"],
-  ["a+b-c.d+e-f.g+h-i.j", "a+b-c.d+e-f.g+h-i.j"]
+  ["a+b-c.d+e-f.g+h-i.j", "a+b-c.d+e-f.g+h-i.j"],
+  ["the token\u200b=abc123def456 and pass\u00adword: hunter22", "the token=\u2022\u2022\u2022\u2022 and password: \u2022\u2022\u2022\u2022"]
 ]

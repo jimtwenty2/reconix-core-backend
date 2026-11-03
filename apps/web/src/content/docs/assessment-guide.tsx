@@ -122,7 +122,7 @@ export const assessmentGuide: GroupContent = {
             </li>
             <li>
               <strong>Reject</strong> discards the draft: nothing is tested, the assessment stops (&quot;Scope rejected.
-              Nothing was tested.&quot;) and a fresh one starts.
+              Nothing was tested.&quot;) and stays open, asking &quot;Start again?&quot;.
             </li>
           </ul>
           <Callout variant="warning" title="When the scope can change">
@@ -302,7 +302,8 @@ export const assessmentGuide: GroupContent = {
           <p>
             <Badge variant="accent">MEDIUM</Badge> One decision. Approve &amp; run records the approval bound to the request&apos;s
             hash and the run continues (&quot;MEDIUM action approved by analyst.&quot;). Reject records the rejection and{" "}
-            <strong>stops the assessment</strong>: nothing else runs, the findings so far are kept.
+            <strong>skips that action</strong>: &quot;Not executed — the plan goes on with its next step.&quot; A later
+            gated action still asks for its own approval.
           </p>
         </DocSection>
         <DocSection title="HIGH risk: the double check">
@@ -371,7 +372,7 @@ export const assessmentGuide: GroupContent = {
           </ul>
           <p>
             The screen opens only after the plan has run; <Mono>/status</Mono> (alias <Mono>/execution</Mono>) and{" "}
-            <Kbd>5</Kbd> get there.
+            <Kbd>Alt+5</Kbd> get there.
           </p>
         </DocSection>
         <DocSection title="When the run pauses">
@@ -397,7 +398,7 @@ export const assessmentGuide: GroupContent = {
         <DocSection title="Stopping">
           <p>
             <Kbd>Ctrl+C</Kbd> on Execution asks &quot;Keep running&quot; or &quot;Stop now&quot; (nothing else runs; the
-            findings so far are kept). Rejecting the scope or a gated action also stops the run, and so does the scope&apos;s
+            findings so far are kept). Rejecting the scope also stops the run (a rejected gated action is only skipped), and so does the scope&apos;s
             time limit (&quot;Time limit reached. Testing stopped.&quot;). A stopped assessment
             cannot be resumed: <Mono>/new</Mono> starts another, and the stopped one keeps its partial findings under{" "}
             <Mono>/assessments</Mono>. With no run going, stopping says &quot;No assessment is running.&quot;

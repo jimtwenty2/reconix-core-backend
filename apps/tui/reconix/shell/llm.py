@@ -91,8 +91,13 @@ class LlmMixin:
             return False
 
     def open_provider_menu(self) -> None:
+        """Every provider; the ACTIVE one (else the first configured) is highlighted, so it
+        is on screen even when the list is longer than a small terminal (QA-002)."""
         choices = []
-        for p in store.list_providers():
+        providers = store.list_providers()
+        default = next((i for i, p in enumerate(providers) if p.active_model),
+                       next((i for i, p in enumerate(providers) if p.configured), 0))
+        for p in providers:
             tag = "ACTIVE" if p.active_model else ""
             bits = [p.status.title()]
             if p.configured and p.api_key_hint:
@@ -103,7 +108,7 @@ class LlmMixin:
             choices.append(Choice(p.id, label, " · ".join(bits), tag=tag))
         self.open_dialog(
             ChoiceScreen("◆ LLM PROVIDERS", "Pick a provider to set up or manage:",
-                         choices, chip="Providers"),
+                         choices, default=default, chip="Providers"),
             self._provider_picked)
 
     def _provider_picked(self, provider_id: Optional[str]) -> None:

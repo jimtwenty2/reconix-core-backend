@@ -280,8 +280,10 @@ python run.py         # the launcher in the repository root`}</Code>
         <DocSection title="Getting around">
           <ul>
             <li>
-              <Kbd>←</Kbd> / <Kbd>→</Kbd> move through the flow; <Kbd>1</Kbd>…<Kbd>8</Kbd> jump to a screen when no menu
-              has focus.
+              <Kbd>←</Kbd> / <Kbd>→</Kbd> move through the flow (while typing they move the cursor; with a step chat open
+              they stay until <Kbd>Esc</Kbd> closes it, and they never decide a gate); <Kbd>Alt+1</Kbd>…<Kbd>Alt+8</Kbd> jump
+              to a screen. A bare
+              digit only picks a numbered menu choice; a red choice (Reject, Cancel) has no number.
             </li>
             <li>
               <Kbd>/</Kbd> opens the command bar on any screen (suggestions appear inline on Start); <Kbd>?</Kbd> shows the

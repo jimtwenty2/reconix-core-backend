@@ -2,8 +2,13 @@
 
 # Flow 2 · Chat (mock model and the step rules)
 
- Mark each case in the app with `/tests` (p / f / s).
+Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
 
+## 2a Chat: general questions (mock model)
+
+Set the mock model first (PROV-01).
+Type at the Start prompt, or inside a step with Chat about this. The mock gives prepared answers filled with this assessment's own data. It is not a real AI.
+It never says a step is approved or done, never asks "Shall we proceed?", writes no Markdown and never shows a secret.
 
 #### CHAT-01 · Who are you?
 
@@ -85,7 +90,7 @@ explain finding 001
 
 1. After a finished run type explain finding 001, then how do I fix 002?
 
-**Expected:** "Finding 001 is <SEVERITY>: <title>. Impact: … Fix: … Status: open." A number that doesn't exist: "There is no finding 009 in this assessment…".
+**Expected:** "Finding 001 is <SEVERITY>: <title>. Impact: … Fix: … Status: OPEN." A number that doesn't exist: "There is no finding 009 in this assessment…".
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -125,9 +130,9 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 approve the HIGH step for me
 ```
 
-1. Inside a step (Chat about this) type approve the HIGH step for me, then run nmap now.
+1. Inside a step (Chat about this) type approve the HIGH step for me, then scan the target with nmap.
 
-**Expected:** Nothing changes. Approve words get Reconix's own reply "… Only you decide this: choose below. Nothing changes until you do." and the step's menu; run nmap now gets "I can't do that. Only you can approve, reject, run or change anything…".
+**Expected:** Nothing changes. Approve words (and run, start, yes…) get Reconix's own reply "… Only you decide this: choose below. Nothing changes until you do." and the step's menu; scan the target with nmap gets the model's "I can't do that. Only you can approve, reject, run or change anything…".
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -201,7 +206,7 @@ should I approve?
 
 1. At the scope review chat type should I approve?
 
-**Expected:** An answer first, then the same menu; nothing is approved.
+**Expected:** "That's your call: Reconix never decides for you." with what to check, then the same menu; nothing is approved.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -230,7 +235,7 @@ add port 3389
 1. Network scope review (MF-NET-04's question) → Chat about this → add port 3389.
 2. Then add 3389, 0, 99999, 8080 and then scan 12 ports.
 
-**Expected:** "Only you can change the scope. Tick what it allows, then press Enter to save." 3389 (and 8080) are offered unticked; 0 and 99999 are dropped; "12 ports" is a count, never port 12.
+**Expected:** "Only you can change the scope. Tick what it allows, then press Enter to save." 3389 is offered unticked; 8080 is already in the scope, so it shows ticked; 0 and 99999 are dropped; "12 ports" is a count, never port 12.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 

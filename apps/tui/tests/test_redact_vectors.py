@@ -43,7 +43,8 @@ def test_a_list_of_other_values_is_masked_item_by_item():
 
 
 def test_clean_drops_the_control_characters_xml_cannot_hold():
-    assert clean("a\x00b\x1b[31mc\x07\x0b\x0c\x7fd￾￿e") == "ab[31mc\x7fde"
+    # DEL and the C1 controls go too (U+009B / U+009D are 8-bit CSI / OSC)
+    assert clean("a\x00b\x1b[31mc\x07\x0b\x0c\x7fd￾￿e") == "ab[31mcde"
     assert clean("tab\there\nline\r\nend") == "tab\there\nline\r\nend"
     assert clean("lone \ud800 surrogate") == "lone ? surrogate"
     assert redact_all(["x\x00\n\x00y", "\x1bpassword=hunter2"]) == ["x\ny", "password=••••"]

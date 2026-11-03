@@ -127,7 +127,8 @@ The dashboard has no terminal of its own: run assessments and decide their gates
    several (then the screen asks, with the AI's pick recommended). Reconix drafts a
    **scope manifest**, shown in plain words (what it will test, what it may do, what it
    will never touch, its tools): approve it, edit it (methods, excluded paths, ports,
-   tools, time limit), or reject it (nothing is tested; a fresh assessment starts).
+   tools, time limit), or reject it (nothing is tested; you stay in the stopped assessment,
+   which asks "Start again?").
    On the API template, the **API template: base URL and spec** form opens on its own once
    the scope is drafted (Cancel to skip; **Attach / Replace / Remove** stay in the Scope menu
    until you approve). **API base URL** is prefilled from the draft; a different one is
@@ -160,7 +161,8 @@ The dashboard has no terminal of its own: run assessments and decide their gates
    login covers them all (a test account covers the cookie tools). If the target then
    asks for a one-time code, a second form asks for just the code. It is never stored.
 5. **Approval** — MEDIUM: approve or reject. HIGH: approve, then double-check the exact
-   request ("No, go back" is selected). Rejecting stops the assessment. **Edit params**
+   request ("No, go back" is selected). Rejecting skips that action and the plan goes on
+   with its next step. **Edit params**
    changes where the action runs (a path, host:port or repository file) before you
    decide: the policy engine checks the new value, the exact request and its hash are
    rebuilt, and the risk stays the same.
@@ -184,9 +186,9 @@ command suggestions, and `?` shows the keys for the screen you are on.
 | `Enter` | confirm the highlighted choice, send the request, or run the command; on Execution, open what the run waits for |
 | `Esc` | close a menu or dialog, clear the prompt, or go back (on Approval: decide later) |
 | `Tab` | complete the highlighted command; on Plan, switch between menu and steps |
-| `←` / `→` | previous / next screen in the flow |
-| `1`…`9` | pick a numbered choice in the focused menu |
-| `1`…`8` | jump to any screen when no menu has focus (`2` = Template) |
+| `←` / `→` | previous / next screen in the flow; while typing they move the cursor, and with a step chat open they stay (Esc closes it first). They never decide a gate |
+| `1`…`9` | pick a numbered choice in the focused menu (a red choice such as Reject has no number: `↑`/`↓` and `Enter`) |
+| `Alt+1`…`Alt+8` | jump to any screen (`Alt+2` = Template) |
 | `d` | approval details (scope limits, exact request, audit trail) |
 | `PgUp` / `PgDn` | scroll a long dialog |
 | `Ctrl+R` | search prompt history (on the Start prompt) |

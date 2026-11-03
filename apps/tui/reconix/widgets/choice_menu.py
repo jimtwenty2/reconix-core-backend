@@ -1,4 +1,8 @@
-"""Claude-Code-style selection menus: ↑/↓ or a number to pick, Enter to choose."""
+"""Claude-Code-style selection menus: ↑/↓ or a number to pick, Enter to choose.
+
+A destructive choice (`tone="danger"`: Reject, Stop, Remove…) never gets a number: one stray
+digit must not be able to stop a run or reject a scope. It takes ↑/↓ and Enter.
+"""
 
 from typing import Any, List, Optional, Sequence, Tuple
 
@@ -27,7 +31,7 @@ class ChoiceMenu(OptionList):
 
         ❯ 1. Approve (Recommended)
              Accept the change and continue.
-          2. Reject
+             Reject                    (destructive: red, no number)
           3. Type something.
         ─────────────────────
           4. Chat about this
@@ -143,8 +147,8 @@ class ChoiceMenu(OptionList):
         index = number - 1
         if not 0 <= index < len(self._choices):
             return
-        if self._choices[index].disabled:
-            self.app.bell()
+        if self._choices[index].disabled or self._choices[index].tone == "danger":
+            self.app.bell()          # dead end, or destructive: never on a digit
             return
         self.highlighted = index
         if self._choices[index].kind != "input":   # the input row just takes the cursor
@@ -172,6 +176,8 @@ class ChoiceMenu(OptionList):
                 line.append(f"  {choice.hint}", style=theme.DIM)
             return line
         number = f"{index + 1}. " if self._numbered else ""
+        if choice.tone == "danger":
+            number = " " * len(number)              # destructive: no digit picks it
         if choice.disabled:                         # dead end: visible but not pickable
             line.append(number + choice.label, style=theme.DIM)
             line.append("  (not in demo)", style=f"italic {theme.DIM}")
@@ -248,6 +254,20 @@ class ChoiceMenu(OptionList):
     def _on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         event.stop()
         self._move_pointer(event.option_index)
+
+    # A screen may open scrolled to its top with the menu below the fold (see
+    # `ReconixScreen.focus_menu`): moving the highlight brings the menu into view.
+    def action_cursor_down(self) -> None:
+        super().action_cursor_down()
+        self._reveal()
+
+    def action_cursor_up(self) -> None:
+        super().action_cursor_up()
+        self._reveal()
+
+    def _reveal(self) -> None:
+        if self.has_focus:
+            self.scroll_visible(animate=False)
 
     def _on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         event.stop()   # screens listen for Chosen / Typed, never the raw OptionList message

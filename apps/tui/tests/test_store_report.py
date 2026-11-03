@@ -186,7 +186,7 @@ def test_the_html_the_pdf_prints_is_a_full_styled_document():
 
 def test_the_html_the_pdf_prints_escapes_dynamic_text(monkeypatch):
     run_to(None)
-    finding = store.list_findings()[0]
+    finding = lists.current().findings[0]        # the live row: list_findings() copies
     monkeypatch.setattr(finding, "description", '<script>alert("x")</script>')
     text = render_html(store.report_data())
     assert "<script>alert" not in text                    # injected markup is escaped

@@ -47,9 +47,12 @@ _PATTERNS = (
 )
 
 
-# C0 controls but tab, LF and CR, and the two non-characters: XML 1.0 can't hold them (a Word
-# report would fail on them) and a terminal would act on them (ESC sequences)
-_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+# C0 controls but tab, LF and CR, DEL, the C1 controls (U+009B is an 8-bit CSI and U+009D an
+# 8-bit OSC: a terminal acts on them), the two non-characters (XML 1.0 can't hold them, a Word
+# report would fail), and invisible format characters (zero-width, bidi overrides, soft
+# hyphen, BOM) that would split "token=" or "password" so the masking misses them
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u00ad\u200b-\u200f"
+                      r"\u202a-\u202e\u2060-\u2064\ufeff\ufffe\uffff]")
 
 
 def clean(text: str) -> str:

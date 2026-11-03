@@ -6,27 +6,47 @@ approval), so no step past a gate can play early, whatever the UI does. Steps ma
 `when` play only if the approved tools need them (a login, the code after it).
 """
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import PurePath
 from string import Template as TextTemplate
 from typing import Dict, List, Optional
 
 from ..models import (
-    GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, GATE_PLAN, GATE_SCOPE, GATE_TEMPLATE,
-    PROGRESS_BARS, PlanTask, RunState, RunStep,
+    ApprovalRequest,
+    GATE_ACCOUNT,
+    GATE_APPROVAL_PREFIX,
+    GATE_CODE,
+    GATE_PLAN,
+    GATE_SCOPE,
+    GATE_TEMPLATE,
+    PROGRESS_BARS,
+    PlanTask,
+    RunState,
+    RunStep,
 )
 from ..models.base import utc_now
 from ..models.parser import ParsedTarget
 from . import lists, seed
 from .activity import log_event
 from .approvals import approvals_count, decision_for, get_approval
-from .assessment import add_request, clean_request, get_assessment, is_empty_assessment
+from .assessment import (
+    add_request,
+    clean_request,
+    get_assessment,
+    is_empty_assessment,
+    recorded_line,
+)
 from .errors import StoreValidationError
 from .findings import finding_exists, findings_line, list_findings
-from .parser import parse_request
+from .parser import keyword_hint, parse_request
 from .replies import reply_after_run, reply_to, reply_while_running
 from .scope import (
-    blocked_count, check_request, get_scope, is_scope_approved, time_limit_reached,
+    blocked_count,
+    check_request,
+    get_scope,
+    is_scope_approved,
+    time_limit_reached,
 )
 from .scope_view import join_and
 from .targets import as_network, check_target
@@ -45,8 +65,11 @@ WAITING_PHASES = {
     GATE_CODE: "waiting_account",
 }
 # How the login reads in step text ($login_need).
-LOGIN_WORDS = {"cookie": "a session cookie", "password": "a test account",
-               "password+otp": "a test account and a one-time code"}
+LOGIN_WORDS = {
+    "cookie": "a session cookie",
+    "password": "a test account",
+    "password+otp": "a test account and a one-time code",
+}
 PIPELINE_SOURCES = {"AI": "ai", "POLICY": "policy", "TOOL": "tool"}
 
 
@@ -77,7 +100,8 @@ def submit_prompt(text: str) -> str:
 
     Before a run, a line that names a target starts the run on it; anything else (a
     greeting, a question, "scan my network" without an address) gets a short answer and
-    nothing starts. With the offline mock model active that answer is the mock's: "ask" tells
+    nothing starts. With the offline mock model active that answer is the mock's (except for
+    a line a template keyword names, which gets the template hint): "ask" tells
     the app to call `llm_answer` off the UI thread (a real provider keeps the built-in reply
     here, so nothing typed before a run leaves this computer). A malformed target (10.0.0.300)
     raises, so the operator can fix it. During a run the line goes to the assistant.
@@ -90,10 +114,13 @@ def submit_prompt(text: str) -> str:
     if parsed is None:
         from .providers import active_is_mock
 
-        add_chat("text", "you", text)
-        if active_is_mock():
-            return "ask"                    # the app asks the mock (llm_answer) in a worker
-        add_chat("text", "reconix", reply_to(text), tone="muted")
+        line = recorded_line(text)  # masked: chat and model never see a secret
+        add_chat("text", "you", line)
+        # A line that names a kind of test but no target ("scan my network") gets Reconix's
+        # own template hint first, with or without the mock: it says what to type next.
+        if active_is_mock() and keyword_hint(line) is None:
+            return "ask"  # the app asks the mock (llm_answer) in a worker
+        add_chat("text", "reconix", reply_to(line), tone="muted")
         return "answered"
     _start(text, parsed, picked=False)
     return "started"
@@ -124,7 +151,7 @@ def _start(text: str, parsed: ParsedTarget, *, picked: bool) -> None:
     """Record the request and target and build the plan (and the run, if the template is
     known). `picked`: the operator chose the template; else it is matched or asked for."""
     assessment = lists.current()
-    add_request(text)
+    request = add_request(text)  # recorded masked; `parsed` came from the raw line
     assessment.target = parsed.target
     assessment.target_url = parsed.target_url
     assessment.target_kind = parsed.target_kind
@@ -132,7 +159,7 @@ def _start(text: str, parsed: ParsedTarget, *, picked: bool) -> None:
     assessment.requested_ports = list(parsed.ports)
     assessment.requested_tools = list(parsed.tools)
     assessment.client = _client_label(parsed.target)
-    add_chat("text", "you", text)
+    add_chat("text", "you", request.text)
     known = picked or parsed.confident
     assessment.script = build_plan(parsed.target_kind, ask_template=not known)
     assessment.run.started = True
@@ -147,15 +174,19 @@ def say_operator_line(text: str) -> str:
         raise StoreValidationError("Start an assessment first.")
     if get_run().waiting_gate in (GATE_ACCOUNT, GATE_CODE):
         # Don't record it: an operator may be pasting the login into the wrong place.
-        raise StoreValidationError("Reconix is waiting for the target login. Press Enter on "
-                                   "the Execution screen to open the secure input; never "
-                                   "paste credentials into the chat.")
+        raise StoreValidationError(
+            "Reconix is waiting for the target login. Press Enter on "
+            "the Execution screen to open the secure input; never "
+            "paste credentials into the chat."
+        )
     if get_run().stopped_at_gate in (GATE_ACCOUNT, GATE_CODE):
         # Stopped at the login: the next line may still be the password. Never echo, record
         # or send it to a model.
-        raise StoreValidationError("This run stopped at the target login. Use /new to start "
-                                   "another assessment; never paste credentials into the "
-                                   "chat.")
+        raise StoreValidationError(
+            "This run stopped at the target login. Use /new to start "
+            "another assessment; never paste credentials into the "
+            "chat."
+        )
     request = add_request(text)
     add_chat("text", "you", request.text)
     return request.text
@@ -176,10 +207,14 @@ def llm_answer(text: str) -> None:
             llm_chat.reply(text, active)
             return
         except LLMError as exc:
-            add_chat("text", "reconix",
-                     f"LLM unavailable ({exc}). Showing the built-in reply.", tone="muted")
+            add_chat(
+                "text",
+                "reconix",
+                f"LLM unavailable ({exc}). Showing the built-in reply.",
+                tone="muted",
+            )
     if not get_run().started:
-        builtin = reply_to                  # a question before any target
+        builtin = reply_to  # a question before any target
     else:
         builtin = reply_after_run if is_finished() else reply_while_running
     add_chat("text", "reconix", builtin(text), tone="muted")
@@ -197,11 +232,11 @@ def new_assessment() -> bool:
     False, and nothing changes, when the current one is still empty: it already is a fresh
     one, so no empty assessment is left behind and the numbering never skips.
     """
-    from .persist import autosave       # (imported here: persist depends on this module)
+    from .persist import autosave  # (imported here: persist depends on this module)
 
     if is_empty_assessment():
         return False
-    autosave()                          # keep the one we leave up to date on disk
+    autosave()  # keep the one we leave up to date on disk
     seed.load_run_data()
     log_event("assessment.new")
     return True
@@ -209,7 +244,7 @@ def new_assessment() -> bool:
 
 # --- gates -----------------------------------------------------------------------------------
 def gate_state(gate: str) -> str:
-    """"open" once the human decision is recorded, "rejected", or "pending"."""
+    """ "open" once the human decision is recorded, "rejected", or "pending"."""
     if gate == GATE_TEMPLATE:
         return "open" if selected_template() else "pending"
     if gate == GATE_SCOPE:
@@ -221,7 +256,7 @@ def gate_state(gate: str) -> str:
     if gate == GATE_CODE:
         return "open" if not code_needed() or is_code_verified() else "pending"
     if gate.startswith(GATE_APPROVAL_PREFIX):
-        decision = decision_for(gate[len(GATE_APPROVAL_PREFIX):])
+        decision = decision_for(gate[len(GATE_APPROVAL_PREFIX) :])
         if decision is None:
             return "pending"
         return "open" if decision.decision == "APPROVED" else "rejected"
@@ -306,7 +341,7 @@ def advance() -> Optional[RunStep]:
         return None
     step = lists.current().script[index]
     run = get_run()
-    run.cursor = index                      # past the steps this run doesn't need
+    run.cursor = index  # past the steps this run doesn't need
     if time_limit_reached():
         _stop("the scope's time limit was reached", "Time limit reached. Testing stopped.")
         return None
@@ -319,14 +354,76 @@ def advance() -> Optional[RunStep]:
             return step
         run.waiting_gate = ""
         if state == "rejected":
-            request = get_approval(step.name[len(GATE_APPROVAL_PREFIX):])
-            _stop(f"you rejected {request.action}",
-                  f"Rejected: {request.action}. Not executed.")
-            return None
+            _skip_rejected(index, get_approval(step.name[len(GATE_APPROVAL_PREFIX) :]))
     else:
         _apply(step)
     run.cursor += 1
     return step
+
+
+def _skip_rejected(index: int, request: ApprovalRequest) -> None:
+    """The operator rejected the gated action at `script[index]`: it never runs, and the plan
+    goes on with its next step (a later gated action still asks for its own approval).
+
+    Every step of the action after its gate is dropped from the script but the progress
+    bars: its "approved" banner, the tool line, the requests it would have sent, the
+    "Validation completed" lines and the finding's evidence. The candidate finding the
+    validation was meant to confirm stays UNCONFIRMED, with no evidence from it.
+    """
+    script = lists.current().script
+    end = index + 1
+    while end < len(script) and not _ends_action_block(script[end]):
+        end += 1
+    # Nothing the action would have done or reported plays: only the progress bars move on
+    # (no "approved" banner, tool line, request count, "Validation completed" or evidence)
+    block = script[index + 1:end]
+    for step in block:
+        if step.kind == "confirm":
+            finding = _finding(step.name)
+            finding.evidence = [EVIDENCE_REJECTED]
+            add_activity("POLICY", f"{step.name} stays unconfirmed: its validation was "
+                         "rejected", tone="warn")
+    script[index + 1:end] = [step for step in block if step.kind == "progress"]
+    # A later check of the same validation may still run and record its evidence, but
+    # without this one it can't confirm the finding (the HIGH check compares against the
+    # MEDIUM baseline): its "confirm" keeps the evidence and drops the CONFIRMED
+    for i in range(index + 1, len(script)):
+        step = script[i]
+        if step.kind == "confirm" and step.value:
+            script[i] = replace(step, value=0)
+            add_activity("POLICY", f"{step.name} stays unconfirmed: part of its validation "
+                         "was rejected", tone="warn")
+    add_chat(
+        "banner",
+        "policy",
+        f"Rejected: {request.action}. Not executed — the plan goes on with its next step.",
+        tone="block",
+    )
+    add_activity("POLICY", f"Skipped: {request.action} (rejected)", tone="block")
+
+
+def _confirmed_later(fid: str) -> bool:
+    """A step still to play confirms finding `fid` (it is a candidate until then)."""
+    run = get_run()
+    return any(step.kind == "confirm" and step.name == fid
+               for step in lists.current().script[run.cursor + 1:])
+
+
+def _finding(fid: str):
+    """The live finding row `fid` (the store's own; getters hand out copies)."""
+    for finding in lists.current().findings:
+        if finding.fid == fid:
+            return finding
+    raise StoreValidationError(f"No finding {fid}.")
+
+
+EVIDENCE_PENDING = "Not collected yet: the validation that tests it waits for your approval."
+EVIDENCE_REJECTED = "Not collected: you rejected the validation that would test it."
+
+
+def _ends_action_block(step: RunStep) -> bool:
+    """The next gate's risk line, a gate or a new phase: the rejected action's steps end."""
+    return step.kind in ("gate", "phase") or (step.kind == "log" and step.source == "POLICY")
 
 
 def _fill(text: str, tool: str = "") -> str:
@@ -381,6 +478,21 @@ def _apply(step: RunStep) -> None:
             raise StoreValidationError(f"No finding {step.name}.")
         if step.name not in run.revealed:
             run.revealed.append(step.name)
+        if _confirmed_later(step.name):                # a candidate until validated
+            finding = _finding(step.name)
+            finding.validation = "UNCONFIRMED"
+            if step.text:
+                finding.description = _fill(step.text)
+            finding.evidence = [EVIDENCE_PENDING]
+    elif kind == "confirm":
+        finding = _finding(step.name)
+        if step.text:
+            finding.description = step.text
+        finding.evidence = [line for _, line in step.rows]
+        if step.value:
+            finding.validation = "CONFIRMED"
+            add_activity("AI", f"{step.name} confirmed by the validation you approved",
+                         tone="ok")
     elif kind == "complete":
         run.completed = True
         run.phase = "completed"
@@ -399,21 +511,27 @@ def _propose(method: str, path: str) -> None:
         add_activity("TOOL", f"Executing {method} {path}")
         return
     add_activity("POLICY", f"Blocked: {verdict.reason}", tone="block")
-    add_chat("banner", "policy", f"Blocked: {method} {path} · {verdict.reason}. Not executed.",
-             tone="block")
+    add_chat(
+        "banner",
+        "policy",
+        f"Blocked: {method} {path} · {verdict.reason}. Not executed.",
+        tone="block",
+    )
 
 
 def _policy_blocks_gate(gate: str) -> bool:
     """Before asking a human, the policy engine checks the action; a block stops the run."""
     if not gate.startswith(GATE_APPROVAL_PREFIX):
         return False
-    request = get_approval(gate[len(GATE_APPROVAL_PREFIX):])
+    request = get_approval(gate[len(GATE_APPROVAL_PREFIX) :])
     verdict = check_request(request.method, request.path)
     if verdict.allowed:
         return False
     add_activity("POLICY", f"Blocked: {verdict.reason}", tone="block")
-    _stop(f"policy blocked {request.action}",
-          f"Blocked: {request.method} {request.path} · {verdict.reason}. Not executed.")
+    _stop(
+        f"policy blocked {request.action}",
+        f"Blocked: {request.method} {request.path} · {verdict.reason}. Not executed.",
+    )
     return True
 
 
@@ -427,8 +545,12 @@ def _stop(reason: str, banner: str) -> None:
     run.waiting_gate = ""
     run.finished_at = utc_now()
     add_chat("banner", "policy", banner, tone="block")
-    add_chat("text", "reconix", "Assessment stopped. Nothing else will run. "
-             "Type /new to start a new assessment.", tone="muted")
+    add_chat(
+        "text",
+        "reconix",
+        "Assessment stopped. Nothing else will run. Type /new to start a new assessment.",
+        tone="muted",
+    )
     add_activity("SYS", "Assessment stopped", tone="block")
     log_event("run.stopped", run.stopped)
 

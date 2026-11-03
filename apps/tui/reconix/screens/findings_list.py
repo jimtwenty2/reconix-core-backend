@@ -45,6 +45,13 @@ class FindingsListScreen(ReconixScreen):
         Binding("t", "triage", "triage"),
         Binding("c", "chat", "chat"),
         Binding("escape", "back", "back", show=False),
+        # The focused table would take ←/→ (it scrolls sideways), so the flow keys the hint
+        # advertises ("→ report") never reached the app: they win here; Shift+←/→ scroll.
+        # → goes to the Report (a finding's detail opens with Enter, not →).
+        Binding("right", "report", "report", show=False, priority=True),
+        Binding("left", "back", "back", show=False, priority=True),
+        Binding("shift+right", "scroll_table(1)", "scroll right", show=False),
+        Binding("shift+left", "scroll_table(-1)", "scroll left", show=False),
     ]
 
     def __init__(self) -> None:
@@ -59,8 +66,9 @@ class FindingsListScreen(ReconixScreen):
         table.add_columns(*_COLUMNS)
         yield table
         yield Static(id="findings-empty", classes="panel-note")
-        yield Static(Text("↑/↓ select · ↵ open · f filter · s sort · t triage · c chat · "
-                          "→ report", style=theme.DIM), classes="muted")
+        # One line at 80 columns: f / s / t / c are in the footer already
+        yield Static(Text("↑/↓ select · ↵ open · ← back · → report · Shift+←/→ more columns",
+                          style=theme.DIM), id="findings-hint", classes="muted")
 
     def on_mount(self) -> None:
         self._fill(keep=self.app.selected_finding)
@@ -83,11 +91,14 @@ class FindingsListScreen(ReconixScreen):
         # Re-add the columns each fill so an auto-sized column shrinks back when titles get
         # shorter (DataTable grows a column to its widest cell but never shrinks it on clear).
         table.clear(columns=True)
-        table.add_columns(*_COLUMNS)
         findings = store.list_findings()
         rows = store.find_findings(self.app.findings_filter, self.app.findings_sort)
         display = [for_display(f) for f in rows]     # mask every shown field (display only)
         titles = self._title_cells(table, display)   # capped with … only when they wouldn't fit
+        for name in _COLUMNS:
+            # TITLE takes the width that ends the visible columns exactly at the edge
+            width = self._title_width if name == "TITLE" else None
+            table.add_column(name, width=width)
         for f, d, title in zip(rows, display, titles):
             table.add_row(
                 Text(d.fid, style=theme.KEY), severity_text(d), title,
@@ -118,6 +129,19 @@ class FindingsListScreen(ReconixScreen):
         if rows:
             self._move_to(keep)
             table.focus()
+            self.call_after_refresh(self._refit)
+
+    def _refit(self) -> None:
+        """Fill again when the table's visible width changed after layout (a vertical
+        scrollbar that came or went), so the columns still end exactly at the edge."""
+        table = self.query_one("#findings-table", DataTable)
+        refits = getattr(self, "_refits", 0)
+        if table.scrollable_content_region.width != getattr(self, "_fitted_width", 0) \
+                and refits < 2:
+            self._refits = refits + 1
+            self._fill()
+        else:
+            self._refits = 0
 
     def on_resize(self, event: Resize) -> None:
         """Re-fit the title column to the new width (it is capped only when it wouldn't fit)."""
@@ -133,6 +157,8 @@ class FindingsListScreen(ReconixScreen):
         titles = [d.title for d in display]
         cells = [Text(t) for t in titles]            # plain Text: the title is never markup
         visible = table.scrollable_content_region.width
+        self._fitted_width = visible                 # checked again once laid out (_refit)
+        self._title_width: Optional[int] = None      # auto width unless set below
         if visible <= 0 or not titles:
             return cells                             # not laid out yet: on_resize re-fits
         pad = table.cell_padding * 2
@@ -144,10 +170,17 @@ class FindingsListScreen(ReconixScreen):
                  + column("SEVERITY", [severity_text(d).plain for d in display])
                  + column("STATUS", [triage_text(d).plain for d in display])
                  + column("VALIDATION", [validation_text(d).plain for d in display]))
+        rest = (column("PATH / COMPONENT", [d.path for d in display])
+                + column("TOOL", [d.tool for d in display])
+                + column("CVE / CWE", [reference_text(d).plain for d in display]))
         budget = visible - fixed - pad               # characters left for the title content
-        if max(cell_len(t) for t in titles) <= budget:
-            return cells                             # every title fits: nothing to cut
+        widest = max(cell_len(t) for t in titles)
+        if widest + pad + fixed + rest <= visible:
+            return cells                             # the whole table fits: nothing to do
         budget = max(budget, 1)
+        # The TITLE column fills the visible width exactly, so the next column (PATH) starts
+        # past the right edge and is never drawn half cut ("P│"); Shift+→ scrolls to it.
+        self._title_width = budget
         return [Text(t if cell_len(t) <= budget else t[:budget - 1] + "…") for t in titles]
 
     def _cursor_key(self) -> Optional[str]:
@@ -211,3 +244,13 @@ class FindingsListScreen(ReconixScreen):
 
     def action_back(self) -> None:
         self.app.go_prev()
+
+    def action_report(self) -> None:
+        self.app.goto("report")
+
+    def action_scroll_table(self, direction: int) -> None:
+        table = self.query_one("#findings-table", DataTable)
+        if direction > 0:
+            table.scroll_right(animate=False)
+        else:
+            table.scroll_left(animate=False)

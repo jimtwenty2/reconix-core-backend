@@ -40,16 +40,21 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
         Binding("slash", "command_bar", "commands", key_display="/"),
         Binding("question_mark", "help", "help", key_display="?"),
         Binding("ctrl+q", "quit", "quit"),
+        # Priority, so Ctrl+C stops a run (it asks first) on every flow screen, also with the
+        # Start prompt focused; in a dialog or a field with selected text it is left to them.
+        Binding("ctrl+c", "stop_assessment", "stop", show=False, priority=True),
         Binding("ctrl+o", "toggle_activity", "expand steps", show=False),
-        # Quick jumps for presenting — hidden to keep the footer clean.
-        Binding("1", "jump('start')", "start", show=False),
-        Binding("2", "jump('template')", "template", show=False),
-        Binding("3", "jump('plan')", "plan", show=False),
-        Binding("4", "jump('approval')", "approval", show=False),
-        Binding("5", "jump('execution')", "execution", show=False),
-        Binding("6", "jump('findings')", "findings", show=False),
-        Binding("7", "jump('detail')", "detail", show=False),
-        Binding("8", "jump('report')", "report", show=False),
+        # Quick jumps for presenting — hidden to keep the footer clean. On Alt, never on a
+        # bare digit: a menu's digits pick a choice, and the same key must not mean "show
+        # me screen N" on one screen and "decide this gate" on the next (QA-008).
+        Binding("alt+1", "jump('start')", "start", show=False),
+        Binding("alt+2", "jump('template')", "template", show=False),
+        Binding("alt+3", "jump('plan')", "plan", show=False),
+        Binding("alt+4", "jump('approval')", "approval", show=False),
+        Binding("alt+5", "jump('execution')", "execution", show=False),
+        Binding("alt+6", "jump('findings')", "findings", show=False),
+        Binding("alt+7", "jump('detail')", "detail", show=False),
+        Binding("alt+8", "jump('report')", "report", show=False),
     ]
 
     def __init__(self) -> None:

@@ -24,7 +24,8 @@ FLOW = Flow(
                 "The Reconix mock (offline) form opens: leave API key empty → Save provider.",
             ),
             'A note says "Active model: Reconix mock (offline) · reconix-mock-1". The top bar '
-            "shows llm: Reconix mock (offline) · reconix-mock-1 ● and the Start screen is ready.",
+            "shows llm: Reconix mock (offline) · reconix-mock-1 ● (on an 80-column terminal the "
+            "short form llm: reconix-mock-1 ●) and the Start screen is ready.",
         ),
         Case(
             "PROV-02",
