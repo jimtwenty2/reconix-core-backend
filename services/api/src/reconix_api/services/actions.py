@@ -129,7 +129,7 @@ async def send_action(
     )
     result = interfaces.check(action, _check_context(db, interfaces, operator, assessment_id))
     row = ActionRow(
-        tool=action.tool.value,
+        tool=action.tool,
         args=action.arguments,
         target=action.target,
         purpose=body.purpose,

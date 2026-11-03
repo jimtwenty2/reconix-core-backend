@@ -1,15 +1,22 @@
 """Risk check: the fourth of the 5 checks.
 
-A rule table gives each tool a base level and each option its own level. The
-action's risk is the highest of them. Anything the table does not know counts
-as HIGH, and validating a finding (a PoC) is at least MEDIUM. An action above
-the scope's max risk is blocked; otherwise the risk decides what happens next:
-LOW runs right away, MEDIUM and HIGH wait for a person to approve.
+A call's risk starts at the tool's baseline (the "risk" field in tool_specs.json),
+and a destructive or free-shell tool is pushed to at least HIGH. risk_ops.json
+then raises a single call above that baseline when one of the tool's escalation
+patterns is a substring of the (lowercased, space-joined) argument values. A tool
+the catalog does not know counts as HIGH, and validating a finding (a PoC) is at
+least MEDIUM. An action above the scope's max risk is blocked; otherwise the risk
+decides what happens next: LOW runs right away, MEDIUM and HIGH wait for a person.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 
+from reconix_ai.harness.catalog import (
+    baseline_risk,
+    escalations,
+    is_destructive,
+    is_free_shell,
+)
 from reconix_ai.harness.checks.result import (
     RISK_ORDER,
     CheckOutcome,
@@ -19,57 +26,6 @@ from reconix_ai.harness.checks.result import (
 )
 
 LOW, MEDIUM, HIGH = RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH
-
-
-@dataclass(frozen=True)
-class ToolRisk:
-    base: RiskLevel
-    options: dict[str, RiskLevel] = field(default_factory=dict)
-
-
-# Base levels follow the "risk" in tool_specs.json from Reconix-Kali-MCP.
-# The option rows match ALLOWED_OPTIONS in command.py, which blocks any other
-# option first. Draft: tuned again with real runs on the lab (week 2).
-RISK_RULES: dict[str, ToolRisk] = {
-    "NMAP": ToolRisk(
-        base=MEDIUM,
-        options={
-            "-p": LOW,
-            "--top-ports": LOW,
-            "-F": LOW,
-            "-Pn": LOW,
-            "-n": LOW,
-            "-sT": LOW,
-            "-sS": LOW,
-            "-sV": LOW,
-            "-sC": MEDIUM,
-            "-sU": MEDIUM,
-            "-O": MEDIUM,
-            "-A": MEDIUM,
-            "-T0": LOW,
-            "-T1": LOW,
-            "-T2": LOW,
-            "-T3": LOW,
-            "-T4": MEDIUM,
-            "-T5": HIGH,
-            "--script": HIGH,
-        },
-    ),
-    "NUCLEI": ToolRisk(
-        base=MEDIUM,
-        options={
-            "-severity": LOW,
-            "-tags": LOW,
-            "-exclude-tags": LOW,
-            "-rate-limit": LOW,
-            "-timeout": LOW,
-            "-retries": LOW,
-        },
-    ),
-    "ZAP": ToolRisk(base=HIGH),  # active scan sends attack requests
-    "SEMGREP": ToolRisk(base=LOW, options={"--config": LOW}),
-    "GITLEAKS": ToolRisk(base=LOW, options={"--log-opts": LOW}),
-}
 
 
 def check_risk(
@@ -87,16 +43,17 @@ def check_risk(
 
 
 def action_risk(tool: str, arguments: Sequence[str]) -> RiskLevel:
-    rules = RISK_RULES.get(tool.upper())
-    if rules is None:
-        return HIGH
-    levels = [rules.base]
-    for argument in arguments:
-        if argument.startswith("-"):
-            # "--script=vuln" is the same option as "--script vuln".
-            option = argument.split("=", 1)[0]
-            levels.append(rules.options.get(option, HIGH))
-    return highest(levels)
+    base = baseline_risk(tool)
+    if is_destructive(tool) or is_free_shell(tool):
+        base = highest([base, HIGH])
+    joined = " ".join(str(argument) for argument in arguments).lower()
+    matched = [
+        level
+        for level, patterns in escalations(tool).items()
+        for pattern in patterns
+        if pattern in joined
+    ]
+    return highest([base, *matched])
 
 
 def highest(levels: Sequence[RiskLevel]) -> RiskLevel:

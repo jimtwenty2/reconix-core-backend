@@ -130,7 +130,7 @@ class Action(BaseModel):
     Arguments are always a list, never one shell string.
     """
 
-    tool: ToolName
+    tool: str
     target: str
     arguments: list[str] = Field(default_factory=list)
     is_validation: bool = False  # a PoC check of an existing finding
@@ -140,7 +140,7 @@ class Action(BaseModel):
 class RecentRun(BaseModel):
     """A past action, given to the loop check."""
 
-    tool: ToolName
+    tool: str
     target: str
     arguments: list[str]
     started_at: datetime
@@ -209,7 +209,7 @@ class FindingInput(BaseModel):
 class ToolRunInput(BaseModel):
     """One tool run and how it was approved, for the report's methodology."""
 
-    tool: ToolName
+    tool: str
     target: str
     args: list[str]
     risk_level: RiskLevel
@@ -335,7 +335,7 @@ class ToolJob(BaseModel):
     """One call to the Kali MCP server."""
 
     tool_run_id: UUID
-    tool: ToolName
+    tool: str
     target: str
     arguments: list[str]
     job_token: str  # signed by the backend, single use, short-lived
