@@ -1,5 +1,6 @@
 """Running one action: new tool run -> one-time job token -> call_tool (MCP) -> masked result."""
 
+import logging
 import re
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -7,21 +8,24 @@ from uuid import uuid4
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.config import Settings
+from reconix_api.core.disclosure import DisclosureVault, vault_for_tool_runs
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Action, Interfaces, Operator, ToolJob, ToolResult
 from reconix_api.core.job_token import sign_job_token
 from reconix_api.core.masking import MaskSecrets, mask_output
-from reconix_api.findings.shape import OutputUnreadable
+from reconix_api.findings.shape import NewFinding, OutputUnreadable
 from reconix_api.models import Action as ActionRow
 from reconix_api.models import Approval, ToolRun
 from reconix_api.models.enums import ActionStatus, ToolRunStatus
 from reconix_api.repositories import actions as action_repo
 from reconix_api.services.approvals import approval_state, ensure_can_use
 from reconix_api.services.audit import audit
-from reconix_api.services.findings import CONTROL, parse_run, save_findings
+from reconix_api.services.findings import CONTROL, KeptValues, parse_run, save_findings
 
 # Terminal colour and cursor codes, e.g. gitleaks's "\x1b[90m2:45AM\x1b[0m". Cut out
 # whole, before the control characters, so no "[90m" is left behind.
+logger = logging.getLogger(__name__)
+
 TERMINAL_CODES = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
@@ -77,6 +81,7 @@ async def run_action(
         arguments=action.arguments,
         job_token=token,
     )
+    result: ToolResult | None = None
     try:
         result = await interfaces.call_tool(job)
     except Exception as error:  # noqa: BLE001 - any failure is saved on the run, never raised
@@ -84,8 +89,9 @@ async def run_action(
     else:
         _save_result(run, row, mask, result)
     finding_count = 0
-    if run.tool_run_status == ToolRunStatus.COMPLETED:
-        finding_count = _save_findings(db, mask, run, row, action)
+    if result is not None and run.tool_run_status == ToolRunStatus.COMPLETED:
+        vault = vault_for_tool_runs(settings)
+        finding_count = _save_findings(db, mask, vault, run, row, action, result)
     db.commit()
 
     audit(
@@ -120,12 +126,25 @@ def _save_result(run: ToolRun, row: ActionRow, mask: MaskSecrets, result: ToolRe
         row.action_status = ActionStatus.FAILED
 
 
-def _save_findings(db: Db, mask: MaskSecrets, run: ToolRun, row: ActionRow, action: Action) -> int:
-    """Parse the masked output and save its findings. The run is kept whatever happens here."""
+def _save_findings(
+    db: Db,
+    mask: MaskSecrets,
+    vault: DisclosureVault | None,
+    run: ToolRun,
+    row: ActionRow,
+    action: Action,
+    result: ToolResult,
+) -> int:
+    """Parse the masked output and save its findings. The run is kept whatever happens here.
+
+    The raw output is parsed too, in memory only, so the real values behind the saved
+    evidence's labels can be kept in the vault for a `disclosure` approval.
+    """
     try:
         new, run.request_count = parse_run(action.tool, run.output_masked or "")
         with db.begin_nested():  # a savepoint: a failure drops the findings, not the run
-            saved = save_findings(db, mask, row.assessment_id, run, new)
+            raw = _parse_raw(action, result) if vault is not None else None
+            saved, kept = save_findings(db, mask, row.assessment_id, run, new, raw)
     except OutputUnreadable as error:
         note, _ = mask(f"OUTPUT_UNREADABLE: {error}")  # parser messages quote the output
         run.error = _append(run.error, note)
@@ -133,7 +152,28 @@ def _save_findings(db: Db, mask: MaskSecrets, run: ToolRun, row: ActionRow, acti
     except Exception as error:  # noqa: BLE001 - a parser bug must not lose the run
         run.error = _append(run.error, f"FINDINGS_NOT_SAVED: {type(error).__name__}")
         return 0
+    if vault is not None:
+        _keep_values(vault, kept)
     return len(saved)
+
+
+def _parse_raw(action: Action, result: ToolResult) -> list[NewFinding] | None:
+    """The raw output's findings, only to find the values behind labels. Unreadable: None."""
+    try:
+        raw, _ = parse_run(action.tool, result.output_file or result.stdout)
+    except Exception:  # noqa: BLE001 - the masked findings are saved either way
+        return None
+    return raw
+
+
+def _keep_values(vault: DisclosureVault, kept: list[KeptValues]) -> None:
+    """After the findings are saved. A vault that cannot be written only means these
+    values cannot be shown later; the findings stay."""
+    for evidence_id, hidden in kept:
+        try:
+            vault.keep(evidence_id, hidden)
+        except Exception as error:  # noqa: BLE001 - never lose findings over the vault
+            logger.warning("Evidence values not kept: %s", type(error).__name__)
 
 
 def _append(error: str | None, note: str) -> str:

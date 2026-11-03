@@ -11,12 +11,12 @@ from reconix_api.core.errors import ApiError
 
 
 def encrypt(settings: Settings, api_key: str) -> bytes:
-    return _fernet(settings).encrypt(api_key.encode())
+    return fernet(settings).encrypt(api_key.encode())
 
 
 def decrypt(settings: Settings, token: bytes) -> str:
     try:
-        return _fernet(settings).decrypt(token).decode()
+        return fernet(settings).decrypt(token).decode()
     except InvalidToken:
         raise ApiError(
             409,
@@ -29,7 +29,7 @@ def last4(api_key: str) -> str:
     return api_key[-4:]
 
 
-def _fernet(settings: Settings) -> Fernet:
+def fernet(settings: Settings) -> Fernet:
     key = settings.fernet_key.get_secret_value()
     if not key:
         raise ApiError(503, "FERNET_KEY_MISSING", "Set RECONIX_FERNET_KEY to save API keys.")

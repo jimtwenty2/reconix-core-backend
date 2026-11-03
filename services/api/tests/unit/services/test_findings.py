@@ -90,3 +90,26 @@ async def test_a_bug_in_the_memory_is_raised_not_hidden():
 
     with pytest.raises(KeyError):
         await update_memory(broken, reviewed("OPEN"))
+
+
+def test_hidden_values_line_up_labels_with_the_raw_text():
+    masked = '{"a": "[MASKED:password]", "b": "x [MASKED:token] y"}'
+    raw = '{"a": "hunter2", "b": "x abc.def y"}'
+    hidden = findings_service.hidden_values(masked, raw)
+    assert [(item.index, item.kind, item.value) for item in hidden] == [
+        (0, "password", "hunter2"),
+        (1, "token", "abc.def"),
+    ]
+
+
+def test_hidden_values_keep_nothing_when_the_texts_differ():
+    assert findings_service.hidden_values("a [MASKED:token] b", "something else") == []
+
+
+def test_hidden_values_keep_nothing_for_labels_side_by_side():
+    masked = "x [MASKED:token][MASKED:password] y"
+    assert findings_service.hidden_values(masked, "x tokpass y") == []
+
+
+def test_no_labels_nothing_to_keep():
+    assert findings_service.hidden_values("plain", "plain") == []

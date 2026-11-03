@@ -33,4 +33,5 @@ class ApprovalOut(BaseModel):
     action_id: UUID | None
     manifest_id: UUID | None
     report_id: UUID | None  # set for a review approval
+    evidence_id: UUID | None  # set for a disclosure approval
     config_change: dict[str, Any] | None  # set for a configuration approval

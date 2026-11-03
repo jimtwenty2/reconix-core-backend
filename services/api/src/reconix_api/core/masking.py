@@ -147,14 +147,30 @@ def _mask_object(mask: MaskSecrets, value: dict[str, Any]) -> tuple[dict[str, An
         if isinstance(item, str) and item in secrets:
             masked[key], count = secrets[item], 1
         else:
-            for secret, label in secrets.items():
-                # Short values ("x", "true") would match everywhere; only real secrets repeat.
-                if isinstance(item, str) and len(secret) >= MIN_REPEATED and secret in item:
-                    item = item.replace(secret, label)
-                    total += 1
+            item, repeats = _hide_repeats(item, secrets)
             masked[key], count = _mask_value(mask, item)
+            total += repeats
         total += count
     return masked, total
+
+
+def _hide_repeats(item: Any, secrets: dict[str, str]) -> tuple[Any, int]:
+    """Every repeat of a secret in item, also inside nested lists and objects."""
+    if isinstance(item, str):
+        total = 0
+        for secret, label in secrets.items():
+            # Short values ("x", "true") would match everywhere; only real secrets repeat.
+            if len(secret) >= MIN_REPEATED and secret in item:
+                item = item.replace(secret, label)
+                total += 1
+        return item, total
+    if isinstance(item, list):
+        pairs = [_hide_repeats(part, secrets) for part in item]
+        return [part for part, _ in pairs], sum(count for _, count in pairs)
+    if isinstance(item, dict):
+        pairs = {key: _hide_repeats(part, secrets) for key, part in item.items()}
+        return {key: part for key, (part, _) in pairs.items()}, sum(c for _, c in pairs.values())
+    return item, 0
 
 
 def _secret_label(mask: MaskSecrets, key: str) -> str | None:

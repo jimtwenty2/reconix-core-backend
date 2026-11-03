@@ -14,7 +14,15 @@ from reconix_api.models import Approval
 from reconix_api.models.enums import ApprovalStatus
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.schemas.approvals import ApprovalDecision, ApprovalOut
-from reconix_api.services import actions, llm_providers, plans, reports, scopes
+from reconix_api.services import (
+    actions,
+    disclosures,
+    limit_settings,
+    llm_providers,
+    plans,
+    reports,
+    scopes,
+)
 from reconix_api.services.approvals import approval_state, ensure_can_decide, expires_at
 from reconix_api.services.audit import audit
 
@@ -56,6 +64,10 @@ async def approve(
         reports.approve_review(db, interfaces.write_audit, operator, approval)
     elif llm_providers.is_activation(approval):
         llm_providers.approve_activation(db, interfaces.write_audit, operator, approval)
+    elif limit_settings.is_limit_change(approval):
+        limit_settings.approve_limit_change(db, interfaces.write_audit, operator, approval)
+    elif disclosures.is_disclosure(approval):
+        disclosures.approve_disclosure(db, interfaces.write_audit, operator, approval)
     else:
         _not_supported(approval)
     return approval_out(approval, ttl_minutes)
@@ -79,6 +91,14 @@ async def reject(
         reports.reject_review(db, interfaces.write_audit, operator, approval, decision.reason)
     elif llm_providers.is_activation(approval):
         llm_providers.reject_activation(
+            db, interfaces.write_audit, operator, approval, decision.reason
+        )
+    elif limit_settings.is_limit_change(approval):
+        limit_settings.reject_limit_change(
+            db, interfaces.write_audit, operator, approval, decision.reason
+        )
+    elif disclosures.is_disclosure(approval):
+        disclosures.reject_disclosure(
             db, interfaces.write_audit, operator, approval, decision.reason
         )
     else:
@@ -115,6 +135,7 @@ def approval_out(approval: Approval, ttl_minutes: int) -> ApprovalOut:
         action_id=approval.action_id,
         manifest_id=approval.manifest_id,
         report_id=approval.report_id,
+        evidence_id=approval.evidence_id,
         config_change=approval.config_change,
     )
 
@@ -148,7 +169,7 @@ def _get_pending(
 def _details(approval: Approval, reason: str) -> dict[str, str]:
     """Which approval, what it was for, and why: never the snapshot itself."""
     details = {"approval_id": str(approval.approval_id), "kind": approval.kind, "reason": reason}
-    for name in ("action_id", "manifest_id", "report_id"):
+    for name in ("action_id", "manifest_id", "report_id", "evidence_id"):
         value = getattr(approval, name)
         if value is not None:
             details[name] = str(value)
