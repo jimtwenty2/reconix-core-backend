@@ -40,7 +40,8 @@ DASHBOARD = Flow(
             "WEB-05",
             "Without Node.js",
             ("On a machine without node/npm type /web.",),
-            '"The web dashboard needs Node.js (node and npm)." The TUI keeps working.',
+            '"The web dashboard needs Node.js (node and npm). Install Node.js (nodejs.org), '
+            'then type /web again." The TUI keeps working.',
         ),
     ),
 )
@@ -65,7 +66,8 @@ ASSISTANT = Flow(
             "Set the mock",
             (
                 "Click Choose a model (under the message box) → + Model → Provider: Reconix mock "
-                "(offline). The address fills in and Model shows reconix-mock-1 at once.",
+                "(offline). Its fixed local address is set for you (not shown) and Model shows "
+                "reconix-mock-1 at once.",
                 "API key: leave empty, or type the fake sk-mock-0000-1234 → Add model.",
             ),
             "No network is used; the chip under the message box shows reconix-mock-1 and "
@@ -82,8 +84,9 @@ ASSISTANT = Flow(
         Case(
             "WEB-AI-04",
             "Summarize the findings",
-            ("Ask with All assessments (the mock then uses the newest run and says so), or "
-             "pick your TUI run in the dashboard's top bar first.",),
+            ("In the dashboard's top bar pick your TUI run first (Overview → Assessment), then "
+             "open the AI Assistant and ask. With All assessments the mock uses the newest run "
+             "and says so, which may be a different run.",),
             '"3 findings (…): 001 … ; 002 … ; 003 …" for that run, with the findings card '
             "from the saved data.",
             ask="summarize the findings",
@@ -92,7 +95,7 @@ ASSISTANT = Flow(
             "WEB-AI-05",
             "Explain finding 001",
             ("Ask the question.",),
-            "001's severity, title, impact and fix from that run.",
+            "001's severity, title, impact and fix from that run, with 001's card only.",
             ask="explain finding 001",
         ),
         Case(
@@ -125,7 +128,7 @@ ASSISTANT = Flow(
         Case(
             "WEB-AI-10",
             "Remove the mock",
-            ("Model picker → remove Reconix mock (offline).",),
+            ("Model picker → remove Reconix mock (offline) → confirm Remove (No keeps it).",),
             "Back to no model set up.",
         ),
     ),

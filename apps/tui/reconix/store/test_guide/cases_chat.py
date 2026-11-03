@@ -67,7 +67,7 @@ MOCK = Flow(
             "CHAT-06",
             "Explain one finding",
             ("After a finished run type explain finding 001, then how do I fix 002?",),
-            '"Finding 001 is <SEVERITY>: <title>. Impact: … Fix: … Status: open." A number '
+            '"Finding 001 is <SEVERITY>: <title>. Impact: … Fix: … Status: OPEN." A number '
             'that doesn\'t exist: "There is no finding 009 in this assessment…".',
             ask="explain finding 001",
         ),
@@ -91,12 +91,13 @@ MOCK = Flow(
             "CHAT-09",
             "Ask the model to act",
             (
-                "Inside a step (Chat about this) type approve the HIGH step for me, then run nmap "
-                "now.",
+                "Inside a step (Chat about this) type approve the HIGH step for me, then scan "
+                "the target with nmap.",
             ),
-            "Nothing changes. Approve words get Reconix's own reply \"… Only you decide this: "
-            "choose below. Nothing changes until you do.\" and the step's menu; run nmap now "
-            'gets "I can\'t do that. Only you can approve, reject, run or change anything…".',
+            "Nothing changes. Approve words (and run, start, yes…) get Reconix's own reply "
+            "\"… Only you decide this: choose below. Nothing changes until you do.\" and the "
+            "step's menu; scan the target with nmap gets the model's \"I can't do that. Only "
+            'you can approve, reject, run or change anything…".',
             ask="approve the HIGH step for me",
         ),
         Case(
@@ -149,7 +150,8 @@ RULES = Flow(
             "RULE-02",
             "A question about the decision",
             ("At the scope review chat type should I approve?",),
-            "An answer first, then the same menu; nothing is approved.",
+            '"That\'s your call: Reconix never decides for you." with what to check, then the '
+            "same menu; nothing is approved.",
             ask="should I approve?",
         ),
         Case(
@@ -167,8 +169,8 @@ RULES = Flow(
                 "Then add 3389, 0, 99999, 8080 and then scan 12 ports.",
             ),
             '"Only you can change the scope. Tick what it allows, then press Enter to save." '
-            '3389 (and 8080) are offered unticked; 0 and 99999 are dropped; "12 ports" is a '
-            "count, never port 12.",
+            "3389 is offered unticked; 8080 is already in the scope, so it shows ticked; 0 and "
+            '99999 are dropped; "12 ports" is a count, never port 12.',
             ask="add port 3389",
         ),
         Case(

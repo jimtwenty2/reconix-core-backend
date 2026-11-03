@@ -106,12 +106,13 @@ STATUS = {
     "pending":      (DIM,    "·"),
 }
 
-# (color, label) for an analyst's triage status
+# (color, label) for an analyst's triage status. The labels are the store's TRIAGE_LABELS
+# words, so the list, the report and the triage dialog say the same thing.
 TRIAGE = {
     "open":           (MUTED,    "Open"),
     "fixed":          (GREEN,    "Fixed"),
-    "accepted":       (MEDIUM,   "Accepted"),
-    "false-positive": (VIOLET,   "False +"),
+    "accepted":       (MEDIUM,   "Accepted risk"),
+    "false-positive": (VIOLET,   "False positive"),
 }
 
 # Text color for a tone ("ok", "warn", "block", ...) used by chat, log and dialogs

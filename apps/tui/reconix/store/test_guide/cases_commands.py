@@ -29,7 +29,8 @@ FLOW = Flow(
             "Open the flow screens",
             (
                 "During a run type /plan, /approval, /status, /findings, /finding 001, /report.",
-                "Press 1 … 8 (not while typing) to jump between the same screens.",
+                "Press Alt+1 … Alt+8 to jump between the same screens (a bare digit only picks "
+                "a menu choice).",
             ),
             "Each command opens that screen; a screen with nothing yet says so.",
         ),
@@ -78,7 +79,7 @@ FLOW = Flow(
                 "Save provider → Yes, test it now.",
                 "Afterwards /provider → Custom OpenAI-compatible → Unset → Yes, remove it.",
             ),
-            "Only sk-…1234 is shown. The test says UNREACHABLE with a short reason; nothing "
+            "Only sk-…1234 is shown. The test says UNREACHABLE — connection refused; nothing "
             "leaves this computer and the mock stays the active model.",
         ),
         Case(
@@ -91,8 +92,8 @@ FLOW = Flow(
             "CMD-11",
             "Agent mode needs a real model",
             ("Type /assess 10.0.0.0/24.",),
-            "Static mode can't run the AI agent: Reconix explains it needs a model (and the "
-            "backend harness). Nothing runs.",
+            '"Agent mode needs a real AI model and the backend harness; the static version '
+            'has neither. Nothing runs." Nothing runs.',
             note="Not testable in the static version.",
         ),
         Case(

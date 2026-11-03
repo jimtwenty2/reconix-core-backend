@@ -9,7 +9,7 @@ export const reports: GroupContent = {
       <>
         <DocSection title="The Report screen">
           <p>
-            <Mono>/report</Mono> or <Kbd>8</Kbd>. It shows, for the current assessment:
+            <Mono>/report</Mono> or <Kbd>Alt+8</Kbd>. It shows, for the current assessment:
           </p>
           <ul>
             <li>

@@ -31,7 +31,12 @@ const PATTERNS: [RegExp, string][] = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, `${MASK} (private key)`],
 ];
 
+// Invisible format characters (soft hyphen, zero-width, bidi overrides, BOM) that would split
+// "token=" or "password" so the patterns miss them. The TUI's redact.clean() drops the same.
+const INVISIBLE = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g;
+
 /** `text` with credentials, tokens and keys masked. */
 export function redact(text: string): string {
-  return PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+  const plain = text.replace(INVISIBLE, "");
+  return PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), plain);
 }

@@ -8,7 +8,7 @@ from reconix import store
 from reconix.store import lists
 from reconix.store.snapshot import snapshot
 
-from .support import auth_values, play_until_gate, run_to
+from .support import auth_values, event_kinds, play_until_gate, run_to
 
 
 def refused(call, *args, **kwargs) -> str:
@@ -90,11 +90,11 @@ def test_triage_can_reopen_a_finding():
 
 
 # --- a stopped run's saved copy ---------------------------------------------------------------
-def test_a_rejected_high_action_is_saved_as_stopped():
+def test_a_rejected_high_action_is_skipped_and_saved_as_completed():
     run_to("approval:approval-002")
     store.reject("approval-002")
     assert play_until_gate() is None
     saved = json.loads(json.dumps(snapshot(lists.current())))
-    assert saved["status"] == "Stopped"
-    assert "limited_validation" in saved["stopped_reason"]
-    assert saved["run"]["completed"] is False
+    assert saved["status"] == "Completed"
+    assert saved["run"]["completed"] is True
+    assert "approval.rejected" in event_kinds()

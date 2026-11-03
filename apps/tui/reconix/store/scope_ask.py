@@ -9,7 +9,8 @@ unticked. Saving goes through `edit_scope`, which validates every value.
 A number is a port only where it reads like one: "port 4000", "21 (FTP)", "3306/tcp", a
 list of numbers in a sentence about ports ("add 4000, 3000 and 5432"), or a bare number in
 the operator's own line. A count ("12 ports") or a part of an address or
-range (1.1.1.0/24) is never a port.
+range (1.1.1.0/24) is never a port. On a scope with ports (network), "add 3389, 8080" asks
+for a change even without the word "port".
 """
 
 import re
@@ -27,6 +28,14 @@ _CHANGE = re.compile(
     re.IGNORECASE,
 )
 _SUBJECT = re.compile(r"\b(?:ports?|tools?|scope)\b", re.IGNORECASE)
+# A change verb right before a bare number list ("add 3389, 0, 99999, 8080"): ports, on a scope
+# that has ports. Not "change": "change step 2" is about the plan. Not a count of something.
+_BARE_PORTS = re.compile(
+    r"\b(?:add|remove|drop|allow|open|include|exclude|delete|disallow|close)\s+(?:also\s+)?"
+    r"\d{1,5}(?:(?:\s*,\s*(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+)\d{1,5})*(?![\w.:/-])"
+    r"(?!\s*(?:steps?|hosts?|minutes?|mins?|seconds?|requests?|rows?|phases?|%))",
+    re.IGNORECASE,
+)
 # A bare number that isn't part of an address, range, version or time (1.1.1.0/24, 1.2).
 _NUMBER = re.compile(r"(?<![\w.:/-])\d{1,5}(?![\w:/-]|\.\d)")
 _COUNT = re.compile(r"\b(\d{1,5})\s+(?:more\s+|common\s+|open\s+)?ports?\b", re.IGNORECASE)
@@ -60,8 +69,12 @@ class ScopeChoices(NamedTuple):
 
 
 def wants_scope_change(text: str) -> bool:
-    """A line that asks to add or remove ports, tools or the scope itself."""
-    return bool(_CHANGE.search(text) and _SUBJECT.search(text))
+    """A line that asks to add or remove ports, tools or the scope itself; on a scope with
+    ports also a change verb before bare numbers ("add 3389, 8080")."""
+    if _CHANGE.search(text) and _SUBJECT.search(text):
+        return True
+    scope = lists.current().scope
+    return bool(scope is not None and scope.kind == "network" and _BARE_PORTS.search(text))
 
 
 def _add(ports: List[int], values: Sequence[str]) -> None:

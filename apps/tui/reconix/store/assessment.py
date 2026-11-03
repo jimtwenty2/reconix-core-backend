@@ -1,5 +1,6 @@
 """The current assessment, the operator's typed requests, and the session's assessments."""
 
+import re
 from dataclasses import dataclass
 from typing import List
 
@@ -7,6 +8,7 @@ from ..models import Assessment, UserRequest
 from . import lists
 from .activity import log_event
 from .errors import StoreValidationError
+from .redact import clean, redact
 
 MAX_REQUEST_LENGTH = 500
 
@@ -97,9 +99,24 @@ def list_requests() -> List[UserRequest]:
     return list(lists.current().requests)
 
 
+# A pasted terminal escape sequence: CSI (ESC [ … letter) and OSC (ESC ] … BEL or ESC \).
+# `clean()` drops the ESC byte itself; this drops the rest, so no "[31m" is left behind.
+_ESCAPE_SEQUENCE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?")
+
+
+def fold_line(text: str) -> str:
+    """`text` without control bytes or terminal escape sequences, its whitespace folded."""
+    return " ".join(clean(_ESCAPE_SEQUENCE.sub("", text)).split())
+
+
 def clean_request(text: str) -> str:
-    """A typed line with its whitespace folded; raises if it is empty or too long."""
-    text = " ".join(text.split())
+    """A typed line without control bytes or escape sequences (BEL, ESC, NUL…), its
+    whitespace folded; raises if it is empty or too long.
+
+    The result can still hold a secret (https://user:pass@host): the target parser reads it
+    as typed, and `recorded_line()` masks it before it is stored, shown or logged.
+    """
+    text = fold_line(text)
     if not text:
         raise StoreValidationError("Type a request first.")
     if len(text) > MAX_REQUEST_LENGTH:
@@ -107,9 +124,16 @@ def clean_request(text: str) -> str:
     return text
 
 
+def recorded_line(text: str) -> str:
+    """A typed line as Reconix records it: cleaned (`clean_request`) and with credentials,
+    tokens and keys masked. Chat, the audit trail, the history and the model only ever get
+    this form."""
+    return redact(clean_request(text))
+
+
 def add_request(text: str) -> UserRequest:
-    """Store a plain-language request typed at the prompt."""
-    request = UserRequest(clean_request(text))
+    """Store a plain-language request typed at the prompt (masked, see `recorded_line`)."""
+    request = UserRequest(recorded_line(text))
     lists.current().requests.append(request)
     log_event("request.submitted", request.text)
     return request

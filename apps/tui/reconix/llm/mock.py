@@ -7,7 +7,7 @@ port of this file (`apps/web/src/lib/assistant/models/mock.ts`) reading a copy o
 JSON; change both together.
 
 `facts` is a plain dict:
-    target, scope, step, plan: str ("" when there is none yet)
+    target, scope, step, plan: str ("" when there is none yet); plan is "1. … ; 2. …; 3a. …"
     findings: list of {id, severity, title, impact, remediation, status}
 """
 
@@ -63,6 +63,8 @@ def reply(question: str, facts: Optional[Mapping[str, object]] = None) -> str:
     needs = item.get("needs")
     if needs == "finding":
         return _finding_reply(item, facts, captured or "", values)
+    if needs == "plan_step":
+        return _plan_step_reply(item, captured or "", values)
     if needs and not values.get(needs):
         return _fill(item["empty"], values)
     return _fill(item["reply"], values)
@@ -79,6 +81,19 @@ def _finding_reply(
     if match is None:
         return _fill(item["missing"], {**values, "id": fid})
     return _fill(item["reply"], {**values, **{k: str(v) for k, v in match.items()}})
+
+
+def _plan_step_reply(item: dict, wanted: str, values: Dict[str, str]) -> str:
+    """One row of the plan ("what does step 2 do?"), not the whole plan."""
+    rows = [row.strip() for row in values["plan"].split(";") if row.strip()]
+    if not rows:
+        return _fill(item["empty"], values)
+    wanted = wanted.casefold()
+    for row in rows:
+        number, dot, rest = row.partition(". ")
+        if dot and number.casefold() == wanted:
+            return _fill(item["reply"], {**values, "row": f"{number}: {rest}"})
+    return _fill(item["missing"], {**values, "id": wanted})
 
 
 def _findings(facts: Mapping[str, object]) -> List[Mapping[str, object]]:

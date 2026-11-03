@@ -17,7 +17,8 @@ from .approvals import (
 )
 from .assessment import (
     MAX_REQUEST_LENGTH, AssessmentCard, add_request, assessment_label, assessment_status,
-    get_assessment, is_empty_assessment, list_assessments, list_requests, switch_assessment,
+    get_assessment, is_empty_assessment, list_assessments, list_requests, recorded_line,
+    switch_assessment,
 )
 from .errors import StoreValidationError
 from .findings import (
@@ -87,7 +88,7 @@ reset = load_demo_data   # tests: restore the demo rows between runs
 __all__ = [
     "StoreValidationError", "reset", "DEMO_REQUEST", "MAX_REQUEST_LENGTH",
     # assessment and requests
-    "get_assessment", "assessment_label", "list_requests", "add_request",
+    "get_assessment", "assessment_label", "list_requests", "add_request", "recorded_line",
     "list_assessments", "switch_assessment", "assessment_status", "AssessmentCard",
     "is_empty_assessment",
     # the run
