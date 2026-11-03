@@ -34,11 +34,18 @@ def list_findings(
     target: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=200),
 ) -> list[FindingOut]:
-    """Lists every finding, newest first. With ?assessment_id=, it lists only that assessment's
-    findings, in the order they were found. You can filter with ?severity_status=,
-    ?validation_status=, ?finding_status=, ?tool= (a tool that found it), ?target= (part of the
-    target) and ?q= (part of the code, title, target, description or a CWE id). Every filter you
-    give must match."""
+    """Lists the findings, newest first.
+
+    Business Rules:
+    - With ?assessment_id=, lists only that assessment's findings, in the order they were found.
+    - Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (the tool that
+      found it), ?target= (part of the target), and ?q= (part of the code, title, target,
+      description, or a CWE id).
+    - Every filter you provide must match.
+
+    Security:
+    - Requires a valid session token.
+    """
     filters = FindingFilters(
         assessment_id=assessment_id,
         severity_status=severity_status,
@@ -53,8 +60,15 @@ def list_findings(
 
 @router.get("/{finding_id}")
 def read_finding(finding_id: UUID, db: Db, _: CurrentOperator) -> FindingOut:
-    """Returns one finding with its severity, CVSS score, CWE and CVE ids, how to fix it, and its
-    review status. Returns 404 FINDING_NOT_FOUND if there is no finding with this id."""
+    """Returns one finding with its severity, CVSS score, CWE and CVE ids, remediation, and review
+    status.
+
+    Business Rules:
+    - Returns 404 FINDING_NOT_FOUND if no finding has this id.
+
+    Security:
+    - Requires a valid session token.
+    """
     return findings.read_finding(db, finding_id)
 
 
@@ -68,8 +82,20 @@ def review_finding(
     memory: CurrentFindingMemory,
     background: BackgroundTasks,
 ) -> FindingOut:
-    """Marks a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED count as accepted, and the AI
-    remembers them for later."""
+    """Marks a finding OPEN, FALSE_POSITIVE, or FIXED.
+
+    Business Rules:
+    - OPEN and FIXED count as accepted.
+
+    Execution Behavior:
+    - Records accepted findings in the AI's memory for later.
+
+    State Changes:
+    - Updates the finding's review status.
+
+    Security:
+    - Requires a valid session token.
+    """
     reviewed = findings.review_finding(db, interfaces.write_audit, operator, finding_id, body)
     # After the response: a slow memory never holds the person or a database connection.
     background.add_task(findings.update_memory, memory, reviewed)
@@ -85,13 +111,30 @@ async def check_finding(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> ValidationRunOut:
-    """Confirms a finding with a PoC: give the id of a COMPLETED tool run and the AI reads that
-    run's real output and sets the verdict (CONFIRMED, UNCONFIRMED or INCONCLUSIVE). The finding
-    takes this newest result as its validation_status; no one sets the verdict by hand."""
+    """Confirms a finding with a proof of concept.
+
+    Business Rules:
+    - Provide the id of a COMPLETED tool run.
+    - The finding takes the newest result as its validation_status; no one sets the verdict by hand.
+
+    Execution Behavior:
+    - The AI reads the tool run's real output and sets the verdict (CONFIRMED, UNCONFIRMED, or
+      INCONCLUSIVE).
+
+    State Changes:
+    - Creates a validation run and updates the finding's validation_status.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await findings.check_finding(db, interfaces, mask, operator, finding_id, body)
 
 
 @router.get("/{finding_id}/validation-runs")
 def list_validation_runs(finding_id: UUID, db: Db, _: CurrentOperator) -> list[ValidationRunOut]:
-    """Lists every check of the finding, newest first."""
+    """Lists every check of the finding, newest first.
+
+    Security:
+    - Requires a valid session token.
+    """
     return findings.list_validation_runs(db, finding_id)

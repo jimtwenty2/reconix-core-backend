@@ -28,9 +28,16 @@ def read_timeline(
     event_type: Annotated[list[EventType] | None, Query(max_length=50)] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_EVENTS)] = 500,
 ) -> TimelineOut:
-    """Returns the assessment's audit log lines, oldest first. You get at most the newest `limit`
-    lines, and has_older tells you when older ones were left out. Repeat ?event_type= to keep
-    only those event types. Lines are masked when they are written and again when they are read."""
+    """Returns the assessment's audit log lines, oldest first.
+
+    Business Rules:
+    - Returns at most the newest `limit` lines; has_older marks when older lines were left out.
+    - Repeat ?event_type= to keep only those event types.
+
+    Security:
+    - Requires a valid session token.
+    - Lines are masked when written and again when read.
+    """
     return timeline.read_timeline(
         db, settings.audit_log_path, assessment_id, event_type or [], limit
     )

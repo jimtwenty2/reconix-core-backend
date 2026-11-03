@@ -34,8 +34,14 @@ def open_session(
     interfaces: CurrentInterfaces,
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
 ) -> SessionCreated:
-    """Opens a new session and returns its token. It can only be reached from this computer, thanks
-    to the Host check and CORS."""
+    """Opens a new session and returns its token.
+
+    State Changes:
+    - Creates a session and issues its token.
+
+    Security:
+    - Open. Needs no token; the Host check and CORS restrict it to this computer.
+    """
     session, _, token = sessions.open_session(db, tokens, interfaces.write_audit, body.interface)
     created = SessionRead.model_validate(session, from_attributes=True)
     return SessionCreated(**created.model_dump(), token=token)
@@ -47,8 +53,17 @@ def issue_web_sign_in_code(
     interfaces: CurrentInterfaces,
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
 ) -> WebSignInCode:
-    """Creates a one-time code for signing in to the local web (`/web`). Put it in the sign-in
-    link; it works for 2 minutes."""
+    """Creates a one-time code for signing in to the local web at `/web`.
+
+    Business Rules:
+    - Add the code to the sign-in link. It is valid for 2 minutes.
+
+    State Changes:
+    - Creates a one-time web sign-in code.
+
+    Security:
+    - Requires a valid session token.
+    """
     code, expires_at = sessions.issue_web_sign_in_code(tokens, interfaces.write_audit, operator)
     return WebSignInCode(code=code, expires_at=expires_at)
 
@@ -60,9 +75,17 @@ def web_sign_in(
     interfaces: CurrentInterfaces,
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
 ) -> SessionCreated:
-    """Trades a sign-in code for a new web session. Like POST /sessions it needs no token, because
-    the code itself is the check. Returns 401 INVALID_SIGN_IN_CODE if the code is unknown,
-    already used or expired."""
+    """Exchanges a sign-in code for a new web session and returns its token.
+
+    Business Rules:
+    - Returns 401 INVALID_SIGN_IN_CODE if the code is unknown, already used, or expired.
+
+    State Changes:
+    - Creates a web session and issues its token.
+
+    Security:
+    - Open. Needs no token; the one-time code is the check.
+    """
     session, _, token = sessions.open_web_session(db, tokens, interfaces.write_audit, body.code)
     created = SessionRead.model_validate(session, from_attributes=True)
     return SessionCreated(**created.model_dump(), token=token)
@@ -75,15 +98,28 @@ def list_sessions(
     interface: Interface | None = None,
     session_status: SessionStatus | None = None,
 ) -> list[SessionRead]:
-    """Lists the sessions, newest first. For example, `?interface=vscode&session_status=ACTIVE`
-    lists only the open VS Code sessions."""
+    """Lists the sessions, newest first.
+
+    Business Rules:
+    - Filter with `interface` and `session_status` (e.g. `?interface=vscode&session_status=ACTIVE`
+      lists only the open VS Code sessions).
+
+    Security:
+    - Requires a valid session token.
+    """
     return sessions.list_sessions(db, interface, session_status)
 
 
 @router.get("/{session_id}")
 def read_session(session_id: UUID, db: Db, _: CurrentOperator) -> SessionRead:
-    """Returns one session and its status. Returns 404 SESSION_NOT_FOUND if there is no session
-    with this id."""
+    """Returns one session and its status.
+
+    Business Rules:
+    - Returns 404 SESSION_NOT_FOUND if no session has this id.
+
+    Security:
+    - Requires a valid session token.
+    """
     return sessions.read_session(db, session_id)
 
 
@@ -96,7 +132,15 @@ def close_session(
     tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SessionRead:
-    """Closes the session. Its token stops working, and any source code sent to it is deleted."""
+    """Closes the session.
+
+    State Changes:
+    - Invalidates the session token.
+    - Deletes any source code sent to the session.
+
+    Security:
+    - Requires a valid session token.
+    """
     return sessions.close_session(
         db, tokens, interfaces.write_audit, operator, session_id, settings.code_dir
     )
