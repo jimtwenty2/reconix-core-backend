@@ -28,8 +28,17 @@ async def create_report(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> ReportOut:
-    """Creates a new report version from a locked copy of the findings and tool runs. It answers
-    READY with its files, or with an error and a FAILED report."""
+    """Creates a new report version from a locked copy of the findings and tool runs.
+
+    Business Rules:
+    - Answers READY with its files, or FAILED with an error.
+
+    State Changes:
+    - Creates a report version.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await reports.create_report(db, interfaces, mask, settings, operator, assessment_id)
 
 
@@ -43,10 +52,20 @@ async def create_combined_report(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> ReportOut:
-    """Creates one report that covers this assessment and 1 to 4 others (2 to 5 in all), each with
-    an approved scope. The report is filed under this assessment and listed under each of them,
-    and each finding code gets its assessment's code in front. It is signed off and downloaded
-    like any other report."""
+    """Creates one report that covers this assessment and 1 to 4 others (2 to 5 in all).
+
+    Business Rules:
+    - Each assessment must have an approved scope.
+    - The report is filed under this assessment and listed under each one.
+    - Each finding code is prefixed with its assessment's code.
+    - It is signed off and downloaded like any other report.
+
+    State Changes:
+    - Creates a combined report version.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await reports.create_report(
         db, interfaces, mask, settings, operator, assessment_id, body.combined_with
     )
@@ -55,15 +74,25 @@ async def create_combined_report(
 @router.get("/assessments/{assessment_id}/reports")
 def list_reports(assessment_id: UUID, db: Db, _: CurrentOperator) -> list[ReportOut]:
     """Lists the assessment's own reports, newest first, followed by the combined reports that
-    cover it."""
+    cover it.
+
+    Security:
+    - Requires a valid session token.
+    """
     return reports.list_reports(db, assessment_id)
 
 
 @router.get("/reports/{report_id}")
 def read_report(report_id: UUID, db: Db, _: CurrentOperator) -> ReportOut:
-    """Returns one report version with its status, the file formats it can be downloaded in, and
-    whether its review was approved. Returns 404 REPORT_NOT_FOUND if there is no report with
-    this id."""
+    """Returns one report version with its status, the formats it can be downloaded in, and whether
+    its review was approved.
+
+    Business Rules:
+    - Returns 404 REPORT_NOT_FOUND if no report has this id.
+
+    Security:
+    - Requires a valid session token.
+    """
     return reports.read_report(db, report_id)
 
 
@@ -75,8 +104,17 @@ def request_review(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> ApprovalOut:
-    """Asks for the report to be reviewed. This creates a `review` approval, which a person
-    approves or rejects with /approvals/{id}/approve or /reject."""
+    """Requests a review of the report.
+
+    Execution Behavior:
+    - A person approves or rejects the review with /approvals/{id}/approve or /reject.
+
+    State Changes:
+    - Creates a `review` approval request.
+
+    Security:
+    - Requires a valid session token.
+    """
     ttl_minutes = settings.approval_ttl_minutes
     approval = reports.request_review(db, interfaces.write_audit, operator, report_id, ttl_minutes)
     return decisions.approval_out(approval, settings.approval_ttl_minutes)
@@ -90,7 +128,14 @@ def download(
     settings: CurrentSettings,
     format: ReportFormat = "PDF",
 ) -> FileResponse:
-    """Downloads the report file. It is available once the report is READY and its review has been
-    approved."""
+    """Downloads the report file.
+
+    Business Rules:
+    - Available once the report is READY and its review is approved.
+    - Choose the file format with `format` (PDF by default).
+
+    Security:
+    - Requires a valid session token.
+    """
     path, media_type, name = reports.download(db, settings, report_id, format)
     return FileResponse(path, media_type=media_type, filename=name)

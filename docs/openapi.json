@@ -3663,7 +3663,7 @@
   "paths": {
     "/api/v1/actions/{action_id}": {
       "get": {
-        "description": "Returns one action with its risk level, its status, the approval it waits for (if any) and\nits tool runs. Returns 404 ACTION_NOT_FOUND if there is no action with this id.",
+        "description": "Returns one action with its risk level, status, the approval it is waiting for (if any), and\nits tool runs.\n\nBusiness Rules:\n- Returns 404 ACTION_NOT_FOUND if no action has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_action_api_v1_actions__action_id__get",
         "parameters": [
           {
@@ -3712,7 +3712,7 @@
     },
     "/api/v1/agent-runs/{agent_run_id}": {
       "get": {
-        "description": "Returns one agent run and the actions filed under it, for example the step a plan suggested\nand where that step is now.",
+        "description": "Returns one agent run and the actions filed under it, such as the step a plan suggested and\nits current state.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_agent_run_api_v1_agent_runs__agent_run_id__get",
         "parameters": [
           {
@@ -3761,7 +3761,7 @@
     },
     "/api/v1/agent-runs/{agent_run_id}/cancel": {
       "post": {
-        "description": "Stops a plan or next-step run that is waiting for a person. Its step becomes CANCELLED and\ncan never run. Returns 409 while the agent is still answering, or if the run has already\nended.",
+        "description": "Stops a plan or next-step run that is waiting for a person.\n\nBusiness Rules:\n- Returns 409 while the agent is still answering, or if the run has already ended.\n\nState Changes:\n- Sets the run's step to CANCELLED so it can never run.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "cancel_agent_run_api_v1_agent_runs__agent_run_id__cancel_post",
         "parameters": [
           {
@@ -3810,7 +3810,7 @@
     },
     "/api/v1/agent-runs/{agent_run_id}/send": {
       "post": {
-        "description": "Sends the first step of a drafted plan, through the same checks as any action.",
+        "description": "Sends the first step of a drafted plan.\n\nBusiness Rules:\n- The step goes through the same safety checks as any action.\n\nExecution Behavior:\n- Runs the harness checks on the step.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "send_plan_api_v1_agent_runs__agent_run_id__send_post",
         "parameters": [
           {
@@ -3859,7 +3859,7 @@
     },
     "/api/v1/approvals": {
       "get": {
-        "description": "Lists the approvals that are waiting for a person. Filter by status and kind to see others,\nsuch as the ones already decided.",
+        "description": "Lists the approval requests waiting for a person.\n\nBusiness Rules:\n- Filter by status and kind to see others, such as those already decided.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_approvals_api_v1_approvals_get",
         "parameters": [
           {
@@ -3934,7 +3934,7 @@
     },
     "/api/v1/approvals/{approval_id}": {
       "get": {
-        "description": "Returns one approval, whether it is still waiting or already decided, together with the time\nit expires. Returns 404 APPROVAL_NOT_FOUND if there is no approval with this id.",
+        "description": "Returns one approval request, whether it is waiting or already decided, with its expiry time.\n\nBusiness Rules:\n- Returns 404 APPROVAL_NOT_FOUND if no approval has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_approval_api_v1_approvals__approval_id__get",
         "parameters": [
           {
@@ -3983,7 +3983,7 @@
     },
     "/api/v1/approvals/{approval_id}/approve": {
       "post": {
-        "description": "Approves a waiting approval. Approving an action also runs it, so read the action afterwards\nto see its tool run.",
+        "description": "Approves a waiting approval request.\n\nExecution Behavior:\n- Approving an action also runs it; read the action afterward to see its tool run.\n\nState Changes:\n- Marks the approval approved, and runs the approved action when the approval is for one.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "approve_api_v1_approvals__approval_id__approve_post",
         "parameters": [
           {
@@ -4042,7 +4042,7 @@
     },
     "/api/v1/approvals/{approval_id}/reject": {
       "post": {
-        "description": "Rejects a waiting approval. Send a reason so the audit log shows why. A rejected action\nnever runs. Returns 409 APPROVAL_ALREADY_DECIDED if someone already decided it, or 409\nAPPROVAL_EXPIRED if it is older than its time limit.",
+        "description": "Rejects a waiting approval request.\n\nBusiness Rules:\n- Send a reason so the audit log records it.\n- A rejected action never runs.\n- Returns 409 APPROVAL_ALREADY_DECIDED if it was already decided, or 409 APPROVAL_EXPIRED if it\n  is past its time limit.\n\nState Changes:\n- Marks the approval rejected.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "reject_api_v1_approvals__approval_id__reject_post",
         "parameters": [
           {
@@ -4101,7 +4101,7 @@
     },
     "/api/v1/assessments": {
       "get": {
-        "description": "Lists the assessments, newest first. Each one comes with its approved targets, its finding\ncount, its worst severity and its pending approvals. False positives are left out of the\ncount and the severity.",
+        "description": "Lists the assessments, newest first.\n\nBusiness Rules:\n- Each row includes its approved targets, finding count, worst severity, and pending approvals.\n- False positives are excluded from the finding count and the worst severity.\n- Filter with `status`.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_assessments_api_v1_assessments_get",
         "parameters": [
           {
@@ -4160,7 +4160,7 @@
     },
     "/api/v1/assessments/{assessment_id}": {
       "delete": {
-        "description": "Cancels the assessment by setting its status to CANCELLED. Nothing is erased.",
+        "description": "Cancels the assessment.\n\nState Changes:\n- Sets the assessment status to CANCELLED. Nothing is erased.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "cancel_assessment_api_v1_assessments__assessment_id__delete",
         "parameters": [
           {
@@ -4207,7 +4207,7 @@
         ]
       },
       "get": {
-        "description": "Returns one assessment with its name, type and status. Returns 404 ASSESSMENT_NOT_FOUND if\nthere is no assessment with this id.",
+        "description": "Returns one assessment with its name, type, and status.\n\nBusiness Rules:\n- Returns 404 ASSESSMENT_NOT_FOUND if no assessment has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_assessment_api_v1_assessments__assessment_id__get",
         "parameters": [
           {
@@ -4254,7 +4254,7 @@
         ]
       },
       "patch": {
-        "description": "Renames the assessment, or marks it COMPLETED (with assessment_status) when the work is\ndone.",
+        "description": "Renames the assessment, or marks it COMPLETED when the work is done.\n\nBusiness Rules:\n- Set assessment_status to COMPLETED to complete the assessment.\n\nState Changes:\n- Updates the assessment's name or status.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "update_assessment_api_v1_assessments__assessment_id__patch",
         "parameters": [
           {
@@ -4313,7 +4313,7 @@
     },
     "/api/v1/assessments/{assessment_id}/actions": {
       "get": {
-        "description": "Lists every action in the assessment, newest first, together with its tool runs. Returns 404\nASSESSMENT_NOT_FOUND if the assessment does not exist.",
+        "description": "Lists every action in the assessment, newest first, with its tool runs.\n\nBusiness Rules:\n- Returns 404 ASSESSMENT_NOT_FOUND if the assessment does not exist.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_actions_api_v1_assessments__assessment_id__actions_get",
         "parameters": [
           {
@@ -4364,7 +4364,7 @@
         ]
       },
       "post": {
-        "description": "Sends one tool step through the safety checks. A LOW risk step runs right away. A\nMEDIUM or HIGH risk step waits for a person: the answer carries an approval_id to\napprove. A step that fails any safety check is BLOCKED and returns 422 ACTION_BLOCKED.",
+        "description": "Sends one tool step through the safety checks.\n\nBusiness Rules:\n- A LOW-risk step runs immediately.\n- A MEDIUM- or HIGH-risk step waits for a person; the response carries an approval_id.\n- A step that fails any safety check is BLOCKED and returns 422 ACTION_BLOCKED.\n\nExecution Behavior:\n- Runs the harness checks, and runs the tool now only when the step is LOW risk.\n\nState Changes:\n- Creates an action, and an approval request when the step needs one.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "send_action_api_v1_assessments__assessment_id__actions_post",
         "parameters": [
           {
@@ -4423,7 +4423,7 @@
     },
     "/api/v1/assessments/{assessment_id}/analyze": {
       "post": {
-        "description": "Asks the agent for suggestions on each OPEN finding, 10 findings at a time. Nothing about a\nfinding changes until a person accepts a suggestion with PATCH /findings/{id}.",
+        "description": "Asks the agent for suggestions on each OPEN finding, 10 findings at a time.\n\nBusiness Rules:\n- Nothing about a finding changes until a person accepts a suggestion with PATCH /findings/{id}.\n\nExecution Behavior:\n- Calls the agent to analyze the open findings.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "analyze_api_v1_assessments__assessment_id__analyze_post",
         "parameters": [
           {
@@ -4472,7 +4472,7 @@
     },
     "/api/v1/assessments/{assessment_id}/code-scans": {
       "post": {
-        "description": "Scans the code sent to the assessment's session with SEMGREP and then GITLEAKS. If you ask\nfor analyze, the agent also analyses the results afterwards. The call answers at once, so\npoll GET /code-scans/{id} to follow it. Each tool goes through the same safety checks as any\naction, so the scope needs a \"path\" target for that code. Returns 422 NO_CODE if no code was\nsent, or 409 SCAN_RUNNING if a scan is already running.",
+        "description": "Scans the code sent to the assessment's session with SEMGREP, then GITLEAKS.\n\nBusiness Rules:\n- With analyze, the agent also analyzes the results afterward.\n- The scope needs a \"path\" target for that code.\n- Returns 422 NO_CODE if no code was sent, or 409 SCAN_RUNNING if a scan is already running.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- Creates a code scan.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "start_code_scan_api_v1_assessments__assessment_id__code_scans_post",
         "parameters": [
           {
@@ -4531,7 +4531,7 @@
     },
     "/api/v1/assessments/{assessment_id}/combined-reports": {
       "post": {
-        "description": "Creates one report that covers this assessment and 1 to 4 others (2 to 5 in all), each with\nan approved scope. The report is filed under this assessment and listed under each of them,\nand each finding code gets its assessment's code in front. It is signed off and downloaded\nlike any other report.",
+        "description": "Creates one report that covers this assessment and 1 to 4 others (2 to 5 in all).\n\nBusiness Rules:\n- Each assessment must have an approved scope.\n- The report is filed under this assessment and listed under each one.\n- Each finding code is prefixed with its assessment's code.\n- It is signed off and downloaded like any other report.\n\nState Changes:\n- Creates a combined report version.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "create_combined_report_api_v1_assessments__assessment_id__combined_reports_post",
         "parameters": [
           {
@@ -4590,7 +4590,7 @@
     },
     "/api/v1/assessments/{assessment_id}/next-step": {
       "post": {
-        "description": "Asks the agent for the next step after a step has run. The agent reads the newest tool\noutputs (masked), thinks again (ReflAct) and suggests the next step, which goes through the\nsame checks as any action. Returns 409 NO_TOOL_RESULTS if no tool has run yet.",
+        "description": "Asks the agent for the next step after a step has run.\n\nBusiness Rules:\n- The suggested step goes through the same safety checks as any action.\n- Returns 409 NO_TOOL_RESULTS if no tool has run yet.\n\nExecution Behavior:\n- The agent reads the newest masked tool output, reflects (ReflAct), and suggests the next step.\n\nState Changes:\n- Creates an agent run and the suggested action.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "suggest_next_step_api_v1_assessments__assessment_id__next_step_post",
         "parameters": [
           {
@@ -4639,7 +4639,7 @@
     },
     "/api/v1/assessments/{assessment_id}/overview": {
       "get": {
-        "description": "Returns all the counts for the run overview in one call: findings by severity, validation\nand status, actions by status, plan progress, tool run totals and pending approvals. Only\nfindings_by_status counts false positives; the other finding counts leave them out.",
+        "description": "Returns the counts for the run overview in one call: findings by severity, validation, and\nstatus; actions by status; plan progress; tool run totals; and pending approvals.\n\nBusiness Rules:\n- Only findings_by_status counts false positives; the other finding counts exclude them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_overview_api_v1_assessments__assessment_id__overview_get",
         "parameters": [
           {
@@ -4688,7 +4688,7 @@
     },
     "/api/v1/assessments/{assessment_id}/plan": {
       "post": {
-        "description": "Asks the agent to plan the test and suggest one step. The step goes through the same checks\nas any action: it is BLOCKED, runs now (LOW), or waits for the approval in\naction.approval_id. With draft=true nothing is sent yet: the person reads the plan first,\nthen sends it (POST /agent-runs/{id}/send) or drops it (POST /agent-runs/{id}/cancel).",
+        "description": "Asks the agent to plan the test and suggest one step.\n\nBusiness Rules:\n- The suggested step goes through the same safety checks as any action: BLOCKED, run now (LOW),\n  or wait for the approval in action.approval_id.\n- With draft=true, nothing is sent yet: the person reads the plan first, then sends it\n  (POST /agent-runs/{id}/send) or drops it (POST /agent-runs/{id}/cancel).\n\nExecution Behavior:\n- Calls the agent to produce the plan and the first step.\n\nState Changes:\n- Creates an agent run and the suggested action.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "start_plan_api_v1_assessments__assessment_id__plan_post",
         "parameters": [
           {
@@ -4747,7 +4747,7 @@
     },
     "/api/v1/assessments/{assessment_id}/reports": {
       "get": {
-        "description": "Lists the assessment's own reports, newest first, followed by the combined reports that\ncover it.",
+        "description": "Lists the assessment's own reports, newest first, followed by the combined reports that\ncover it.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_reports_api_v1_assessments__assessment_id__reports_get",
         "parameters": [
           {
@@ -4798,7 +4798,7 @@
         ]
       },
       "post": {
-        "description": "Creates a new report version from a locked copy of the findings and tool runs. It answers\nREADY with its files, or with an error and a FAILED report.",
+        "description": "Creates a new report version from a locked copy of the findings and tool runs.\n\nBusiness Rules:\n- Answers READY with its files, or FAILED with an error.\n\nState Changes:\n- Creates a report version.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "create_report_api_v1_assessments__assessment_id__reports_post",
         "parameters": [
           {
@@ -4847,7 +4847,7 @@
     },
     "/api/v1/assessments/{assessment_id}/timeline": {
       "get": {
-        "description": "Returns the assessment's audit log lines, oldest first. You get at most the newest `limit`\nlines, and has_older tells you when older ones were left out. Repeat ?event_type= to keep\nonly those event types. Lines are masked when they are written and again when they are read.",
+        "description": "Returns the assessment's audit log lines, oldest first.\n\nBusiness Rules:\n- Returns at most the newest `limit` lines; has_older marks when older lines were left out.\n- Repeat ?event_type= to keep only those event types.\n\nSecurity:\n- Requires a valid session token.\n- Lines are masked when written and again when read.",
         "operationId": "read_timeline_api_v1_assessments__assessment_id__timeline_get",
         "parameters": [
           {
@@ -4929,7 +4929,7 @@
     },
     "/api/v1/code-scans/{agent_run_id}": {
       "get": {
-        "description": "Returns a code scan's status, stage and progress, and how many findings of each severity it\nhas found so far.",
+        "description": "Returns a code scan's status, stage, and progress, with how many findings of each severity it\nhas found so far.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_code_scan_api_v1_code_scans__agent_run_id__get",
         "parameters": [
           {
@@ -4978,7 +4978,7 @@
     },
     "/api/v1/code-scans/{agent_run_id}/cancel": {
       "post": {
-        "description": "Cancels the scan at once; it stops before its next step. Returns 409 SCAN_ENDED if the scan\nhas already ended.",
+        "description": "Cancels the scan immediately; it stops before its next step.\n\nBusiness Rules:\n- Returns 409 SCAN_ENDED if the scan has already ended.\n\nState Changes:\n- Cancels the running scan.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "cancel_code_scan_api_v1_code_scans__agent_run_id__cancel_post",
         "parameters": [
           {
@@ -5027,7 +5027,7 @@
     },
     "/api/v1/code-scans/{agent_run_id}/findings": {
       "get": {
-        "description": "Lists the findings this scan found, in the order they were found. Each one has its relative\npath, line, rule and a masked code snippet.",
+        "description": "Lists the findings this scan found, in the order they were found.\n\nBusiness Rules:\n- Each finding has its relative path, line, rule, and a masked code snippet.\n\nSecurity:\n- Requires a valid session token.\n- Code snippets are masked.",
         "operationId": "list_code_scan_findings_api_v1_code_scans__agent_run_id__findings_get",
         "parameters": [
           {
@@ -5080,7 +5080,7 @@
     },
     "/api/v1/evidence/{evidence_id}": {
       "get": {
-        "description": "Returns one piece of evidence that supports a finding. Any secret in it was masked before it\nwas saved. Returns 404 EVIDENCE_NOT_FOUND if there is no evidence with this id.",
+        "description": "Returns one piece of evidence that supports a finding.\n\nBusiness Rules:\n- Returns 404 EVIDENCE_NOT_FOUND if no evidence has this id.\n\nSecurity:\n- Requires a valid session token.\n- Any secret in the evidence is masked before it is saved.",
         "operationId": "read_evidence_api_v1_evidence__evidence_id__get",
         "parameters": [
           {
@@ -5129,7 +5129,7 @@
     },
     "/api/v1/findings": {
       "get": {
-        "description": "Lists every finding, newest first. With ?assessment_id=, it lists only that assessment's\nfindings, in the order they were found. You can filter with ?severity_status=,\n?validation_status=, ?finding_status=, ?tool= (a tool that found it), ?target= (part of the\ntarget) and ?q= (part of the code, title, target, description or a CWE id). Every filter you\ngive must match.",
+        "description": "Lists the findings, newest first.\n\nBusiness Rules:\n- With ?assessment_id=, lists only that assessment's findings, in the order they were found.\n- Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (the tool that\n  found it), ?target= (part of the target), and ?q= (part of the code, title, target,\n  description, or a CWE id).\n- Every filter you provide must match.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_findings_api_v1_findings_get",
         "parameters": [
           {
@@ -5287,7 +5287,7 @@
     },
     "/api/v1/findings/{finding_id}": {
       "get": {
-        "description": "Returns one finding with its severity, CVSS score, CWE and CVE ids, how to fix it, and its\nreview status. Returns 404 FINDING_NOT_FOUND if there is no finding with this id.",
+        "description": "Returns one finding with its severity, CVSS score, CWE and CVE ids, remediation, and review\nstatus.\n\nBusiness Rules:\n- Returns 404 FINDING_NOT_FOUND if no finding has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_finding_api_v1_findings__finding_id__get",
         "parameters": [
           {
@@ -5334,7 +5334,7 @@
         ]
       },
       "patch": {
-        "description": "Marks a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED count as accepted, and the AI\nremembers them for later.",
+        "description": "Marks a finding OPEN, FALSE_POSITIVE, or FIXED.\n\nBusiness Rules:\n- OPEN and FIXED count as accepted.\n\nExecution Behavior:\n- Records accepted findings in the AI's memory for later.\n\nState Changes:\n- Updates the finding's review status.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "review_finding_api_v1_findings__finding_id__patch",
         "parameters": [
           {
@@ -5393,7 +5393,7 @@
     },
     "/api/v1/findings/{finding_id}/validation-runs": {
       "get": {
-        "description": "Lists every check of the finding, newest first.",
+        "description": "Lists every check of the finding, newest first.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_validation_runs_api_v1_findings__finding_id__validation_runs_get",
         "parameters": [
           {
@@ -5444,7 +5444,7 @@
         ]
       },
       "post": {
-        "description": "Confirms a finding with a PoC: give the id of a COMPLETED tool run and the AI reads that\nrun's real output and sets the verdict (CONFIRMED, UNCONFIRMED or INCONCLUSIVE). The finding\ntakes this newest result as its validation_status; no one sets the verdict by hand.",
+        "description": "Confirms a finding with a proof of concept.\n\nBusiness Rules:\n- Provide the id of a COMPLETED tool run.\n- The finding takes the newest result as its validation_status; no one sets the verdict by hand.\n\nExecution Behavior:\n- The AI reads the tool run's real output and sets the verdict (CONFIRMED, UNCONFIRMED, or\n  INCONCLUSIVE).\n\nState Changes:\n- Creates a validation run and updates the finding's validation_status.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "check_finding_api_v1_findings__finding_id__validation_runs_post",
         "parameters": [
           {
@@ -5503,7 +5503,7 @@
     },
     "/api/v1/health": {
       "get": {
-        "description": "Returns OK whenever the API is running. This is one of the few routes that work without a\nsession token.",
+        "description": "Returns OK while the API is running.\n\nSecurity:\n- Open. Works without a session token.",
         "operationId": "health_api_v1_health_get",
         "responses": {
           "200": {
@@ -5525,7 +5525,7 @@
     },
     "/api/v1/knowledge-add-ons": {
       "delete": {
-        "description": "Deletes every add-on. The public knowledge (CVE, CWE, OWASP, ATT&CK and the tool guides)\nstays.",
+        "description": "Deletes every add-on.\n\nBusiness Rules:\n- The public knowledge (CVE, CWE, OWASP, ATT&CK, and the tool guides) stays.\n\nState Changes:\n- Deletes all add-ons and their passages.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_all_knowledge_add_ons_api_v1_knowledge_add_ons_delete",
         "responses": {
           "200": {
@@ -5550,7 +5550,7 @@
         ]
       },
       "get": {
-        "description": "Lists your knowledge add-ons, oldest first.",
+        "description": "Lists your knowledge add-ons, oldest first.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_knowledge_add_ons_api_v1_knowledge_add_ons_get",
         "responses": {
           "200": {
@@ -5579,7 +5579,7 @@
         ]
       },
       "post": {
-        "description": "Adds your own file to the knowledge search. Send it as multipart/form-data: a .txt, .md,\n.json, .yaml, .yml, .docx or .pdf file of at most 10 MB, plus interface (web or cli). The\noptional name is the name to show, and its extension decides the file type; without it, the\nfile's own name is used. The text is masked, cut into passages and saved in the knowledge\nsearch, where the agent finds it from then on. No copy of the file itself is kept. This\nneeds Qdrant and the embedding model, and returns 503 without them.",
+        "description": "Adds your own file to the knowledge search.\n\nBusiness Rules:\n- Send multipart/form-data: a .txt, .md, .json, .yaml, .yml, .docx, or .pdf file of at most\n  10 MB, plus interface (web or cli).\n- The optional name sets the display name, and its extension decides the file type; without it,\n  the file's own name is used.\n\nExecution Behavior:\n- Masks the text, splits it into passages, and saves them in the knowledge search, where the\n  agent finds them from then on.\n\nState Changes:\n- Adds the passages to the knowledge search. No copy of the file itself is kept.\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "create_knowledge_add_on_api_v1_knowledge_add_ons_post",
         "requestBody": {
           "content": {
@@ -5637,7 +5637,7 @@
     },
     "/api/v1/knowledge-add-ons/{knowledge_add_on_id}": {
       "delete": {
-        "description": "Deletes one add-on, and removes its text from the knowledge search. Returns 404\nKNOWLEDGE_ADD_ON_NOT_FOUND if there is no add-on with this id.",
+        "description": "Deletes one add-on and removes its text from the knowledge search.\n\nBusiness Rules:\n- Returns 404 KNOWLEDGE_ADD_ON_NOT_FOUND if no add-on has this id.\n\nState Changes:\n- Deletes the add-on and its passages.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_knowledge_add_on_api_v1_knowledge_add_ons__knowledge_add_on_id__delete",
         "parameters": [
           {
@@ -5679,7 +5679,7 @@
     },
     "/api/v1/knowledge/search": {
       "get": {
-        "description": "Searches the knowledge base for q, both by meaning and by exact words, and returns the best\npassages. An exact CVE, CWE, ATT&CK or OWASP id comes first. Repeat ?source= to search only\nthose sources. This needs Qdrant and the embedding model, and returns 503 without them.",
+        "description": "Searches the knowledge base for q, by meaning and by exact words, and returns the best\npassages.\n\nBusiness Rules:\n- An exact CVE, CWE, ATT&CK, or OWASP id comes first.\n- Repeat ?source= to search only those sources.\n- `limit` sets how many passages to return (1 to 20, default 5).\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "search_knowledge_api_v1_knowledge_search_get",
         "parameters": [
           {
@@ -5774,7 +5774,7 @@
     },
     "/api/v1/llm-providers": {
       "get": {
-        "description": "Lists the AI providers, oldest first. The built-in RECONIX provider is always there.",
+        "description": "Retrieves the LLM providers, oldest first.\n\nBusiness Rules:\n- The built-in RECONIX provider is always present.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_providers_api_v1_llm_providers_get",
         "responses": {
           "200": {
@@ -5803,7 +5803,7 @@
         ]
       },
       "post": {
-        "description": "Adds an AI provider. It is saved inactive. Its API key is encrypted and never shown again;\nyou only see its last 4 characters. OPENAI, ANTHROPIC and DEEPSEEK need a key, and\nOPENAI_API_COMPATIBLE needs a base_url.",
+        "description": "Adds an LLM provider. It is saved inactive.\n\nBusiness Rules:\n- OPENAI, ANTHROPIC, and DEEPSEEK require an API key; OPENAI_API_COMPATIBLE requires a base_url.\n\nState Changes:\n- Creates the provider. Its API key is encrypted and shown only as its last 4 characters.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "create_provider_api_v1_llm_providers_post",
         "requestBody": {
           "content": {
@@ -5850,7 +5850,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}": {
       "delete": {
-        "description": "Deletes a provider. You cannot delete the built-in provider, the active provider, or a\nprovider that agent runs have used.",
+        "description": "Deletes a provider.\n\nBusiness Rules:\n- You cannot delete the built-in provider, the active provider, or a provider that agent runs\n  have used.\n\nState Changes:\n- Deletes the provider.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_provider_api_v1_llm_providers__llm_provider_id__delete",
         "parameters": [
           {
@@ -5890,7 +5890,7 @@
         ]
       },
       "get": {
-        "description": "Returns one AI provider. For safety, its API key is never shown in full: only its last 4\ncharacters. Returns 404 LLM_PROVIDER_NOT_FOUND if there is no provider with this id.",
+        "description": "Returns one LLM provider.\n\nBusiness Rules:\n- Returns 404 LLM_PROVIDER_NOT_FOUND if no provider has this id.\n\nSecurity:\n- Requires a valid session token.\n- The API key is never shown in full, only its last 4 characters.",
         "operationId": "read_provider_api_v1_llm_providers__llm_provider_id__get",
         "parameters": [
           {
@@ -5937,7 +5937,7 @@
         ]
       },
       "patch": {
-        "description": "Changes a provider. Only the fields you send change. The built-in provider and the active\nprovider cannot be changed.",
+        "description": "Updates a provider. Only the fields you send change.\n\nBusiness Rules:\n- The built-in provider and the active provider cannot be changed.\n\nState Changes:\n- Updates the provider.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "update_provider_api_v1_llm_providers__llm_provider_id__patch",
         "parameters": [
           {
@@ -5996,7 +5996,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/activate": {
       "post": {
-        "description": "Makes a provider the active one. A provider on this computer becomes active at once. Any\nother provider answers with a `configuration` approval, and becomes active once a person\napproves it.",
+        "description": "Sets an LLM provider as the active one.\n\nBusiness Rules:\n- A provider on this computer becomes active immediately.\n- Any other provider returns a `configuration` approval and becomes active once a person\n  approves it.\n\nState Changes:\n- Sets the provider active, or creates a configuration approval request.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "activate_provider_api_v1_llm_providers__llm_provider_id__activate_post",
         "parameters": [
           {
@@ -6045,7 +6045,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/models": {
       "get": {
-        "description": "Lists the models that a RECONIX or OLLAMA provider's Ollama has on this computer. Cloud\nproviders return 422 MODEL_LIST_NOT_SUPPORTED.",
+        "description": "Lists the models that a RECONIX or OLLAMA provider's Ollama has on this computer.\n\nBusiness Rules:\n- Cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_models_api_v1_llm_providers__llm_provider_id__models_get",
         "parameters": [
           {
@@ -6094,7 +6094,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/test": {
       "post": {
-        "description": "Sends the model one fixed prompt that contains no Reconix data, and tells you whether it\nanswered and how fast. It changes nothing.",
+        "description": "Tests connectivity to the configured LLM provider.\n\nExecution Behavior:\n- Sends one fixed prompt that contains no Reconix data and reports whether the provider\n  answered and its response latency.\n\nState Changes:\n- None. The test changes nothing.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "test_provider_api_v1_llm_providers__llm_provider_id__test_post",
         "parameters": [
           {
@@ -6143,7 +6143,7 @@
     },
     "/api/v1/operator": {
       "get": {
-        "description": "Tells you who the session token belongs to: its session id and the name of the person using\nit.",
+        "description": "Returns the owner of the session token: its session id and the person's name.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_operator_api_v1_operator_get",
         "responses": {
           "200": {
@@ -6170,7 +6170,7 @@
     },
     "/api/v1/reports/{report_id}": {
       "get": {
-        "description": "Returns one report version with its status, the file formats it can be downloaded in, and\nwhether its review was approved. Returns 404 REPORT_NOT_FOUND if there is no report with\nthis id.",
+        "description": "Returns one report version with its status, the formats it can be downloaded in, and whether\nits review was approved.\n\nBusiness Rules:\n- Returns 404 REPORT_NOT_FOUND if no report has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_report_api_v1_reports__report_id__get",
         "parameters": [
           {
@@ -6219,7 +6219,7 @@
     },
     "/api/v1/reports/{report_id}/download": {
       "get": {
-        "description": "Downloads the report file. It is available once the report is READY and its review has been\napproved.",
+        "description": "Downloads the report file.\n\nBusiness Rules:\n- Available once the report is READY and its review is approved.\n- Choose the file format with `format` (PDF by default).\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "download_api_v1_reports__report_id__download_get",
         "parameters": [
           {
@@ -6281,7 +6281,7 @@
     },
     "/api/v1/reports/{report_id}/review-requests": {
       "post": {
-        "description": "Asks for the report to be reviewed. This creates a `review` approval, which a person\napproves or rejects with /approvals/{id}/approve or /reject.",
+        "description": "Requests a review of the report.\n\nExecution Behavior:\n- A person approves or rejects the review with /approvals/{id}/approve or /reject.\n\nState Changes:\n- Creates a `review` approval request.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "request_review_api_v1_reports__report_id__review_requests_post",
         "parameters": [
           {
@@ -6330,7 +6330,7 @@
     },
     "/api/v1/scope-manifests/{manifest_id}": {
       "get": {
-        "description": "Returns one scope version: its targets, exclusions, time window, allowed tools and maximum\nrisk. Returns 404 SCOPE_NOT_FOUND if there is no scope with this id.",
+        "description": "Returns one scope version: its targets, exclusions, time window, allowed tools, and maximum\nrisk.\n\nBusiness Rules:\n- Returns 404 SCOPE_NOT_FOUND if no scope has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_scope_api_v1_scope_manifests__manifest_id__get",
         "parameters": [
           {
@@ -6377,7 +6377,7 @@
         ]
       },
       "patch": {
-        "description": "Changes a scope draft. Only the fields you send change, and only a draft that has not been\nsubmitted can be changed.",
+        "description": "Updates a scope draft. Only the fields you send change.\n\nBusiness Rules:\n- Only a draft that has not been submitted can be changed.\n\nState Changes:\n- Updates the scope draft.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "update_scope_api_v1_scope_manifests__manifest_id__patch",
         "parameters": [
           {
@@ -6436,7 +6436,7 @@
     },
     "/api/v1/scope-manifests/{manifest_id}/submit": {
       "post": {
-        "description": "Submits the scope for approval. This creates the assessment, in DRAFT, and a scope approval\nfor a person to decide.",
+        "description": "Submits the scope for approval.\n\nState Changes:\n- Creates the assessment in DRAFT status.\n- Creates a scope approval request for a person to decide.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "submit_scope_api_v1_scope_manifests__manifest_id__submit_post",
         "parameters": [
           {
@@ -6495,7 +6495,7 @@
     },
     "/api/v1/sessions": {
       "get": {
-        "description": "Lists the sessions, newest first. For example, `?interface=vscode&session_status=ACTIVE`\nlists only the open VS Code sessions.",
+        "description": "Lists the sessions, newest first.\n\nBusiness Rules:\n- Filter with `interface` and `session_status` (e.g. `?interface=vscode&session_status=ACTIVE`\n  lists only the open VS Code sessions).\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_sessions_api_v1_sessions_get",
         "parameters": [
           {
@@ -6573,7 +6573,7 @@
         ]
       },
       "post": {
-        "description": "Opens a new session and returns its token. It can only be reached from this computer, thanks\nto the Host check and CORS.",
+        "description": "Opens a new session and returns its token.\n\nState Changes:\n- Creates a session and issues its token.\n\nSecurity:\n- Open. Needs no token; the Host check and CORS restrict it to this computer.",
         "operationId": "open_session_api_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -6615,7 +6615,7 @@
     },
     "/api/v1/sessions/web-sign-in": {
       "post": {
-        "description": "Trades a sign-in code for a new web session. Like POST /sessions it needs no token, because\nthe code itself is the check. Returns 401 INVALID_SIGN_IN_CODE if the code is unknown,\nalready used or expired.",
+        "description": "Exchanges a sign-in code for a new web session and returns its token.\n\nBusiness Rules:\n- Returns 401 INVALID_SIGN_IN_CODE if the code is unknown, already used, or expired.\n\nState Changes:\n- Creates a web session and issues its token.\n\nSecurity:\n- Open. Needs no token; the one-time code is the check.",
         "operationId": "web_sign_in_api_v1_sessions_web_sign_in_post",
         "requestBody": {
           "content": {
@@ -6657,7 +6657,7 @@
     },
     "/api/v1/sessions/web-sign-in-codes": {
       "post": {
-        "description": "Creates a one-time code for signing in to the local web (`/web`). Put it in the sign-in\nlink; it works for 2 minutes.",
+        "description": "Creates a one-time code for signing in to the local web at `/web`.\n\nBusiness Rules:\n- Add the code to the sign-in link. It is valid for 2 minutes.\n\nState Changes:\n- Creates a one-time web sign-in code.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "issue_web_sign_in_code_api_v1_sessions_web_sign_in_codes_post",
         "responses": {
           "201": {
@@ -6684,7 +6684,7 @@
     },
     "/api/v1/sessions/{session_id}": {
       "get": {
-        "description": "Returns one session and its status. Returns 404 SESSION_NOT_FOUND if there is no session\nwith this id.",
+        "description": "Returns one session and its status.\n\nBusiness Rules:\n- Returns 404 SESSION_NOT_FOUND if no session has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "read_session_api_v1_sessions__session_id__get",
         "parameters": [
           {
@@ -6733,7 +6733,7 @@
     },
     "/api/v1/sessions/{session_id}/agent-runs": {
       "get": {
-        "description": "Lists the agent's runs in this session, newest first.",
+        "description": "Lists the agent's runs in this session, newest first.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_agent_runs_api_v1_sessions__session_id__agent_runs_get",
         "parameters": [
           {
@@ -6786,7 +6786,7 @@
     },
     "/api/v1/sessions/{session_id}/chat": {
       "post": {
-        "description": "Saves the person's message and returns the agent's answer. The agent only answers: it never\nchanges the scope, the plan or an approval, and it never runs a tool.",
+        "description": "Saves the person's message and returns the agent's answer.\n\nBusiness Rules:\n- The agent only answers. It never changes the scope, the plan, or an approval, and it never\n  runs a tool.\n\nExecution Behavior:\n- Calls the agent to answer the message.\n\nState Changes:\n- Saves the message and the agent's reply.\n\nSecurity:\n- Requires a valid session token.\n- Secrets in the message are masked before it is saved.",
         "operationId": "chat_api_v1_sessions__session_id__chat_post",
         "parameters": [
           {
@@ -6845,7 +6845,7 @@
     },
     "/api/v1/sessions/{session_id}/chat/stream": {
       "post": {
-        "description": "Works like POST /chat, but streams the answer as Server-Sent Events while the agent writes\nit. You get three kinds of events:\n\n- `event: PIECE`, `data: {\"text\": \"...\"}`: the next part of the answer, already masked.\n\n- `event: DONE`, `data:` the same ChatOut as POST /chat. Show its reply in place of the\n  pieces: it is the answer that was saved, and the last words arrive only here.\n\n- `event: ERROR`, `data: {\"code\", \"message\", \"details\"}`: the question could not be\n  answered.\n\nA wrong session, or a chat that is already running, fails before the stream starts, with the\nusual error and status code. If the client goes away, the answer is still saved.",
+        "description": "Streams the agent's answer as Server-Sent Events while it is written, like POST /chat.\n\nBusiness Rules:\n- A wrong session, or a chat already running, fails before the stream starts, with the usual\n  error and status code.\n\nExecution Behavior:\n- Emits three event types:\n  - `event: PIECE`, `data: {\"text\": \"...\"}`: the next part of the masked answer.\n  - `event: DONE`, `data:` the same ChatOut as POST /chat. Show its reply in place of the\n    pieces; it is the answer that was saved, and the final words arrive only here.\n  - `event: ERROR`, `data: {\"code\", \"message\", \"details\"}`: the question could not be answered.\n\nState Changes:\n- Saves the message and the agent's reply, even if the client disconnects.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "chat_stream_api_v1_sessions__session_id__chat_stream_post",
         "parameters": [
           {
@@ -6900,7 +6900,7 @@
     },
     "/api/v1/sessions/{session_id}/close": {
       "post": {
-        "description": "Closes the session. Its token stops working, and any source code sent to it is deleted.",
+        "description": "Closes the session.\n\nState Changes:\n- Invalidates the session token.\n- Deletes any source code sent to the session.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "close_session_api_v1_sessions__session_id__close_post",
         "parameters": [
           {
@@ -6949,7 +6949,7 @@
     },
     "/api/v1/sessions/{session_id}/code": {
       "put": {
-        "description": "Uploads the missing files as one tar.gz with relative paths. The archive may be at most\nRECONIX_MAX_UPLOAD_MB, both packed and unpacked. A packed archive over the limit returns\n413 UPLOAD_TOO_LARGE. One that is too big unpacked, is broken, or holds a link, a device,\nan absolute path or `..` returns 422 INVALID_CODE_UPLOAD. A refused upload changes\nnothing.",
+        "description": "Uploads the missing files as one tar.gz of relative paths.\n\nBusiness Rules:\n- The archive may be at most RECONIX_MAX_UPLOAD_MB, both packed and unpacked.\n- A packed archive over the limit returns 413 UPLOAD_TOO_LARGE.\n- One that is too large unpacked, is broken, or holds a link, device, absolute path, or `..`\n  returns 422 INVALID_CODE_UPLOAD.\n- A refused upload changes nothing.\n\nState Changes:\n- Stores the uploaded files for the session.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own open session.",
         "operationId": "upload_code_api_v1_sessions__session_id__code_put",
         "parameters": [
           {
@@ -7009,7 +7009,7 @@
     },
     "/api/v1/sessions/{session_id}/code/sync": {
       "post": {
-        "description": "Tells the API which files the workspace has right now, with each file's path, size and\nSHA-256. Stored files that are not in the list are deleted, and `missing` lists the files to\nupload next. This works only on your own open session: otherwise it returns 403\nNOT_YOUR_SESSION, or 409 SESSION_CLOSED if the session is closed.",
+        "description": "Reports which files the workspace currently has, each with its path, size, and SHA-256.\n\nBusiness Rules:\n- The response's `missing` field lists the files to upload next.\n- Returns 409 SESSION_CLOSED if the session is closed.\n\nState Changes:\n- Deletes stored files that are not in the list.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own open session; returns 403 NOT_YOUR_SESSION otherwise.",
         "operationId": "sync_code_api_v1_sessions__session_id__code_sync_post",
         "parameters": [
           {
@@ -7068,7 +7068,7 @@
     },
     "/api/v1/sessions/{session_id}/messages": {
       "get": {
-        "description": "Lists the messages in the session, oldest first.",
+        "description": "Lists the messages in the session, oldest first.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_messages_api_v1_sessions__session_id__messages_get",
         "parameters": [
           {
@@ -7119,7 +7119,7 @@
         ]
       },
       "post": {
-        "description": "Saves a message in your own open session. Any secret in the text is masked before it is\nsaved. This does not ask the agent anything: use POST /chat to get the agent's answer.",
+        "description": "Saves a message in your own open session.\n\nBusiness Rules:\n- Does not ask the agent anything; use POST /chat to get the agent's answer.\n\nState Changes:\n- Saves the message.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own open session.\n- Any secret in the text is masked before the message is saved.",
         "operationId": "add_message_api_v1_sessions__session_id__messages_post",
         "parameters": [
           {
@@ -7178,7 +7178,7 @@
     },
     "/api/v1/sessions/{session_id}/scope-manifests": {
       "get": {
-        "description": "Lists every scope version in the session, oldest first.",
+        "description": "Lists every scope version in the session, oldest first.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_scopes_api_v1_sessions__session_id__scope_manifests_get",
         "parameters": [
           {
@@ -7229,7 +7229,7 @@
         ]
       },
       "post": {
-        "description": "Starts a new scope draft in your own session, as the session's next scope version. Edit it\nwith PATCH, then submit it for approval. Returns 403 NOT_YOUR_SESSION if the session is not\nyours.",
+        "description": "Starts a new scope draft in your session, as the session's next scope version.\n\nBusiness Rules:\n- Edit the draft with PATCH, then submit it for approval.\n\nState Changes:\n- Creates a scope draft.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own session; returns 403 NOT_YOUR_SESSION otherwise.",
         "operationId": "create_scope_api_v1_sessions__session_id__scope_manifests_post",
         "parameters": [
           {
@@ -7288,7 +7288,7 @@
     },
     "/api/v1/stream": {
       "get": {
-        "description": "Sends every audit event live, as Server-Sent Events, the moment it is written.\n\nEach message is `event: <EVENT_TYPE>` with `data: {event_type, assessment_id, session_id,\nactor, at, details}`, and the data is masked. A `: ping` comment arrives every few seconds\nto keep the connection open. With ?assessment_id=, you only get that assessment's events.\n\nSend the token as a Bearer header, which means reading the stream with fetch rather than\nEventSource. The stream ends when the session is closed; reconnect and reload your lists to\ncatch up.",
+        "description": "Streams every audit event live as Server-Sent Events, the moment it is written.\n\nBusiness Rules:\n- With ?assessment_id=, you receive only that assessment's events.\n- The stream ends when the session is closed; reconnect and reload your lists to catch up.\n\nExecution Behavior:\n- Each message is `event: <EVENT_TYPE>` with `data: {event_type, assessment_id, session_id,\n  actor, at, details}`, masked.\n- A `: ping` comment arrives every few seconds to keep the connection open.\n\nSecurity:\n- Requires a valid session token, sent as a Bearer header (read the stream with fetch, not\n  EventSource).",
         "operationId": "read_stream_api_v1_stream_get",
         "parameters": [
           {

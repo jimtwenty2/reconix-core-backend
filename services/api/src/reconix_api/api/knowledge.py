@@ -20,7 +20,18 @@ async def search_knowledge(
     source: Annotated[list[KnowledgeSource] | None, Query(max_length=7)] = None,
     limit: Annotated[int, Query(ge=1, le=20)] = 5,
 ) -> list[KnowledgeHitOut]:
-    """Searches the knowledge base for q, both by meaning and by exact words, and returns the best
-    passages. An exact CVE, CWE, ATT&CK or OWASP id comes first. Repeat ?source= to search only
-    those sources. This needs Qdrant and the embedding model, and returns 503 without them."""
+    """Searches the knowledge base for q, by meaning and by exact words, and returns the best
+    passages.
+
+    Business Rules:
+    - An exact CVE, CWE, ATT&CK, or OWASP id comes first.
+    - Repeat ?source= to search only those sources.
+    - `limit` sets how many passages to return (1 to 20, default 5).
+
+    Operational Considerations:
+    - Requires Qdrant and the embedding model; returns 503 without them.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await knowledge_add_ons.search(store, q, source or [], limit)
