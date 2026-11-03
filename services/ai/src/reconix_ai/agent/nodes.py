@@ -34,9 +34,10 @@ from reconix_ai.agent.prompts import (
     reflect_messages,
     report_messages,
     understand_messages,
+    validate_messages,
 )
 from reconix_ai.agent.state import AgentScope, AgentState, scope_from_dict
-from reconix_ai.analysis.answers import read_analysis
+from reconix_ai.analysis.answers import read_analysis, read_validation
 from reconix_ai.contracts import ProposedAction
 from reconix_ai.harness import StreamMasker, check, mask_secrets
 from reconix_ai.harness.checks.input import check_input
@@ -62,6 +63,7 @@ DEFAULT_TOKEN_BUDGET = 60_000
 HITS_PER_QUERY = 3
 # An analysis answers for up to 10 findings at once, so it may write more than a plan.
 ANALYZE_MAX_TOKENS = 20_000  # thinking included, as for every call
+VALIDATE_MAX_TOKENS = 8_000  # one finding, one verdict
 REPORT_MAX_TOKENS = 16_000
 MAX_HITS = 6
 MAX_REFLECTIONS = 5
@@ -226,6 +228,23 @@ async def analyze(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, A
     }
 
 
+async def validate(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
+    """Judge whether the PoC tool output confirms one finding. The verdict is the AI's,
+    grounded in the real (masked) tool output; the API records it as the finding's status."""
+    deps = runtime.context
+    longer = replace(deps, provider=replace(deps.provider, max_tokens=VALIDATE_MAX_TOKENS))
+    answer, usage = await ask_json(
+        longer, validate_messages(state), read_validation, tokens_used(state)
+    )
+    if answer is None:
+        raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable verdict.")
+    status, reason = answer
+    reason, count = mask_secrets(reason)
+    update = {"validation_status": status, "validation_reason": reason, **added(state, usage)}
+    update["masked_count"] += count
+    return update
+
+
 async def report(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
     """The executive summary and the methodology, written from the locked copy."""
     deps = runtime.context
@@ -312,7 +331,12 @@ def wait(state: AgentState) -> dict[str, Any]:
 
 def start_task(state: AgentState) -> str:
     task = state.get("task")
-    return {"ANALYZE": "analyze", "REPORT": "report", "CHAT": "chat"}.get(task, "plan")
+    return {
+        "ANALYZE": "analyze",
+        "REPORT": "report",
+        "CHAT": "chat",
+        "VALIDATE": "validate",
+    }.get(task, "plan")
 
 
 def after_find(state: AgentState) -> str:

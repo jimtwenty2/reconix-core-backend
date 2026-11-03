@@ -32,10 +32,10 @@ class ValidationRunOut(BaseModel):
 
 
 class ValidationRunIn(BaseModel):
-    """A person's own check of a finding."""
+    """Ask the AI to confirm a finding from a completed PoC tool run. The AI reads that
+    run's real (masked) output and sets the verdict; a person cannot set it by hand."""
 
-    validation_status: ValidationStatus
-    reason: str | None = Field(default=None, max_length=4000)  # what was checked; masked
+    tool_run_id: UUID  # the COMPLETED PoC run whose output the AI judges
 
 
 class FindingOut(BaseModel):

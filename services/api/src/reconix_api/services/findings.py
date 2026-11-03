@@ -12,7 +12,14 @@ from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.errors import ApiError
 from reconix_api.core.finding_memory import FindingMemory, MemoryUnavailable
-from reconix_api.core.interfaces import Operator, ToolName, WriteAudit
+from reconix_api.core.interfaces import (
+    AgentRequest,
+    AgentTask,
+    Interfaces,
+    Operator,
+    ToolName,
+    WriteAudit,
+)
 from reconix_api.core.masking import MaskSecrets, mask_output
 from reconix_api.findings import json_mapping
 from reconix_api.findings import nmap as nmap_findings
@@ -20,7 +27,12 @@ from reconix_api.findings import osv as osv_findings
 from reconix_api.findings import sarif as sarif_findings
 from reconix_api.findings.shape import NewFinding
 from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
-from reconix_api.models.enums import FindingStatus
+from reconix_api.models.enums import (
+    AgentRunStatus,
+    FindingStatus,
+    ToolRunStatus,
+    ValidationStatus,
+)
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as finding_repo
 from reconix_api.schemas.findings import (
@@ -117,39 +129,81 @@ def review_finding(
     return _finding_out(db, finding)
 
 
-MANUAL_REVIEW = "manual_review"
+POC = "poc"
 
 
-def check_finding(
+async def check_finding(
     db: Db,
-    write_audit: WriteAudit,
+    interfaces: Interfaces,
     mask: MaskSecrets,
     operator: Operator,
     finding_id: UUID,
     body: ValidationRunIn,
 ) -> ValidationRunOut:
-    """A person checked a finding by hand. The check is saved as a validation run, and
-    the finding takes its result as its validation_status (the newest check wins)."""
+    """Confirm a finding from a completed PoC tool run. The AI reads that run's real
+    (masked) output and sets the verdict; the finding takes it as its validation_status.
+    No person sets the verdict by hand."""
+    # Local imports: findings is imported by tool_runs, so a top-level import of these
+    # (which route back through actions -> tool_runs -> findings) would be a cycle.
+    from reconix_api.services import agent_runs, plans
+    from reconix_api.services.analysis import finding_input
+
+    finding = _get_finding(db, finding_id)
+    assessment_id, code = finding.assessment_id, finding.code
+    tool_run = finding_repo.get_tool_run(db, body.tool_run_id)
+    # A run from another assessment is treated as not found, so nothing leaks across them.
+    if tool_run is None or finding_repo.tool_run_assessment(db, body.tool_run_id) != assessment_id:
+        raise ApiError(404, "TOOL_RUN_NOT_FOUND", "No tool run with this id for this finding.")
+    if tool_run.tool_run_status != ToolRunStatus.COMPLETED:
+        raise ApiError(422, "TOOL_RUN_NOT_COMPLETED", "The PoC tool run has not completed.")
+
+    scope = plans.approved_scope(interfaces, assessment_id)
+    run = agent_runs.new_agent_run(db, operator, assessment_id, task="VALIDATE")
+    db.commit()
+    try:
+        provider, model = agent_runs.agent_provider(db, run)
+        response = await agent_runs.ask_agent(
+            db,
+            interfaces,
+            AgentRequest(
+                task=AgentTask.VALIDATE,
+                assessment_id=assessment_id,
+                agent_run_id=run.agent_run_id,
+                provider=provider,
+                model=model,
+                scope=scope,
+                findings=[finding_input(finding)],
+                tool_results=[tool_run.output_masked or ""],
+            ),
+        )
+    except Exception as error:
+        agent_runs.fail(db, interfaces, operator, run, error)
+        raise
+    agent_runs.end(db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"finding": code})
+
+    verdict = ValidationStatus(response.validation_status or ValidationStatus.INCONCLUSIVE)
     finding = _get_finding(db, finding_id, lock=True)
-    run = ValidationRun(
-        method=MANUAL_REVIEW,
-        validation_status=body.validation_status,
-        reason=mask(body.reason)[0] if body.reason else None,
-        reviewed_by=operator.actor,
+    validation = ValidationRun(
+        method=POC,
+        validation_status=verdict,
+        reason=mask(response.validation_reason)[0] if response.validation_reason else None,
+        reviewed_by="agent",  # the verdict is the AI's, not a person's
         reviewed_at=datetime.now(UTC),
         finding_id=finding_id,
+        tool_run_id=body.tool_run_id,
     )
-    finding_repo.add(db, run)
-    finding.validation_status = body.validation_status
+    finding_repo.add(db, validation)
+    finding.validation_status = verdict
     db.commit()
     details = {
         "finding_id": str(finding_id),
-        "validation_run_id": str(run.validation_run_id),
-        "validation_status": body.validation_status,
-        "method": MANUAL_REVIEW,
+        "validation_run_id": str(validation.validation_run_id),
+        "validation_status": verdict,
+        "method": POC,
+        "tool_run_id": str(body.tool_run_id),
     }
-    audit(write_audit, "FINDING_CHECKED", operator, finding.assessment_id, details)
-    return ValidationRunOut.model_validate(run, from_attributes=True)
+    audit(interfaces.write_audit, "FINDING_CHECKED", operator, assessment_id, details)
+    return ValidationRunOut.model_validate(validation, from_attributes=True)
 
 
 def list_validation_runs(db: Db, finding_id: UUID) -> list[ValidationRunOut]:

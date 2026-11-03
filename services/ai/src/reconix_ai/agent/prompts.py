@@ -79,6 +79,17 @@ def analyze_messages(state: AgentState) -> list[Message]:
     return [system_message(), Message("user", "\n\n".join(parts))]
 
 
+def validate_messages(state: AgentState) -> list[Message]:
+    """One finding plus the PoC tool output, for the verdict."""
+    parts = [
+        read_markdown(PROMPTS_DIR / "validate.md"),
+        scope_text(state["scope"]),
+        findings_text(state.get("findings", [])),
+        tool_results_text(state.get("tool_results", [])),
+    ]
+    return [system_message(), Message("user", "\n\n".join(parts))]
+
+
 def chat_messages(state: AgentState) -> list[Message]:
     parts = [
         read_markdown(PROMPTS_DIR / "chat.md"),

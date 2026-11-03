@@ -94,6 +94,20 @@ def get_evidence(db: Db, evidence_id: UUID) -> Evidence | None:
     return db.get(Evidence, evidence_id)
 
 
+def get_tool_run(db: Db, tool_run_id: UUID) -> ToolRun | None:
+    return db.get(ToolRun, tool_run_id)
+
+
+def tool_run_assessment(db: Db, tool_run_id: UUID) -> UUID | None:
+    """The assessment a tool run belongs to, via its action, to keep a PoC validation in scope."""
+    query = (
+        select(Action.assessment_id)
+        .join(ToolRun, ToolRun.action_id == Action.action_id)
+        .where(ToolRun.tool_run_id == tool_run_id)
+    )
+    return db.scalar(query)
+
+
 def list_matching(
     db: Db,
     *,

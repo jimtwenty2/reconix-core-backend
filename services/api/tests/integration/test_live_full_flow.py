@@ -97,7 +97,7 @@ def test_the_full_flow_with_the_real_kali_tools(live_client, db_app, reports_dir
     assert analyzed.json()["agent_run"]["agent_runs_status"] == "COMPLETED"
     step("6 analysis", f"{len(analyzed.json()['analysis'])} finding(s)")
 
-    # 7. Validation: a PoC action (always waits for a person), then the person's check
+    # 7. Validation: a PoC action (always waits for a person), then the AI judges its output
     poc = send(
         client,
         headers,
@@ -112,13 +112,14 @@ def test_the_full_flow_with_the_real_kali_tools(live_client, db_app, reports_dir
     assert poc["tool_runs"][0]["tool_run_status"] == "COMPLETED"
     checked = client.post(
         f"/findings/{finding['finding_id']}/validation-runs",
-        json={"validation_status": "CONFIRMED", "reason": "port 80 answers again"},
+        json={"tool_run_id": poc["tool_runs"][0]["tool_run_id"]},
         headers=headers,
     )
     assert checked.status_code == 201, checked.json()
+    assert checked.json()["method"] == "poc"
     latest = client.get(f"/findings/{finding['finding_id']}", headers=headers).json()
     assert latest["latest_validation"]["validation_status"] == "CONFIRMED"
-    step("7 validated", f"PoC {poc['risk_level']} approved, CONFIRMED")
+    step("7 validated", f"PoC {poc['risk_level']} approved, CONFIRMED by the AI")
 
     # 8. Report -> READY -> review sign-off -> download the 3 files
     made = client.post(f"/assessments/{assessment_id}/reports", headers=headers)

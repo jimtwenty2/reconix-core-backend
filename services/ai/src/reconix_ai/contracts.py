@@ -184,6 +184,9 @@ class AgentAnswer:
     references: list[str] = field(default_factory=list)  # knowledge ids used, e.g. CWE-89
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = field(default_factory=list)  # ANALYZE
+    # VALIDATE: the verdict on one finding, read from the real (masked) PoC tool output.
+    validation_status: str | None = None  # CONFIRMED, UNCONFIRMED or INCONCLUSIVE
+    validation_reason: str = ""  # one masked line on why
     executive_summary: str | None = None  # REPORT: reports.executive_summary
     methodology: str | None = None  # REPORT: reports.methodology
     agent_run_id: str = ""  # agent_runs.agent_run_id; the LangGraph thread

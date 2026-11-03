@@ -15,6 +15,7 @@ from reconix_ai.agent.answers import MAX_SUMMARY_CHARS, BadAnswer, read_action
 from reconix_ai.contracts import SEVERITY_ORDER
 
 SEVERITIES = set(SEVERITY_ORDER)
+VERDICTS = {"CONFIRMED", "UNCONFIRMED", "INCONCLUSIVE"}  # validation_runs.validation_status
 MAX_TEXT_CHARS = 1500
 MIN_EVIDENCE_CHARS = 8  # shorter text is found almost anywhere
 MAX_IDS = 10
@@ -53,6 +54,17 @@ def read_analysis(
         for finding in findings
     ]
     return text(data.get("summary"), MAX_SUMMARY_CHARS), analyses
+
+
+def read_validation(data: dict[str, Any]) -> tuple[str, str]:
+    """The verdict on one PoC run: (validation_status, reason). The status must be one of
+    the three values; anything else is a bad answer, so the node asks once more then fails
+    rather than guess a verdict for a security decision."""
+    verdict = data.get("verdict")
+    status = verdict.strip().upper() if isinstance(verdict, str) else ""
+    if status not in VERDICTS:
+        raise BadAnswer("no verdict")
+    return status, text(data.get("reason"), MAX_TEXT_CHARS)
 
 
 def read_one(

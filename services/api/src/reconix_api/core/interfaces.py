@@ -75,6 +75,7 @@ class AgentTask(StrEnum):
     ANALYZE = "ANALYZE"
     REPORT = "REPORT"
     CHAT = "CHAT"
+    VALIDATE = "VALIDATE"  # judge whether a PoC tool run confirms one finding
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +321,9 @@ class AgentResponse(BaseModel):
     references: list[str] = Field(default_factory=list)  # knowledge ids, e.g. CWE-89
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = Field(default_factory=list)  # ANALYZE
+    # VALIDATE: the AI's verdict on a finding, read from the real (masked) PoC tool output.
+    validation_status: Literal["CONFIRMED", "UNCONFIRMED", "INCONCLUSIVE"] | None = None
+    validation_reason: str = ""  # VALIDATE: one masked line on why
     executive_summary: str | None = None  # REPORT: reports.executive_summary
     methodology: str | None = None  # REPORT: reports.methodology
     agent_run_id: UUID
