@@ -382,3 +382,23 @@ def test_excluded_path_does_not_exclude_the_whole_host() -> None:
 
 def test_port_zero_is_not_the_default_port() -> None:
     assert_blocked("http://juice-shop.lab:0/", "TARGET_OUT_OF_SCOPE", tool="ZAP")
+
+
+def test_tool_name_matches_in_any_case() -> None:
+    assert_allowed("172.20.0.5", tool="nmap")
+    assert_allowed("172.20.0.5", tool="masscan", scope=replace(SCOPE, allowed_tools=["MASSCAN"]))
+
+
+def test_catalog_tool_not_in_the_scope_is_blocked() -> None:
+    assert_blocked("172.20.0.5", "TOOL_NOT_ALLOWED", tool="MASSCAN")
+
+
+def test_masscan_takes_no_url() -> None:
+    scope = replace(SCOPE, allowed_tools=["MASSCAN"])
+    assert_blocked("http://juice-shop.lab:3000/", "TARGET_KIND_NOT_ALLOWED", "MASSCAN", scope)
+
+
+@pytest.mark.parametrize(("allowed", "tool"), [("ZAP", "ZAP_SCAN"), ("ZAP_SCAN", "zap")])
+def test_zap_and_zap_scan_are_the_same_tool(allowed: str, tool: str) -> None:
+    scope = replace(SCOPE, allowed_tools=[allowed])
+    assert_allowed("http://juice-shop.lab:3000/", tool=tool, scope=scope)

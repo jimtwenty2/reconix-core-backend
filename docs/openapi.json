@@ -3328,18 +3328,6 @@
         "title": "TimelineOut",
         "type": "object"
       },
-      "ToolName": {
-        "description": "The only 5 tools. The MCP client maps these to the Kali tool names.",
-        "enum": [
-          "NMAP",
-          "NUCLEI",
-          "ZAP",
-          "SEMGREP",
-          "GITLEAKS"
-        ],
-        "title": "ToolName",
-        "type": "string"
-      },
       "ToolRunOut": {
         "properties": {
           "approval_id": {
@@ -5129,7 +5117,7 @@
     },
     "/api/v1/findings": {
       "get": {
-        "description": "Lists the findings, newest first.\n\nBusiness Rules:\n- With ?assessment_id=, lists only that assessment's findings, in the order they were found.\n- Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (the tool that\n  found it), ?target= (part of the target), and ?q= (part of the code, title, target,\n  description, or a CWE id).\n- Every filter you provide must match.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Lists the findings, newest first.\n\nBusiness Rules:\n- With ?assessment_id=, lists only that assessment's findings, in the order they were found.\n- Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (a Kali\n  catalog tool that found it, in any case), ?target= (part of the target), and ?q= (part\n  of the code, title, target, description, or a CWE id).\n- Every filter you provide must match.\n- A ?tool= that is not in the Kali catalog returns 422 UNKNOWN_TOOL.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_findings_api_v1_findings_get",
         "parameters": [
           {
@@ -5204,7 +5192,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/ToolName"
+                  "maxLength": 100,
+                  "type": "string"
                 },
                 {
                   "type": "null"

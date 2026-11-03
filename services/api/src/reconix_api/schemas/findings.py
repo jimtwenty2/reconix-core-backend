@@ -6,7 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from reconix_api.core.interfaces import ToolName
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 
 
@@ -76,7 +75,7 @@ class FindingFilters(BaseModel):
     severity_status: SeverityStatus | None = None
     validation_status: ValidationStatus | None = None
     finding_status: FindingStatus | None = None
-    tool: ToolName | None = None  # one of the tools that found it
+    tool: str | None = Field(default=None, max_length=100)  # one of the tools that found it
     target: str | None = Field(default=None, max_length=200)  # part of the target
     q: str | None = Field(default=None, max_length=200)  # part of the code, title, target,
     # description or a CWE id

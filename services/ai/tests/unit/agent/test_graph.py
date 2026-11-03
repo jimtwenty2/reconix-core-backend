@@ -226,7 +226,8 @@ async def test_prompt_lists_only_the_allowed_tools(graph) -> None:
     await ask_agent(graph, Request(), run_id(), make_deps(model))
 
     plan_prompt = model.prompts[1][1].content
-    assert "- NMAP (params: target, ports, opts):" in plan_prompt
+    assert "- NMAP (target: DOMAIN/IP/NETWORK; options: " in plan_prompt
+    assert "-p <value>" in plan_prompt
     assert "SEMGREP" not in plan_prompt
 
 

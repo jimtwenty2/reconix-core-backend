@@ -34,7 +34,7 @@ def severity_rank(finding: dict[str, Any]) -> int:
 class ProposedAction:
     """One tool run the agent suggests. The API checks it again before it runs."""
 
-    tool: str  # NMAP, NUCLEI, ZAP, SEMGREP or GITLEAKS
+    tool: str  # a Kali catalog tool, UPPERCASE, e.g. NMAP, MASSCAN, SQLMAP
     target: str
     arguments: list[str] = field(default_factory=list)  # always a list, never one string
     is_validation: bool = False
@@ -91,7 +91,7 @@ class FindingInput:
 class ToolRunInput:
     """One tool run, with how it was approved, for the report's methodology."""
 
-    tool: str  # NMAP, NUCLEI, ZAP, SEMGREP or GITLEAKS
+    tool: str  # a Kali catalog tool, UPPERCASE, e.g. NMAP, MASSCAN, SQLMAP
     target: str
     args: list[str]
     risk_level: str  # LOW, MEDIUM or HIGH

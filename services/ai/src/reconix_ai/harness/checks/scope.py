@@ -33,7 +33,9 @@ from pathlib import PurePosixPath
 from typing import Protocol
 from urllib.parse import unquote, urlsplit
 
-from reconix_ai.harness.checks.result import ALLOWED, CheckOutcome, blocked
+from reconix_ai.harness.catalog import canonical
+from reconix_ai.harness.checks.result import ALLOWED, CheckOutcome, Decision, blocked
+from reconix_ai.harness.tool_rules import option_values, rule_for
 
 IpAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
@@ -51,7 +53,18 @@ OWN_PORT_OPTIONS = {"--top-ports", "-F", "-p-"}
 # (-O, -A), and scripts that connect on their own (-sC, --script).
 OTHER_PORT_PROBES = {"-O", "-A", "-sC", "--script"}
 DEFAULT_PORTS = {"http": 80, "https": 443}
-WEB_TOOLS = {"NUCLEI", "ZAP"}
+WEB_TOOLS = {"nuclei", "zap_scan"}  # catalog names
+# Cloud metadata and link-local addresses: never a target, even inside a scope range.
+METADATA_NETWORKS = [
+    ipaddress.ip_network(net)
+    for net in ("169.254.0.0/16", "fe80::/10", "fd00:ec2::254/128", "100.100.100.200/32")
+]
+METADATA_HOSTS = {"metadata", "metadata.google.internal", "metadata.goog"}
+# A value in the arguments that names a host: "x.lab", "x.lab:22" (a dotted name ending
+# in letters). URLs, IPs and networks are found by parsing.
+DOMAIN_LIKE = re.compile(
+    r"^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z][a-z0-9-]*\.?(:[0-9]+)?$", re.IGNORECASE
+)
 
 
 class ScopeRules(Protocol):
@@ -89,15 +102,6 @@ class TargetKind(StrEnum):
     PATH = "PATH"
 
 
-TOOL_TARGET_KINDS = {
-    "NMAP": {TargetKind.IP, TargetKind.NETWORK, TargetKind.DOMAIN},
-    "NUCLEI": {TargetKind.URL, TargetKind.DOMAIN},
-    "ZAP": {TargetKind.URL},
-    "SEMGREP": {TargetKind.PATH},
-    "GITLEAKS": {TargetKind.PATH},
-}
-
-
 @dataclass(frozen=True)
 class Url:
     scheme: str
@@ -121,8 +125,12 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
         return blocked("OUTSIDE_TIME_WINDOW")
     if scope.window_end is not None and now > scope.window_end:
         return blocked("OUTSIDE_TIME_WINDOW")
-    if tool not in scope.allowed_tools:
+    # By catalog name, so case and aliases do not matter: "zap" == "ZAP" == "ZAP_SCAN".
+    if canonical(tool) not in {canonical(str(allowed)) for allowed in scope.allowed_tools}:
         return blocked("TOOL_NOT_ALLOWED")
+    tool_rule = rule_for(tool)
+    if tool_rule is None:
+        return blocked("TOOL_NOT_SUPPORTED")  # in the catalog, but Core has no rule for it
     if has_path_traversal(target):
         return blocked("PATH_TRAVERSAL")
 
@@ -131,17 +139,71 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
         return blocked("INVALID_TARGET")
     if not is_plain_form(target, parsed):
         return blocked("TARGET_NOT_NORMALIZED")
-    kinds = TOOL_TARGET_KINDS.get(tool.upper())
-    # The five curated tools restrict which target kinds they accept; a tool from
-    # the wider catalog has no such mapping, so its target kind is not restricted
-    # here (scope membership, exclusions and path traversal still apply).
-    if kinds is not None and parsed.kind not in kinds:
+    if parsed.kind not in tool_rule.kinds:
         return blocked("TARGET_KIND_NOT_ALLOWED")
+    return target_in_scope(parsed, scope)
+
+
+def target_in_scope(parsed: Target, scope: ScopeRules) -> CheckOutcome:
+    if is_metadata(parsed):
+        return blocked("TARGET_NOT_ALLOWED")
     if any(is_excluded(parsed, entry) for entry in scope.excluded_targets):
         return blocked("TARGET_EXCLUDED")
     if not is_in_scope(parsed, scope):
         return blocked("TARGET_OUT_OF_SCOPE")
     return ALLOWED
+
+
+def check_argument_targets(tool: str, arguments: Sequence[str], scope: ScopeRules) -> CheckOutcome:
+    """Every host, IP, network or URL written in an option's value must be in the scope
+    too, and use an allowed port. Unknown options are blocked by the command check."""
+    allowed = set(scope.allowed_ports)
+    for value in option_values(tool, list(arguments)) or []:
+        for part in value.split(","):
+            part = part.strip()
+            if not looks_like_target(part):
+                continue
+            if has_path_traversal(part):
+                return blocked("PATH_TRAVERSAL")
+            parsed = parse_target(part)
+            if parsed is None:
+                return blocked("INVALID_TARGET")
+            outcome = target_in_scope(parsed, scope)
+            if outcome.decision == Decision.BLOCKED:
+                return outcome
+            if allowed and parsed.kind == TargetKind.URL:
+                outcome = check_url_port(part, allowed)
+            elif allowed:
+                outcome = blocked("PORTS_NOT_SUPPORTED")
+            if outcome.decision == Decision.BLOCKED:
+                return outcome
+    return ALLOWED
+
+
+def looks_like_target(value: str) -> bool:
+    if "://" in value or value.startswith("["):
+        return True
+    if parse_ip(strip_port(value)) is not None:
+        return True
+    if "/" in value and not value.startswith("/") and parse_network(value) is not None:
+        return True
+    return bool(DOMAIN_LIKE.match(value))
+
+
+def is_metadata(target: Target) -> bool:
+    match target.kind:
+        case TargetKind.IP:
+            return any(target.ip in net for net in METADATA_NETWORKS)
+        case TargetKind.NETWORK:
+            return any(target.network.overlaps(net) for net in METADATA_NETWORKS)
+        case TargetKind.DOMAIN:
+            return target.host in METADATA_HOSTS
+        case TargetKind.URL:
+            ip = parse_ip(target.url.host)
+            if ip is not None:
+                return any(ip in net for net in METADATA_NETWORKS)
+            return target.url.host in METADATA_HOSTS
+    return False
 
 
 def check_ports(
@@ -153,15 +215,18 @@ def check_ports(
     nmap: every -p value must be inside them, -Pn is needed (host discovery probes 80
     and 443 on its own), and options that pick or probe their own ports are blocked.
     NUCLEI and ZAP: the target must be a URL whose port (written, or 80/443 from the
-    scheme) is allowed; a bare domain lets nuclei pick its own ports."""
+    scheme) is allowed; a bare domain lets nuclei pick its own ports.
+    Any other tool: a URL target must use an allowed port, a path target (code) reaches
+    no port, and a host, IP or network target is blocked, since the tool picks its own
+    ports (masscan and rustscan scan all of them) and Core cannot limit them."""
     allowed = set(scope.allowed_ports)
     if not allowed:
         return ALLOWED
-    name = tool.upper()
+    name = canonical(tool)
     if name in WEB_TOOLS:
         return check_url_port(target, allowed)
-    if name != "NMAP":
-        return ALLOWED
+    if name != "nmap":
+        return check_other_tool_port(target, allowed)
     named = False
     for index, argument in enumerate(arguments):
         option = argument.partition("=")[0]  # also "--top-ports=100"
@@ -181,6 +246,17 @@ def check_ports(
     if not named:
         return blocked("PORTS_NOT_GIVEN")
     return ALLOWED if "-Pn" in arguments else blocked("HOST_DISCOVERY_NOT_ALLOWED")
+
+
+def check_other_tool_port(target: str, allowed: set[int]) -> CheckOutcome:
+    parsed = parse_target(target)
+    if parsed is None:
+        return blocked("INVALID_TARGET")
+    if parsed.kind == TargetKind.URL:
+        return check_url_port(target, allowed)
+    if parsed.kind == TargetKind.PATH:
+        return ALLOWED
+    return blocked("PORTS_NOT_SUPPORTED")
 
 
 def check_url_port(target: str, allowed: set[int]) -> CheckOutcome:

@@ -12,10 +12,11 @@ Two character rules keep an argument from turning into something else:
   whole purpose is to run a real shell command. The risk check pins those to
   HIGH instead, so a person approves and types the target before any runs.
 
-The per-tool option allowlist is gone: with the full catalog open, a risky
-option is rated by `risk_ops.json` and sent for approval (see risk.py), not
-refused here. The catalog + these character rules are what this check enforces;
-scope, risk and approval do the rest.
+Core runs only the tools it has a rule for (`tool_rules.py`), and each tool takes
+only the options its rule lists: any other option, or a bare word that is not an
+option's value, is blocked (OPTION_NOT_ALLOWED). That keeps a second host, a port,
+a proxy or a file of targets out of `opts`, where the scope check could not see it.
+A risky allowed option is still rated by `risk_ops.json` (see risk.py).
 """
 
 import unicodedata
@@ -23,6 +24,7 @@ from collections.abc import Sequence
 
 from reconix_ai.harness.catalog import is_free_shell, is_known_tool
 from reconix_ai.harness.checks.result import ALLOWED, CheckOutcome, blocked
+from reconix_ai.harness.tool_rules import is_supported, option_values
 
 SHELL_METACHARACTERS = set(";|&$`<>")
 
@@ -32,11 +34,15 @@ def check_command(tool: str, target: str, arguments: Sequence[str]) -> CheckOutc
         return blocked("UNKNOWN_TOOL")
     if isinstance(arguments, str):
         return blocked("ARGUMENTS_NOT_A_LIST")
+    if not is_supported(tool):
+        return blocked("TOOL_NOT_SUPPORTED")
     parts = [target, *arguments]
     if any(has_control_characters(part) for part in parts):
         return blocked("SHELL_CHARACTERS")
     if not is_free_shell(tool) and any(has_shell_metacharacters(part) for part in parts):
         return blocked("SHELL_CHARACTERS")
+    if option_values(tool, list(arguments)) is None:
+        return blocked("OPTION_NOT_ALLOWED")
     return ALLOWED
 
 

@@ -84,12 +84,27 @@ def test_source_tools_send_a_path():
     assert arguments["path"] == "/workspace/app"
 
 
-def test_zap_maps_to_zap_scan_and_ignores_extra_arguments():
-    # zap_scan's inputSchema has no `opts`, so arguments have nowhere to go and are
-    # dropped; the scan is driven by the URL alone.
-    name, args = tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+def test_zap_maps_to_zap_scan():
+    name, args = tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", []))
     assert name == "zap_scan"
     assert args == {"url": "http://juice-shop:3000/", "timeout": args["timeout"]}
+
+
+def test_arguments_for_a_tool_without_opts_are_refused_not_dropped():
+    with pytest.raises(McpError, match="TOOL_TAKES_NO_OPTIONS"):
+        tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+
+
+def test_a_catalog_tool_without_a_rule_is_refused():
+    with pytest.raises(McpError, match="TOOL_NOT_SUPPORTED"):
+        tool_call(job("run_command", "id", []))
+
+
+def test_the_target_goes_in_the_param_the_rule_names():
+    name, args = tool_call(job("nikto", "http://juice-shop:3000/", ["-ssl"]))
+    assert name == "nikto"
+    assert args["host"] == "http://juice-shop:3000/"
+    assert args["opts"] == "-ssl"
 
 
 async def test_call_sends_the_key_session_and_job_token():

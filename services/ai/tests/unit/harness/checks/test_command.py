@@ -9,15 +9,22 @@ def reason(tool: str, target: str = "172.20.0.5", arguments: list[str] | None = 
     return None if outcome.decision == Decision.ALLOW else outcome.reason
 
 
-# --- the catalog decides which tools are known -----------------------------
+# --- only tools with a rule run --------------------------------------------
 
 
 @pytest.mark.parametrize(
     "tool",
     ["NMAP", "NUCLEI", "ZAP", "SEMGREP", "GITLEAKS", "nmap", "sqlmap", "masscan", "whatweb"],
 )
-def test_catalog_tools_are_allowed(tool: str) -> None:
+def test_tools_with_a_rule_are_allowed(tool: str) -> None:
     assert reason(tool) is None
+
+
+@pytest.mark.parametrize(
+    "tool", ["run_command", "proxychains", "msfconsole", "smbclient", "impacket", "zap_start"]
+)
+def test_catalog_tools_without_a_rule_are_not_supported(tool: str) -> None:
+    assert reason(tool) == "TOOL_NOT_SUPPORTED"
 
 
 @pytest.mark.parametrize("tool", ["METASPLOIT", "BASH", "", "nmap2", "nessus"])
@@ -38,12 +45,6 @@ def test_shell_characters_in_target_are_blocked(target: str) -> None:
     assert reason("NMAP", target=target) == "SHELL_CHARACTERS"
 
 
-@pytest.mark.parametrize("tool", ["run_command", "proxychains", "msfconsole", "smbclient"])
-def test_free_shell_tools_allow_shell_characters(tool: str) -> None:
-    # Their input is a real shell command; the risk check pins them to HIGH instead.
-    assert reason(tool, target="nmap -sV x | tee out && id") is None
-
-
 def test_one_string_instead_of_a_list_is_blocked() -> None:
     outcome = check_command("NMAP", "172.20.0.5", "-sV -p 80")
     assert outcome.reason == "ARGUMENTS_NOT_A_LIST"
@@ -54,9 +55,24 @@ def test_normal_values_are_allowed() -> None:
     assert reason("NUCLEI", target="http://juice-shop.lab:3000/?a=1", arguments=arguments) is None
 
 
-def test_options_are_no_longer_flag_allowlisted() -> None:
-    # The per-flag allowlist is gone: the command check only blocks shell characters
-    # and unknown tools. A risky flag is rated by the risk check and sent for approval
-    # (and the Kali container is sandboxed), not refused here.
-    assert reason("NMAP", arguments=["-oN", "scan.out"]) is None
-    assert reason("NMAP", arguments=["--script", "vuln"]) is None
+def test_listed_options_are_allowed() -> None:
+    assert reason("NMAP", arguments=["-sV", "-Pn", "-p", "22,80", "--script", "vuln"]) is None
+    assert reason("NMAP", arguments=["--top-ports=100"]) is None
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("NMAP", ["-oN", "scan.out"]),  # not listed
+        ("NMAP", ["-sV", "8.8.8.8"]),  # a second target as a bare word
+        ("NMAP", ["-iL", "hosts.txt"]),  # a file of targets
+        ("NIKTO", ["-host", "10.9.9.9", "-port", "22"]),
+        ("WHATWEB", ["http://169.254.169.254/"]),
+        ("SQLMAP", ["-u", "http://evil.example/"]),
+        ("NUCLEI", ["-severity"]),  # an option missing its value
+        ("MASSCAN", ["--rate", "100000"]),  # takes no options at all
+        ("ZAP", ["-x"]),
+    ],
+)
+def test_other_options_and_bare_words_are_blocked(tool: str, arguments: list[str]) -> None:
+    assert reason(tool, target="http://172.20.0.5/", arguments=arguments) == "OPTION_NOT_ALLOWED"
