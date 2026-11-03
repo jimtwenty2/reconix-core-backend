@@ -77,7 +77,7 @@ def review_finding(
 
 
 @router.post("/{finding_id}/validation-runs", status_code=status.HTTP_201_CREATED)
-def check_finding(
+async def check_finding(
     finding_id: UUID,
     body: ValidationRunIn,
     db: Db,
@@ -85,9 +85,10 @@ def check_finding(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> ValidationRunOut:
-    """Records a person's own check of a finding: CONFIRMED, UNCONFIRMED or INCONCLUSIVE, together
-    with what was checked. The finding takes this newest result as its validation_status."""
-    return findings.check_finding(db, interfaces.write_audit, mask, operator, finding_id, body)
+    """Confirms a finding with a PoC: give the id of a COMPLETED tool run and the AI reads that
+    run's real output and sets the verdict (CONFIRMED, UNCONFIRMED or INCONCLUSIVE). The finding
+    takes this newest result as its validation_status; no one sets the verdict by hand."""
+    return await findings.check_finding(db, interfaces, mask, operator, finding_id, body)
 
 
 @router.get("/{finding_id}/validation-runs")

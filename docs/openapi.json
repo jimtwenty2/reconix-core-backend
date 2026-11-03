@@ -3502,26 +3502,16 @@
         "type": "object"
       },
       "ValidationRunIn": {
-        "description": "A person's own check of a finding.",
+        "description": "Ask the AI to confirm a finding from a completed PoC tool run. The AI reads that\nrun's real (masked) output and sets the verdict; a person cannot set it by hand.",
         "properties": {
-          "reason": {
-            "anyOf": [
-              {
-                "maxLength": 4000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          },
-          "validation_status": {
-            "$ref": "#/components/schemas/ValidationStatus"
+          "tool_run_id": {
+            "format": "uuid",
+            "title": "Tool Run Id",
+            "type": "string"
           }
         },
         "required": [
-          "validation_status"
+          "tool_run_id"
         ],
         "title": "ValidationRunIn",
         "type": "object"
@@ -5454,7 +5444,7 @@
         ]
       },
       "post": {
-        "description": "Records a person's own check of a finding: CONFIRMED, UNCONFIRMED or INCONCLUSIVE, together\nwith what was checked. The finding takes this newest result as its validation_status.",
+        "description": "Confirms a finding with a PoC: give the id of a COMPLETED tool run and the AI reads that\nrun's real output and sets the verdict (CONFIRMED, UNCONFIRMED or INCONCLUSIVE). The finding\ntakes this newest result as its validation_status; no one sets the verdict by hand.",
         "operationId": "check_finding_api_v1_findings__finding_id__validation_runs_post",
         "parameters": [
           {

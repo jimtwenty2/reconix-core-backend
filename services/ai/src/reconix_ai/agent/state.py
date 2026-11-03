@@ -41,6 +41,8 @@ class AgentState(TypedDict, total=False):
     findings: list[dict[str, Any]]  # ANALYZE: masked, see contracts.FindingInput
     analysis_summary: str
     analysis: list[dict[str, Any]]  # see contracts.FindingAnalysis
+    validation_status: str  # VALIDATE: CONFIRMED, UNCONFIRMED or INCONCLUSIVE
+    validation_reason: str  # VALIDATE: one masked line on why
     report: dict[str, Any]  # REPORT: the masked locked copy, see contracts.ReportInput
     executive_summary: str
     methodology: str
