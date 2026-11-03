@@ -131,7 +131,11 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
         return blocked("INVALID_TARGET")
     if not is_plain_form(target, parsed):
         return blocked("TARGET_NOT_NORMALIZED")
-    if parsed.kind not in TOOL_TARGET_KINDS.get(tool.upper(), set()):
+    kinds = TOOL_TARGET_KINDS.get(tool.upper())
+    # The five curated tools restrict which target kinds they accept; a tool from
+    # the wider catalog has no such mapping, so its target kind is not restricted
+    # here (scope membership, exclusions and path traversal still apply).
+    if kinds is not None and parsed.kind not in kinds:
         return blocked("TARGET_KIND_NOT_ALLOWED")
     if any(is_excluded(parsed, entry) for entry in scope.excluded_targets):
         return blocked("TARGET_EXCLUDED")

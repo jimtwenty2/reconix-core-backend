@@ -4,19 +4,26 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from reconix_api.core.interfaces import ToolName
+from reconix_ai.harness.catalog import is_known_tool
 from reconix_api.models.enums import ActionStatus, RiskLevel, ToolRunStatus
 
 
 class ActionIn(BaseModel):
     """One tool run. Arguments are a list, never one shell string."""
 
-    tool: ToolName
+    tool: str = Field(min_length=1, max_length=100)
     target: str = Field(min_length=1, max_length=2048)
     arguments: list[str] = Field(default_factory=list, max_length=50)
     purpose: Literal["discovery", "scan", "validation"] = "scan"
+
+    @field_validator("tool")
+    @classmethod
+    def tool_is_in_catalog(cls, value: str) -> str:
+        if not is_known_tool(value):
+            raise ValueError("tool is not in the Kali catalog (tool_specs.json)")
+        return value
 
 
 class ToolRunOut(BaseModel):

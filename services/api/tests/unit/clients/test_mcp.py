@@ -84,9 +84,12 @@ def test_source_tools_send_a_path():
     assert arguments["path"] == "/workspace/app"
 
 
-def test_zap_refuses_extra_arguments():
-    with pytest.raises(McpError):
-        tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+def test_zap_maps_to_zap_scan_and_ignores_extra_arguments():
+    # zap_scan's inputSchema has no `opts`, so arguments have nowhere to go and are
+    # dropped; the scan is driven by the URL alone.
+    name, args = tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+    assert name == "zap_scan"
+    assert args == {"url": "http://juice-shop:3000/", "timeout": args["timeout"]}
 
 
 async def test_call_sends_the_key_session_and_job_token():

@@ -33,7 +33,8 @@
             "type": "string"
           },
           "tool": {
-            "$ref": "#/components/schemas/ToolName"
+            "title": "Tool",
+            "type": "string"
           }
         },
         "required": [
@@ -71,7 +72,10 @@
             "type": "string"
           },
           "tool": {
-            "$ref": "#/components/schemas/ToolName"
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Tool",
+            "type": "string"
           }
         },
         "required": [
@@ -2658,7 +2662,7 @@
           },
           "allowed_tools": {
             "items": {
-              "$ref": "#/components/schemas/ToolName"
+              "type": "string"
             },
             "minItems": 1,
             "title": "Allowed Tools",
@@ -3063,7 +3067,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/ToolName"
+                  "type": "string"
                 },
                 "type": "array"
               },

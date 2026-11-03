@@ -12,8 +12,7 @@ from typing import Any
 
 from reconix_ai.agent.state import AgentState
 from reconix_ai.contracts import severity_rank
-from reconix_ai.harness.checks.command import ALLOWED_OPTIONS
-from reconix_ai.harness.checks.scope import TOOL_TARGET_KINDS
+from reconix_ai.harness.catalog import description, is_known_tool, param_names
 from reconix_ai.providers import Message
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
@@ -171,16 +170,13 @@ def scope_text(scope: dict[str, Any], title: str = "Approved scope") -> str:
 
 
 def tools_text(allowed_tools: list[str]) -> str:
-    lines = ["## Allowed tools and options"]
+    lines = ["## Allowed tools"]
     for tool in allowed_tools:
-        options = ALLOWED_OPTIONS.get(tool)
-        if options is None:
+        if not is_known_tool(tool):
             continue
-        kinds = ", ".join(sorted(kind.lower() for kind in TOOL_TARGET_KINDS[tool]))
-        written = [
-            option if value is None else f"{option} <value>" for option, value in options.items()
-        ]
-        lines.append(f"- {tool} (target: {kinds}): {', '.join(written) or 'no options'}")
+        params = ", ".join(param_names(tool)) or "none"
+        summary = description(tool).split(". ")[0].strip()
+        lines.append(f"- {tool} (params: {params}): {summary}")
     if len(lines) == 1:
         lines.append("- none")
     return "\n".join(lines)
