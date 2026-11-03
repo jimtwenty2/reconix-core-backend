@@ -4,11 +4,17 @@ Called only while a run is going and only when a model is active (see `run.py`).
 the messages from the fixed guardrail prompt plus the assessment's own state and chat
 history, calls the model, checks the reply, shows it and writes both rows to the SQLite
 `chat_messages` table. The model gets no tools and can never reach a decision function.
+
+The call blocks, so the app makes it off the UI thread. `build_draft()` does the blocking
+half and records nothing; `record_draft()` writes the reply into the assessment. The app
+records a draft only while the assessment it was asked in is still the current one, so a
+reply can never land in a run the operator switched to while the model was answering.
 """
 
-from typing import List, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
-from ..llm import catalog, client, crypto, db, guardrail, mock
+from ..llm import LLMError, catalog, client, crypto, db, guardrail, mock
 from ..models import ActiveModel
 from ..models.base import utc_now
 from .assessment import get_assessment
@@ -21,28 +27,85 @@ HISTORY_BUDGET = 40
 _SPEAKER_ROLE = {"you": "user", "reconix": "assistant"}
 
 
+@dataclass
+class Draft:
+    """A reply that has been built but not recorded yet.
+
+    `error` set means no model answered: `text` is then the built-in reply to show, and
+    `active` is None.
+    """
+
+    text: str
+    sources: Tuple[str, ...] = ()
+    active: Optional[ActiveModel] = None
+    error: str = ""
+
+
 def reply(text: str, active: ActiveModel) -> str:
     """Call the active model, display its reply and persist the exchange. Raises LLMError."""
+    checked, used_sources = _complete(text, active)
+    record_draft(Draft(checked, tuple(used_sources), active))
+    return checked
+
+
+def build_draft(text: str) -> Draft:
+    """Build the reply to `text` without recording anything (safe off the UI thread).
+
+    Nothing is written to any assessment here, so a switch while the model is answering
+    cannot put the reply in another run. A model failure (or no active model) comes back
+    as `Draft.error`, with the built-in reply ready in `Draft.text`.
+    """
+    from . import providers
+
+    active = providers.active_model()
+    if active is None:
+        return Draft(_builtin(text), error="no model is active")
+    try:
+        checked, used_sources = _complete(text, active)
+    except LLMError as exc:
+        return Draft(_builtin(text), error=str(exc))
+    return Draft(checked, tuple(used_sources), active)
+
+
+def record_draft(draft: Draft) -> None:
+    """Add a built reply to the current assessment's chat (call it on the UI thread)."""
+    if draft.error:
+        add_chat("text", "reconix",
+                 f"LLM unavailable ({draft.error}). Showing the built-in reply.", tone="muted")
+        add_chat("text", "reconix", draft.text, tone="muted")
+        return
+    entry = add_chat("text", "reconix", draft.text)
+    _persist(draft.active, draft.text, entry.seq)
+    if draft.sources:
+        # A muted note under the reply, so the operator sees which add-ons informed it.
+        add_chat("text", "reconix", "Knowledge: " + ", ".join(draft.sources), tone="muted")
+
+
+def _complete(text: str, active: ActiveModel) -> Tuple[str, List[str]]:
+    """Call the model (or the offline mock) and check the reply. Raises LLMError; no records."""
     entry = catalog.get(active.provider_id)
     if entry is not None and entry.is_mock:
         # The offline mock: a prepared answer filled with this assessment's own facts.
-        raw, used_sources = mock.reply(redact(text), mock_facts()), []
-    else:
-        row = db.get_provider_row(active.provider_id)
-        key = crypto.decrypt(row["api_key_enc"]) if row and row["api_key_enc"] else None
-        base = (row["base_url"] if row else "") or None
-        context, used_sources = _context_with_knowledge(text)
-        messages = guardrail.build_messages(context, _history(), text)
-        raw = client.complete(active.provider_id, active.model, messages,
-                              api_key=key, api_base=base)
-    checked = guardrail.check_response(raw)
+        return guardrail.check_response(mock.reply(redact(text), mock_facts())), []
+    row = db.get_provider_row(active.provider_id)
+    key = crypto.decrypt(row["api_key_enc"]) if row and row["api_key_enc"] else None
+    base = (row["base_url"] if row else "") or None
 
-    entry = add_chat("text", "reconix", checked)
-    _persist(active, checked, entry.seq)
-    if used_sources:
-        # A muted note under the reply, so the operator sees which add-ons informed it.
-        add_chat("text", "reconix", "Knowledge: " + ", ".join(used_sources), tone="muted")
-    return checked
+    context, used_sources = _context_with_knowledge(text)
+    messages = guardrail.build_messages(context, _history(), text)
+    raw = client.complete(active.provider_id, active.model, messages,
+                          api_key=key, api_base=base)
+    return guardrail.check_response(raw), used_sources
+
+
+def _builtin(text: str) -> str:
+    """The scripted reply shown when no model answered (the same one `run.py` falls back to)."""
+    from .replies import reply_after_run, reply_to, reply_while_running
+    from .run import get_run, is_finished
+
+    if not get_run().started:
+        return reply_to(text)
+    return reply_after_run(text) if is_finished() else reply_while_running(text)
 
 
 def _persist(active: ActiveModel, reply_text: str, reply_seq: int) -> None:

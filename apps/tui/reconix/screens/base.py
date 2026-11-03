@@ -340,13 +340,17 @@ class ReconixScreen(Screen):
                     self._show_decision(chat)
             return
         reply = chat.add_reply(THINKING, tone="muted")
+        gen = self.app.llm_generation()      # the assessment this question was asked in
 
         def show() -> None:
             replies = store.last_exchange()[1]
             if replies:
                 chat.show_reply(reply, replies[-1].text, replies[-1].tone)
 
-        def done() -> None:
+        def done(draft: store.Draft) -> None:
+            if gen != self.app.llm_generation():
+                return          # another assessment is on screen: record nothing into it
+            store.record_draft(draft)
             show()
             if scope_change and chat.is_mounted:
                 # The model's ports are offered as rows, never ticked.
@@ -358,8 +362,9 @@ class ReconixScreen(Screen):
                 self._show_decision(chat)           # the model explains; you decide here
 
         def work() -> None:
-            store.llm_answer(line)
-            self.app.call_from_thread(done)
+            # Built off the UI thread and recorded in `done()`, so a switch while the model
+            # is answering can't put this reply in another run.
+            self.app.call_from_thread(done, store.build_draft(line))
 
         self.app.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
