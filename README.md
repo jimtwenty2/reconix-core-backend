@@ -17,8 +17,7 @@
 [Repository layout](#repository-layout) •
 [Getting started](#getting-started) •
 [Checks and tests](#checks-and-tests) •
-[Contributing](#contributing) •
-[Contributors](#contributors)
+[Contributing](#contributing)
 
 </div>
 
@@ -26,20 +25,27 @@
 
 ## About
 
-Reconix is an AI-assisted pentest tool that runs on the tester's own computer. A person writes a
-scope, the AI agent plans the test and suggests each step, approved steps run real tools in a
-locked-down Kali container, and the results become findings, analysis and a report.
+Reconix is a pentest assistant that runs on the tester's own computer. You start by writing a
+scope: what you are allowed to test, and how far you may go. An AI agent then plans the test and
+suggests one step at a time. Each step you approve runs a real tool inside a locked-down Kali
+container, and the results turn into findings, an analysis and finally a report you can download.
 
 ```
 scope → plan → approve → run → analyze → validate → report → download
 ```
 
 > [!IMPORTANT]
-> **The AI never runs a tool.** Every action goes through the safety checks
-> (input → scope → command → risk → loop), stays inside the approved scope, and waits for a person
-> when the risk is `MEDIUM` or `HIGH`. The API checks the action again right before the tool runs.
+> **The AI never runs a tool by itself.** Every action it suggests goes through five safety
+> checks, in this order: input, scope, command, risk and loop. Nothing may leave the approved
+> scope, and anything rated `MEDIUM` or `HIGH` waits until a person approves it. Right before a
+> tool actually runs, the API checks the action a second time.
 
 ### How the parts connect
+
+The terminal app and the local web both talk to the backend API. The API stores everything in
+PostgreSQL, asks the AI Service for plans and analysis, and is the only part allowed to call the
+Kali container. It does so over MCP, with a fresh one-time job token for every run. The safety
+harness sits between them: both the AI and the API run its checks.
 
 ```mermaid
 flowchart LR
@@ -57,17 +63,24 @@ flowchart LR
 
 ## Tech stack
 
-| Part | Stack |
-|---|---|
-| **Backend API** | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2, Alembic, Uvicorn, psycopg 3 |
-| **AI Service** | LiteLLM, LangGraph (Postgres checkpoints), LlamaIndex, Qdrant |
-| **Safety harness** | Input, scope, command, risk and loop checks; secret masking; JSON-lines audit log |
-| **Data** | PostgreSQL 16, Qdrant |
-| **Models** | Ollama locally, or a cloud provider through LiteLLM |
-| **Tool container** | Kali Linux with nmap, nuclei, ZAP, semgrep and gitleaks, over MCP |
-| **Terminal app** | Textual, Rich, Typer |
-| **Local web** | Next.js 16, React 19, TypeScript, Tailwind CSS 4, xterm.js |
-| **Tooling** | uv, ruff, pytest, Vitest, Playwright, Docker Compose |
+The **backend API** is written in Python 3.12 with FastAPI and Pydantic v2. It uses SQLAlchemy 2
+and Alembic for the database, psycopg 3 as the Postgres driver, and Uvicorn as the server.
+
+The **AI Service** uses LiteLLM to talk to any model, LangGraph to run the agent (it saves its
+progress in Postgres), and LlamaIndex with Qdrant for the knowledge search. Report files are
+made with Jinja2 and WeasyPrint (PDF) and python-docx (DOCX). Models run locally
+through Ollama, or in the cloud through any provider LiteLLM supports.
+
+The **safety harness** holds the five checks, the secret masking and the audit log, which is a
+JSON-lines file.
+
+The **tool container** is Kali Linux with nmap, nuclei, ZAP, semgrep and gitleaks, reached over
+MCP.
+
+The **terminal app** is built with Textual and Rich. The **local web** is Next.js 16 with React 19,
+TypeScript and Tailwind CSS 4.
+
+For tooling we use uv, ruff, pytest, Vitest, Playwright and Docker Compose.
 
 ## Repository layout
 
@@ -84,52 +97,37 @@ reconix-core-backend/
 └── docs/               # Team plan, openapi.json (generated), ERD V3
 ```
 
-| Folder | Owner |
-|---|---|
-| `services/api/` | Vanneth |
-| `services/api/.../parsers`, `findings`, `clients` | Youlong |
-| `services/ai/` | Sakphearoth |
-| `services/ai/.../harness/` | Pojim |
-| `apps/tui/` | Vanhong |
-| `apps/web/` | Sokpiseth |
-| `deploy/` | Vanneth |
-| `docs/` | Pojim |
-
-The Kali tool container and its MCP server live in a separate repo, **Reconix-Kali-MCP**. This
-repo talks to it only through MCP and pulls its image by tag.
+The Kali tool container and its MCP server live in their own repo, **Reconix-Kali-MCP**. This repo
+never reaches into it: it talks to it only through MCP and pulls its image by tag.
 
 ## Getting started
 
-### Requirements
+You need Python 3.12 with [uv](https://docs.astral.sh/uv/), and Docker with Compose. Node.js 20 or
+newer with npm is only needed if you want to run the local web.
 
-- Python 3.12 and [uv](https://docs.astral.sh/uv/)
-- Docker with Compose
-- Node.js 20+ and npm (only for the local web)
+### The quick way
 
-### Quick start
+Clone the repo, switch to `Main`, and run the dev script:
 
 ```bash
 git clone git@github.com:14th-Generation-Advanced-Course/reconix-core-backend.git
 cd reconix-core-backend
 git checkout Main
-./deploy/dev.sh        # first run creates .env; fill it in, then run it again
+./deploy/dev.sh
 ```
 
-What `deploy/dev.sh` does, in order:
+The first time, the script creates a `.env` file from `.env.example` and stops so you can fill it
+in. Run it again once you have. From then on it installs the Python packages, starts Postgres,
+Qdrant, Ollama and the Kali container, waits for Postgres to be ready, migrates the database, and
+starts the API at http://127.0.0.1:8000. The Swagger UI is at `/docs`.
 
-1. Creates `.env` from `.env.example` if it is missing, then stops so you can fill it in.
-2. Installs the Python packages (`uv sync`).
-3. Starts Postgres, Qdrant, Ollama and the Kali MCP container, and waits for Postgres.
-4. Migrates the database.
-5. Runs the API at http://127.0.0.1:8000 (Swagger UI at `/docs`).
-
-Press `Ctrl+C` to stop the API. To stop the Docker services too:
+Press `Ctrl+C` to stop the API. The Docker services keep running; stop them with:
 
 ```bash
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env down
 ```
 
-The steps below do the same thing by hand.
+If you would rather see each step, the rest of this section does the same thing by hand.
 
 ### 1. Clone and install
 
@@ -142,11 +140,14 @@ uv sync
 
 ### 2. Configure
 
+Copy the example settings and fill in the secrets:
+
 ```bash
 cp .env.example .env
 ```
 
-Fill in the secrets in `.env`. To make the Fernet key that encrypts AI provider API keys:
+One of them is the Fernet key, which encrypts the AI provider API keys you save. You can make one
+with:
 
 ```bash
 uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -157,60 +158,74 @@ uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_
 
 ### 3. Start the services
 
-Postgres, Qdrant, Ollama and the Kali MCP container. While the API runs on your computer (not in
-Compose), add the dev file: it starts a small relay that publishes the Kali MCP port on `127.0.0.1`
-(`RECONIX_MCP_PORT`, default 8765; change it and `RECONIX_KALI_MCP_URL` if that port is taken):
+This starts Postgres, Qdrant, Ollama and the Kali container. Because the API runs on your computer
+rather than inside Compose, also pass the dev file. It adds a small relay that makes the Kali MCP
+port reachable on `127.0.0.1`. The port is `RECONIX_MCP_PORT`, 8765 by default; if it is taken,
+change it and `RECONIX_KALI_MCP_URL` together.
 
 ```bash
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env up -d
 docker compose -f deploy/docker-compose.yml ps
-# once (and to update): the Kali container has no internet, so download the nuclei templates for it
+```
+
+The Kali container has no internet access, so nuclei cannot download its templates by itself. Run
+this once, and again whenever you want newer templates:
+
+```bash
 docker compose -f deploy/docker-compose.yml --env-file .env run --rm nuclei-templates
 ```
 
-### 4. Migrate and run the API
+### 4. Migrate the database and run the API
 
-Run both from the repo root, so they read the root `.env`:
+Run both commands from the repo root, so they read the root `.env`:
 
 ```bash
 uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
 uv run --package reconix-api python -m reconix_api.main
 ```
 
-### 5. Check it works
+### 5. Check that it works
 
-All routes live under `/api/v1`:
+Every route lives under `/api/v1`. The health check is open; almost everything else needs a session
+token, so the second call below should answer 401:
 
 ```bash
 curl http://127.0.0.1:8000/api/v1/health           # {"status":"OK"}
 curl -i http://127.0.0.1:8000/api/v1/sessions/x     # 401: routes need a session token
 ```
 
-### Troubleshooting
+### If something goes wrong
 
-| Problem | Fix |
-|---|---|
-| `password authentication failed for user "reconix"` | Postgres keeps the password from its first start. Make `RECONIX_DATABASE_URL` match `RECONIX_DB_PASSWORD`, or reset the volume: `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env down -v` (deletes all data). |
-| `Can't locate revision identified by '...'` | The database was migrated from another branch. Switch back to that branch, or reset the volume as above and migrate again. |
-| `address already in use` on port 8000 | The API is already running in another terminal. Stop it first. |
-| A port is already taken | Change `RECONIX_MCP_PORT` and `RECONIX_KALI_MCP_URL` in `.env`, or stop the other container. |
+**`password authentication failed for user "reconix"`**: Postgres keeps the password it was given
+the first time it started. Make `RECONIX_DATABASE_URL` match `RECONIX_DB_PASSWORD`, or start over
+with a fresh volume. Be careful: this deletes all data.
 
-### Local addresses
+```bash
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env down -v
+```
 
-Everything binds to `127.0.0.1` only.
+**`Can't locate revision identified by '...'`**: the database was migrated from another branch.
+Switch back to that branch, or reset the volume as above and migrate again.
 
-| Service | Address |
-|---|---|
-| Backend API | http://127.0.0.1:8000 |
-| Swagger UI | http://127.0.0.1:8000/docs |
-| PostgreSQL | `127.0.0.1:5432` |
-| Qdrant | http://127.0.0.1:6333 |
-| Ollama | http://127.0.0.1:11434 |
-| Kali MCP (dev only) | http://127.0.0.1:8765/mcp |
+**`address already in use` on port 8000**: the API is already running in another terminal. Stop
+that one first.
 
-For the terminal app and the local web, see [`apps/README.md`](apps/README.md).
+**Another port is already taken**: change `RECONIX_MCP_PORT` and `RECONIX_KALI_MCP_URL` in `.env`,
+or stop the container that is using it.
+
+### Where everything runs
+
+Everything listens on `127.0.0.1` only, so nothing is reachable from other machines. The API is at
+http://127.0.0.1:8000 with its Swagger UI at http://127.0.0.1:8000/docs. PostgreSQL is on port 5432,
+Qdrant at http://127.0.0.1:6333 and Ollama at http://127.0.0.1:11434. In development only, the Kali
+MCP relay is at http://127.0.0.1:8765/mcp.
+
+To run the terminal app or the local web, see [`apps/README.md`](apps/README.md).
 
 ## Checks and tests
+
+Before you open a pull request, make sure lint and formatting pass, and run the tests for every
+package you touched:
 
 ```bash
 # lint and format
@@ -230,25 +245,13 @@ cd apps/web && npm ci && npm run lint && npm run test
 
 ## Contributing
 
-| Read this | For |
-|---|---|
-| [`AGENTS.md`](AGENTS.md) | Safety rules, contracts, code rules and the "done" checklist |
-| `services/*/AGENTS.md`, `apps/*/AGENTS.md` | The rules for each part |
-| [`docs/reconix-plan-v2.md`](docs/reconix-plan-v2.md) | Who does what, and when |
-| [`docs/erd/reconix-erd-v3-final.md`](docs/erd/reconix-erd-v3-final.md) | Table, column and enum names |
+Start with [`AGENTS.md`](AGENTS.md). It explains the safety rules, the contracts between parts,
+the code rules and what "done" means. Each part also has its own `AGENTS.md` under `services/` or
+`apps/` with the rules for that part. [`docs/reconix-plan-v2.md`](docs/reconix-plan-v2.md) says who
+does what and when, and [`docs/erd/reconix-erd-v3-final.md`](docs/erd/reconix-erd-v3-final.md) has
+the exact table, column and enum names to use.
 
-**Workflow**
-
-1. Branch from `Develop`: `feat/<task>`, `fix/<task>` or `chore/<task>`.
-2. Use conventional commits with the part, for example `feat(api): chat messages per session`.
-3. Open the pull request against `Develop`. It needs green CI and one review.
-4. Nobody pushes to `Main` or `Develop` directly.
-
-## Contributors
-
-<a href="https://github.com/14th-Generation-Advanced-Course/reconix-core-backend/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=14th-Generation-Advanced-Course/reconix-core-backend" alt="Contributors" />
-</a>
-
-Made with [contrib.rocks](https://contrib.rocks). The list updates by itself from the GitHub
-contributors of this repo.
+When you work on something, branch from `Develop` with a name like `feat/<task>`, `fix/<task>` or
+`chore/<task>`. Write conventional commit messages that name the part, for example
+`feat(api): chat messages per session`. Open your pull request against `Develop`; it needs green CI
+and one review before it can be merged. Nobody pushes to `Main` or `Develop` directly.
