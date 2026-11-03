@@ -13,6 +13,7 @@ import { AssistantHeader } from "./assistant-header";
 import { Composer } from "./composer";
 import { Message } from "./message";
 import { ScrollToBottom } from "./scroll-to-bottom";
+import { SwitchDialog } from "./switch-dialog";
 import { useStickToBottom } from "./use-stick-to-bottom";
 import { Welcome } from "./welcome";
 
@@ -116,6 +117,7 @@ export const AssistantView = forwardRef<HTMLTextAreaElement, { onMinimize: () =>
           <p className="ai-footnote">Answers use your saved assessment data. Scans and approvals stay in the terminal.</p>
         </div>
       </div>
+      <SwitchDialog />
     </section>
   );
 });

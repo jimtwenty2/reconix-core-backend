@@ -121,24 +121,7 @@
 .kn-danger:not(:disabled):hover { background: var(--danger); }
 @media (max-width: 639.98px) { .kn-col-actions .kn-actions { align-items: flex-start; } }
 
-/* ---- The upload dialog ---- */
-.kn-dialog {
-  width: min(480px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
-  margin: auto;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--card);
-  color: var(--foreground);
-  box-shadow: 0 24px 60px color-mix(in oklab, var(--background) 70%, transparent);
-}
-.kn-dialog::backdrop { background: color-mix(in oklab, var(--background) 72%, transparent); }
-.kn-dialog-body { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 18px; }
-.kn-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.kn-dialog-title { font-size: 15px; font-weight: 500; }
-.kn-dialog-text { font-size: 12.5px; line-height: 1.5; color: var(--muted-foreground); }
-.kn-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
+/* ---- The upload dialog (its frame is .ui-dialog, styles/ui.css) ---- */
 .kn-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .kn-label { font-size: 12px; font-weight: 500; }
 .kn-hint { font-size: 11.5px; line-height: 1.45; color: var(--muted-foreground); }
