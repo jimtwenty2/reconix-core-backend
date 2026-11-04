@@ -1,0 +1,13 @@
+- generic [active] [ref=f2e1]:
+  - main [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - paragraph [ref=f2e4]: Reconix · sign-in
+      - generic [ref=f2e5]: Open your sign-in link
+      - paragraph [ref=f2e15]:
+        - text: This dashboard runs on your computer only, and its sign-in link is new each time it starts. Run
+        - code [ref=f2e16]: /web
+        - text: in the TUI, or open the link that
+        - code [ref=f2e17]: npm run dev
+        - text: printed.
+  - button "Open Next.js Dev Tools" [ref=f2e11] [cursor=pointer]
+  - alert [ref=f2e18]

@@ -251,7 +251,7 @@ export const troubleshooting: GroupContent = {
             head={["Message", "What to do"]}
             rows={[
               { key: "The web dashboard folder (web/) isn't next to this install.", value: <>Run Reconix from the cloned repository, where <Mono>web/package.json</Mono> exists.</> },
-              { key: "The web dashboard needs Node.js (node and npm).", value: <>Install Node.js 20 or later so <Mono>node</Mono> and <Mono>npm</Mono> are on the PATH, or start it yourself: <Mono>cd web &amp;&amp; npm run dev</Mono>.</> },
+              { key: "The web dashboard needs Node.js (node and npm).", value: <>Install Node.js 20 or later so <Mono>node</Mono> and <Mono>npm</Mono> are on the PATH, or start it yourself: <Mono>cd apps/web &amp;&amp; npm run dev</Mono>.</> },
               { key: "Another web dashboard already uses its port on 127.0.0.1 (an older one left running?). Stop it, then run /web again.", value: <>The launcher exited with code 2: its port is taken, usually by a dashboard from an earlier session. Find it with <Mono>ss -ltnp</Mono> (or your OS&apos;s equivalent) and stop that process, then <Mono>/web</Mono> again.</> },
               { key: "Couldn't install the web dashboard's packages.", value: <><Mono>npm install</Mono> failed; the log has the reason (network, Node version).</> },
               { key: "The web dashboard stopped while starting.", value: "It exited for another reason; read the log." },
@@ -269,7 +269,7 @@ export const troubleshooting: GroupContent = {
           </p>
         </DocSection>
         <DocSection title="Running it yourself">
-          <Code>{`cd web && npm install && npm run dev       # prints a sign-in link; /web opens the same one
+          <Code>{`cd apps/web && npm install && npm run dev       # prints a sign-in link; /web opens the same one
 RECONIX_DATA_DIR=sample-data npm run dev    # browse the bundled sample assessments
 npm run dev -- --no-open                    # print the link without opening a browser`}</Code>
           <Callout>
