@@ -7,15 +7,19 @@ DASHBOARD = Flow(
     number="4a",
     title="Local web from the TUI",
     intro=(
-        "Needs Node.js 20+ and npm. /web starts the web on 127.0.0.1:3100 (the first time it "
+        "Needs Node.js 20+ and npm. /web starts the web on 127.0.0.1:3100 by default "
+        "(RECONIX_WEB_PORT to change it, which matters whenever 3100 is taken; the first time it "
         "runs npm install, which takes a few minutes) and opens it with a sign-in link.",
     ),
     cases=(
         Case(
             "WEB-01",
             "Open the web",
-            ("Finish one assessment (any MF-…-01).", "Type /web."),
-            "The browser opens http://127.0.0.1:3100 and signs you in from the link.",
+            ("Finish one assessment (any MF-…-01).", "Type /web.", "Type /web a second time."),
+            "The browser opens http://127.0.0.1:3100 (the port RECONIX_WEB_PORT sets) and signs "
+            "you in from the link. On the first /web the dashboard's own launcher opens the "
+            "browser; a later /web opens it from the TUI, which says \"Opening the web dashboard "
+            "in your browser…\".",
         ),
         Case(
             "WEB-02",
@@ -34,7 +38,8 @@ DASHBOARD = Flow(
             "WEB-04",
             "The web is read-only",
             ("Look for a way to approve or change the scope in the web.",),
-            'There is none: a waiting step shows "Waiting for approval — Decide in the TUI".',
+            'There is none: a waiting step carries the badge "Waiting for approval", and its '
+            'hint reads "Decide in the TUI." — two separate pieces, not one line.',
         ),
         Case(
             "WEB-05",

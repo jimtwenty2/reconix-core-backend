@@ -61,10 +61,10 @@
 | CMD-10 | 3 Commands and settings | Add a knowledge file |  | The file is added to the knowledge list; /add-on lists it. |
 | CMD-11 | 3 Commands and settings | Agent mode needs a real model |  | "Agent mode needs a real AI model and the backend harness; the static version has neither. Nothing runs." Nothing runs. |
 | CMD-12 | 3 Commands and settings | Quit |  | Reconix closes; the assessments are saved for the web (Flow 4). |
-| WEB-01 | 4a Local web from the TUI | Open the web |  | The browser opens http://127.0.0.1:3100 and signs you in from the link. |
+| WEB-01 | 4a Local web from the TUI | Open the web |  | The browser opens http://127.0.0.1:3100 (the port RECONIX_WEB_PORT sets) and signs you in from the link. On the first /web the dashboard's own launcher opens the browser; a later /web opens it from the TUI, which says "Opening the web dashboard in your browser…". |
 | WEB-02 | 4a Local web from the TUI | The same run in the web |  | Each shows the run you just made in the TUI: the same target, findings and decisions; evidence stays masked (••••). |
 | WEB-03 | 4a Local web from the TUI | Download the report |  | Both files download and match the TUI report. |
-| WEB-04 | 4a Local web from the TUI | The web is read-only |  | There is none: a waiting step shows "Waiting for approval — Decide in the TUI". |
+| WEB-04 | 4a Local web from the TUI | The web is read-only |  | There is none: a waiting step carries the badge "Waiting for approval", and its hint reads "Decide in the TUI." — two separate pieces, not one line. |
 | WEB-05 | 4a Local web from the TUI | Without Node.js |  | "The web dashboard needs Node.js (node and npm). Install Node.js (nodejs.org), then type /web again." The TUI keeps working. |
 | WEB-AI-01 | 4b Web AI Assistant (mock model) | No model yet |  | It says no model is set up and offers to choose one. |
 | WEB-AI-02 | 4b Web AI Assistant (mock model) | Set the mock |  | No network is used; the chip under the message box shows reconix-mock-1 and "Ask anything about your assessments…" is ready. A typed key is saved encrypted and never shown again. |
