@@ -94,9 +94,11 @@ def test_a_poc_cannot_use_another_assessments_tool_run(db_client):
     run_nmap(db_client, headers, mine)
     finding = findings(db_client, headers, mine)[0]
 
-    other = active_assessment(db_client, headers)
-    run_nmap(db_client, headers, other)
-    other_run = findings(db_client, headers, other)[0]["source_tool_run_ids"][0]
+    # A session has one assessment, so the other assessment needs a session of its own.
+    other_headers = open_session(db_client)
+    other = active_assessment(db_client, other_headers)
+    run_nmap(db_client, other_headers, other)
+    other_run = findings(db_client, other_headers, other)[0]["source_tool_run_ids"][0]
 
     response = db_client.post(
         f"/findings/{finding['finding_id']}/validation-runs",
