@@ -17,6 +17,8 @@ import net from "node:net";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
+import { answers, PORTS_BUSY, waitForReady } from "./ready.mjs";
+
 const require = createRequire(import.meta.url);
 const mode = process.argv[2] === "dev" ? "dev" : "start";
 const openBrowser = !process.argv.includes("--no-open");
@@ -44,29 +46,17 @@ function portInUse(p) {
   });
 }
 
+let decided = false; // until the readiness watch at the end decides, it owns the exit code
+
+/* Both streams are piped, not inherited: Next.js's "Ready" line and its duplicate-dev-server
+   abort have to be read (and mirrored on) before anything is announced (ready.mjs). */
 const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), mode, "-H", "127.0.0.1", "-p", port], {
-  stdio: ["inherit", "pipe", "inherit"],
+  stdio: ["inherit", "pipe", "pipe"],
   env: {
     ...process.env,
     RECONIX_WEB_TOKEN: token,
     RECONIX_WEB_PORT: port,
   },
-});
-
-let announced = false;
-child.stdout.on("data", (chunk) => {
-  process.stdout.write(chunk);
-  if (announced || !/ready/i.test(String(chunk))) return;
-  announced = true;
-  writeLink();
-  process.stdout.write(
-    `\n  Reconix analysis dashboard\n` +
-      `  Data     ${dataDir}\n` +
-      `  Sign in  ${signInLine()}\n` +
-      `  The link changes every time the dashboard starts. Press Ctrl+C to stop.\n` +
-      `  From the TUI, run /web to open it.\n\n`,
-  );
-  if (openBrowser) open(link);
 });
 
 /* The link signs in (the AI Assistant, the Security knowledge page), so it is printed only to a
@@ -130,5 +120,35 @@ for (const signal of ["SIGINT", "SIGTERM"])
 child.on("exit", (code) => {
   cleanup();
   removeLink();
-  process.exit(code ?? 0);
+  if (decided) process.exit(code ?? 0); // before that, the readiness watch above owns the code
 });
+
+child.stdout.on("data", (chunk) => process.stdout.write(chunk));
+child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+
+/* "Ready" is not enough: Next.js prints it, binds the port and only then aborts over another
+   next dev's lock, so /web announced a dashboard that was already dying (QAL-001). */
+const started = await waitForReady(child, { probe: () => answers(port) });
+decided = true;
+
+if (!started.ready) {
+  console.error(
+    started.code === PORTS_BUSY
+      ? `[web] another dashboard (or another next dev) is in the way of 127.0.0.1:${port}. Stop it, then start again.`
+      : `[web] the dashboard never answered on 127.0.0.1:${port}; nothing was opened.`,
+  );
+  child.kill();
+  cleanup();
+  removeLink();
+  process.exit(started.code);
+}
+
+writeLink();
+process.stdout.write(
+  `\n  Reconix analysis dashboard\n` +
+    `  Data     ${dataDir}\n` +
+    `  Sign in  ${signInLine()}\n` +
+    `  The link changes every time the dashboard starts. Press Ctrl+C to stop.\n` +
+    `  From the TUI, run /web to open it.\n\n`,
+);
+if (openBrowser) open(link);
