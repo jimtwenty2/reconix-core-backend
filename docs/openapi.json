@@ -3469,6 +3469,18 @@
             ],
             "title": "Interface",
             "type": "string"
+          },
+          "operator": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator"
           }
         },
         "required": [
@@ -7242,7 +7254,7 @@
         ]
       },
       "post": {
-        "description": "Opens a new session and returns its token.\n\nState Changes:\n- Creates a session and issues its token.\n\nSecurity:\n- Open. Needs no token; the Host check and CORS restrict it to this computer.",
+        "description": "Opens a new session and returns its token.\n\nBusiness Rules:\n- Send `operator` as user@host of the computer the client runs on (for example\n  \"vanneth@kshrd-laptop\"). It is the name in /operator, approvals and the audit log.\n  Without it, the API uses its own OS user and host name.\n\nState Changes:\n- Creates a session and issues its token.\n\nSecurity:\n- Open. Needs no token; the Host check and CORS restrict it to this computer.",
         "operationId": "open_session_api_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -7284,7 +7296,7 @@
     },
     "/api/v1/sessions/web-sign-in": {
       "post": {
-        "description": "Exchanges a sign-in code for a new web session and returns its token.\n\nBusiness Rules:\n- Returns 401 INVALID_SIGN_IN_CODE if the code is unknown, already used, or expired.\n\nState Changes:\n- Creates a web session and issues its token.\n\nSecurity:\n- Open. Needs no token; the one-time code is the check.",
+        "description": "Exchanges a sign-in code for a new web session and returns its token.\n\nBusiness Rules:\n- Returns 401 INVALID_SIGN_IN_CODE if the code is unknown, already used, or expired.\n- The web session gets the same operator name as the session that asked for the code.\n\nState Changes:\n- Creates a web session and issues its token.\n\nSecurity:\n- Open. Needs no token; the one-time code is the check.",
         "operationId": "web_sign_in_api_v1_sessions_web_sign_in_post",
         "requestBody": {
           "content": {
