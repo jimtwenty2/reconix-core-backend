@@ -42,8 +42,8 @@ scope → plan → approve → run → analyze → validate → report → downl
 
 ### How the parts connect
 
-The terminal app and the local web both talk to the backend API. The API stores everything in
-PostgreSQL, asks the AI Service for plans and analysis, and is the only part allowed to call the
+The terminal app, the local web and the VS Code extension (Reconix-Vscode repo) all talk to the
+backend API. The API stores everything in PostgreSQL, asks the AI Service for plans and analysis, and is the only part allowed to call the
 Kali container. It does so over MCP, with a fresh one-time job token for every run. The safety
 harness sits between them: both the AI and the API run its checks.
 
@@ -51,12 +51,14 @@ harness sits between them: both the AI and the API run its checks.
 flowchart LR
     TUI[Terminal app] --> API
     WEB[Local web] --> API
+    VSC[VS Code extension<br/>Reconix-Vscode] --> API
     API[Backend API<br/>FastAPI] --> AI[AI Service<br/>LangGraph + LiteLLM]
     AI --> H[Safety harness]
     API --> H
     API --> DB[(PostgreSQL)]
     AI --> Q[(Qdrant)]
-    AI --> O[Ollama / cloud models]
+    AI --> E[Embeddings<br/>bge-m3 on CPU]
+    AI --> O[RECONIX server<br/>or OpenAI / Anthropic / DeepSeek /<br/>OpenAI-compatible / Ollama]
     API -- MCP + one-time job token --> KALI[Kali tool container<br/>Reconix-Kali-MCP]
     KALI --> LAB[Lab targets]
 ```
@@ -68,8 +70,10 @@ and Alembic for the database, psycopg 3 as the Postgres driver, and Uvicorn as t
 
 The **AI Service** uses LiteLLM to talk to any model, LangGraph to run the agent (it saves its
 progress in Postgres), and LlamaIndex with Qdrant for the knowledge search. Report files are
-made with Jinja2 and WeasyPrint (PDF) and python-docx (DOCX). Models run locally
-through Ollama, or in the cloud through any provider LiteLLM supports.
+made with Jinja2 and WeasyPrint (PDF) and python-docx (DOCX). The default AI model, RECONIX, is
+served by the Reconix team on an OpenAI-compatible server; you can also use OpenAI, Anthropic,
+DeepSeek, any OpenAI-compatible server or your own Ollama. The knowledge search turns text into
+vectors with BGE-M3, run on CPU by Hugging Face text-embeddings-inference in its own container.
 
 The **safety harness** holds the five checks, the secret masking and the audit log, which is a
 JSON-lines file.
@@ -117,74 +121,63 @@ git checkout Main
 ```
 
 The first time, the script creates a `.env` file from `.env.example` and stops so you can fill it
-in. Run it again once you have. From then on it installs the Python packages, starts Postgres,
-Qdrant, Ollama and the Kali container, waits for Postgres to be ready, migrates the database, and
-starts the API at http://127.0.0.1:8000. The Swagger UI is at `/docs`.
+in. Run it again once you have. It then builds the API image and starts everything in Docker: the
+API, Postgres, Qdrant, the embedding server and the Kali container. The API migrates the database
+when it starts
+and serves http://127.0.0.1:8000, with the Swagger UI at `/docs`.
 
-Press `Ctrl+C` to stop the API. The Docker services keep running; stop them with:
+Stop everything with:
 
 ```bash
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env down
+docker compose -f deploy/docker-compose.yml --env-file .env down
 ```
 
 If you would rather see each step, the rest of this section does the same thing by hand.
 
-### 1. Clone and install
+### 1. Clone
 
 ```bash
 git clone git@github.com:14th-Generation-Advanced-Course/reconix-core-backend.git
 cd reconix-core-backend
 git checkout Main
-uv sync
 ```
 
 ### 2. Configure
 
-Copy the example settings and fill in the secrets:
+Copy the example settings and fill in the empty values:
 
 ```bash
 cp .env.example .env
 ```
 
-One of them is the Fernet key, which encrypts the AI provider API keys you save. You can make one
-with:
+One of them is `RECONIX_PROVIDER_ENCRYPTION_KEY`, which encrypts the AI provider API keys you
+save. You can make one with:
 
 ```bash
-uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 > [!CAUTION]
 > Never commit `.env`. Only `.env.example` belongs in git.
 
-### 3. Start the services
-
-This starts Postgres, Qdrant, Ollama and the Kali container. Because the API runs on your computer
-rather than inside Compose, also pass the dev file. It adds a small relay that makes the Kali MCP
-port reachable on `127.0.0.1`. The port is `RECONIX_MCP_PORT`, 8765 by default; if it is taken,
-change it and `RECONIX_KALI_MCP_URL` together.
+### 3. Start everything
 
 ```bash
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env up -d
-docker compose -f deploy/docker-compose.yml ps
+mkdir -p data/code
+docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+docker compose -f deploy/docker-compose.yml --env-file .env ps
 ```
 
-The Kali container has no internet access, so nuclei cannot download its templates by itself. Run
-this once, and again whenever you want newer templates:
+This builds the API image and starts the API, Postgres, Qdrant, the embedding server and the Kali
+container. The
+API migrates the database before it starts. After a code change, run the same `up` command again:
+`--build` rebuilds the API.
 
-```bash
-docker compose -f deploy/docker-compose.yml --env-file .env run --rm nuclei-templates
-```
+The Kali container has no internet access and no open port; only the API reaches it, over the
+internal `tools` network. Everything its tools need, including the nuclei templates, is already
+inside the Kali image. To get newer templates, pull a newer image.
 
-### 4. Migrate the database and run the API
-
-Run both commands from the repo root, so they read the root `.env`:
-
-```bash
-uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
-uv run --package reconix-api python -m reconix_api.main
-```
-
-### 5. Check that it works
+### 4. Check that it works
 
 Every route lives under `/api/v1`. The health check is open; almost everything else needs a session
 token, so the second call below should answer 401:
@@ -192,49 +185,54 @@ token, so the second call below should answer 401:
 ```bash
 curl http://127.0.0.1:8000/api/v1/health           # {"status":"OK"}
 curl -i http://127.0.0.1:8000/api/v1/sessions/x     # 401: routes need a session token
+docker compose -f deploy/docker-compose.yml --env-file .env logs -f api
 ```
 
 ### If something goes wrong
 
 **`password authentication failed for user "reconix"`**: Postgres keeps the password it was given
-the first time it started. Make `RECONIX_DATABASE_URL` match `RECONIX_DB_PASSWORD`, or start over
-with a fresh volume. Be careful: this deletes all data.
+the first time it started. Use that password in `RECONIX_DB_PASSWORD`, or start over with a fresh
+volume. Be careful: this deletes all data.
 
 ```bash
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env down -v
+docker compose -f deploy/docker-compose.yml --env-file .env down -v
 ```
 
 **`Can't locate revision identified by '...'`**: the database was migrated from another branch.
-Switch back to that branch, or reset the volume as above and migrate again.
+Switch back to that branch, or reset the volume as above.
 
-**`address already in use` on port 8000**: the API is already running in another terminal. Stop
-that one first.
-
-**Another port is already taken**: change `RECONIX_MCP_PORT` and `RECONIX_KALI_MCP_URL` in `.env`,
-or stop the container that is using it.
+**Port 8000 is already taken**: stop whatever is using it, or change the left-hand port of the
+`api` service in `deploy/docker-compose.yml`.
 
 ### Where everything runs
 
-Everything listens on `127.0.0.1` only, so nothing is reachable from other machines. The API is at
-http://127.0.0.1:8000 with its Swagger UI at http://127.0.0.1:8000/docs. PostgreSQL is on port 5432,
-Qdrant at http://127.0.0.1:6333 and Ollama at http://127.0.0.1:11434. In development only, the Kali
-MCP relay is at http://127.0.0.1:8765/mcp.
+Only the API has a port on your computer: http://127.0.0.1:8000, with its Swagger UI at
+http://127.0.0.1:8000/docs. Nothing is reachable from other machines. The other services talk to
+each other on private Docker networks, and only the API and the embedding server have internet.
+To reach one
+of them, go through Docker:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file .env exec postgres psql -U reconix reconix   # the database
+docker compose -f deploy/docker-compose.yml --env-file .env logs embeddings                          # the embedding server (model download progress)
+```
 
 To run the terminal app or the local web, see [`apps/README.md`](apps/README.md).
 
 ## Checks and tests
 
 Before you open a pull request, make sure lint and formatting pass, and run the tests for every
-package you touched:
+package you touched. The checks run on your computer, so install the Python packages first:
 
 ```bash
+uv sync
 # lint and format
 uv run ruff check . && uv run ruff format --check .
 
 # tests, one package at a time
-uv run --package reconix-api pytest
-uv run --package reconix-ai  pytest
-uv run --package reconix-tui pytest
+uv run --package reconix-api pytest services/api/tests
+uv run --package reconix-ai  pytest services/ai/tests
+uv run --package reconix-tui pytest apps/tui/tests
 
 # local web
 cd apps/web && npm ci && npm run lint && npm run test

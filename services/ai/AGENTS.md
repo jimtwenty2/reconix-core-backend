@@ -30,8 +30,7 @@ Mon 2 Nov.** After Tue 17 Nov (feature freeze), only bug fixes and prompt tuning
 | `harness/` | Safety checks, masking, audit log (see below) |
 
 Outside `src/`: `data/knowledge-sample/` (CVE, CWE, OWASP, API Top 10, ATT&CK samples),
-`data/tool-guides/` (one Markdown guide per tool), `models/Modelfile` (the built-in RECONIX model on
-Ollama) and `tests/`.
+`data/tool-guides/` (one Markdown guide per tool) and `tests/`.
 
 ## Rules
 
@@ -39,7 +38,11 @@ Ollama) and `tests/`.
   reason over results (ReflAct, up to 5 times) only with tools that read, never with tools that
   change anything.
 - **Model calls** go only through `providers/`. Never import a model SDK anywhere else. Default: the
-  built-in `RECONIX` model on local Ollama.
+  built-in `RECONIX` model, served by the Reconix team on an OpenAI-compatible server
+  (`RECONIX_MODEL_URL`, `RECONIX_MODEL_API_KEY`, `RECONIX_MODEL_NAME`). It never falls back to
+  another server.
+- **Embeddings** (BGE-M3, for the knowledge search and finding memory) come from the
+  `embeddings` container (text-embeddings-inference on CPU, `RECONIX_EMBEDDINGS_URL`), not Ollama.
 - **Providers:** `RECONIX`, `OLLAMA`, `OPENAI`, `ANTHROPIC`, `DEEPSEEK`, `OPENAI_API_COMPATIBLE`.
   Use the one set active in the API. Never show an API key, only its last 4 characters. Save which
   provider and model each run used.
@@ -91,7 +94,7 @@ Keep this table true; update the row in the PR that changes it.
 
 | Plan item | Week | Status |
 |---|---|---|
-| Package with LiteLLM in one place, RECONIX on Ollama by default | 1 | Done; base model in `Modelfile` is a placeholder until the speed check |
+| Package with LiteLLM in one place, RECONIX by default | 1 | Done: RECONIX is the Reconix team's OpenAI-compatible server; BGE-M3 runs in the `embeddings` container |
 | Qdrant hybrid search, LlamaIndex ingest, `search_knowledge()` | 1 | Done |
 | Agent: understand, find, plan, suggest, wait; progress in Postgres | 1 | Done; wired into the API as `ask_agent` (`core/agent.py`) |
 | Prompts and agent rules as Markdown; tool specs copied from the Kali repo | 1 | Done |
@@ -122,17 +125,17 @@ Keep this table true; update the row in the PR that changes it.
 Run from the repo root.
 
 ```bash
-uv run --package reconix-ai pytest                              # all AI tests
+uv run --package reconix-ai pytest services/ai/tests                              # all AI tests
 uv run --package reconix-ai pytest services/ai/tests/unit/harness -q
 
-ollama pull qwen2.5:7b-instruct                                 # the built-in RECONIX model
-ollama create reconix -f services/ai/models/Modelfile
+# load the knowledge (the stack must be running; see README.md)
+docker compose -f deploy/docker-compose.yml --env-file .env exec api python -m reconix_ai.knowledge.ingest
 ```
 
 ## Done when
 
 - `uv run ruff check . && uv run ruff format --check .` pass.
-- `uv run --package reconix-ai pytest` passes, including the harness tests and, once they exist,
+- `uv run --package reconix-ai pytest services/ai/tests` passes, including the harness tests and, once they exist,
   the evals.
 - A prompt or policy change has the eval results in the PR.
 - The "Plan status" table above is updated if the change finishes a plan item.

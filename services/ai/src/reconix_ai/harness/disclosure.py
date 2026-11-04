@@ -55,7 +55,7 @@ class DisclosureError(Exception):
 
 
 class Cipher(Protocol):
-    """cryptography's Fernet fits; the API passes one made from RECONIX_FERNET_KEY."""
+    """cryptography's Fernet fits; the API passes one made from RECONIX_PROVIDER_ENCRYPTION_KEY."""
 
     def encrypt(self, data: bytes) -> bytes: ...
     def decrypt(self, token: bytes) -> bytes: ...

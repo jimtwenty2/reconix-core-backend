@@ -2,34 +2,50 @@
 
 import ipaddress
 from functools import lru_cache
+from typing import Self
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="RECONIX_", env_file=".env", extra="ignore")
+    # populate_by_name: a field with an env alias can still be set by its name in code.
+    model_config = SettingsConfigDict(
+        env_prefix="RECONIX_", env_file=".env", extra="ignore", populate_by_name=True
+    )
 
-    # The API only ever listens on this computer.
+    # The API only ever listens on this computer. Inside its Docker container it listens on
+    # 0.0.0.0 instead, and Compose publishes the port on 127.0.0.1 only (S10). Only the
+    # Compose api service sets in_container (RECONIX_IN_CONTAINER=1).
     host: str = "127.0.0.1"
+    in_container: bool = False
     port: int = 8000
     allowed_hosts: list[str] = ["127.0.0.1", "localhost"]
     web_origins: list[str] = ["http://127.0.0.1:3000", "http://localhost:3000"]
 
     database_url: str = "postgresql+psycopg://reconix:reconix@127.0.0.1:5432/reconix"
 
-    # Kali MCP container. RECONIX_MCP_URL is the old name, still read until v1.0.0, so an
-    # old .env does not quietly fall back to the default port and send the access key there.
+    # Kali MCP container, reached over the internal tools network (deploy/docker-compose.yml).
+    # RECONIX_MCP_URL is the old name, still read until v1.0.0, so an old .env does not
+    # quietly fall back to the default address and send the auth token there.
     kali_mcp_url: str = Field(
-        "http://127.0.0.1:8765/mcp",
+        "http://reconix-kali-container:8000/mcp",
         validation_alias=AliasChoices("RECONIX_KALI_MCP_URL", "RECONIX_MCP_URL"),
     )
-    mcp_access_key: SecretStr = SecretStr("")
+    # RECONIX_MCP_ACCESS_KEY is the old name, still read until v1.0.0.
+    mcp_access_key: SecretStr = Field(
+        SecretStr(""),
+        validation_alias=AliasChoices("RECONIX_MCP_AUTH_TOKEN", "RECONIX_MCP_ACCESS_KEY"),
+    )
     job_token_secret: SecretStr = SecretStr("")
     job_token_ttl_seconds: int = 300
 
-    # Encrypts AI provider API keys
-    fernet_key: SecretStr = SecretStr("")
+    # Encrypts the AI provider API keys saved in the database (a Fernet key).
+    # RECONIX_FERNET_KEY is the old name, still read until v1.0.0.
+    provider_encryption_key: SecretStr = Field(
+        SecretStr(""),
+        validation_alias=AliasChoices("RECONIX_PROVIDER_ENCRYPTION_KEY", "RECONIX_FERNET_KEY"),
+    )
 
     # Audit log (JSON lines), written by the harness
     audit_log_path: str = "data/audit/audit.jsonl"
@@ -45,12 +61,13 @@ class Settings(BaseSettings):
     # Approvals
     approval_ttl_minutes: int = 30
 
-    @field_validator("host")
-    @classmethod
-    def host_must_be_loopback(cls, value: str) -> str:
-        if value != "localhost" and not ipaddress.ip_address(value).is_loopback:
+    @model_validator(mode="after")
+    def host_must_be_loopback(self) -> Self:
+        if self.in_container and self.host == "0.0.0.0":  # noqa: S104  published on 127.0.0.1
+            return self
+        if self.host != "localhost" and not ipaddress.ip_address(self.host).is_loopback:
             raise ValueError("RECONIX_HOST must be a loopback address")
-        return value
+        return self
 
 
 @lru_cache

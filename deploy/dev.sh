@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Reconix for local development: services in Docker, the API on this computer.
+# Start Reconix for local development: the API and every service in Docker.
 # Run from anywhere: ./deploy/dev.sh
 set -euo pipefail
 
@@ -11,17 +11,12 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-compose=(docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env)
+# The Kali container mounts this folder; create it first, or Docker makes it owned by root.
+mkdir -p data/code
 
-echo "==> Installing Python packages"
-uv sync
+echo "==> Building the API and starting the API, Postgres, Qdrant, embeddings and Kali"
+docker compose -f deploy/docker-compose.yml --env-file .env up -d --build --wait api
 
-echo "==> Starting Postgres, Qdrant, Ollama and the Kali MCP container"
-"${compose[@]}" up -d --wait postgres
-"${compose[@]}" up -d
-
-echo "==> Migrating the database"
-uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
-
-echo "==> Starting the API on http://127.0.0.1:8000 (docs at /docs, Ctrl+C to stop)"
-exec uv run --package reconix-api python -m reconix_api.main
+echo "==> Ready: http://127.0.0.1:8000 (docs at /docs)"
+echo "    Logs: docker compose -f deploy/docker-compose.yml --env-file .env logs -f api"
+echo "    Stop: docker compose -f deploy/docker-compose.yml --env-file .env down"

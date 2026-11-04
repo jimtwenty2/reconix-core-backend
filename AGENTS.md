@@ -53,7 +53,7 @@ These rules are the product. A change that weakens one is a bug, even if every t
 | S7 | Tools are called only through the MCP client, with a fresh one-time job token. | `clients/`, `core/job_token.py` |
 | S8 | Secrets are masked before anything is saved, logged, shown, sent to the AI or stored in Qdrant. Provider API keys are Fernet-encrypted and shown as the last 4 characters only. | `harness/masking.py`, `core/masking.py` |
 | S9 | Every decision writes **exactly one** audit line. | `harness/audit.py`, `services/audit.py` |
-| S10 | The API binds to `127.0.0.1`, rejects an unknown `Host`, and allows CORS only for the local web. | `main.py`, `core/config.py` |
+| S10 | The API binds to `127.0.0.1`, rejects an unknown `Host`, and allows CORS only for the local web. Inside its Docker container it listens on `0.0.0.0` (`RECONIX_IN_CONTAINER=1`, set only there) and Compose publishes it on `127.0.0.1` only. | `main.py`, `core/config.py`, `deploy/docker-compose.yml` |
 
 Paths without a prefix are under `services/api/src/reconix_api/` or
 `services/ai/src/reconix_ai/` (`harness/`).
@@ -77,7 +77,7 @@ One uv workspace (Python 3.12) plus one npm app.
 | `apps/tui/` | Terminal app: Textual, Typer. Package `reconix` (see section 11). | Vanhong |
 | `apps/web/` | Local web: Next.js, xterm.js | Sokpiseth |
 | `apps/sample-data/` | Fake data for the TUI and web, built from `deploy/seed.sql` | shared |
-| `deploy/` | Docker Compose (`docker-compose.yml`, `docker-compose.dev.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
+| `deploy/` | Docker Compose (`docker-compose.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
 | `docs/` | `reconix-plan-v2.md`, `openapi.json` (generated), `erd/` | Pojim |
 | `.claude/`, `AGENTS.md` files | Agent rules, skills, subagents, hooks (section 9) | Pojim |
 
@@ -155,15 +155,16 @@ cp .env.example .env                            # then fill it in; never commit 
 uv run ruff check . && uv run ruff format --check .
 
 # tests, one package at a time
-uv run --package reconix-api pytest
-uv run --package reconix-ai  pytest             # includes evals and harness tests
-uv run --package reconix-tui pytest             # Textual pilot tests
+uv run --package reconix-api pytest services/api/tests
+uv run --package reconix-ai  pytest services/ai/tests             # includes evals and harness tests
+uv run --package reconix-tui pytest apps/tui/tests             # Textual pilot tests
 
 # narrower runs
 uv run --package reconix-api pytest services/api/tests/security -q
 uv run --package reconix-api pytest services/api/tests/contract -q
 
-# database (alembic.ini lives in services/api/)
+# database: the api service migrates it when it starts. By hand, against a database you can
+# reach (alembic.ini lives in services/api/):
 uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
 
 # local web
@@ -171,7 +172,7 @@ cd apps/web && npm ci && npm run lint && npm run test    # e2e: npm run e2e
 
 # full stack
 docker compose -f deploy/docker-compose.yml up -d
-docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml --env-file .env ps
 ```
 
 Export the API contract after any route or schema change: see the `sync-openapi` skill.

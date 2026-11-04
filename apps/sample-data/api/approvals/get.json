@@ -1,0 +1,25 @@
+{
+  "approval_id": "ab000000-0000-4000-8000-000000000003",
+  "kind": "action",
+  "subject_snapshot": {
+    "tool": "ZAP",
+    "target": "http://juice-shop.example:3000/",
+    "arguments": [],
+    "finding_id": null,
+    "is_validation": false
+  },
+  "subject_hash": "74f98cfa9a4c466e2929032d9de222aae90a273bb04c69e69f06a2ee13ba37e6",
+  "risk_level": "MEDIUM",
+  "approval_status": "PENDING",
+  "confirmation_verified": false,
+  "reason": null,
+  "decided_by": null,
+  "requested_at": "2026-11-02T09:20:00Z",
+  "decided_at": null,
+  "consumed_at": null,
+  "expires_at": "2026-11-02T09:50:00Z",
+  "action_id": "ac000000-0000-4000-8000-000000000003",
+  "manifest_id": null,
+  "report_id": null,
+  "config_change": null
+}

@@ -1,4 +1,5 @@
-"""AI provider API keys: encrypted with Fernet (RECONIX_FERNET_KEY) before they are saved.
+"""AI provider API keys: encrypted with Fernet (RECONIX_PROVIDER_ENCRYPTION_KEY) before they
+are saved.
 
 Only the last 4 characters are ever shown. The key itself never leaves this module in
 clear, except to the model call that needs it.
@@ -21,7 +22,8 @@ def decrypt(settings: Settings, token: bytes) -> str:
         raise ApiError(
             409,
             "PROVIDER_KEY_UNREADABLE",
-            "The saved API key cannot be read with RECONIX_FERNET_KEY. Enter the key again.",
+            "The saved API key cannot be read with RECONIX_PROVIDER_ENCRYPTION_KEY. "
+            "Enter the key again.",
         ) from None
 
 
@@ -30,12 +32,16 @@ def last4(api_key: str) -> str:
 
 
 def _fernet(settings: Settings) -> Fernet:
-    key = settings.fernet_key.get_secret_value()
+    key = settings.provider_encryption_key.get_secret_value()
     if not key:
-        raise ApiError(503, "FERNET_KEY_MISSING", "Set RECONIX_FERNET_KEY to save API keys.")
+        raise ApiError(
+            503, "FERNET_KEY_MISSING", "Set RECONIX_PROVIDER_ENCRYPTION_KEY to save API keys."
+        )
     try:
         return Fernet(key)
     except ValueError:
         raise ApiError(
-            503, "FERNET_KEY_INVALID", "RECONIX_FERNET_KEY is not a valid Fernet key."
+            503,
+            "FERNET_KEY_INVALID",
+            "RECONIX_PROVIDER_ENCRYPTION_KEY is not a valid Fernet key.",
         ) from None

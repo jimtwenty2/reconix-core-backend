@@ -109,6 +109,6 @@ async def test_provider(
 
 @router.get("/{llm_provider_id}/models")
 async def list_models(llm_provider_id: UUID, db: Db, _: CurrentOperator) -> LlmProviderModelsOut:
-    """The models a RECONIX or OLLAMA provider's Ollama has on this computer. Cloud
+    """The models an OLLAMA provider's Ollama has on this computer. RECONIX and cloud
     providers answer 422 MODEL_LIST_NOT_SUPPORTED."""
     return await llm_providers.list_models(db, llm_provider_id)

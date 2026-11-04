@@ -2,8 +2,11 @@
 
 Opt-in. Besides RECONIX_TEST_DATABASE_URL, set:
 
-    RECONIX_TEST_MCP_URL=http://127.0.0.1:8765/mcp
-    RECONIX_TEST_MCP_ACCESS_KEY=<the server's KALI_MCP_AUTH_TOKEN>
+    RECONIX_TEST_MCP_URL=http://127.0.0.1:8096/mcp
+    RECONIX_TEST_MCP_AUTH_TOKEN=<the server's KALI_MCP_AUTH_TOKEN, if it has one>
+
+Core's Kali has no port on this computer, so start a Kali with one from the Reconix-Kali-MCP
+repo (`docker compose up -d` there publishes 127.0.0.1:8096).
 
 The container needs NET_RAW and NET_ADMIN, or nmap cannot start.
 """
@@ -19,10 +22,11 @@ from tests.integration.test_action_flow import active_assessment, send
 from tests.integration.test_scope_flow import open_session
 
 MCP_URL = os.environ.get("RECONIX_TEST_MCP_URL")
-MCP_ACCESS_KEY = os.environ.get("RECONIX_TEST_MCP_ACCESS_KEY", "")
+MCP_ACCESS_KEY = os.environ.get("RECONIX_TEST_MCP_AUTH_TOKEN", "")
 
 pytestmark = pytest.mark.skipif(
-    not (MCP_URL and MCP_ACCESS_KEY), reason="RECONIX_TEST_MCP_URL is not set"
+    not MCP_URL,
+    reason="RECONIX_TEST_MCP_URL is not set",  # the auth token is optional
 )
 
 
