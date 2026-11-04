@@ -9,7 +9,6 @@
 # Safety:
 # - Only the API has a port on your computer (127.0.0.1:8000). Nothing else is reachable.
 # - Each container joins only the networks it needs (see networks at the bottom).
-# - Only the API and the embedding server have internet. Postgres, Qdrant and Kali have none.
 
 name: reconix
 
@@ -50,8 +49,8 @@ services:
         condition: service_started
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    # data: Postgres and Qdrant. models: the embedding server and AI providers. tools: Kali.
-    networks: [data, models, tools]
+    # models: Postgres, Qdrant, the embedding server and AI providers. tools: Kali.
+    networks: [models, tools]
 
   # --- Database ---------------------------------------------------------------------------
   postgres:
@@ -67,14 +66,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    networks: [data]
+    networks: [models]
 
   # --- Knowledge search (vector database) -------------------------------------------------
   qdrant:
     image: qdrant/qdrant:v1.13.2
     restart: unless-stopped
     volumes: [qdrant-data:/qdrant/storage]
-    networks: [data]
+    networks: [models]
 
   # --- Embeddings: turns text into vectors for the knowledge search --------------------------
   # Runs BAAI/bge-m3 on CPU (Hugging Face text-embeddings-inference) and answers OpenAI-style at
@@ -89,13 +88,11 @@ services:
     # Needs no Linux permissions; port 8080 needs none to open.
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    # Internet only to download the model.
     networks: [models]
 
   # --- Kali tool container ----------------------------------------------------------------
   reconix-kali-container:
-    # Built in Reconix-Kali-MCP. The image already holds the nuclei templates, since Kali
-    # has no internet to download them.
+    # Built in Reconix-Kali-MCP. The image already holds the nuclei templates.
     image: ${RECONIX_KALI_IMAGE:-dannygg02/reconix-kali-container:latest}
     restart: unless-stopped
     environment:
@@ -114,15 +111,12 @@ services:
     networks: [tools, lab]
 
 networks:
-  # API to Postgres and Qdrant. No internet.
-  data:
-    internal: true
-  # API and the embedding server. Has internet: the model download, and the AI providers.
+  # API, Postgres, Qdrant and the embedding server. Qdrant has no password, so every service on
+  # this network can read and change it.
   models: {}
-  # API to Kali. No internet.
-  tools:
-    internal: true
-  # Kali to the lab targets (Juice Shop, test repo). No internet.
+  # API to Kali.
+  tools: {}
+  # Kali to the lab targets (Juice Shop, test repo).
   lab:
     name: reconix-lab
     internal: true

@@ -173,9 +173,10 @@ container. The
 API migrates the database before it starts. After a code change, run the same `up` command again:
 `--build` rebuilds the API.
 
-The Kali container has no internet access and no open port; only the API reaches it, over the
-internal `tools` network. Everything its tools need, including the nuclei templates, is already
-inside the Kali image. To get newer templates, pull a newer image.
+The Kali container has no open port; only the API reaches it, over the `tools` network. It does
+have internet through that network, so the safety checks and approvals are what keep tools on the
+approved targets. The nuclei templates are already inside the Kali image; pull a newer image for
+newer templates.
 
 ### 4. Check that it works
 
@@ -208,7 +209,7 @@ Switch back to that branch, or reset the volume as above.
 
 Only the API has a port on your computer: http://127.0.0.1:8000, with its Swagger UI at
 http://127.0.0.1:8000/docs. Nothing is reachable from other machines. The other services talk to
-each other on private Docker networks, and only the API and the embedding server have internet.
+each other on private Docker networks, all with internet except the lab network.
 To reach one
 of them, go through Docker:
 

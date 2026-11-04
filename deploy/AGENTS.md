@@ -25,24 +25,24 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 
 | Network | Who is on it | Internet |
 |---|---|---|
-| `data` | `api` ↔ `postgres`, `qdrant` | **No** (`internal: true`) |
-| `models` | `api` ↔ `embeddings` (the model download, AI providers) | Yes |
-| `tools` | `api` ↔ `reconix-kali-container` | **No** (`internal: true`) |
+| `models` | `api` ↔ `postgres`, `qdrant`, `embeddings` (the model download, AI providers) | Yes |
+| `tools` | `api` ↔ `reconix-kali-container` | Yes |
 | `reconix-lab` | `reconix-kali-container` ↔ lab targets | **No** (`internal: true`) |
 
 ## Rules
 
 - **Only the API has a host port**, `127.0.0.1:8000`. Never publish another service's port, and
   never bind to `0.0.0.0` or a bare port. Use `docker compose exec` to reach the others.
-- **Each service joins only the networks it needs.** Only `api` and `embeddings` have internet.
+- **Each service joins only the networks it needs.** Every service has internet except on `reconix-lab`; Postgres and Qdrant share `models` with `embeddings`.
   Inside its container the API listens on `0.0.0.0`; that is only allowed with
   `RECONIX_IN_CONTAINER=1`, which only the Dockerfile sets.
 - **The Kali container stays locked down.** No published port in `docker-compose.yml`, only the
-  `tools` and `reconix-lab` networks, both internal. Keep `cap_drop: [ALL]`, only `NET_RAW`,
+  `tools` and `reconix-lab` networks. Keep `cap_drop: [ALL]`, only `NET_RAW`,
   `NET_ADMIN` and `NET_BIND_SERVICE` (nmap needs all three), and `no-new-privileges`. Never add
   `privileged`, host networking or a Docker socket mount.
-- **No internet for Kali, ever.** What its tools need (the nuclei templates included) is built
-  into the Kali image in Reconix-Kali-MCP; newer data means a newer image, not a download here.
+- **Kali has internet** through `tools` (decided 4 Nov 2026; the lead's approval is pending), so
+  its tools can update their own data. The network no longer stops a tool from reaching a target
+  outside the lab: the harness scope check and approvals are the only limit.
 - **Tools run only against the lab.** Nothing in this folder may point a tool at a target outside
   `reconix-lab`.
 - **Pinned images.** Use exact tags (for example `qdrant/qdrant:v1.13.2`), never `latest`. The Kali
@@ -96,7 +96,6 @@ bash -n deploy/install.sh
 
 - `docker compose ... config --quiet` passes and the stack starts with `up -d`; every service is
   healthy in `ps`.
-- No port is published outside `127.0.0.1`, and the Kali container still has no published port and
-  no internet.
+- No port is published outside `127.0.0.1`, and the Kali container still has no published port.
 - The full flow still runs (`run-full-flow-test` skill) if a service, network or variable changed.
 - `.env.example` and the "Plan status" table above are updated when needed.

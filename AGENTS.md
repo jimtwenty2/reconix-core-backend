@@ -309,9 +309,6 @@ Keep this list true; remove an item in the PR that closes it.
   the database, logs, audit log, AI requests, API answers and report files, but not Qdrant
   (the API writes nothing there yet) or disclosure. Check those by hand with `run-leak-test`.
 - Imported findings and finding categories: decision pending.
-- **Code scans need semgrep rules inside the Kali image.** In Compose the Kali container has no
-  internet, so semgrep's default `p/default` cannot download, and a code scan gets no semgrep
-  findings until Reconix-Kali-MCP bundles the rules. gitleaks needs nothing extra.
 - **An excluded path does not stop a tool on the folder around it.** The harness scope check
   blocks a target *inside* an excluded path, but not one that *contains* it, so a manual
   SEMGREP or GITLEAKS action on `/workspace/code/<s>` still reads `/workspace/code/<s>/secrets`
