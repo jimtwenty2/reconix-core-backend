@@ -82,7 +82,9 @@ services:
   embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
-    command: ["--model-id", "BAAI/bge-m3", "--port", "8080"]
+    # A batch of 8192 tokens (the model's longest input) keeps the CPU warm-up short; the
+    # default 16384 can take many minutes. It uses about 6-9 GB of memory.
+    command: ["--model-id", "BAAI/bge-m3", "--port", "8080", "--max-batch-tokens", "8192"]
     volumes: [embeddings-data:/data]
     # Needs no Linux permissions; port 8080 needs none to open.
     cap_drop: [ALL]

@@ -48,7 +48,8 @@ The stack runs in Docker (`./deploy/dev.sh` from the repo root).
 1. **The AI model:** set `RECONIX_MODEL_URL` (and `RECONIX_MODEL_API_KEY` if needed) in `.env`,
    then restart the API: `docker compose -f deploy/docker-compose.yml --env-file .env up -d api`.
 2. **The embedding model** downloads by itself (~2.3 GB) the first time the `embeddings`
-   container starts. Wait until it is ready:
+   container starts, then loads in about a minute. It runs on CPU and needs about 6-9 GB of
+   memory. Wait until it is ready:
    ```bash
    docker compose -f deploy/docker-compose.yml --env-file .env logs -f embeddings      # ready when it says "Ready"
    ```
@@ -90,7 +91,8 @@ port, then point the scripts at them:
 uv sync
 docker run -d --name reconix-dev-qdrant -p 127.0.0.1:6334:6333 qdrant/qdrant:v1.13.2
 docker run -d --name reconix-dev-embeddings -p 127.0.0.1:8081:8080 -v reconix-dev-embeddings:/data \
-  ghcr.io/huggingface/text-embeddings-inference:cpu-1.8 --model-id BAAI/bge-m3 --port 8080
+  ghcr.io/huggingface/text-embeddings-inference:cpu-1.8 --model-id BAAI/bge-m3 --port 8080 \
+  --max-batch-tokens 8192
 
 export RECONIX_QDRANT_URL=http://127.0.0.1:6334
 export RECONIX_EMBEDDINGS_URL=http://127.0.0.1:8081/v1     # also the default
