@@ -49,6 +49,7 @@ async def run_action(
     """
     secret = settings.job_token_secret.get_secret_value()
     if not secret:
+        db.commit()  # the action is kept as sent; it just cannot run yet
         raise ApiError(503, "NOT_READY", "RECONIX_JOB_TOKEN_SECRET is not set.")
     now = now or datetime.now(UTC)
     if approval is not None:

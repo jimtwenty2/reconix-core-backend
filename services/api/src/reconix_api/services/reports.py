@@ -150,6 +150,17 @@ async def create_report(
         if run is not None:
             agent_runs.fail(db, interfaces, operator, run, error)
         raise
+    # Cut off as stuck meanwhile (fail_stuck_reports)? The first end wins: this one backs
+    # out, its files are removed and the report stays FAILED.
+    report = get(db, report.report_id, lock=True)
+    if report.report_status != ReportStatus.GENERATING:
+        db.commit()
+        shutil.rmtree(folder, ignore_errors=True)
+        cut_off = ApiError(
+            409, "REPORT_CUT_OFF", "This report was cut off as stuck. Create it again."
+        )
+        agent_runs.fail(db, interfaces, operator, run, cut_off)
+        raise cut_off
     report.exports = exports
     report.executive_summary = summary
     report.methodology = methodology
@@ -270,9 +281,12 @@ def fail_stuck_reports(
 ) -> None:
     """A report still GENERATING after STALE_MINUTES was cut off (e.g. the API stopped)."""
     cutoff = datetime.now(UTC) - timedelta(minutes=STALE_MINUTES)
-    for report in report_repo.generating_before(db, assessment_id, cutoff):
+    stuck = report_repo.generating_before(db, assessment_id, cutoff)
+    for report in stuck:
         report.report_status = ReportStatus.FAILED
+    if stuck:
         db.commit()
+    for report in stuck:
         audit(
             interfaces.write_audit,
             "REPORT_FAILED",
@@ -291,9 +305,13 @@ def report_failed(
     folder: Path,
 ) -> None:
     db.rollback()
+    report = get(db, report.report_id, lock=True)
+    shutil.rmtree(folder, ignore_errors=True)  # no half-written files are left
+    if report.report_status != ReportStatus.GENERATING:
+        db.commit()  # already ended (cut off as stuck): it keeps that end and its one line
+        return
     report.report_status = ReportStatus.FAILED
     db.commit()
-    shutil.rmtree(folder, ignore_errors=True)  # no half-written files are left
     code = error.code if isinstance(error, ApiError) else "UNEXPECTED_ERROR"
     audit(
         interfaces.write_audit,
@@ -322,7 +340,7 @@ def request_review(
             {"report_status": report.report_status},
         )
     review = report_repo.review_for(db, report_id)
-    expire_lapsed_review(db, write_audit, operator, report, review, ttl_minutes)
+    lapsed = expire_lapsed_review(report, review, ttl_minutes)
     if review is not None and review.approval_status in (
         ApprovalStatus.PENDING,
         ApprovalStatus.APPROVED,
@@ -347,7 +365,15 @@ def request_review(
             report_id=report.report_id,
         ),
     )
-    db.commit()
+    db.commit()  # one commit: the report stays locked until the new review is saved
+    if lapsed:
+        audit(
+            write_audit,
+            "APPROVAL_EXPIRED",
+            operator,
+            report.assessment_id,
+            {"report_id": str(report.report_id), "approval_id": str(review.approval_id)},
+        )
     audit(
         write_audit,
         "APPROVAL_REQUESTED",
@@ -405,28 +431,15 @@ def file_hashes(report: Report) -> dict[str, str]:
     return {name: report.exports.get(f"{name}_SHA256", "") for name in report_files.FORMATS}
 
 
-def expire_lapsed_review(
-    db: Db,
-    write_audit: WriteAudit,
-    operator: Operator,
-    report: Report,
-    review: Approval | None,
-    ttl_minutes: int,
-) -> None:
-    """A review still PENDING past its 30 minutes is EXPIRED, so a new one can be asked."""
+def expire_lapsed_review(report: Report, review: Approval | None, ttl_minutes: int) -> bool:
+    """A review still PENDING past its 30 minutes is EXPIRED, so a new one can be asked.
+    Not committed here: the caller commits it with the new review. True when it expired."""
     if review is None or review.approval_status != ApprovalStatus.PENDING:
-        return
+        return False
     if datetime.now(UTC) < expires_at(review.requested_at, ttl_minutes):
-        return
+        return False
     review.approval_status = ApprovalStatus.EXPIRED
-    db.commit()
-    audit(
-        write_audit,
-        "APPROVAL_EXPIRED",
-        operator,
-        report.assessment_id,
-        {"report_id": str(report.report_id), "approval_id": str(review.approval_id)},
-    )
+    return True
 
 
 def reject_review(

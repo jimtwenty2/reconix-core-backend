@@ -119,7 +119,12 @@ async def send_action(
     agent_run_id: UUID | None = None,
 ) -> ActionOut:
     """source is who asked: "operator", or "agent" for the step a plan suggested, which
-    passes its own agent_run_id so the action is filed under that plan's run."""
+    passes its own agent_run_id so the action is filed under that plan's run.
+
+    The assessment row is locked from the loop check until a LOW action's tool run is
+    saved, so actions sent at once are checked one at a time and each sees the runs
+    before it: the loop limits hold under parallel requests."""
+    assessment_repo.get_for_update(db, assessment_id)
     manifest = ensure_can_act(db, assessment_id)
     action = Action(
         tool=body.tool,
@@ -147,7 +152,9 @@ async def send_action(
         row.target, row.args = snapshot["target"], snapshot["arguments"]
         row.action_status = ActionStatus.BLOCKED
     action_repo.add(db, row)
-    db.commit()
+    runs_now = result.decision != Decision.BLOCKED and next_step(result) == NextStep.RUN_NOW
+    if not runs_now:
+        db.commit()  # a LOW action is committed with its tool run (run_action), under the lock
 
     details = {"action_id": str(row.action_id), "tool": row.tool, "risk": result.risk}
     if result.decision == Decision.BLOCKED:
