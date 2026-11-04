@@ -175,10 +175,10 @@ async def test_provider(
 
 @router.get("/{llm_provider_id}/models")
 async def list_models(llm_provider_id: UUID, db: Db, _: CurrentOperator) -> LlmProviderModelsOut:
-    """Lists the models that a RECONIX or OLLAMA provider's Ollama has on this computer.
+    """Lists the models that an OLLAMA provider's Ollama has on this computer.
 
     Business Rules:
-    - Cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.
+    - RECONIX and cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.
 
     Security:
     - Requires a valid session token.

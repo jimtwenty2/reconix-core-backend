@@ -71,7 +71,7 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
 - **Tools** are called only through `clients/mcp.py` with a fresh one-time job token
   (`core/job_token.py`). Commands are `list[str]`, never strings.
 - **Secrets:** mask before saving, logging or returning anything. AI provider API keys are
-  encrypted with Fernet (`RECONIX_FERNET_KEY`) and only the last 4 characters are ever shown.
+  encrypted with Fernet (`RECONIX_PROVIDER_ENCRYPTION_KEY`) and only the last 4 characters are ever shown.
 - **Schema changes** go through Alembic (`add-db-migration` skill).
 - **Routes or schemas changed** → regenerate `docs/openapi.json` in the same PR (`sync-openapi`
   skill). New endpoints follow the `add-endpoint` skill.
@@ -119,22 +119,23 @@ Keep this table true; update the row in the PR that changes it.
 Run from the repo root.
 
 ```bash
-uv run --package reconix-api pytest                              # all API tests
+uv run --package reconix-api pytest services/api/tests                              # all API tests
 uv run --package reconix-api pytest services/api/tests/unit -q
 uv run --package reconix-api pytest services/api/tests/security -q
 
-cd services/api && uv run alembic upgrade head && cd -           # migrate
+uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head         # migrate
 uv run --package reconix-api python -m reconix_api.main          # http://127.0.0.1:8000/docs
 ```
 
 Integration tests skip unless `RECONIX_TEST_DATABASE_URL` points at a PostgreSQL 16 database (see
-`tests/integration/conftest.py`). The live MCP test also needs `RECONIX_TEST_MCP_URL` and
-`RECONIX_TEST_MCP_ACCESS_KEY` (the Kali container, started with `deploy/docker-compose.dev.yml`).
+`tests/integration/conftest.py`). The live MCP test also needs `RECONIX_TEST_MCP_URL` (and
+`RECONIX_TEST_MCP_AUTH_TOKEN` if that Kali has one): a Kali started from the Reconix-Kali-MCP
+repo, since Core's Kali has no port on this computer.
 
 ## Done when
 
 - `uv run ruff check . && uv run ruff format --check .` pass.
-- `uv run --package reconix-api pytest` passes, including the no-token (401) tests.
+- `uv run --package reconix-api pytest services/api/tests` passes, including the no-token (401) tests.
 - A new endpoint needs the token (the no-token test checks it by itself); a bug fix has a test
   that failed before the fix.
 - `docs/openapi.json` is regenerated if routes or schemas changed, and a migration exists if the

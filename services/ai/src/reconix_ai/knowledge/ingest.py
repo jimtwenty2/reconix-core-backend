@@ -3,7 +3,7 @@
     uv run --package reconix-ai python -m reconix_ai.knowledge.ingest [folder] [--rebuild]
 
 Uses the full download in data/knowledge/ if it is there, else the committed
-sample. Needs Ollama with bge-m3 (`ollama pull bge-m3`) and Qdrant running.
+sample. Needs the bge-m3 embedding server (RECONIX_EMBEDDINGS_URL) and Qdrant running.
 The public knowledge is replaced on every run; the add-ons people uploaded
 (USER_DOC, add_ons.py) stay. --rebuild drops the whole collection and makes it
 again, add-ons and all: use it when the vectors or indexes change.

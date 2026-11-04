@@ -222,6 +222,24 @@ def test_the_api_settings_never_reach_the_terminal_app(monkeypatch):
     assert env["RECONIX_DATA_DIR"] == "tui-data-folder"
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "RECONIX_MCP_AUTH_TOKEN",  # an alias, not the field name (mcp_access_key)
+        "RECONIX_MCP_ACCESS_KEY",  # the old name, still read
+        "RECONIX_FERNET_KEY",  # the old name of RECONIX_PROVIDER_ENCRYPTION_KEY
+        "RECONIX_PROVIDER_ENCRYPTION_KEY",
+        "RECONIX_MCP_URL",
+        "RECONIX_MODEL_API_KEY",  # read by the AI Service, not an API settings field
+        "RECONIX_MODEL_URL",
+        "RECONIX_EMBEDDINGS_URL",
+    ],
+)
+def test_aliases_and_ai_service_settings_never_reach_the_terminal_app(monkeypatch, name):
+    monkeypatch.setenv(name, "fake-api-only-value")
+    assert name not in child_environment(80, 24)
+
+
 def installed(monkeypatch, *, in_api_env: bool, on_path: str | None) -> None:
     """Fake where the terminal app is installed, so the tests never depend on this machine."""
     real_find_spec = terminal_core.importlib.util.find_spec

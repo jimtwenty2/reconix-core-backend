@@ -22,6 +22,8 @@ import sys
 import termios
 from pathlib import Path
 
+from pydantic import AliasChoices
+
 from reconix_api.core.config import Settings
 
 READ_SIZE = 65536  # bytes read from the terminal at a time
@@ -29,11 +31,32 @@ QUEUE_SIZE = 64  # screen chunks waiting for the page; reading pauses when it is
 STOP_SECONDS = 3  # SIGTERM first; SIGKILL if the TUI is still running after this
 WRITE_SECONDS = 5  # a paste the TUI does not read within this is dropped
 
+# The AI Service's settings, read straight from the environment (not API settings fields).
+AI_SERVICE_SETTINGS = {
+    "RECONIX_MODEL_URL",
+    "RECONIX_MODEL_API_KEY",
+    "RECONIX_MODEL_NAME",
+    "RECONIX_EMBEDDINGS_URL",
+    "RECONIX_OLLAMA_URL",
+    "RECONIX_QDRANT_URL",
+}
+
+
+def api_setting_names() -> set[str]:
+    """Every environment name an API setting is read from: RECONIX_<field> and each alias,
+    new and old (RECONIX_MCP_AUTH_TOKEN, RECONIX_FERNET_KEY, ...)."""
+    names = set()
+    for name, field in Settings.model_fields.items():
+        names.add(f"RECONIX_{name.upper()}")
+        alias = field.validation_alias
+        choices = alias.choices if isinstance(alias, AliasChoices) else [alias]
+        names |= {choice for choice in choices if isinstance(choice, str)}
+    return names
+
+
 # The API's own settings, as environment variables. Never handed to the TUI; the TUI's own
 # RECONIX_* settings (its data folder, for example) still are.
-API_SETTINGS = {f"RECONIX_{name.upper()}" for name in Settings.model_fields} | {
-    "RECONIX_MCP_URL"  # the older name of RECONIX_KALI_MCP_URL
-}
+API_SETTINGS = api_setting_names() | AI_SERVICE_SETTINGS
 
 
 class TerminalAppMissing(RuntimeError):

@@ -60,8 +60,8 @@ class FakeKali:
         return self.requests[-1]
 
 
-async def run(kali: FakeKali, the_job: ToolJob):
-    call_tool = make_call_tool(URL, "access-key", transport=httpx.MockTransport(kali))
+async def run(kali: FakeKali, the_job: ToolJob, access_key: str = "access-key"):
+    call_tool = make_call_tool(URL, access_key, transport=httpx.MockTransport(kali))
     return await call_tool(the_job)
 
 
@@ -151,6 +151,10 @@ def test_plain_text_results_from_zap():
     assert failed.stderr == "[error] url is required"
 
 
-def test_no_access_key_is_refused():
-    with pytest.raises(ValueError):
-        make_call_tool(URL, "")
+async def test_without_an_auth_token_no_authorization_header_is_sent():
+    kali = FakeKali()
+    result = await run(kali, job(), access_key="")
+    assert result.status == ToolRunStatus.COMPLETED
+    headers, body = kali.call()
+    assert "authorization" not in headers
+    assert body["params"]["_meta"] == {"job_token": "job-token"}  # the job token still goes

@@ -77,7 +77,9 @@ def db_app(session_factory):
         finding_memory=parts["memory"].update,
     )
     settings = Settings(
-        database_url=TEST_DATABASE_URL, job_token_secret=JOB_TOKEN_SECRET, fernet_key=FERNET_KEY
+        database_url=TEST_DATABASE_URL,
+        job_token_secret=JOB_TOKEN_SECRET,
+        provider_encryption_key=FERNET_KEY,
     )
     parts["mcp"].secret = JOB_TOKEN_SECRET  # checks tokens the way the Kali side does
 

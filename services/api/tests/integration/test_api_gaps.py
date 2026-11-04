@@ -270,15 +270,26 @@ def test_a_provider_that_does_not_answer_is_not_ok(db_client, monkeypatch):
 
 def test_an_ollama_provider_lists_its_models(db_client, monkeypatch):
     headers = open_session(db_client)
-    provider_id = builtin_provider_id(db_client, headers)
+    ollama = {"provider_type": "OLLAMA", "display_name": "Local", "model_name": "llama3.1:8b"}
+    added = db_client.post("/llm-providers", json=ollama, headers=headers)
+    assert added.status_code == 201, added.json()
 
     async def models(base_url):
-        return ["bge-m3:latest", "reconix:latest"]
+        return ["bge-m3:latest", "llama3.1:8b"]
 
     monkeypatch.setattr(provider_checks, "local_models", models)
-    listed = get(db_client, headers, f"/llm-providers/{provider_id}/models")
+    listed = get(db_client, headers, f"/llm-providers/{added.json()['llm_provider_id']}/models")
 
-    assert listed == {"models": ["bge-m3:latest", "reconix:latest"]}
+    assert listed == {"models": ["bge-m3:latest", "llama3.1:8b"]}
+
+
+def test_the_built_in_provider_lists_no_models(db_client):
+    # RECONIX is the Reconix team's server, not an Ollama on this computer.
+    headers = open_session(db_client)
+    provider_id = builtin_provider_id(db_client, headers)
+    response = db_client.get(f"/llm-providers/{provider_id}/models", headers=headers)
+    assert response.status_code == 422
+    assert response.json()["code"] == "MODEL_LIST_NOT_SUPPORTED"
 
 
 def add_compatible(client, headers, base_url="https://llm.example.com/v1") -> str:

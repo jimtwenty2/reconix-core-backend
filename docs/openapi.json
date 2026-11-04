@@ -6291,7 +6291,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/models": {
       "get": {
-        "description": "Lists the models that a RECONIX or OLLAMA provider's Ollama has on this computer.\n\nBusiness Rules:\n- Cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Lists the models that an OLLAMA provider's Ollama has on this computer.\n\nBusiness Rules:\n- RECONIX and cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_models_api_v1_llm_providers__llm_provider_id__models_get",
         "parameters": [
           {

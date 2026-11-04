@@ -10,7 +10,7 @@ import ipaddress
 from urllib.parse import urlsplit, urlunsplit
 
 from reconix_ai.providers.base_url import BaseUrlError, check_base_url
-from reconix_ai.providers.settings import ollama_url
+from reconix_ai.providers.settings import ollama_url, reconix_provider
 from reconix_api.core.errors import ApiError
 
 
@@ -43,9 +43,15 @@ def is_local_address(url: str) -> bool:
 
 
 def default_ollama_url() -> str:
-    """Where the built-in RECONIX model and an Ollama provider with no address are
-    called: RECONIX_OLLAMA_URL, or Ollama on this computer."""
+    """Where an Ollama provider with no address is called: RECONIX_OLLAMA_URL, or Ollama
+    on this computer."""
     return ollama_url()
+
+
+def reconix_model_url() -> str | None:
+    """Where the built-in RECONIX model is called: RECONIX_MODEL_URL (the Reconix team's
+    server), or None when it is not set."""
+    return reconix_provider().base_url
 
 
 def _plain_form(base_url: str) -> bool:
