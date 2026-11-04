@@ -1,0 +1,127 @@
+# Reconix local stack: the API, Postgres, Qdrant, the bge-m3 embedding server and the Kali
+# tool container. The AI model itself (RECONIX) is served by the Reconix team, not here.
+#
+# Start everything (--build rebuilds the API after a code change):
+#   docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+# Stop everything (add -v to also delete the data):
+#   docker compose -f deploy/docker-compose.yml --env-file .env down
+#
+# Safety:
+# - Only the API has a port on your computer (127.0.0.1:8000). Nothing else is reachable.
+# - Each container joins only the networks it needs (see networks at the bottom).
+
+name: reconix
+
+services:
+  # --- API --------------------------------------------------------------------------------
+  # http://127.0.0.1:8000 (docs at /docs). It migrates the database when it starts.
+  api:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+    image: reconix-api:local
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      # Inside Docker, the other services are reached by their service name.
+      RECONIX_DATABASE_URL: postgresql+psycopg://${RECONIX_DB_USER:-reconix}:${RECONIX_DB_PASSWORD:?set RECONIX_DB_PASSWORD in .env}@postgres:5432/${RECONIX_DB_NAME:-reconix}
+      RECONIX_KALI_MCP_URL: http://reconix-kali-container:8000/mcp
+      RECONIX_EMBEDDINGS_URL: http://embeddings:8080/v1
+      RECONIX_QDRANT_URL: http://qdrant:6333
+    ports: ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Audit log, reports and uploaded code. Kali reads data/code (read-only).
+    volumes: [../data:/app/data]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      embeddings:
+        condition: service_started
+      reconix-kali-container:
+        condition: service_started
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # models: Postgres, Qdrant, the embedding server and AI providers. tools: Kali.
+    networks: [models, tools]
+
+  # --- Database ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${RECONIX_DB_NAME:-reconix}
+      POSTGRES_USER: ${RECONIX_DB_USER:-reconix}
+      POSTGRES_PASSWORD: ${RECONIX_DB_PASSWORD:?set RECONIX_DB_PASSWORD in .env}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [models]
+
+  # --- Knowledge search (vector database) -------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    restart: unless-stopped
+    volumes: [qdrant-data:/qdrant/storage]
+    networks: [models]
+
+  # --- Embeddings: turns text into vectors for the knowledge search --------------------------
+  # Runs BAAI/bge-m3 on CPU (Hugging Face text-embeddings-inference) and answers OpenAI-style at
+  # http://embeddings:8080/v1/embeddings. It downloads the model (~2.3 GB) once, on first start.
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
+    restart: unless-stopped
+    # A batch of 8192 tokens (the model's longest input) keeps the CPU warm-up short; the
+    # default 16384 can take many minutes. It uses about 6-9 GB of memory.
+    command: ["--model-id", "BAAI/bge-m3", "--port", "8080", "--max-batch-tokens", "8192"]
+    volumes: [embeddings-data:/data]
+    # Needs no Linux permissions; port 8080 needs none to open.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [models]
+
+  # --- Kali tool container ----------------------------------------------------------------
+  reconix-kali-container:
+    # Built in Reconix-Kali-MCP. The image already holds the nuclei templates.
+    image: ${RECONIX_KALI_IMAGE:-dannygg02/reconix-kali-container:latest}
+    restart: unless-stopped
+    environment:
+      # Serve MCP over HTTP at http://reconix-kali-container:8000/mcp.
+      KALI_MCP_TRANSPORT: http
+      KALI_MCP_HOST: 0.0.0.0
+      KALI_MCP_PORT: "8000"
+      KALI_MCP_AUTH_TOKEN: ${RECONIX_MCP_AUTH_TOKEN:-}  # optional
+      JOB_TOKEN_SECRET: ${RECONIX_JOB_TOKEN_SECRET:?set RECONIX_JOB_TOKEN_SECRET in .env}
+    # Remove all Linux permissions, then add back only the three nmap needs to start.
+    cap_drop: [ALL]
+    cap_add: [NET_RAW, NET_ADMIN, NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    # Code sent from the VS Code extension (RECONIX_CODE_DIR). Read-only.
+    volumes: [../data/code:/workspace/code:ro]
+    networks: [tools, lab]
+
+networks:
+  # API, Postgres, Qdrant and the embedding server. Qdrant has no password, so every service on
+  # this network can read and change it.
+  models: {}
+  # API to Kali.
+  tools: {}
+  # Kali to the lab targets (Juice Shop, test repo).
+  lab:
+    name: reconix-lab
+    internal: true
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  embeddings-data:

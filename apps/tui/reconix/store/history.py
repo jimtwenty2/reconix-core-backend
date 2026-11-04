@@ -1,0 +1,34 @@
+"""Prompt history: every line submitted at a prompt, oldest first."""
+
+from typing import List
+
+from ..models import HistoryEntry
+from . import lists
+from .assessment import MAX_REQUEST_LENGTH, fold_line, refuse_escaped_secret
+from .errors import StoreValidationError
+from .redact import redact
+
+MAX_HISTORY = 100
+
+
+def add_history(text: str) -> HistoryEntry:
+    """Remember a submitted request or command (consecutive repeats are kept once).
+
+    Masked like a recorded request, so ↑ can never bring back a typed password or token. A
+    line with colour codes and a secret is refused, so it is never kept."""
+    refuse_escaped_secret(text)
+    text = redact(fold_line(text))
+    if not text:
+        raise StoreValidationError("Nothing to add to the history.")
+    if len(text) > MAX_REQUEST_LENGTH:
+        raise StoreValidationError(f"Keep prompts to at most {MAX_REQUEST_LENGTH} characters.")
+    if lists.PROMPT_HISTORY and lists.PROMPT_HISTORY[-1].text == text:
+        return lists.PROMPT_HISTORY[-1]
+    entry = HistoryEntry(text)
+    lists.PROMPT_HISTORY.append(entry)
+    del lists.PROMPT_HISTORY[:-MAX_HISTORY]
+    return entry
+
+
+def list_history() -> List[str]:
+    return [entry.text for entry in lists.PROMPT_HISTORY]

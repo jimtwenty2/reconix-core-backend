@@ -1,0 +1,292 @@
+"""/provider and /model: configure LLM providers and pick the active model.
+
+Handlers in `commands/builtin.py` call these methods only. Reachability tests and the chat
+reply block on the network, so they run in a Textual worker thread (copying `web.py`).
+Nothing here decides a gate or changes scope — a model is only ever configured or displayed.
+"""
+
+from typing import Optional
+
+from .. import store
+from ..models import Choice
+from ..screens import ChoiceScreen
+from ..screens.forms import ProviderForm
+
+_VERBS = {"set", "update", "test", "unset"}
+
+
+def _setup_hint(view) -> str:
+    """What the set-up form asks for this provider (the mock has no address and no model)."""
+    if view.kind == "mock":
+        return "An optional API key; offline, no address or model to set"
+    parts = []
+    if view.shows_key_field:
+        parts.append("API key" + ("" if view.needs_key else " (optional)"))
+    if view.shows_base_field:
+        parts.append("base URL")
+    if view.shows_models_field:
+        parts.append("model(s)" if view.multi_model else "model")
+    if not parts:
+        return "Its settings"
+    return parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
+
+
+class LlmMixin:
+    """Mixed into ReconixApp."""
+
+    # At start, while no model is active, ask which provider to use (tests switch it off).
+    ASK_PROVIDER_ON_START = True
+
+    # --- start-up: "Set an AI provider?" ------------------------------------------------------
+    def ask_provider_on_start(self) -> None:
+        """Offer the offline mock, a real provider or no model, until a model is active."""
+        if not self.ASK_PROVIDER_ON_START or store.active_model() is not None:
+            return
+        choices = [
+            Choice("mock", "Use the mock model (offline)",
+                   "Prepared answers on this computer, for testing: reconix-mock-1, no network",
+                   recommended=True),
+            Choice("provider", "Set a provider…",
+                   "OpenAI, Anthropic, DeepSeek, Ollama or a custom endpoint (/provider)"),
+            Choice("skip", "Skip (built-in replies only)",
+                   "No model for now. Reconix asks again at the next start.", separated=True),
+        ]
+        self.open_dialog(
+            ChoiceScreen("◆ SET AN AI PROVIDER", "Set an AI provider?", choices,
+                         chip="Provider"),
+            self._start_provider_chosen)
+
+    def _start_provider_chosen(self, choice: Optional[str]) -> None:
+        if choice == "mock":
+            self.open_dialog(ProviderForm("mock"), self._mock_saved)
+        elif choice == "provider":
+            self.open_provider_menu()
+
+    def _mock_saved(self, result: Optional[str]) -> None:
+        """The mock's form closed: when saved, test it and make it the active model."""
+        if result != "saved":
+            self.refresh_view()
+            return
+        try:
+            store.test_provider("mock")      # the form saved it: test, then make it active
+            active = store.activate("mock", store.get_provider("mock").models[0])
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
+        self.refresh_view()
+        self.notify(f"Active model: {active.label} · {active.model}", markup=False)
+
+    # --- /provider ----------------------------------------------------------------------------
+    def provider_command(self, arg: Optional[str]) -> None:
+        arg = (arg or "").strip()
+        if not arg:
+            self.open_provider_menu()
+            return
+        parts = arg.split(None, 1)
+        verb = parts[0].lower()
+        rest = parts[1].strip().lower() if len(parts) > 1 else ""
+        if verb in _VERBS:
+            if not self._known(rest):
+                return
+            if verb in ("set", "update"):
+                self.open_provider_form(rest)
+            elif verb == "test":
+                self.test_provider_async(rest)
+            else:
+                self.confirm_unset(rest)
+            return
+        if self._known(arg.lower()):
+            self.open_provider_submenu(arg.lower())
+
+    def _known(self, provider_id: str) -> bool:
+        try:
+            store.get_provider(provider_id)
+            return True
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return False
+
+    def open_provider_menu(self) -> None:
+        """Every provider; the ACTIVE one (else the first configured) is highlighted, so it
+        is on screen even when the list is longer than a small terminal (QA-002)."""
+        choices = []
+        providers = store.list_providers()
+        default = next((i for i, p in enumerate(providers) if p.active_model),
+                       next((i for i, p in enumerate(providers) if p.configured), 0))
+        for p in providers:
+            tag = "ACTIVE" if p.active_model else ""
+            bits = [p.status.title()]
+            if p.configured and p.api_key_hint:
+                bits.append(p.api_key_hint)
+            if p.models:
+                bits.append(", ".join(p.models))
+            label = p.label + ("  [configured]" if p.configured else "")
+            choices.append(Choice(p.id, label, " · ".join(bits), tag=tag))
+        self.open_dialog(
+            ChoiceScreen("◆ LLM PROVIDERS", "Pick a provider to set up or manage:",
+                         choices, default=default, chip="Providers"),
+            self._provider_picked)
+
+    def _provider_picked(self, provider_id: Optional[str]) -> None:
+        if provider_id:
+            self.open_provider_submenu(provider_id)
+
+    def open_provider_submenu(self, provider_id: str) -> None:
+        p = store.get_provider(provider_id)
+        setup = "Update" if p.configured else "Set up"
+        if not p.configured:
+            use_reason = "set up first"
+        elif not p.reachable:
+            use_reason = "test first"
+        else:
+            use_reason = "no model listed"
+        choices = [
+            Choice("set", f"{setup} {p.label}", _setup_hint(p)),
+            Choice("test", "Test connection", "Check the key and that the model is reachable",
+                   disabled=not p.configured, reason="set up first"),
+            Choice("model", "Use a model", "Make one of its models the active choice",
+                   disabled=not (p.reachable and p.models), reason=use_reason),
+            Choice("unset", "Unset", "Remove this provider", disabled=not p.configured,
+                   separated=True, reason="not set up"),
+        ]
+        self.open_dialog(
+            ChoiceScreen(f"◆ {p.label.upper()}", f"{p.label} · {p.status.title()}",
+                         choices, chip="Provider"),
+            lambda choice: self._submenu_chosen(provider_id, choice))
+
+    def _submenu_chosen(self, provider_id: str, choice: Optional[str]) -> None:
+        if choice == "set":
+            self.open_provider_form(provider_id)
+        elif choice == "test":
+            self.test_provider_async(provider_id)
+        elif choice == "model":
+            self.open_model_menu(provider_id)
+        elif choice == "unset":
+            self.confirm_unset(provider_id)
+
+    def open_provider_form(self, provider_id: str) -> None:
+        self.open_dialog(ProviderForm(provider_id),
+                         lambda result: self._provider_saved(provider_id, result))
+
+    def _provider_saved(self, provider_id: str, result: Optional[str]) -> None:
+        self.refresh_view()
+        if result != "saved":
+            return
+        label = store.get_provider(provider_id).label
+        self.open_dialog(
+            ChoiceScreen("✓ PROVIDER SAVED", f"Saved {label}. Test the connection now?",
+                         [Choice("test", "Yes, test it now"), Choice("later", "Not now")],
+                         chip="Provider"),
+            lambda choice: self.test_provider_async(provider_id) if choice == "test" else None)
+
+    # --- test (worker) ------------------------------------------------------------------------
+    def test_provider_async(self, provider_id: str) -> None:
+        try:
+            view = store.get_provider(provider_id)
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
+        if not view.configured:
+            self.notify(f"{view.label} is not configured yet.", severity="warning", markup=False)
+            return
+        self.notify(f"Testing {view.label}…", markup=False)
+        self.run_worker(lambda: self._run_test(provider_id), thread=True, group="llm",
+                        exit_on_error=False)
+
+    def _run_test(self, provider_id: str) -> None:
+        try:
+            view = store.test_provider(provider_id)
+        except store.StoreValidationError as exc:
+            self.call_from_thread(self._warn, exc)
+            return
+        self.call_from_thread(self._test_done, view)
+
+    def _test_done(self, view) -> None:
+        """Say how the test went. A reachable provider becomes the active model when none is
+        active yet (as the start-up dialog does), and the notice says so."""
+        message = f"{view.label}: {view.status} — {view.status_detail}"
+        if view.reachable and view.models and store.active_model() is None:
+            try:
+                active = store.activate(view.id, view.models[0])
+                message += f" · Active model now: {active.label} · {active.model}"
+            except store.StoreValidationError as exc:
+                message += f" {exc}"
+        self.refresh_view()
+        self.notify(message, severity="information" if view.reachable else "warning",
+                    markup=False)
+
+    # --- unset --------------------------------------------------------------------------------
+    def confirm_unset(self, provider_id: str) -> None:
+        try:
+            view = store.get_provider(provider_id)
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
+        if not view.configured:
+            self.notify(f"{view.label} is not configured.", severity="warning", markup=False)
+            return
+        self.open_dialog(
+            ChoiceScreen(f"REMOVE {view.label.upper()}?",
+                         f"This deletes {view.label}'s saved key and settings.",
+                         [Choice("keep", "No, keep it"),
+                          Choice("unset", "Yes, remove it", tone="danger")],
+                         chip="Provider", danger=True, default=0),
+            lambda choice: self._do_unset(provider_id) if choice == "unset" else None)
+
+    def _do_unset(self, provider_id: str) -> None:
+        try:
+            label = store.get_provider(provider_id).label
+            store.unset_provider(provider_id)
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
+        self.refresh_view()
+        self.notify(f"Removed {label}.", markup=False)
+
+    # --- /model -------------------------------------------------------------------------------
+    def model_command(self, arg: Optional[str]) -> None:
+        arg = (arg or "").strip()
+        if not arg:
+            self.open_model_menu()
+            return
+        self.activate_model(arg)
+
+    def open_model_menu(self, only_provider: Optional[str] = None) -> None:
+        choices = []
+        for p in store.list_providers():
+            if only_provider and p.id != only_provider:
+                continue
+            if not p.configured or not p.models:
+                continue
+            for i, model in enumerate(p.models):
+                active = p.active_model == model
+                hint = "active" if active else (
+                    "ready" if p.reachable else "Test the connection first")
+                choices.append(Choice(
+                    f"{p.id}/{model}", f"{p.label} · {model}", hint,
+                    disabled=not p.reachable, separated=(i == 0), tag="ACTIVE" if active else ""))
+        if not choices:
+            self.notify("No models yet. Use /provider to set one up and test it.",
+                        severity="warning", markup=False)
+            return
+        self.open_dialog(
+            ChoiceScreen("◆ CHOOSE A MODEL", "Pick the model the next chat line will use:",
+                         choices, chip="Model"),
+            self.activate_model)
+
+    def activate_model(self, spec: Optional[str]) -> None:
+        if not spec or "/" not in spec:
+            if spec:
+                self.notify("Use provider/model, e.g. openai/gpt-4o-mini.",
+                            severity="warning", markup=False)
+            return
+        provider_id, model = spec.split("/", 1)
+        try:
+            active = store.activate(provider_id.strip(), model.strip())
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
+        from ..store import agent_run
+        agent_run.switch_model()        # repoint a live agent, keeping its history
+        self.refresh_view()
+        self.notify(f"Active model: {active.label} · {active.model}", markup=False)

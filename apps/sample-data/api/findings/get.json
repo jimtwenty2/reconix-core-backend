@@ -1,0 +1,51 @@
+{
+  "finding_id": "f0000000-0000-4000-8000-000000000001",
+  "code": "RCX-001",
+  "title": "SQL injection in product search",
+  "target": "http://juice-shop.example:3000/rest/products/search?q=",
+  "description": "The q parameter is put into a SQL query without escaping; a single quote returns a database error.",
+  "severity_status": "HIGH",
+  "cvss_score": "8.6",
+  "cwe_ids": [
+    "CWE-89"
+  ],
+  "owasp_id": [
+    "A03:2021"
+  ],
+  "cve_ids": [],
+  "impact": "An attacker can read any table, including user accounts and password hashes.",
+  "remediation": "Use parameterised queries for the product search.",
+  "validation_status": "CONFIRMED",
+  "finding_status": "OPEN",
+  "reviewed_by": "demo-tester",
+  "reviewed_at": "2026-11-02T09:25:00Z",
+  "created_at": "2026-11-02T09:18:31Z",
+  "assessment_id": "a0000000-0000-4000-8000-000000000001",
+  "source_tool_run_ids": [
+    "e0000000-0000-4000-8000-000000000002"
+  ],
+  "tools": [
+    "NUCLEI"
+  ],
+  "evidence": [
+    {
+      "evidence_id": "f1000000-0000-4000-8000-000000000001",
+      "kind": "http_response",
+      "content": "HTTP/1.1 500 Internal Server Error\n{\"error\": \"SQLITE_ERROR: unrecognized token: \\\"'\\\"\"}",
+      "location": "http://juice-shop.example:3000/rest/products/search?q='",
+      "created_at": "2026-11-02T09:18:31Z",
+      "tool_run_id": "e0000000-0000-4000-8000-000000000002"
+    }
+  ],
+  "latest_validation": {
+    "validation_run_id": "f2000000-0000-4000-8000-000000000001",
+    "method": "manual_review",
+    "validation_status": "CONFIRMED",
+    "reason": "The database error appears with a single quote and goes away when it is escaped.",
+    "reviewed_by": "demo-tester",
+    "reviewed_at": "2026-11-02T09:25:00Z",
+    "created_at": "2026-11-02T09:25:00Z",
+    "finding_id": "f0000000-0000-4000-8000-000000000001",
+    "tool_run_id": null
+  }
+}

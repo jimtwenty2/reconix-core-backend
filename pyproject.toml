@@ -1,0 +1,36 @@
+[project]
+name = "reconix-core"
+version = "0.0.0"
+description = "Reconix-Core uv workspace"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["services/api", "services/ai", "apps/tui"]
+
+[tool.uv]
+# Security fix: filelock < 4.2.1 has known vulnerabilities (GHSA-v4x8-3wr5-3wq8 and others),
+# but litellm 1.104+ still declares filelock<4.0. litellm only uses filelock in its proxy CLI,
+# which Reconix never runs; huggingface-hub uses FileLock, SoftFileLock, BaseFileLock and
+# Timeout, which filelock 4 keeps. Remove this once litellm allows filelock 4.
+override-dependencies = ["filelock>=4.2.1"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S105", "S106"]  # asserts and fake tokens are fine in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["reconix_api", "reconix_ai", "reconix_tui", "tests"]

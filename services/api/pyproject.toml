@@ -1,0 +1,38 @@
+[project]
+name = "reconix-api"
+version = "0.0.0"
+description = "Reconix backend API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic>=1.14",
+    "cryptography>=44",
+    "defusedxml>=0.7",
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "mcp>=2.3,<3",  # the core MCP server at /mcp (code scan tools for the VS Code extension)
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "pypdf>=6.21.4",  # knowledge add-ons: PDF page text
+    "python-docx>=1.2",  # knowledge add-ons: Word paragraphs and tables
+    "python-multipart>=0.0.20",  # FastAPI file uploads (knowledge add-ons)
+    "pyyaml>=6.0",  # knowledge add-ons: YAML, safe loading only
+    "reconix-ai",
+    "sqlalchemy>=2.0.36",
+    "uvicorn>=0.34",
+]
+
+[tool.uv.sources]
+reconix-ai = { workspace = true }  # the harness: check, masking, audit log
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reconix_api"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
