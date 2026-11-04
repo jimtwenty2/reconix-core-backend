@@ -49,12 +49,18 @@ MAX_FEEDBACK_LENGTH = 500
 
 
 def add_feedback(gate: str, text: str) -> Feedback:
-    """Save free text typed at a question (the "Type something." answer)."""
-    text = " ".join(text.split())
+    """Save free text typed at a question (the "Type something." answer), masked like a
+    recorded line: the feedback list and the audit line never hold a password or token."""
+    from .assessment import fold_line, refuse_escaped_secret  # (assessment imports us)
+    from .redact import redact
+
+    refuse_escaped_secret(text)  # control codes next to a secret: never kept
+    text = fold_line(text)
     if not text:
         raise StoreValidationError("Type some feedback first.")
     if len(text) > MAX_FEEDBACK_LENGTH:
         raise StoreValidationError(f"Keep feedback under {MAX_FEEDBACK_LENGTH} characters.")
+    text = redact(text)
     feedback = Feedback(gate=gate, text=text, operator=current_operator(),
                         assessment=_current_label())
     lists.FEEDBACK.append(feedback)

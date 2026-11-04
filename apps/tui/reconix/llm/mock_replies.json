@@ -1,11 +1,22 @@
 {
-  "_about": "Prepared answers of the offline mock model (reconix-mock-1). Shared by the TUI (reconix/llm/mock.py) and the web (apps/web/src/lib/assistant/models/mock-replies.json, written by apps/web/scripts/sync-mock-replies.mjs; a test in each app checks the copies match). Intents are tried in order; the first pattern that matches (case-insensitive) wins. Patterns use only syntax Python and JavaScript read the same way. {name} is filled from the assessment's facts; 'needs' names the fact the reply uses, and 'empty' is the reply when that fact is missing.",
+  "_about": "Prepared answers of the offline mock model (reconix-mock-1). Shared by the TUI (reconix/llm/mock.py) and the web (apps/web/src/lib/assistant/models/mock-replies.json, written by apps/web/scripts/sync-mock-replies.mjs; a test in each app checks the copies match). Intents are tried in order; the first pattern that matches (case-insensitive) wins. Patterns use only syntax Python and JavaScript read the same way. {name} is filled from the assessment's facts; 'needs' names the fact the reply uses, and 'empty' is the reply when that fact is missing; 'missing' (needs finding or plan_step) is the reply for a number that isn't there.",
   "model": "reconix-mock-1",
   "intents": [
     {
       "id": "secret",
       "patterns": ["\\b(?:password|passwd|passwords|token|tokens|secret|secrets|api[ -]?key|api[ -]?keys|cookie|cookies|credential|credentials)\\b"],
       "reply": "Secrets are masked: I never see them and can't show them. Evidence and logs keep them as ••••."
+    },
+    {
+      "id": "decision",
+      "patterns": [
+        "\\b(?:should|shall|can|could|may|must|do)\\s+(?:i|we)\\s+(?:(?:just|now|really|safely|still)\\s+)?(?:approve|reject|accept|decline|proceed|continue|go ahead|skip)\\b",
+        "\\b(?:should|shall|can|could|may|must|do)\\s+(?:i|we)\\s+(?:(?:just|now|really|safely|still)\\s+)?(?:run|start)\\s+(?:it|this|that|the plan|the scope|this step|now)\\b",
+        "\\b(?:is it|is this|is that)\\s+(?:safe|ok|okay|fine|wise|a good idea)\\s+to\\s+(?:approve|reject|run|start|proceed|continue|go ahead)\\b",
+        "\\bwhat (?:should|would|do) (?:i|you) (?:do|pick|choose|recommend)\\b",
+        "\\b(?:recommend|advise|suggest)\\w*\\b.*\\b(?:approve|approving|reject|rejecting|run|running)\\b"
+      ],
+      "reply": "That's your call: Reconix never decides for you. {step} Check what it allows first. If that is what you may test, pick it in the menu; if not, edit it or reject it."
     },
     {
       "id": "action",
@@ -15,6 +26,14 @@
         "\\b(?:add|remove|change|allow|delete)\\b.*\\b(?:port|ports|tool|tools|scope|target|path|method)\\b"
       ],
       "reply": "I can't do that. Only you can approve, reject, run or change anything, with the menu Reconix shows. {step}"
+    },
+    {
+      "id": "plan_step",
+      "patterns": ["\\bsteps?\\W{0,3}#?(\\d{1,2}[a-z]?)\\b"],
+      "needs": "plan_step",
+      "reply": "Step {row}. {step}",
+      "missing": "There is no step {id} in the plan. The plan: {plan}.",
+      "empty": "There is no plan yet. It comes after you approve the scope."
     },
     {
       "id": "identity",

@@ -26,7 +26,7 @@ class Question(Vertical):
         self, chip: str, question: str, choices: Sequence[Choice], *,
         hint: str = "", default: int = 0, numbered: Optional[bool] = None,
         typing: bool = True, chat: bool = True, danger: bool = False,
-        inline: bool = False, show_hint: bool = True,
+        inline: bool = False, show_hint: bool = True, type_out: bool = False,
         menu_id: Optional[str] = None, id: Optional[str] = None,
     ) -> None:
         super().__init__(id=id, classes="danger" if danger else None)
@@ -40,13 +40,14 @@ class Question(Vertical):
         self._inline = inline          # one line per choice
         self._show_hint = show_hint    # the "Enter to select …" key-hint row
         self._menu_id = menu_id
+        self._type_out = type_out      # typed keys go to an input (`ChoiceMenu.TypedOut`)
 
     def compose(self) -> ComposeResult:
         yield Static(Text(f"☐ {self._chip}"), classes="chip")
         if self._question:
             yield Static(Text(self._question), classes="question")
         yield ChoiceMenu(self._choices, default=self._default, numbered=self._numbered,
-                         inline=self._inline, id=self._menu_id)
+                         inline=self._inline, type_out=self._type_out, id=self._menu_id)
         if self._show_hint:
             yield Static(self._hint, classes="menu-hint", markup=True)
 

@@ -8,6 +8,7 @@ PROMPT_FILES = [
     "reflect.md",
     "plan.md",
     "analyze.md",
+    "validate.md",
     "report.md",
     "chat.md",
 ]

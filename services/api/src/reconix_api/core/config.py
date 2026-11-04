@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # GET /stream sends a ping this often, and checks the session is still open
     stream_heartbeat_seconds: float = 15
 
+    # Too many requests: per session token, per minute (429 after that). Signing in
+    # (POST /sessions, POST /sessions/web-sign-in) has its own, smaller limit.
+    rate_limit_per_minute: int = 600
+    sign_in_limit_per_minute: int = 20
+
     @field_validator("host")
     @classmethod
     def host_must_be_loopback(cls, value: str) -> str:

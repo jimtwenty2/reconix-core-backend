@@ -43,7 +43,7 @@ from reconix_ai.harness.checks.result import Decision
 from reconix_ai.knowledge.search import ref_ids_in
 from reconix_ai.providers import ProviderError
 
-SUPPORTED_TASKS = {"PLAN", "SUGGEST", "ANALYZE", "REPORT", "CHAT"}
+SUPPORTED_TASKS = {"PLAN", "SUGGEST", "ANALYZE", "REPORT", "CHAT", "VALIDATE"}
 SCOPE_STATUSES = {"APPROVED", "DRAFT"}
 MAX_PLAN_LINES = 10  # CHAT: the plan has at most 5 steps; a few lines of notes besides
 MAX_CHAT_QUERY_CHARS = 200
@@ -87,12 +87,19 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
     graph.add_node("suggest", nodes.suggest)
     graph.add_node("wait", nodes.wait)
     graph.add_node("analyze", nodes.analyze)
+    graph.add_node("validate", nodes.validate)
     graph.add_node("report", nodes.report)
     graph.add_node("chat", nodes.chat)
     graph.add_conditional_edges(
         START,
         nodes.start_task,
-        {"plan": "understand", "analyze": "find", "report": "report", "chat": "find"},
+        {
+            "plan": "understand",
+            "analyze": "find",
+            "validate": "validate",
+            "report": "report",
+            "chat": "find",
+        },
     )
     graph.add_edge("understand", "find")
     graph.add_conditional_edges(
@@ -104,6 +111,7 @@ def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
         "reflect", nodes.after_reflect, {"reflect": "reflect", "plan": "plan"}
     )
     graph.add_edge("analyze", END)
+    graph.add_edge("validate", END)
     graph.add_edge("report", END)
     graph.add_edge("chat", END)
     graph.add_edge("plan", "suggest")
@@ -132,6 +140,8 @@ async def ask_agent(
     findings, masked_in_findings = masked_findings(list(request.findings))
     if task == "ANALYZE":
         check_findings(findings)
+    if task == "VALIDATE":
+        check_validate(findings, results)
     report, masked_in_report = {}, 0
     if task == "REPORT":
         check_report(request.report)
@@ -208,6 +218,16 @@ def check_findings(findings: list[dict[str, Any]]) -> None:
                 raise AgentError(
                     "INPUT_BLOCKED", f"Finding {finding['code']} was blocked: {outcome.reason}."
                 )
+
+
+def check_validate(findings: list[dict[str, Any]], tool_results: list[str]) -> None:
+    """VALIDATE judges exactly one finding against a real PoC run, so it needs that one
+    finding (input-checked like ANALYZE) and at least one tool result to read."""
+    if len(findings) != 1:
+        raise AgentError("ONE_FINDING", "A validation judges exactly one finding.")
+    check_findings(findings)
+    if not any(result.strip() for result in tool_results):
+        raise AgentError("NO_TOOL_RESULT", "A validation needs the PoC tool output to judge.")
 
 
 def check_report(report: Any) -> None:
@@ -307,6 +327,8 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
     notes = [*reflected, values.get("summary", "")]
     if values.get("task") == "ANALYZE":
         notes = [values.get("analysis_summary", "")]
+    elif values.get("task") == "VALIDATE":
+        notes = [values.get("validation_reason", "")]
     elif values.get("task") == "REPORT":
         notes = [values.get("executive_summary", "")]
     elif values.get("task") == "CHAT":
@@ -328,6 +350,8 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         decision=values.get("decision"),
         analysis_summary=values.get("analysis_summary", ""),
         analysis=[finding_analysis(item) for item in values.get("analysis", [])],
+        validation_status=values.get("validation_status"),
+        validation_reason=values.get("validation_reason", ""),
         executive_summary=values.get("executive_summary") or None,
         methodology=values.get("methodology") or None,
         prompt_tokens=values.get("prompt_tokens", 0),

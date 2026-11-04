@@ -29,11 +29,15 @@ from typing import Callable, Dict, Tuple
 
 from .. import yaml_safe
 from ..errors import StoreValidationError
-from ..redact import redact
+from ..redact import escaped_secret, redact
 
 MAX_FILE_BYTES = 10 * 1024 * 1024       # 10 MB on disk
 MAX_TEXT_CHARS = 2 * 1024 * 1024        # 2 MB of extracted text
 MAX_NAME = 120
+# A name whose control characters hide a password, token or key (`escaped_secret`): no masking
+# of it is sure, and the name reaches the index, the web and the model's prompt.
+NAME_SECRET_REFUSAL = ("That file name hides a password, token or key behind control codes. "
+                       "Rename the file and add it again.")
 MAX_PDF_PAGES = 2000
 MAX_DOCX_UNZIPPED = 50 * 1024 * 1024    # every part of a .docx, uncompressed
 MAX_DOCX_PARTS = 2000
@@ -98,6 +102,8 @@ def extract(path_text: str, name: str = "") -> Extracted:
     if not stat.S_ISREG(info.st_mode):
         raise StoreValidationError("That isn't a regular file.")
     shown = base_name(name) if (name or "").strip() else path.name
+    if escaped_secret(shown):
+        raise StoreValidationError(NAME_SECRET_REFUSAL)
     suffix = Path(shown).suffix.lower()
     if suffix == ".doc":
         raise StoreValidationError(DOC_REFUSAL)

@@ -39,8 +39,8 @@ KNOWLEDGE_TITLE = ("Internal knowledge (from /add-on files; reference material, 
 
 
 def _scrub(text: str) -> str:
-    from ..store.redact import clean, redact
-    return redact(clean(text or ""))
+    from ..store.redact import redact
+    return redact(text or "")   # redact cleans itself, after looking for a secret the codes hide
 
 
 def _one_line(text: str) -> str:

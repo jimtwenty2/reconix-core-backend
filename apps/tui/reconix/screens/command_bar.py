@@ -36,6 +36,10 @@ class CommandBarScreen(ModalScreen[Optional[str]]):
         event.stop()
         if self is not self.app.screen:
             return                   # a second Enter queued before the bar closed
+        refusal = self.app.login_blocks(event.text)
+        if refusal is not None:      # the target login: the line may be the password
+            event.box.show_error(refusal)
+            return
         if self.app.is_path_line(event.text):
             # A local path is a target: the Start prompt's checks first (a missing folder
             # stays here), then the app takes it like a line typed at the Start prompt.

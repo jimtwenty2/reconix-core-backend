@@ -56,8 +56,10 @@ class PlanOrder(Vertical):
             self.plan_order = plan_order
 
     def __init__(
-        self, rows: Sequence[PlanRow], movable: Sequence[str], *, id: str = "plan-order"
+        self, rows: Sequence[PlanRow], movable: Sequence[str], *, id: Optional[str] = None
     ) -> None:
+        # A class, not a fixed id: a second reorder in the same chat mounts a new list while
+        # the old one may still be leaving the DOM.
         super().__init__(id=id, classes="tick-list")
         self._rows = list(rows)
         # The gated rows in plan order, paired with their request ids.

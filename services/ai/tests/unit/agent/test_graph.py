@@ -34,7 +34,7 @@ async def test_suggests_one_step_and_waits(graph) -> None:
 
     assert answer.waiting
     assert answer.proposed_action == ProposedAction("NMAP", "172.20.0.5", NMAP_STEP["arguments"])
-    assert answer.risk == "MEDIUM"  # the harness rates -sV as MEDIUM; the scope allows it
+    assert answer.risk == "LOW"  # nmap's baseline; -sV/--top-ports trigger no risk_ops escalation
     assert answer.text == "Start with a service scan."
     assert [step.title for step in answer.plan] == ["Find open ports and services"]
     assert answer.references == ["nmap"]
@@ -92,7 +92,7 @@ async def test_out_of_scope_step_is_skipped_for_the_next_one(graph) -> None:
 async def test_nothing_is_suggested_when_every_step_is_blocked(graph) -> None:
     bad = [
         {**NMAP_STEP, "target": "10.0.0.5"},  # out of scope
-        {**NMAP_STEP, "arguments": ["-iL", "/etc/hosts"]},  # option not allowed
+        {**NMAP_STEP, "arguments": ["-p", "80;id"]},  # shell characters
         {**NMAP_STEP, "tool": "SEMGREP"},  # tool not in scope
     ]
     plan = {"summary": "Bad plan.", "steps": bad}
@@ -108,7 +108,7 @@ async def test_nothing_is_suggested_when_every_step_is_blocked(graph) -> None:
 async def test_risk_above_the_scope_maximum_is_blocked(graph) -> None:
     request = Request()
     request.scope.max_risk = "LOW"
-    plan = {"summary": "Aggressive.", "steps": [{**NMAP_STEP, "arguments": ["-A"]}]}
+    plan = {"summary": "Aggressive.", "steps": [{**NMAP_STEP, "arguments": ["--script=vuln"]}]}
 
     answer = await ask_agent(graph, request, run_id(), make_deps(FakeModel(UNDERSTOOD, plan)))
 
@@ -226,7 +226,7 @@ async def test_prompt_lists_only_the_allowed_tools(graph) -> None:
     await ask_agent(graph, Request(), run_id(), make_deps(model))
 
     plan_prompt = model.prompts[1][1].content
-    assert "- NMAP (target: domain, ip, network): -p <value>" in plan_prompt
+    assert "- NMAP (params: target, ports, opts):" in plan_prompt
     assert "SEMGREP" not in plan_prompt
 
 

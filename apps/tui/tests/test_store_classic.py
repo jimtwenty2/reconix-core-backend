@@ -175,10 +175,16 @@ def test_step_states_mark_where_a_run_stopped():
     assert store.step_states()["template"] == "stopped"
     store.new_assessment()
     run_to("approval:approval-002")
+    store.stop_run()                                # stopped with an action undecided
+    assert store.step_states()["execution"] == "stopped"
+
+
+def test_a_rejected_action_is_a_decision_and_the_run_completes():
+    run_to("approval:approval-002")
     store.reject(store.get_approval("approval-002").request_id)
-    store.advance()
+    play_until_gate()
     states = store.step_states()
-    assert states["approval"] == states["execution"] == "stopped"
+    assert states["approval"] == states["execution"] == "done"
 
 
 # --- the saved copy ------------------------------------------------------------------------------

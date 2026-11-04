@@ -13,8 +13,15 @@ import threading
 from typing import Any, Dict, Optional, Tuple
 
 from .. import store
+from ..store.assessment import fold_line
+from ..store.redact import redact
 from ..screens.forms import CredentialForm
 from ..store import agent_run
+
+# What /assess says where the backend harness isn't installed (the static build): the agent
+# needs a real model and the harness, and nothing runs without them.
+AGENT_NOT_HERE = ("Agent mode needs a real AI model and the backend harness; the static "
+                  "version has neither. Nothing runs.")
 
 
 class AgentMixin:
@@ -36,8 +43,7 @@ class AgentMixin:
     def enter_agent_mode(self, target: Optional[str]) -> bool:
         target = (target or "").strip()
         if not agent_run.harness_installed():
-            self.notify("The harness backend isn't installed (pip install -e backend).",
-                        severity="warning", markup=False)
+            self.notify(AGENT_NOT_HERE, severity="warning", markup=False)
             return False
         if store.active_model() is None:
             self.notify("Pick a model first with /model.", severity="warning", markup=False)
@@ -94,6 +100,7 @@ class AgentMixin:
                         severity="warning", markup=False)
             return
         agent_run.record_user(text)
+        text = redact(fold_line(text))      # the agent and its model get the masked line only
         self._agent_busy = True
         self.refresh_view()
         self.notify("Thinking…", timeout=2)

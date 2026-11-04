@@ -53,6 +53,8 @@ COMMANDS = (
     Command("approval", "Open the approval gate", _goto("approval")),
     Command("status", "Live execution (after the plan runs)", _goto("execution"),
             aliases=("execution",)),
+    Command("stop", "Stop the running assessment (asks first)",
+            lambda app, arg: app.confirm_stop()),
     Command("findings", "List all findings", _goto("findings")),
     Command("finding", "Open one finding…", _open_finding,
             choices=_finding_choices, question="Which finding?",

@@ -108,8 +108,26 @@ export function mockReply(question: string, facts: MockFacts = {}): string {
     if (!match) return fill(intent.missing ?? "", { ...v, id: wanted });
     return fill(intent.reply, { ...v, ...match });
   }
+  if (intent.needs === "plan_step") return planStepReply(intent, captured ?? "", v);
   if (intent.needs && !v[intent.needs]) return fill(intent.empty ?? "", v);
   return fill(intent.reply, v);
+}
+
+/** One row of the plan ("what does step 2 do?"), not the whole plan. */
+function planStepReply(intent: Intent, wanted: string, v: Record<string, string>): string {
+  const rows = v.plan
+    .split(";")
+    .map((row) => row.trim())
+    .filter(Boolean);
+  if (!rows.length) return fill(intent.empty ?? "", v);
+  const want = wanted.toLowerCase();
+  for (const row of rows) {
+    const at = row.indexOf(". ");
+    if (at > 0 && row.slice(0, at).toLowerCase() === want) {
+      return fill(intent.reply, { ...v, row: `${row.slice(0, at)}: ${row.slice(at + 2)}` });
+    }
+  }
+  return fill(intent.missing ?? "", { ...v, id: want });
 }
 
 /** The facts of one saved run (null: nothing saved yet). `picked`: the operator chose this run;
@@ -131,7 +149,7 @@ export function factsOf(view: AssessmentView | null, picked = true): MockFacts {
         .join("; ")
     : "";
   const about = picked ? "" : ` (This is the newest run, ${view.id}; pick another in the top bar.)`;
-  const step = (view.gate ? `The run waits for you: ${view.gate.text}. Decide in the TUI.` : `The run is ${upper(view.status)}. Decide anything in the TUI.`) + about;
+  const step = (view.gate ? `The run waits for you: ${view.gate.text}. Decide in the TUI.` : runState(view.status)) + about;
   return {
     target: m(view.target),
     scope: m(scope),
@@ -148,6 +166,15 @@ export function factsOf(view: AssessmentView | null, picked = true): MockFacts {
         status: upper(f.status),
       })),
   };
+}
+
+/** Where a run that waits for nothing stands: only a run still going has more to come. */
+function runState(status: unknown): string {
+  const word = upper(status);
+  if (["COMPLETED", "STOPPED", "INTERRUPTED", "FAILED", "CANCELLED"].includes(word)) {
+    return `The run is ${word}: nothing is left to decide. Start a new one in the TUI.`;
+  }
+  return `The run is ${word}. Any decision it needs is made in the TUI.`;
 }
 
 /** A status as the data model writes it: false-positive -> FALSE_POSITIVE, Completed -> COMPLETED. */

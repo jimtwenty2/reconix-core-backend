@@ -74,8 +74,20 @@ class DialogsMixin:
 
     # --- report exports ------------------------------------------------------------------------
     def export_report(self, fmt: Optional[str]) -> None:
+        """Write the report in `fmt`. The store refuses with its own sentence (not complete
+        yet, not installed), shown as a warning. Writing blocks (a PDF takes seconds), so a
+        "Writing…" note is drawn first and the work runs after that redraw."""
+        fmt = (fmt or "").lower()
+        if not store.is_completed():
+            self._write_report(fmt)              # refused at once, with the store's reason
+            return
+        self.notify(f"Writing the {fmt.upper() or 'report'} report…", title="Report",
+                    timeout=3, markup=False)
+        self.call_after_refresh(self._write_report, fmt)
+
+    def _write_report(self, fmt: str) -> None:
         try:
-            path = store.generate_report((fmt or "").lower())
+            path = store.generate_report(fmt)
         except (store.StoreValidationError, OSError) as exc:
             self._warn(exc)
             return
@@ -148,7 +160,7 @@ class DialogsMixin:
              theme.TEXT),
             ("human approvals", approvals, theme.MUTED),
             ("blocked actions", f"{summary.blocked} (out of scope)", theme.MUTED),
-            ("report", summary.report_path or "not exported yet (8 or /export)", theme.MUTED),
+            ("report", summary.report_path or "not exported yet (Alt+8 or /export)", theme.MUTED),
         ])])
         body += [Text(""), Text("Plan → Approve scope → Run plan → Test → Validate → Report",
                                 style=f"bold {theme.CYAN}")]

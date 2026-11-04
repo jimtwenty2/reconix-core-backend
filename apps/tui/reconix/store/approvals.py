@@ -208,6 +208,7 @@ def approve(
 
 
 def reject(request_id: str) -> ApprovalDecision:
+    """The operator rejects a gated action: it never runs; the run skips it and goes on."""
     request = _pending(request_id)
     decline_confirmation(request_id)
     decision = ApprovalDecision(

@@ -39,13 +39,18 @@ def step_states() -> Dict[str, str]:
     elif gate == GATE_PLAN and not run.stopped:
         states["plan"] = "waiting"
 
+    # A rejected action is skipped and the plan goes on, so a rejection is a decision like
+    # any other: the step is done once every gated action is decided. A run that stopped
+    # with actions still undecided (Ctrl+C, or a copy saved before rejections were skipped)
+    # shows the step stopped.
     decisions = list_approval_decisions()
-    if any(d.decision == "REJECTED" for d in decisions):
-        states["approval"] = "stopped"
-    elif gate.startswith(GATE_APPROVAL_PREFIX) and not run.stopped:
+    all_decided = bool(assessment.approvals) and len(decisions) >= len(assessment.approvals)
+    if gate.startswith(GATE_APPROVAL_PREFIX) and not run.stopped:
         states["approval"] = "waiting"
-    elif assessment.approvals and len(decisions) >= len(assessment.approvals):
+    elif all_decided:
         states["approval"] = "done"
+    elif run.stopped and any(d.decision == "REJECTED" for d in decisions):
+        states["approval"] = "stopped"
 
     if run.completed:
         states["execution"] = "done"
@@ -53,6 +58,11 @@ def step_states() -> Dict[str, str]:
         states["execution"] = "stopped"
     elif gate in (GATE_ACCOUNT, GATE_CODE) and not run.stopped:
         states["execution"] = "waiting"
+
+    # The findings are final once the run completed (nothing else can add one): the step is
+    # settled even before the Findings screen was opened.
+    if run.completed and run.revealed:
+        states["findings"] = "done"
 
     if run.report_path:
         states["report"] = "done"

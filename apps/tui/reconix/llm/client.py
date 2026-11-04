@@ -37,6 +37,11 @@ def _redact(text: str) -> str:
 def _map_error(exc: Exception) -> str:
     """Turn any provider/transport error into a short plain message."""
     status = getattr(exc, "status_code", None)
+    text = str(exc).lower()
+    # Before the status code: LiteLLM gives a connection error status 500, though no server
+    # answered at all (nothing listens on that address).
+    if _no_connection(exc, text):
+        return "connection refused"
     if status in (401, 403):
         return "bad API key (unauthorized)"
     if status == 404:
@@ -45,7 +50,6 @@ def _map_error(exc: Exception) -> str:
         return "the server refused the request (HTTP 400)"
     if isinstance(status, int) and status >= 500:
         return f"the model server failed (HTTP {status})"
-    text = str(exc).lower()
     if status == 401 or "unauthor" in text or "invalid api key" in text or "api key" in text:
         return "bad API key (unauthorized)"
     if "not found" in text or "does not exist" in text:
@@ -55,6 +59,18 @@ def _map_error(exc: Exception) -> str:
     if "refused" in text or "connection" in text or "failed to establish" in text:
         return "connection refused"
     return "could not reach the model"
+
+
+def _no_connection(exc: Exception, text: str) -> bool:
+    """No server answered: the connection was refused or could not be opened."""
+    if isinstance(exc, ConnectionError) or type(exc).__name__ in ("APIConnectionError",
+                                                                    "ConnectError"):
+        return "timed out" not in text and "timeout" not in text
+    return any(words in text for words in ("connection refused", "connection error",
+                                             "failed to establish", "connecterror",
+                                             "cannot connect", "connect call failed",
+                                             "name or service not known",
+                                             "nodename nor servname"))
 
 
 def complete(provider_id: str, model: str, messages: List[dict], *,
@@ -150,7 +166,9 @@ def _ping_openai_models(api_base: Optional[str], api_key: Optional[str],
         raise LLMError("no base URL")
     try:
         data = _http_get_json(base.rstrip("/") + "/models", api_key)
-    except LLMError:
+    except LLMError as exc:
+        if str(exc) in ("connection refused", "timed out"):
+            return False, str(exc)          # no server answered: a completion can't either
         # No /models endpoint — fall back to a 1-token completion.
         return _ping_completion(provider_id, model, api_key, api_base)
     ids = [m.get("id", "") for m in (data.get("data", []) if isinstance(data, dict) else [])]

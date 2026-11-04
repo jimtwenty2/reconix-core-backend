@@ -192,7 +192,7 @@ class TemplateScreen(ReconixScreen):
             self._pick(preset)
             return
         for menu_id in ("template-menu", "scope-menu"):
-            self.focus_menu(menu_id)
+            self.focus_menu(menu_id, top=True)
 
     def refresh_live(self) -> None:
         manifests = self.query("#manifest")

@@ -16,9 +16,8 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from .base import ReconixScreen
-from .choice import ChoiceScreen
 from .. import store, theme
-from ..models import GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, Choice, PlanTask
+from ..models import GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, PlanTask
 from ..widgets import RunLog, Spinner, duration_text
 
 LABEL_WIDTH = 30          # a task label's column; a longer label is cut
@@ -50,7 +49,7 @@ def task_line(task: PlanTask, state: str) -> Text:
     if task.status == "active":
         detail = ACTIVE_DETAIL.get(state, "paused · waiting for you")
     if task.key == "report" and task.status == "active":
-        detail = "ready · export it on Report (8)"     # fits 80 columns
+        detail = "ready · export on Report (Alt+8)"    # fits 80 columns
     text_color = theme.TEXT if task.status == "active" else theme.MUTED
     label = task.label                       # cut, so the status after it still shows
     if len(label) > LABEL_WIDTH - 1:
@@ -206,25 +205,13 @@ class ExecutionScreen(ReconixScreen):
         elif state in ("complete", "stopped"):
             self.app.goto("findings")
         else:
-            self.notify("Still running. Findings appear as they are found (6).")
+            self.notify("Still running. Findings appear as they are found (Alt+6).")
 
     def action_stop(self) -> None:
+        """Ctrl+C (the app's key on every flow screen; kept here for the footer and help)."""
         if run_state() in ("complete", "stopped"):
             return
-
-        def answer(choice: str) -> None:
-            if choice == "stop":
-                self.app.stop_run()
-
-        self.app.push_screen(ChoiceScreen(
-            "Stop the run", "Stop this assessment?",
-            [
-                Choice("keep", "Keep running", "Let the plan finish."),
-                Choice("stop", "Stop now", "Nothing else runs; findings so far are kept.",
-                       "danger"),
-            ],
-            chip="Execution", danger=True,
-        ), answer)
+        self.app.confirm_stop()
 
     def action_detach(self) -> None:
         self.app.goto("plan")

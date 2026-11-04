@@ -51,12 +51,27 @@ async def create_knowledge_add_on(
     mask: CurrentMask,
     store: CurrentKnowledgeStore,
 ) -> KnowledgeAddOnOut:
-    """Adds your own file to the knowledge search. Send it as multipart/form-data: a .txt, .md,
-    .json, .yaml, .yml, .docx or .pdf file of at most 10 MB, plus interface (web or cli). The
-    optional name is the name to show, and its extension decides the file type; without it, the
-    file's own name is used. The text is masked, cut into passages and saved in the knowledge
-    search, where the agent finds it from then on. No copy of the file itself is kept. This
-    needs Qdrant and the embedding model, and returns 503 without them."""
+    """Adds your own file to the knowledge search.
+
+    Business Rules:
+    - Send multipart/form-data: a .txt, .md, .json, .yaml, .yml, .docx, or .pdf file of at most
+      10 MB, plus interface (web or cli).
+    - The optional name sets the display name, and its extension decides the file type; without it,
+      the file's own name is used.
+
+    Execution Behavior:
+    - Masks the text, splits it into passages, and saves them in the knowledge search, where the
+      agent finds them from then on.
+
+    State Changes:
+    - Adds the passages to the knowledge search. No copy of the file itself is kept.
+
+    Operational Considerations:
+    - Requires Qdrant and the embedding model; returns 503 without them.
+
+    Security:
+    - Requires a valid session token.
+    """
     check_upload_size(request)
     async with request.form(max_files=1, max_fields=2) as form:
         upload = form.get("file")
@@ -74,7 +89,11 @@ async def create_knowledge_add_on(
 async def list_knowledge_add_ons(
     _: CurrentOperator, store: CurrentKnowledgeStore
 ) -> list[KnowledgeAddOnOut]:
-    """Lists your knowledge add-ons, oldest first."""
+    """Lists your knowledge add-ons, oldest first.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await knowledge_add_ons.list_add_ons(store)
 
 
@@ -85,8 +104,17 @@ async def delete_knowledge_add_on(
     interfaces: CurrentInterfaces,
     store: CurrentKnowledgeStore,
 ) -> None:
-    """Deletes one add-on, and removes its text from the knowledge search. Returns 404
-    KNOWLEDGE_ADD_ON_NOT_FOUND if there is no add-on with this id."""
+    """Deletes one add-on and removes its text from the knowledge search.
+
+    Business Rules:
+    - Returns 404 KNOWLEDGE_ADD_ON_NOT_FOUND if no add-on has this id.
+
+    State Changes:
+    - Deletes the add-on and its passages.
+
+    Security:
+    - Requires a valid session token.
+    """
     await knowledge_add_ons.remove(store, interfaces.write_audit, operator, knowledge_add_on_id)
 
 
@@ -94,8 +122,17 @@ async def delete_knowledge_add_on(
 async def delete_all_knowledge_add_ons(
     operator: CurrentOperator, interfaces: CurrentInterfaces, store: CurrentKnowledgeStore
 ) -> KnowledgeAddOnsCleared:
-    """Deletes every add-on. The public knowledge (CVE, CWE, OWASP, ATT&CK and the tool guides)
-    stays."""
+    """Deletes every add-on.
+
+    Business Rules:
+    - The public knowledge (CVE, CWE, OWASP, ATT&CK, and the tool guides) stays.
+
+    State Changes:
+    - Deletes all add-ons and their passages.
+
+    Security:
+    - Requires a valid session token.
+    """
     removed_count = await knowledge_add_ons.remove_all(store, interfaces.write_audit, operator)
     return KnowledgeAddOnsCleared(removed_count=removed_count)
 

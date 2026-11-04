@@ -42,6 +42,7 @@ from reconix_api.core.interfaces import Interfaces
 from reconix_api.core.knowledge_add_ons import KnowledgeStore
 from reconix_api.core.live_events import LiveEvents
 from reconix_api.core.masking import MaskSecrets
+from reconix_api.core.rate_limit import RateLimitMiddleware
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.core.wiring import build_interfaces, build_mask_secrets
@@ -74,7 +75,9 @@ are not listed below). Send the token as the subprotocol `token.<token>` next to
 
 **Errors.** Every error has the same shape:
 `{"code": "UPPER_CASE", "message": "...", "details": {...}}`. Secrets are masked in every
-answer the API gives.
+answer the API gives. Each session token may send a set number of requests a minute (signing
+in has a smaller limit); after that the API answers 429 TOO_MANY_REQUESTS with a Retry-After
+header.
 """
 
 # One entry per router tag, in the order of the main flow; Swagger lists them in this order.
@@ -191,12 +194,20 @@ def create_app(
     app.state.knowledge_store = knowledge_store or KnowledgeStore()
     app.state.finding_memory = finding_memory or ai_finding_memory
 
-    # Added last = runs first: the Host check wraps everything, CORS included.
+    # Added last = runs first: the Host check, then CORS, then the rate limit. CORS wraps the
+    # rate limit so the local web can read a 429 and its Retry-After.
+    app.add_middleware(
+        RateLimitMiddleware,
+        per_minute=settings.rate_limit_per_minute,
+        sign_in_per_minute=settings.sign_in_limit_per_minute,
+        web_origins=settings.web_origins,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.web_origins,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["Retry-After"],
     )
     app.add_middleware(HostCheckMiddleware, allowed_hosts=settings.allowed_hosts)
     add_error_handlers(app)
