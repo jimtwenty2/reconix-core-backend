@@ -3,13 +3,19 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 from reconix_api.models.enums import ProviderType
 from reconix_api.schemas.approvals import ApprovalOut
 
 # A model id such as "gpt-4o", "llama3.1:8b" or "hf.co/user/model:Q4": no spaces.
 MODEL_NAME = r"^[\w.:/@+-]+$"
+
+
+def strip_text(value: object) -> object:
+    """So "   " fails min_length, and a pasted key loses its newline. Not base_url: a space
+    there is refused on purpose."""
+    return value.strip() if isinstance(value, str) else value
 
 
 class LlmProviderIn(BaseModel):
@@ -20,6 +26,8 @@ class LlmProviderIn(BaseModel):
     base_url: str | None = Field(default=None, max_length=2048)
     api_key: SecretStr | None = Field(default=None, min_length=16, max_length=500)
 
+    strip_names = field_validator("display_name", "api_key", mode="before")(strip_text)
+
 
 class LlmProviderUpdate(BaseModel):
     """Only the fields sent change. A new api_key replaces the old one; null removes it."""
@@ -28,6 +36,8 @@ class LlmProviderUpdate(BaseModel):
     model_name: str | None = Field(default=None, min_length=1, max_length=100, pattern=MODEL_NAME)
     base_url: str | None = Field(default=None, max_length=2048)
     api_key: SecretStr | None = Field(default=None, min_length=16, max_length=500)
+
+    strip_names = field_validator("display_name", "api_key", mode="before")(strip_text)
 
 
 class LlmProviderOut(BaseModel):

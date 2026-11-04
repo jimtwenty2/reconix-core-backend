@@ -22,6 +22,7 @@ from reconix_api.models.enums import ApprovalStatus, AssessmentStatus, ManifestS
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import scopes as scope_repo
+from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.scopes import (
     AssessmentOut,
     ScopeDraft,
@@ -96,6 +97,8 @@ def patch_draft(
 
 
 def list_session_scopes(db: Db, session_id: UUID) -> list[ScopeOut]:
+    if session_repo.get(db, session_id) is None:
+        raise ApiError(404, "SESSION_NOT_FOUND", "No session with this id.")
     return [read_scope(db, row.manifest_id) for row in scope_repo.list_by_session(db, session_id)]
 
 

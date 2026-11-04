@@ -49,6 +49,8 @@
         "properties": {
           "arguments": {
             "items": {
+              "maxLength": 2048,
+              "minLength": 1,
               "type": "string"
             },
             "maxItems": 50,
@@ -6276,7 +6278,7 @@
     },
     "/api/v1/knowledge/search": {
       "get": {
-        "description": "Searches the knowledge base for q, by meaning and by exact words, and returns the best\npassages.\n\nBusiness Rules:\n- An exact CVE, CWE, ATT&CK, or OWASP id comes first.\n- Repeat ?source= to search only those sources.\n- `limit` sets how many passages to return (1 to 20, default 5).\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Searches the knowledge base for q, by meaning and by exact words, and returns the best\npassages.\n\nBusiness Rules:\n- An exact CVE, CWE, ATT&CK, or OWASP id comes first.\n- Repeat ?source= to search only those sources.\n- `limit` sets how many passages to return (1 to 20, default 5).\n- Returns 422 VALIDATION_ERROR if q is blank.\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "search_knowledge_api_v1_knowledge_search_get",
         "parameters": [
           {
@@ -7847,7 +7849,7 @@
     },
     "/api/v1/sessions/{session_id}/scope-manifests": {
       "get": {
-        "description": "Lists every scope version in the session, oldest first.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Lists every scope version in the session, oldest first.\n\nBusiness Rules:\n- Returns 404 SESSION_NOT_FOUND if no session has this id.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_scopes_api_v1_sessions__session_id__scope_manifests_get",
         "parameters": [
           {
@@ -8016,7 +8018,7 @@
     },
     "/api/v1/stream": {
       "get": {
-        "description": "Streams every audit event live as Server-Sent Events, the moment it is written.\n\nBusiness Rules:\n- With ?assessment_id=, you receive only that assessment's events.\n- The stream ends when the session is closed; reconnect and reload your lists to catch up.\n\nExecution Behavior:\n- Each message is `event: <EVENT_TYPE>` with `data: {event_type, assessment_id, session_id,\n  actor, at, details}`, masked.\n- A `: ping` comment arrives every few seconds to keep the connection open.\n\nSecurity:\n- Requires a valid session token, sent as a Bearer header (read the stream with fetch, not\n  EventSource).",
+        "description": "Streams every audit event live as Server-Sent Events, the moment it is written.\n\nBusiness Rules:\n- With ?assessment_id=, you receive only that assessment's events.\n- Returns 404 ASSESSMENT_NOT_FOUND if no assessment has that id.\n- The stream ends when the session is closed; reconnect and reload your lists to catch up.\n\nExecution Behavior:\n- Each message is `event: <EVENT_TYPE>` with `data: {event_type, assessment_id, session_id,\n  actor, at, details}`, masked.\n- A `: ping` comment arrives every few seconds to keep the connection open.\n\nSecurity:\n- Requires a valid session token, sent as a Bearer header (read the stream with fetch, not\n  EventSource).",
         "operationId": "read_stream_api_v1_stream_get",
         "parameters": [
           {
