@@ -26,6 +26,7 @@ SIGN_IN_CODE_TTL = timedelta(minutes=2)
 class SignInCode:
     issued_by: UUID  # the session that asked for it
     expires_at: datetime
+    actor: str = ""  # who asked for it: the web session gets the same name
 
 
 class SessionTokens:
@@ -70,14 +71,14 @@ class SessionTokens:
             self._sign_in_codes = {
                 old: entry for old, entry in self._sign_in_codes.items() if entry.expires_at > now
             }
-            self._sign_in_codes[code] = SignInCode(operator.session_id, expires_at)
+            self._sign_in_codes[code] = SignInCode(operator.session_id, expires_at, operator.actor)
         return code, expires_at
 
-    def use_sign_in_code(self, code: str, now: datetime) -> UUID:
-        """Uses up the code and returns the session that asked for it. Raises PermissionError
-        if the code is unknown, used, expired, or its session was closed."""
+    def use_sign_in_code(self, code: str, now: datetime) -> SignInCode:
+        """Uses up the code and returns who asked for it (their session and name). Raises
+        PermissionError if the code is unknown, used, expired, or its session was closed."""
         with self._lock:
             entry = self._sign_in_codes.pop(code, None)
         if entry is None or now >= entry.expires_at:
             raise PermissionError("INVALID_SIGN_IN_CODE")
-        return entry.issued_by
+        return entry

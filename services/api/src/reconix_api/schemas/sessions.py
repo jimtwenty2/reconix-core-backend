@@ -13,6 +13,10 @@ Interface = Literal["web", "cli", "vscode"]
 
 class SessionCreate(BaseModel):
     interface: Interface
+    # Who is at the computer, e.g. "vanneth@kshrd-laptop". The client (TUI, the web's server
+    # side, VS Code) runs on that computer and sends it; when it is left out, the API's own
+    # OS user@host is used. A label for the audit log, not a credential.
+    operator: str | None = Field(default=None, max_length=100)
 
 
 class SessionRead(BaseModel):

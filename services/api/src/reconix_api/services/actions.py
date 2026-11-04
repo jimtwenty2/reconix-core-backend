@@ -43,6 +43,7 @@ from reconix_api.repositories import scopes as scope_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut, ToolRunOut
 from reconix_api.schemas.agent_runs import AgentRunDetailOut
 from reconix_api.services import agent_runs, limit_settings, scopes, tool_runs
+from reconix_api.services.approvals import expires_at
 from reconix_api.services.audit import audit
 
 RECENT_MINUTES = 10  # the loop check looks at least this far back
@@ -118,7 +119,12 @@ async def send_action(
     agent_run_id: UUID | None = None,
 ) -> ActionOut:
     """source is who asked: "operator", or "agent" for the step a plan suggested, which
-    passes its own agent_run_id so the action is filed under that plan's run."""
+    passes its own agent_run_id so the action is filed under that plan's run.
+
+    The assessment row is locked from the loop check until a LOW action's tool run is
+    saved, so actions sent at once are checked one at a time and each sees the runs
+    before it: the loop limits hold under parallel requests."""
+    assessment_repo.get_for_update(db, assessment_id)
     manifest = ensure_can_act(db, assessment_id)
     action = Action(
         tool=body.tool,
@@ -155,7 +161,9 @@ async def send_action(
         row.target, row.args = snapshot["target"], snapshot["arguments"]
         row.action_status = ActionStatus.BLOCKED
     action_repo.add(db, row)
-    db.commit()
+    runs_now = result.decision != Decision.BLOCKED and next_step(result) == NextStep.RUN_NOW
+    if not runs_now:
+        db.commit()  # a LOW action is committed with its tool run (run_action), under the lock
 
     details = {"action_id": str(row.action_id), "tool": row.tool, "risk": result.risk}
     if result.decision == Decision.BLOCKED:
@@ -177,7 +185,7 @@ async def send_action(
         await tool_runs.run_action(
             db, interfaces, mask, settings, operator, row, action, action_hash(action), None
         )
-        return read_action(db, row.action_id)
+        return read_action(db, row.action_id, mask)
 
     snapshot = masked_snapshot(action, mask)
     approval = approval_repo.add(
@@ -198,7 +206,7 @@ async def send_action(
         assessment_id,
         {**details, "approval_id": str(approval.approval_id)},
     )
-    return read_action(db, row.action_id)
+    return read_action(db, row.action_id, mask)
 
 
 def _fits_auto_scope(
@@ -258,6 +266,11 @@ async def approve_action(
     the scope window over, or the risk rules changed. If the checks now refuse the action,
     nothing runs and the approval can no longer be used (see _refuse_at_approval).
     """
+    # Everything that can refuse runs before anything is saved: a refusal after the
+    # approval is committed would leave it APPROVED, unused, and the action stuck.
+    if not settings.job_token_secret.get_secret_value():
+        raise ApiError(503, "NOT_READY", "RECONIX_JOB_TOKEN_SECRET is not set.")
+    now = datetime.now(UTC)  # one time for the expiry check here and in run_action
     row = _get(db, approval.action_id, lock=True)
     if row.action_status != ActionStatus.PENDING:
         raise ApiError(
@@ -268,6 +281,9 @@ async def approve_action(
         )
     action = to_action(row)
     write_audit = interfaces.write_audit
+    if now >= expires_at(approval.requested_at, settings.approval_ttl_minutes):
+        error = ApiError(409, "APPROVAL_EXPIRED", "This approval expired. Send the action again.")
+        _refuse_at_approval(db, write_audit, operator, row, approval, ActionStatus.CANCELLED, error)
     try:
         ensure_unchanged(approval.subject_hash, action)
     except ApiError as error:
@@ -295,7 +311,7 @@ async def approve_action(
         _refuse_at_approval(db, write_audit, operator, row, approval, ActionStatus.BLOCKED, error)
     approval.approval_status = ApprovalStatus.APPROVED
     approval.decided_by = operator.actor
-    approval.decided_at = datetime.now(UTC)
+    approval.decided_at = now
     approval.confirmation_verified = approval.risk_level == RiskLevel.HIGH
     row.action_status = ActionStatus.APPROVED
     db.commit()
@@ -307,7 +323,7 @@ async def approve_action(
         {"action_id": str(row.action_id), "approval_id": str(approval.approval_id)},
     )
     await tool_runs.run_action(
-        db, interfaces, mask, settings, operator, row, action, approval.subject_hash, approval
+        db, interfaces, mask, settings, operator, row, action, approval.subject_hash, approval, now
     )
 
 
@@ -370,14 +386,15 @@ def reject_action(
 # ---------------------------------------------------------------------------
 
 
-def read_action(db: Db, action_id: UUID) -> ActionOut:
-    return _action_out(db, _get(db, action_id))
+def read_action(db: Db, action_id: UUID, mask: MaskSecrets) -> ActionOut:
+    return _action_out(db, _get(db, action_id), mask)
 
 
-def list_actions(db: Db, assessment_id: UUID) -> list[ActionOut]:
+def list_actions(db: Db, assessment_id: UUID, mask: MaskSecrets) -> list[ActionOut]:
     if assessment_repo.get(db, assessment_id) is None:
         raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
-    return [_action_out(db, row) for row in action_repo.list_by_assessment(db, assessment_id)]
+    rows = action_repo.list_by_assessment(db, assessment_id)
+    return [_action_out(db, row, mask) for row in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -431,13 +448,15 @@ def _agent_run(db: Db, operator: Operator, assessment_id: UUID) -> AgentRun:
     return running or agent_runs.new_agent_run(db, operator, assessment_id)
 
 
-def _action_out(db: Db, row: ActionRow) -> ActionOut:
+def _action_out(db: Db, row: ActionRow, mask: MaskSecrets) -> ActionOut:
+    """The action as shown: target and arguments masked (S8). The row keeps the real
+    values, because the action is hashed and checked again with them before it runs."""
     approval = action_repo.approval_for(db, row.action_id)
     return ActionOut(
         action_id=row.action_id,
         tool=row.tool,
-        args=row.args,
-        target=row.target,
+        args=[mask(argument)[0] for argument in row.args],
+        target=mask(row.target)[0],
         purpose=row.purpose,
         risk_level=row.risk_level,
         action_status=row.action_status,
@@ -454,7 +473,7 @@ def _action_out(db: Db, row: ActionRow) -> ActionOut:
     )
 
 
-def read_agent_run(db: Db, agent_run_id: UUID) -> AgentRunDetailOut:
+def read_agent_run(db: Db, agent_run_id: UUID, mask: MaskSecrets) -> AgentRunDetailOut:
     """A run and the actions filed under it, e.g. a plan's suggested step and its status."""
     agent_run = agent_run_repo.get(db, agent_run_id)
     if agent_run is None:
@@ -462,5 +481,5 @@ def read_agent_run(db: Db, agent_run_id: UUID) -> AgentRunDetailOut:
     rows = action_repo.list_by_agent_run(db, agent_run_id)
     return AgentRunDetailOut(
         **agent_runs.agent_run_out(agent_run).model_dump(),
-        actions=[_action_out(db, row) for row in rows],
+        actions=[_action_out(db, row, mask) for row in rows],
     )

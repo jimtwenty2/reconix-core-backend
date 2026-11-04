@@ -80,9 +80,16 @@ Every route is under `/api/v1`. Only `GET /health`, `POST /sessions` and
 curl http://127.0.0.1:8000/api/v1/health                      # {"status":"OK"}
 
 TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/sessions \
-  -H "Content-Type: application/json" -d '{"interface":"cli"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+  -H "Content-Type: application/json" \
+  -d "{\"interface\":\"cli\",\"operator\":\"$(id -un)@$(hostname)\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/v1/assessments
 ```
+
+**Who you are:** send `operator` as `user@host` of your computer when you sign in. Clients do
+this for you (the TUI, the web's server side and VS Code run on your computer). It is the name
+shown by `/operator` and written in approvals and the audit log. Without it, the API uses its
+own user and host, which inside Docker are the container's.
 
 In the Swagger UI, click **Authorize** and paste the token. The full contract is
 [`docs/openapi.json`](../../docs/openapi.json), generated from this app.

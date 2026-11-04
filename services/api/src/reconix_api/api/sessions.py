@@ -36,13 +36,20 @@ def open_session(
 ) -> SessionCreated:
     """Opens a new session and returns its token.
 
+    Business Rules:
+    - Send `operator` as user@host of the computer the client runs on (for example
+      "vanneth@kshrd-laptop"). It is the name in /operator, approvals and the audit log.
+      Without it, the API uses its own OS user and host name.
+
     State Changes:
     - Creates a session and issues its token.
 
     Security:
     - Open. Needs no token; the Host check and CORS restrict it to this computer.
     """
-    session, _, token = sessions.open_session(db, tokens, interfaces.write_audit, body.interface)
+    session, _, token = sessions.open_session(
+        db, tokens, interfaces.write_audit, body.interface, sent_operator=body.operator
+    )
     created = SessionRead.model_validate(session, from_attributes=True)
     return SessionCreated(**created.model_dump(), token=token)
 
@@ -79,6 +86,7 @@ def web_sign_in(
 
     Business Rules:
     - Returns 401 INVALID_SIGN_IN_CODE if the code is unknown, already used, or expired.
+    - The web session gets the same operator name as the session that asked for the code.
 
     State Changes:
     - Creates a web session and issues its token.

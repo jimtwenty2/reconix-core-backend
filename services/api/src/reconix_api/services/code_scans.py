@@ -279,10 +279,14 @@ def excluded_folders(scope: ApprovedScope, target: str) -> list[str]:
 def cancel_for_session(
     db: Db, write_audit: WriteAudit, operator: Operator, session_id: UUID
 ) -> None:
-    """When a session closes, its running code scan ends CANCELLED (one audit line)."""
+    """When a session closes, its running code scan ends CANCELLED (one audit line). The
+    row is locked and checked again, so a scan that finished meanwhile keeps its end."""
     assessment = assessment_repo.get_by_session(db, session_id)
-    run = assessment and agent_run_repo.running_code_scan(db, assessment.assessment_id)
-    if not run:
+    found = assessment and agent_run_repo.running_code_scan(db, assessment.assessment_id)
+    if not found:
+        return
+    run = agent_run_repo.get_for_update(db, found.agent_run_id)
+    if run.agent_runs_status != AgentRunStatus.RUNNING:
         return
     _update_plan(run, stage="DONE")
     agent_runs.finish(run, AgentRunStatus.CANCELLED)
