@@ -45,7 +45,7 @@ def build_interfaces(
     session_factory: sessionmaker[Session] | None = None,
     audit_log_path: str | None = None,
     mcp_url: str | None = None,
-    mcp_access_key: str = "",
+    mcp_auth_token: str = "",
     database_url: str | None = None,
     settings: Settings | None = None,
 ) -> Interfaces:
@@ -68,7 +68,7 @@ def build_interfaces(
         ask_agent = make_ask_agent(graph, agent.AgentDeps(), provider_for_run)
     _, call_tool = _not_ready("call_tool")
     if mcp_url:  # the auth token is optional
-        call_tool = make_call_tool(mcp_url, mcp_access_key)
+        call_tool = make_call_tool(mcp_url, mcp_auth_token)
     return Interfaces(
         get_operator=get_operator,
         check=check,

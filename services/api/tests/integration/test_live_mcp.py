@@ -22,7 +22,7 @@ from tests.integration.test_action_flow import active_assessment, send
 from tests.integration.test_scope_flow import open_session
 
 MCP_URL = os.environ.get("RECONIX_TEST_MCP_URL")
-MCP_ACCESS_KEY = os.environ.get("RECONIX_TEST_MCP_AUTH_TOKEN", "")
+MCP_AUTH_TOKEN = os.environ.get("RECONIX_TEST_MCP_AUTH_TOKEN", "")
 
 pytestmark = pytest.mark.skipif(
     not MCP_URL,
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture
 def live_client(db_app, tmp_path):
     real = build_interfaces(
-        audit_log_path=str(tmp_path / "audit.jsonl"), mcp_url=MCP_URL, mcp_access_key=MCP_ACCESS_KEY
+        audit_log_path=str(tmp_path / "audit.jsonl"), mcp_url=MCP_URL, mcp_auth_token=MCP_AUTH_TOKEN
     )
     db_app.state.interfaces = dataclasses.replace(
         db_app.state.interfaces,

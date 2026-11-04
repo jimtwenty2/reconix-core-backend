@@ -225,7 +225,7 @@ def test_the_api_settings_never_reach_the_terminal_app(monkeypatch):
 @pytest.mark.parametrize(
     "name",
     [
-        "RECONIX_MCP_AUTH_TOKEN",  # an alias, not the field name (mcp_access_key)
+        "RECONIX_MCP_AUTH_TOKEN",  # the field name (mcp_auth_token)
         "RECONIX_MCP_ACCESS_KEY",  # the old name, still read
         "RECONIX_FERNET_KEY",  # the old name of RECONIX_PROVIDER_ENCRYPTION_KEY
         "RECONIX_PROVIDER_ENCRYPTION_KEY",

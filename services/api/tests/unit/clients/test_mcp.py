@@ -8,6 +8,7 @@ from reconix_api.clients.mcp import McpError, make_call_tool, to_tool_result, to
 from reconix_api.core.interfaces import ToolJob, ToolName, ToolRunStatus
 
 URL = "http://kali:8096/mcp"
+FAKE_AUTH_TOKEN = "fake-auth-token"
 
 
 def job(tool: ToolName = ToolName.NMAP, target: str = "172.20.0.5", arguments=None) -> ToolJob:
@@ -60,8 +61,8 @@ class FakeKali:
         return self.requests[-1]
 
 
-async def run(kali: FakeKali, the_job: ToolJob, access_key: str = "access-key"):
-    call_tool = make_call_tool(URL, access_key, transport=httpx.MockTransport(kali))
+async def run(kali: FakeKali, the_job: ToolJob, auth_token: str = FAKE_AUTH_TOKEN):
+    call_tool = make_call_tool(URL, auth_token, transport=httpx.MockTransport(kali))
     return await call_tool(the_job)
 
 
@@ -109,7 +110,7 @@ async def test_call_sends_the_key_session_and_job_token():
     assert result.stdout == "<nmaprun/>"
     assert result.duration_ms == 1500
     headers, body = kali.call()
-    assert headers["authorization"] == "Bearer access-key"
+    assert headers["authorization"] == f"Bearer {FAKE_AUTH_TOKEN}"
     assert headers["mcp-session-id"] == "s1"
     assert body["method"] == "tools/call"
     assert body["params"]["name"] == "nmap"
@@ -153,7 +154,7 @@ def test_plain_text_results_from_zap():
 
 async def test_without_an_auth_token_no_authorization_header_is_sent():
     kali = FakeKali()
-    result = await run(kali, job(), access_key="")
+    result = await run(kali, job(), auth_token="")
     assert result.status == ToolRunStatus.COMPLETED
     headers, body = kali.call()
     assert "authorization" not in headers

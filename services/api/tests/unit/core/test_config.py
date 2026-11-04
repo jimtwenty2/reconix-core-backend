@@ -31,14 +31,14 @@ def test_kali_mcp_url_still_reads_the_old_name(monkeypatch):
 def test_mcp_auth_token_reads_the_new_name_first(monkeypatch):
     monkeypatch.setenv("RECONIX_MCP_AUTH_TOKEN", "new-fake-token")
     monkeypatch.setenv("RECONIX_MCP_ACCESS_KEY", "old-fake-token")
-    assert Settings(_env_file=None).mcp_access_key.get_secret_value() == "new-fake-token"
+    assert Settings(_env_file=None).mcp_auth_token.get_secret_value() == "new-fake-token"
 
 
 def test_mcp_auth_token_still_reads_the_old_name(monkeypatch):
     """An old .env with RECONIX_MCP_ACCESS_KEY keeps working until v1.0.0."""
     monkeypatch.delenv("RECONIX_MCP_AUTH_TOKEN", raising=False)
     monkeypatch.setenv("RECONIX_MCP_ACCESS_KEY", "old-fake-token")
-    assert Settings(_env_file=None).mcp_access_key.get_secret_value() == "old-fake-token"
+    assert Settings(_env_file=None).mcp_auth_token.get_secret_value() == "old-fake-token"
 
 
 def test_provider_encryption_key_reads_the_new_name_first(monkeypatch):

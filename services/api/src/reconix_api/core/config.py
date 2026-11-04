@@ -33,7 +33,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("RECONIX_KALI_MCP_URL", "RECONIX_MCP_URL"),
     )
     # RECONIX_MCP_ACCESS_KEY is the old name, still read until v1.0.0.
-    mcp_access_key: SecretStr = Field(
+    mcp_auth_token: SecretStr = Field(
         SecretStr(""),
         validation_alias=AliasChoices("RECONIX_MCP_AUTH_TOKEN", "RECONIX_MCP_ACCESS_KEY"),
     )
