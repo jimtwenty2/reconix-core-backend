@@ -29,6 +29,8 @@ class RunStep:
     requests  value (requests sent since the last step)
     propose   method, path: the AI proposes a request; the policy check decides
     reveal    name (a finding id)
+    confirm   name (a finding id), text (its description), rows (("evidence", line)…):
+              its validation ran; value 1 = CONFIRMED, 0 = evidence only (part was rejected)
     gate      name (GATE_* or an approval gate)
     complete  the assessment is finished
 

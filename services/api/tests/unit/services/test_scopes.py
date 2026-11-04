@@ -95,3 +95,26 @@ def test_draft_needs_a_window_in_order():
             starts_at=now,
             ends_at=now - timedelta(hours=1),
         )
+
+
+def test_draft_takes_any_catalog_tool_and_saves_it_uppercase():
+    draft = ScopeDraft(
+        allowed_tools=["nmap", "masscan", "zap_scan"],
+        targets=[ScopeTargetIn(type="ip", value="172.20.0.5")],
+    )
+    assert draft.allowed_tools == ["NMAP", "MASSCAN", "ZAP_SCAN"]
+
+
+def test_draft_refuses_a_tool_outside_the_catalog():
+    with pytest.raises(ValidationError):
+        ScopeDraft(
+            allowed_tools=["not_a_tool"],
+            targets=[ScopeTargetIn(type="ip", value="172.20.0.5")],
+        )
+
+
+def test_approved_scope_takes_any_catalog_tool():
+    manifest = make_manifest()
+    manifest.allowed_tools = ["masscan", "SQLMAP"]
+    scope = to_approved_scope(manifest, [target("ip", "172.20.0.5")])
+    assert scope.allowed_tools == ["MASSCAN", "SQLMAP"]

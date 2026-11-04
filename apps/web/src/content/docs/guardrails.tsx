@@ -92,7 +92,7 @@ export const guardrails: GroupContent = {
             Each gated action carries a fixed risk. <Badge variant="accent">MEDIUM</Badge> needs one decision.{" "}
             <Badge variant="accent">HIGH</Badge> needs a double check: a confirmation step with a single-use token, a second
             dialog that defaults to &quot;No, go back&quot;, and the matching request hash. An approval is bound to the exact
-            request shown; if the request changes, the approval does not apply. Rejecting stops the assessment. No typed
+            request shown; if the request changes, the approval does not apply. Rejecting skips that action and the plan goes on. No typed
             reason is asked for. See <DocRef>Approval gates</DocRef>.
           </p>
           <p>

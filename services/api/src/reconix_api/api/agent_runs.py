@@ -14,14 +14,22 @@ router = APIRouter(tags=["agent runs"])
 
 @router.get("/sessions/{session_id}/agent-runs")
 def list_agent_runs(session_id: UUID, db: Db, _: CurrentOperator) -> list[AgentRunOut]:
-    """Lists the agent's runs in this session, newest first."""
+    """Lists the agent's runs in this session, newest first.
+
+    Security:
+    - Requires a valid session token.
+    """
     return agent_runs.list_for_session(db, session_id)
 
 
 @router.get("/agent-runs/{agent_run_id}")
 def read_agent_run(agent_run_id: UUID, db: Db, _: CurrentOperator) -> AgentRunDetailOut:
-    """Returns one agent run and the actions filed under it, for example the step a plan suggested
-    and where that step is now."""
+    """Returns one agent run and the actions filed under it, such as the step a plan suggested and
+    its current state.
+
+    Security:
+    - Requires a valid session token.
+    """
     return actions.read_agent_run(db, agent_run_id)
 
 
@@ -29,7 +37,15 @@ def read_agent_run(agent_run_id: UUID, db: Db, _: CurrentOperator) -> AgentRunDe
 def cancel_agent_run(
     agent_run_id: UUID, db: Db, operator: CurrentOperator, interfaces: CurrentInterfaces
 ) -> AgentRunOut:
-    """Stops a plan or next-step run that is waiting for a person. Its step becomes CANCELLED and
-    can never run. Returns 409 while the agent is still answering, or if the run has already
-    ended."""
+    """Stops a plan or next-step run that is waiting for a person.
+
+    Business Rules:
+    - Returns 409 while the agent is still answering, or if the run has already ended.
+
+    State Changes:
+    - Sets the run's step to CANCELLED so it can never run.
+
+    Security:
+    - Requires a valid session token.
+    """
     return plans.cancel_run(db, interfaces, operator, agent_run_id)

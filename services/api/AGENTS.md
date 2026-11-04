@@ -29,8 +29,8 @@ api/ (routes) → services/ (rules) → repositories/ (queries) → models/ (tab
 | Folder | Holds |
 |---|---|
 | `main.py` | `create_app()`: middleware (Host check, CORS), error handlers, routers |
-| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones), `agent.py` (the real `ask_agent`), `report_files.py`, `provider_urls.py` (AI provider address check), `provider_keys.py` (Fernet for API keys), `knowledge_add_ons.py` (add-ons in Qdrant), `knowledge_files.py` (an uploaded file's text), `provider_checks.py` (test a provider, list a local Ollama's models), `timeline.py` (calls the harness's `read_timeline`), `code_files.py` (VS Code source code: safe paths, sync, tar.gz unpack), `disclosure.py` (the vault behind masked evidence), `limits.py` (the harness's limit settings rules). Only `core/` imports `reconix_ai` |
-| `api/` | Routes, one file per resource: `system`, `sessions`, `code`, `code_scans`, `messages`, `scopes`, `assessments`, `actions`, `approvals`, `findings`, `evidence`, `plans`, `analysis`, `agent_runs`, `reports`, `llm_providers`, `limit_settings`, `knowledge_add_ons`, `knowledge`, `timeline` |
+| `core/` | `config.py`, `db.py`, `errors.py`, `security.py`, `rate_limit.py`, `session_tokens.py`, `job_token.py`, `masking.py`, `interfaces.py` (the 6 shared functions), `wiring.py` (wires the real ones), `agent.py` (the real `ask_agent`), `report_files.py`, `provider_urls.py` (AI provider address check), `provider_keys.py` (Fernet for API keys and the vault), `knowledge_add_ons.py` (add-ons in Qdrant), `knowledge_files.py` (an uploaded file's text), `provider_checks.py` (test a provider, list a local Ollama's models), `timeline.py` (calls the harness's `read_timeline`), `code_files.py` (VS Code source code: safe paths, sync, tar.gz unpack), `terminal.py` (the TUI in a pty for the web Terminal page), `disclosure.py` (the vault behind masked evidence), `limits.py` (the harness's limit settings rules). Only `core/` imports `reconix_ai` |
+| `api/` | Routes, one file per resource: `system`, `sessions`, `code`, `code_scans`, `messages`, `scopes`, `assessments`, `actions`, `approvals`, `findings`, `evidence`, `plans`, `analysis`, `agent_runs`, `reports`, `llm_providers`, `limit_settings`, `knowledge_add_ons`, `knowledge`, `timeline`, `terminal` (WebSocket) |
 | `services/` | Rules: actions, approvals, decisions, tool runs, findings, scopes, sessions, code (VS Code uploads), code scans, messages, plans, analysis, agent runs, reports, AI providers, limit settings, disclosures, knowledge add-ons, audit |
 | `repositories/` | Database queries only |
 | `models/` | SQLAlchemy tables from ERD V3 (all 16; the 2 join tables are plain `Table`s); enums in `models/enums.py` |
@@ -71,7 +71,7 @@ Outside `src/`: `alembic/` (migrations, `alembic.ini` in this folder) and `tests
 - **Tools** are called only through `clients/mcp.py` with a fresh one-time job token
   (`core/job_token.py`). Commands are `list[str]`, never strings.
 - **Secrets:** mask before saving, logging or returning anything. AI provider API keys are
-  encrypted with Fernet (`RECONIX_FERNET_KEY`) and only the last 4 characters are ever shown.
+  encrypted with Fernet (`RECONIX_PROVIDER_ENCRYPTION_KEY`) and only the last 4 characters are ever shown.
 - **Schema changes** go through Alembic (`add-db-migration` skill).
 - **Routes or schemas changed** → regenerate `docs/openapi.json` in the same PR (`sync-openapi`
   skill). New endpoints follow the `add-endpoint` skill.
@@ -92,11 +92,11 @@ Keep this table true; update the row in the PR that changes it.
 | 6 AI provider endpoints (Fernet, one active, `configuration` approval for cloud providers) | 2 | Done: `/llm-providers` list, add, read, edit, remove and `/activate`. A provider on this computer is active at once, any other after its `configuration` approval. Each agent request carries its run's provider and model, and `core/agent.py` calls the agent with that run's settings (`services/agent_runs.make_provider_for_run`, key decrypted). A run whose provider is no longer active gets 409 `PROVIDER_CHANGED`, because an inactive row can be edited with no approval |
 | Reports: locked masked copy + hash, `GENERATING` → `READY`/`FAILED`, multi-assessment, `review` sign-off, download | 2 | Done except multi-assessment: one assessment per report, files in `RECONIX_REPORTS_DIR`, `review` sign-off before download |
 | Pojim's parts in the API: disclosure, limit settings, timeline, web sign-in | 2 | Done. Web sign-in: `POST /sessions/web-sign-in-codes` (needs a token) gives a one-time code that works for 2 minutes, and `POST /sessions/web-sign-in` (open) trades it for a normal `web` session token. Timeline: `GET /assessments/{id}/timeline`. Limit settings: `GET /limit-settings`, and `POST /limit-settings` asks for a `configuration` approval; once approved, the loop check gets the new limits through `CheckContext.loop_limits` (the newest approved change is the one in use; no extra table). Disclosure: parsers still read the masked output; the raw output is parsed too, in memory only, and each saved evidence is lined up with its raw copy so the value behind every label is kept encrypted in `RECONIX_VAULT_DIR` (if they do not line up, nothing is kept); `GET /evidence/{id}/hidden-values`, `POST /evidence/{id}/disclosures` (a `disclosure` approval), then `POST /evidence/{id}/disclosures/{approval_id}/reveal` shows the value once |
-| VS Code: `vscode` sessions, `path` scope targets, code sync and upload, code scans | 3 | Done: `POST /sessions/{id}/code/sync` and `PUT /sessions/{id}/code` (tar.gz, `RECONIX_CODE_DIR`, `RECONIX_MAX_UPLOAD_MB`); a `path` target (`/workspace/code/<session>`) becomes `repo_paths`; `POST /assessments/{id}/code-scans` runs SEMGREP then GITLEAKS through `send_action` in the background (an agent run with `plan.task = CODE_SCAN`), then ANALYZE; `GET /code-scans/{id}`, `/cancel` and `/findings` (relative path, line, rule, masked snippet, file hash). Closing a session deletes its code |
+| VS Code: `vscode` sessions, `path` scope targets, code sync and upload, code scans | 3 | Done: `POST /sessions/{id}/code/sync` and `PUT /sessions/{id}/code` (tar.gz, `RECONIX_CODE_DIR`, `RECONIX_MAX_UPLOAD_MB`); a `path` target (`/workspace/code/<session>`) becomes `repo_paths`; `POST /assessments/{id}/code-scans` runs SEMGREP then GITLEAKS through `send_action` in the background (an agent run with `plan.task = CODE_SCAN`), then ANALYZE (excluded `path` targets inside the code are deleted from it first, and never stored once the scope is approved); `GET /code-scans/{id}`, `/cancel` and `/findings` (relative path, line, rule, masked snippet, file hash). Closing a session deletes its code |
 | API in Docker Compose, `install.sh`, uv install steps | 2 | To do: API runs on the host; `install.sh` is a placeholder |
 | Full flow test on Sat 31 Oct, final `openapi.json` on Mon 2 Nov | 2 | To do (`run-full-flow-test` skill) |
-| Terminal WebSocket (the handshake checks the token and `Origin`; the Host middleware does not cover WebSockets), `GET /stream` live updates | 3 | To do |
-| Security tests (rate limit, Host, CORS, no token), contract tests against `openapi.json`, list indexes | 3 | Partly done: Host, CORS and no-token tests exist |
+| Terminal WebSocket (the handshake checks the token and `Origin`; the Host middleware does not cover WebSockets), `GET /stream` live updates | 3 | Done. `GET /stream` (Server-Sent Events). `WS /terminal`: the handshake checks the Host, the `Origin` (local web only) and the session token (subprotocol `token.<token>`, or a Bearer header), one terminal per session; the TUI runs in a pty (`core/terminal.py`, a fixed command, no override) without the API's own settings, and stops when the page leaves, the TUI exits or the session closes; `TERMINAL_OPENED` / `TERMINAL_CLOSED` / `TERMINAL_REFUSED` audit lines |
+| Security tests (rate limit, Host, CORS, no token), contract tests against `openapi.json`, list indexes | 3 | Partly done: Host, CORS and no-token tests exist. Rate limit done: `core/rate_limit.py`, per session token per minute in memory (`RECONIX_RATE_LIMIT_PER_MINUTE`, default 600; sign-in `RECONIX_SIGN_IN_LIMIT_PER_MINUTE`, default 20), 429 `TOO_MANY_REQUESTS` with `Retry-After` (readable by the local web: CORS wraps it). Requests from any other web page get their own bucket, so a page in the browser cannot lock out sign-in; CORS preflights and `GET /health` are not counted. Contract tests and indexes to do |
 | Release `v0.1.0` on Tue 3 Nov, `v1.0.0` on Fri 20 Nov | 3, 4 | To do (`cut-release` skill) |
 
 **No roles:** Reconix has no OPERATOR/VIEWER split (decided 30 Oct 2026). ERD V3 has no
@@ -119,22 +119,23 @@ Keep this table true; update the row in the PR that changes it.
 Run from the repo root.
 
 ```bash
-uv run --package reconix-api pytest                              # all API tests
+uv run --package reconix-api pytest services/api/tests                              # all API tests
 uv run --package reconix-api pytest services/api/tests/unit -q
 uv run --package reconix-api pytest services/api/tests/security -q
 
-cd services/api && uv run alembic upgrade head && cd -           # migrate
+uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head         # migrate
 uv run --package reconix-api python -m reconix_api.main          # http://127.0.0.1:8000/docs
 ```
 
 Integration tests skip unless `RECONIX_TEST_DATABASE_URL` points at a PostgreSQL 16 database (see
-`tests/integration/conftest.py`). The live MCP test also needs `RECONIX_TEST_MCP_URL` and
-`RECONIX_TEST_MCP_ACCESS_KEY` (the Kali container, started with `deploy/docker-compose.dev.yml`).
+`tests/integration/conftest.py`). The live MCP test also needs `RECONIX_TEST_MCP_URL` (and
+`RECONIX_TEST_MCP_AUTH_TOKEN` if that Kali has one): a Kali started from the Reconix-Kali-MCP
+repo, since Core's Kali has no port on this computer.
 
 ## Done when
 
 - `uv run ruff check . && uv run ruff format --check .` pass.
-- `uv run --package reconix-api pytest` passes, including the no-token (401) tests.
+- `uv run --package reconix-api pytest services/api/tests` passes, including the no-token (401) tests.
 - A new endpoint needs the token (the no-token test checks it by itself); a bug fix has a test
   that failed before the fix.
 - `docs/openapi.json` is regenerated if routes or schemas changed, and a migration exists if the

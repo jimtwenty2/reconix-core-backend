@@ -9,6 +9,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
+from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
 from .. import theme
@@ -27,6 +28,8 @@ class PromptInput(Input):
         Binding("tab", "prompt('tab')", "complete", show=False),
         Binding("escape", "prompt('escape')", "close / clear", show=False),
         Binding("ctrl+r", "prompt('search')", "search history", show=False),
+        Binding("left", "arrow(-1)", "cursor left", show=False),
+        Binding("right", "arrow(1)", "cursor right", show=False),
     ]
 
     def __init__(self, box: "PromptBox", **kwargs) -> None:
@@ -36,6 +39,16 @@ class PromptInput(Input):
     def action_prompt(self, key: str) -> None:
         if not self._box.handle_prompt_key(key):
             raise SkipAction()   # let Tab move focus / Esc reach the screen
+
+    def action_arrow(self, direction: int) -> None:
+        """←/→ move the cursor in typed text; on an empty prompt of a flow screen they pass
+        on to the app, which moves to the previous / next screen."""
+        if not self.value and not isinstance(self.screen, ModalScreen):
+            raise SkipAction()
+        if direction < 0:
+            self.action_cursor_left()
+        else:
+            self.action_cursor_right()
 
     def _on_key(self, event: events.Key) -> None:
         # Runs before Input._on_key: "?" on an empty prompt opens help instead of typing.

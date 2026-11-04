@@ -101,7 +101,15 @@ def suggest(commands: Sequence[Command], name: str) -> Optional[Command]:
     return names[close[0]] if close else None
 
 
+def _masked(text: str) -> str:
+    """Typed text repeated in an error, masked: it may be a pasted password or token."""
+    from ..store.assessment import shown_line  # (imported here: no store import at load)
+
+    return shown_line(text)
+
+
 def unknown_message(commands: Sequence[Command], name: str) -> str:
+    name = _masked(name)
     shown = name if len(name) <= 30 else name[:29] + "…"
     near = suggest(commands, name)
     did_you_mean = f" Did you mean /{near.name}?" if near else ""
@@ -131,7 +139,8 @@ def _arg_error(command: Command, arg: Optional[str], app: Any) -> str:
     if arg is not None and command.choices is not None and app is not None:
         ids = [choice.id for choice in command.choices(app)]
         if ids and arg.lower() not in ids:
-            shown = arg if len(arg) <= 30 else arg[:29] + "…"
+            masked = _masked(arg)
+            shown = masked if len(masked) <= 30 else masked[:29] + "…"
             more = ", …" if len(ids) > 8 else ""
             return (f"\"{shown}\" isn't a {command.arg_name} here. Usage: {command.usage} "
                     f"— one of: {', '.join(ids[:8])}{more}")

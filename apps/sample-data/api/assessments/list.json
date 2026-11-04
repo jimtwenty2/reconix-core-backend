@@ -1,0 +1,20 @@
+[
+  {
+    "assessment_id": "a0000000-0000-4000-8000-000000000001",
+    "engagement_code": "RCX-2026-0001",
+    "name": "Juice Shop web test",
+    "type": "web_url",
+    "assessment_status": "ACTIVE",
+    "created_by": "demo-tester",
+    "created_at": "2026-11-02T09:02:00Z",
+    "updated_at": "2026-11-02T09:04:00Z",
+    "session_id": "c0000000-0000-4000-8000-000000000001",
+    "targets": [
+      "192.0.2.10",
+      "http://juice-shop.example:3000/"
+    ],
+    "finding_count": 4,
+    "worst_severity": "HIGH",
+    "pending_approval_count": 0
+  }
+]

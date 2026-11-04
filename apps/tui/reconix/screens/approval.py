@@ -30,6 +30,17 @@ def waiting_request() -> Optional[ApprovalRequest]:
     return store.get_approval(gate[len(GATE_APPROVAL_PREFIX):])
 
 
+def _context_line() -> Text:
+    """What happened last before this gate: the latest AI step (✓), or a skipped action (✕)
+    when the operator rejected one since. A warning is never drawn with a green tick."""
+    for entry in reversed(store.list_activity()):
+        if entry.source == "POLICY" and entry.message.startswith("Skipped:"):
+            return Text.assemble(("✕ ", theme.CRITICAL), (entry.message, theme.DIM))
+        if entry.source == "AI" and entry.tone != "warn":
+            return Text.assemble(("✓ ", theme.GREEN), (entry.message, theme.DIM))
+    return Text.assemble(("✓ ", theme.GREEN), ("testing in progress", theme.DIM))
+
+
 def _row(label: str, *parts) -> Static:
     return Static(Text.assemble((f"{label:<12}", theme.DIM), *parts), classes="approval-row")
 
@@ -68,9 +79,7 @@ class ApprovalScreen(ReconixScreen):
     def _compose_waiting(self, req: ApprovalRequest) -> ComposeResult:
         approvals = [a.request_id for a in store.get_assessment().approvals]
         position = approvals.index(req.request_id) + 1 if req.request_id in approvals else 1
-        context = next((e.message for e in reversed(store.list_activity())
-                        if e.source == "AI"), "testing in progress")
-        yield Static(Text.assemble(("✓ ", theme.GREEN), (context, theme.DIM)))
+        yield Static(_context_line())
         yield Static(Text.assemble(("◆ reconix ", theme.CYAN), (
             f"gated action {position} of {len(approvals)} requires your approval",
             theme.DIM)), classes="ai-label")
@@ -101,7 +110,7 @@ class ApprovalScreen(ReconixScreen):
                    "HIGH risk: you double-check the exact request first." if self._high
                    else "Runs this one request now."),
             Choice("reject", "Reject",
-                   "Not executed. The assessment stops; nothing else runs.", "danger"),
+                   "Not executed. The plan goes on with its next step.", "danger"),
             Choice("details", "View details", "Scope limits, exact request and audit trail."),
             self._edit_choice(req),
         ], default=2)
@@ -152,7 +161,7 @@ class ApprovalScreen(ReconixScreen):
         return line
 
     def on_mount(self) -> None:
-        self.focus_menu("approval-menu")
+        self.focus_menu("approval-menu", top=True)
 
     # --- choices -----------------------------------------------------------------------------
     def decision(self) -> Optional[Decision]:
@@ -240,7 +249,7 @@ class ApprovalScreen(ReconixScreen):
 
     def action_later(self) -> None:
         if self._request is not None:
-            self.notify("Nothing runs until you decide. Come back with 4 or /approval.",
+            self.notify("Nothing runs until you decide. Come back with Alt+4 or /approval.",
                         title="Paused")
             self.app.goto("execution")
         else:

@@ -1,8 +1,10 @@
 """The API pieces the terminal app and the web still needed, through the API and a database:
-finding filters, manual finding checks, the next step, stopping a run and its actions,
+finding filters, PoC finding checks, the next step, stopping a run and its actions,
 combined reports, and testing an AI provider."""
 
 import json
+
+import pytest
 
 from reconix_api.core import provider_checks
 from reconix_api.core.interfaces import AgentTask
@@ -38,6 +40,7 @@ def test_findings_filter_by_tool_target_and_text(db_client):
 
     mine = {"assessment_id": assessment_id}
     assert codes(**mine, tool="NMAP") == ["RCX-001", "RCX-002"]
+    assert codes(**mine, tool="nmap") == ["RCX-001", "RCX-002"]  # any case
     assert codes(**mine, tool="NUCLEI") == []
     assert codes(**mine, target="172.20") == ["RCX-001", "RCX-002"]
     assert codes(**mine, target="10.9.9") == []
@@ -48,45 +51,69 @@ def test_findings_filter_by_tool_target_and_text(db_client):
 
 def test_an_unknown_tool_filter_is_422(db_client):
     headers = open_session(db_client)
-    assert db_client.get("/findings", params={"tool": "nmap"}, headers=headers).status_code == 422
+    response = db_client.get("/findings", params={"tool": "not_a_tool"}, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["code"] == "UNKNOWN_TOOL"
 
 
-# --- manual finding checks -----------------------------------------------------------------
+@pytest.mark.parametrize("tool", ["nmap", "NMAP", "masscan"])
+def test_any_catalog_tool_filter_in_any_case_is_200(db_client, tool):
+    headers = open_session(db_client)
+    assert db_client.get("/findings", params={"tool": tool}, headers=headers).status_code == 200
 
 
-def test_a_person_checks_a_finding(db_client, db_app):
+# --- PoC finding checks (the AI judges a completed tool run) -------------------------------
+
+
+def test_a_poc_confirms_a_finding(db_client, db_app):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)
     run_nmap(db_client, headers, assessment_id)
     finding = findings(db_client, headers, assessment_id)[0]
+    tool_run_id = finding["source_tool_run_ids"][0]
     path = f"/findings/{finding['finding_id']}/validation-runs"
 
-    first = db_client.post(
-        path, json={"validation_status": "INCONCLUSIVE", "reason": "port flaps"}, headers=headers
-    )
-    second = db_client.post(
-        path,
-        json={"validation_status": "CONFIRMED", "reason": "ssh answers; password=hunter2-secret"},
-        headers=headers,
-    )
+    response = db_client.post(path, json={"tool_run_id": tool_run_id}, headers=headers)
 
-    assert (first.status_code, second.status_code) == (201, 201)
-    assert second.json()["method"] == "manual_review"
-    assert second.json()["tool_run_id"] is None
-    assert "hunter2-secret" not in second.text
+    assert response.status_code == 201, response.json()
+    body = response.json()
+    assert body["method"] == "poc"
+    assert body["validation_status"] == "CONFIRMED"  # the fake agent's default verdict
+    assert body["tool_run_id"] == tool_run_id
+    assert body["reviewed_by"] == "agent"  # the verdict is the AI's, not a person's
     saved = get(db_client, headers, f"/findings/{finding['finding_id']}")
     assert saved["validation_status"] == "CONFIRMED"
-    assert saved["latest_validation"]["validation_run_id"] == second.json()["validation_run_id"]
-    history = get(db_client, headers, path)
-    assert [run["validation_status"] for run in history] == ["CONFIRMED", "INCONCLUSIVE"]
-    assert event_types(db_app).count("FINDING_CHECKED") == 2
+    assert saved["latest_validation"]["validation_run_id"] == body["validation_run_id"]
+    assert [run["method"] for run in get(db_client, headers, path)] == ["poc"]
+    assert event_types(db_app).count("FINDING_CHECKED") == 1
+
+
+def test_a_poc_cannot_use_another_assessments_tool_run(db_client):
+    headers = open_session(db_client)
+    mine = active_assessment(db_client, headers)
+    run_nmap(db_client, headers, mine)
+    finding = findings(db_client, headers, mine)[0]
+
+    # A session has one assessment, so the other assessment needs a session of its own.
+    other_headers = open_session(db_client)
+    other = active_assessment(db_client, other_headers)
+    run_nmap(db_client, other_headers, other)
+    other_run = findings(db_client, other_headers, other)[0]["source_tool_run_ids"][0]
+
+    response = db_client.post(
+        f"/findings/{finding['finding_id']}/validation-runs",
+        json={"tool_run_id": other_run},
+        headers=headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == "TOOL_RUN_NOT_FOUND"
 
 
 def test_checking_an_unknown_finding_is_404(db_client):
     headers = open_session(db_client)
     response = db_client.post(
         f"/findings/{UNKNOWN_ID}/validation-runs",
-        json={"validation_status": "CONFIRMED"},
+        json={"tool_run_id": UNKNOWN_ID},
         headers=headers,
     )
     assert response.status_code == 404
@@ -243,15 +270,26 @@ def test_a_provider_that_does_not_answer_is_not_ok(db_client, monkeypatch):
 
 def test_an_ollama_provider_lists_its_models(db_client, monkeypatch):
     headers = open_session(db_client)
-    provider_id = builtin_provider_id(db_client, headers)
+    ollama = {"provider_type": "OLLAMA", "display_name": "Local", "model_name": "llama3.1:8b"}
+    added = db_client.post("/llm-providers", json=ollama, headers=headers)
+    assert added.status_code == 201, added.json()
 
     async def models(base_url):
-        return ["bge-m3:latest", "reconix:latest"]
+        return ["bge-m3:latest", "llama3.1:8b"]
 
     monkeypatch.setattr(provider_checks, "local_models", models)
-    listed = get(db_client, headers, f"/llm-providers/{provider_id}/models")
+    listed = get(db_client, headers, f"/llm-providers/{added.json()['llm_provider_id']}/models")
 
-    assert listed == {"models": ["bge-m3:latest", "reconix:latest"]}
+    assert listed == {"models": ["bge-m3:latest", "llama3.1:8b"]}
+
+
+def test_the_built_in_provider_lists_no_models(db_client):
+    # RECONIX is the Reconix team's server, not an Ollama on this computer.
+    headers = open_session(db_client)
+    provider_id = builtin_provider_id(db_client, headers)
+    response = db_client.get(f"/llm-providers/{provider_id}/models", headers=headers)
+    assert response.status_code == 422
+    assert response.json()["code"] == "MODEL_LIST_NOT_SUPPORTED"
 
 
 def add_compatible(client, headers, base_url="https://llm.example.com/v1") -> str:

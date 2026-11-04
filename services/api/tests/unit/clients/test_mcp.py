@@ -60,8 +60,8 @@ class FakeKali:
         return self.requests[-1]
 
 
-async def run(kali: FakeKali, the_job: ToolJob):
-    call_tool = make_call_tool(URL, "access-key", transport=httpx.MockTransport(kali))
+async def run(kali: FakeKali, the_job: ToolJob, access_key: str = "access-key"):
+    call_tool = make_call_tool(URL, access_key, transport=httpx.MockTransport(kali))
     return await call_tool(the_job)
 
 
@@ -84,9 +84,21 @@ def test_source_tools_send_a_path():
     assert arguments["path"] == "/workspace/app"
 
 
-def test_zap_refuses_extra_arguments():
-    with pytest.raises(McpError):
+def test_zap_maps_to_zap_scan():
+    name, args = tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", []))
+    assert name == "zap_scan"
+    assert args == {"url": "http://juice-shop:3000/", "timeout": args["timeout"]}
+
+
+def test_arguments_for_a_tool_without_opts_are_refused_not_dropped():
+    with pytest.raises(McpError, match="TOOL_TAKES_NO_OPTIONS"):
         tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+
+
+def test_the_target_goes_in_the_primary_param():
+    name, args = tool_call(job("sqlmap", "http://juice-shop:3000/?id=1", ["--level", "2"]))
+    assert name == "sqlmap"
+    assert args["url"] == "http://juice-shop:3000/?id=1"
 
 
 async def test_call_sends_the_key_session_and_job_token():
@@ -139,6 +151,10 @@ def test_plain_text_results_from_zap():
     assert failed.stderr == "[error] url is required"
 
 
-def test_no_access_key_is_refused():
-    with pytest.raises(ValueError):
-        make_call_tool(URL, "")
+async def test_without_an_auth_token_no_authorization_header_is_sent():
+    kali = FakeKali()
+    result = await run(kali, job(), access_key="")
+    assert result.status == ToolRunStatus.COMPLETED
+    headers, body = kali.call()
+    assert "authorization" not in headers
+    assert body["params"]["_meta"] == {"job_token": "job-token"}  # the job token still goes

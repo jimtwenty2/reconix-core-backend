@@ -615,6 +615,14 @@ FormScreen {
     margin-bottom: 1;
 }
 
+/* The fields scroll inside the form; the error line and the buttons stay pinned under them. */
+.form-body {
+    height: auto;
+    scrollbar-color: $border-strong;
+    scrollbar-background: $surface;
+    scrollbar-size-vertical: 1;
+}
+
 .form-note {
     color: $muted;
     margin-bottom: 1;
@@ -628,6 +636,11 @@ FormScreen {
 
 .field-label.-warn {
     color: $medium;
+}
+
+/* "↓ more fields below": shown only while some fields are below the fold */
+#form-more {
+    height: 1;
 }
 
 #form-error {

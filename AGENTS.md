@@ -49,11 +49,11 @@ These rules are the product. A change that weakens one is a bug, even if every t
 | S3 | Nothing runs outside the approved scope (targets, exclusions, time window, allowed tools, max risk). | `harness/checks/scope.py` |
 | S4 | `LOW` runs now. `MEDIUM` and `HIGH` wait for a person. Above the scope's `max_risk` is `BLOCKED` (HTTP 422). | `harness/checks/risk.py`, `services/actions.py` |
 | S5 | Approvals expire after 30 minutes and are single use. The API re-hashes the action (SHA-256) before running it. `HIGH` needs the person to type the target. | `services/api/src/reconix_api/services/approvals.py` |
-| S6 | Only the 5 tools in `ToolName` (`NMAP`, `NUCLEI`, `ZAP`, `SEMGREP`, `GITLEAKS`), only with options from `tool_specs.json`. Commands are `list[str]`, never strings. | `harness/checks/command.py` |
+| S6 | Only tools in the Kali catalog (`tool_specs.json`) may run. Commands are `list[str]`, never strings; control and shell characters are blocked (free-shell tools — run_command, proxychains, msfconsole, smbclient — are exempt from the shell block and pinned to HIGH). Baseline risk comes from `tool_specs.json`, per-call escalation from `risk_ops.json`, and destructive tools gate at HIGH. | `harness/checks/command.py`, `harness/checks/risk.py`, `harness/catalog.py` |
 | S7 | Tools are called only through the MCP client, with a fresh one-time job token. | `clients/`, `core/job_token.py` |
 | S8 | Secrets are masked before anything is saved, logged, shown, sent to the AI or stored in Qdrant. Provider API keys are Fernet-encrypted and shown as the last 4 characters only. | `harness/masking.py`, `core/masking.py` |
 | S9 | Every decision writes **exactly one** audit line. | `harness/audit.py`, `services/audit.py` |
-| S10 | The API binds to `127.0.0.1`, rejects an unknown `Host`, and allows CORS only for the local web. | `main.py`, `core/config.py` |
+| S10 | The API binds to `127.0.0.1`, rejects an unknown `Host`, and allows CORS only for the local web. Inside its Docker container it listens on `0.0.0.0` (`RECONIX_IN_CONTAINER=1`, set only there) and Compose publishes it on `127.0.0.1` only. | `main.py`, `core/config.py`, `deploy/docker-compose.yml` |
 
 Paths without a prefix are under `services/api/src/reconix_api/` or
 `services/ai/src/reconix_ai/` (`harness/`).
@@ -77,7 +77,7 @@ One uv workspace (Python 3.12) plus one npm app.
 | `apps/tui/` | Terminal app: Textual, Typer. Package `reconix` (see section 11). | Vanhong |
 | `apps/web/` | Local web: Next.js, xterm.js | Sokpiseth |
 | `apps/sample-data/` | Fake data for the TUI and web, built from `deploy/seed.sql` | shared |
-| `deploy/` | Docker Compose (`docker-compose.yml`, `docker-compose.dev.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
+| `deploy/` | Docker Compose (`docker-compose.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
 | `docs/` | `reconix-plan-v2.md`, `openapi.json` (generated), `erd/` | Pojim |
 | `.claude/`, `AGENTS.md` files | Agent rules, skills, subagents, hooks (section 9) | Pojim |
 
@@ -99,7 +99,7 @@ Parts never import each other's internals. They meet only at these four contract
 | The 6 shared functions | `services/api/src/reconix_api/core/interfaces.py` | Lead approval + whole-team notice |
 | The HTTP API | `docs/openapi.json` | **Generated** from the FastAPI app (`sync-openapi` skill). Never hand-edited. |
 | Data names | ERD V3 and Data Dictionary V3 (`docs/erd/`) | Lead approval |
-| Tool options | `tool_specs.json` from Reconix-Kali-MCP, copied into `services/ai/src/reconix_ai/tool_specs/` | Copy from the Kali repo; never hand-edit |
+| Tool catalog + risk | `tool_specs.json` and `risk_ops.json` from Reconix-Kali-MCP, copied into `services/ai/src/reconix_ai/tool_specs/` | Copy from the Kali repo (`sync-kali-backend` skill); never hand-edit |
 
 **The 6 shared functions** (`Interfaces` dataclass): `get_operator`, `check`,
 `get_approved_scope`, `write_audit`, `ask_agent`, `call_tool`. `core/wiring.py` wires the real ones and
@@ -155,23 +155,24 @@ cp .env.example .env                            # then fill it in; never commit 
 uv run ruff check . && uv run ruff format --check .
 
 # tests, one package at a time
-uv run --package reconix-api pytest
-uv run --package reconix-ai  pytest             # includes evals and harness tests
-uv run --package reconix-tui pytest             # Textual pilot tests
+uv run --package reconix-api pytest services/api/tests
+uv run --package reconix-ai  pytest services/ai/tests             # includes evals and harness tests
+uv run --package reconix-tui pytest apps/tui/tests             # Textual pilot tests
 
 # narrower runs
 uv run --package reconix-api pytest services/api/tests/security -q
 uv run --package reconix-api pytest services/api/tests/contract -q
 
-# database (alembic.ini lives in services/api/)
-cd services/api && uv run alembic upgrade head && cd -
+# database: the api service migrates it when it starts. By hand, against a database you can
+# reach (alembic.ini lives in services/api/):
+uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
 
 # local web
 cd apps/web && npm ci && npm run lint && npm run test    # e2e: npm run e2e
 
 # full stack
 docker compose -f deploy/docker-compose.yml up -d
-docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml --env-file .env ps
 ```
 
 Export the API contract after any route or schema change: see the `sync-openapi` skill.
@@ -308,18 +309,20 @@ Keep this list true; remove an item in the PR that closes it.
   the database, logs, audit log, AI requests, API answers and report files, but not Qdrant
   (the API writes nothing there yet) or disclosure. Check those by hand with `run-leak-test`.
 - Imported findings and finding categories: decision pending.
-- **Code scans need semgrep rules inside the Kali image.** In Compose the Kali container has no
-  internet, so semgrep's default `p/default` cannot download, and a code scan gets no semgrep
-  findings until Reconix-Kali-MCP bundles the rules. gitleaks needs nothing extra.
 - **An excluded path does not stop a tool on the folder around it.** The harness scope check
   blocks a target *inside* an excluded path, but not one that *contains* it, so a manual
   SEMGREP or GITLEAKS action on `/workspace/code/<s>` still reads `/workspace/code/<s>/secrets`
-  when only that subfolder is excluded. Code scans refuse such a scope
-  (`EXCLUDED_PATH_NOT_SUPPORTED`); the harness fix belongs in `harness/checks/scope.py`.
+  when only that subfolder is excluded. Code scans are safe: they delete the excluded
+  folders from the stored code first, and sync and upload never store them once the scope
+  is approved. The harness fix belongs in `harness/checks/scope.py`.
 - **ZAP runs give no findings yet.** The ZAP reader reads SARIF (`findings/sarif.py`), but
   Reconix-Kali-MCP's `zap_scan` returns a text summary and `zap_report` only returns the path
   of the SARIF file inside the container. Until Kali returns the JSON, a ZAP run is kept with
   an `OUTPUT_UNREADABLE` note.
+- **The web Terminal page does not work with the API in Docker.** `WS /api/v1/terminal` runs
+  the TUI inside the API, and the API image (`services/api/Dockerfile`) does not include it, so
+  the terminal closes with `1011 TERMINAL_APP_MISSING`. It works when the API runs on the host
+  (`services/api/README.md`, "Run it manually") with `uv tool install ./apps/tui`.
 - **A code scan left RUNNING by an API restart stays RUNNING** (the scan is an in-process task).
   Cancel it with `POST /code-scans/{id}/cancel`.
 

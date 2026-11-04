@@ -34,9 +34,33 @@ def _require_http(url: str) -> str:
         raise StoreValidationError("The base URL must start with http:// or https://.")
     if len(url) > MAX_URL:
         raise StoreValidationError("That base URL is too long.")
-    if urlsplit(url).username:   # no user:pass@host — the key goes in the key field, encrypted
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:           # a stray bracket reads as a broken IPv6 literal
+        raise StoreValidationError("That base URL isn't a valid URL.") from None
+    # No user:pass@host in any shape (also ":key@host", an empty user name): the key goes in
+    # the key field, encrypted, never into the address saved in clear text
+    if parts.username is not None or parts.password is not None or "@" in parts.netloc:
         raise StoreValidationError("Put the API key in the key field, not in the base URL.")
+    if _is_metadata_host(host):
+        raise StoreValidationError("That address is a cloud metadata service, not a model "
+                                   "server.")
     return url
+
+
+_METADATA_HOSTS = ("metadata.google.internal", "metadata")
+
+
+def _is_metadata_host(host: str) -> bool:
+    """A cloud instance-metadata address (169.254.169.254, fd00:ec2::254, link-local…)."""
+    if host in _METADATA_HOSTS:
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_link_local or address == ipaddress.ip_address("fd00:ec2::254")
 
 
 def _parse_models(entry: catalog.Provider, models: Optional[List[str]]) -> List[str]:

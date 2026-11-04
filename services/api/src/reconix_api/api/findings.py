@@ -6,7 +6,6 @@ from fastapi import APIRouter, BackgroundTasks, Query, status
 
 from reconix_api.core.db import Db
 from reconix_api.core.finding_memory import CurrentFindingMemory
-from reconix_api.core.interfaces import ToolName
 from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
@@ -30,15 +29,23 @@ def list_findings(
     severity_status: SeverityStatus | None = None,
     validation_status: ValidationStatus | None = None,
     finding_status: FindingStatus | None = None,
-    tool: ToolName | None = None,
+    tool: str | None = Query(default=None, max_length=100),
     target: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=200),
 ) -> list[FindingOut]:
-    """Lists every finding, newest first. With ?assessment_id=, it lists only that assessment's
-    findings, in the order they were found. You can filter with ?severity_status=,
-    ?validation_status=, ?finding_status=, ?tool= (a tool that found it), ?target= (part of the
-    target) and ?q= (part of the code, title, target, description or a CWE id). Every filter you
-    give must match."""
+    """Lists the findings, newest first.
+
+    Business Rules:
+    - With ?assessment_id=, lists only that assessment's findings, in the order they were found.
+    - Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (a Kali
+      catalog tool that found it, in any case), ?target= (part of the target), and ?q= (part
+      of the code, title, target, description, or a CWE id).
+    - Every filter you provide must match.
+    - A ?tool= that is not in the Kali catalog returns 422 UNKNOWN_TOOL.
+
+    Security:
+    - Requires a valid session token.
+    """
     filters = FindingFilters(
         assessment_id=assessment_id,
         severity_status=severity_status,
@@ -53,8 +60,15 @@ def list_findings(
 
 @router.get("/{finding_id}")
 def read_finding(finding_id: UUID, db: Db, _: CurrentOperator) -> FindingOut:
-    """Returns one finding with its severity, CVSS score, CWE and CVE ids, how to fix it, and its
-    review status. Returns 404 FINDING_NOT_FOUND if there is no finding with this id."""
+    """Returns one finding with its severity, CVSS score, CWE and CVE ids, remediation, and review
+    status.
+
+    Business Rules:
+    - Returns 404 FINDING_NOT_FOUND if no finding has this id.
+
+    Security:
+    - Requires a valid session token.
+    """
     return findings.read_finding(db, finding_id)
 
 
@@ -68,8 +82,20 @@ def review_finding(
     memory: CurrentFindingMemory,
     background: BackgroundTasks,
 ) -> FindingOut:
-    """Marks a finding OPEN, FALSE_POSITIVE or FIXED. OPEN and FIXED count as accepted, and the AI
-    remembers them for later."""
+    """Marks a finding OPEN, FALSE_POSITIVE, or FIXED.
+
+    Business Rules:
+    - OPEN and FIXED count as accepted.
+
+    Execution Behavior:
+    - Records accepted findings in the AI's memory for later.
+
+    State Changes:
+    - Updates the finding's review status.
+
+    Security:
+    - Requires a valid session token.
+    """
     reviewed = findings.review_finding(db, interfaces.write_audit, operator, finding_id, body)
     # After the response: a slow memory never holds the person or a database connection.
     background.add_task(findings.update_memory, memory, reviewed)
@@ -77,7 +103,7 @@ def review_finding(
 
 
 @router.post("/{finding_id}/validation-runs", status_code=status.HTTP_201_CREATED)
-def check_finding(
+async def check_finding(
     finding_id: UUID,
     body: ValidationRunIn,
     db: Db,
@@ -85,12 +111,30 @@ def check_finding(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> ValidationRunOut:
-    """Records a person's own check of a finding: CONFIRMED, UNCONFIRMED or INCONCLUSIVE, together
-    with what was checked. The finding takes this newest result as its validation_status."""
-    return findings.check_finding(db, interfaces.write_audit, mask, operator, finding_id, body)
+    """Confirms a finding with a proof of concept.
+
+    Business Rules:
+    - Provide the id of a COMPLETED tool run.
+    - The finding takes the newest result as its validation_status; no one sets the verdict by hand.
+
+    Execution Behavior:
+    - The AI reads the tool run's real output and sets the verdict (CONFIRMED, UNCONFIRMED, or
+      INCONCLUSIVE).
+
+    State Changes:
+    - Creates a validation run and updates the finding's validation_status.
+
+    Security:
+    - Requires a valid session token.
+    """
+    return await findings.check_finding(db, interfaces, mask, operator, finding_id, body)
 
 
 @router.get("/{finding_id}/validation-runs")
 def list_validation_runs(finding_id: UUID, db: Db, _: CurrentOperator) -> list[ValidationRunOut]:
-    """Lists every check of the finding, newest first."""
+    """Lists every check of the finding, newest first.
+
+    Security:
+    - Requires a valid session token.
+    """
     return findings.list_validation_runs(db, finding_id)

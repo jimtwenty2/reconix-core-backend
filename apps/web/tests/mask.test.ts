@@ -42,13 +42,17 @@ describe("maskDeep", () => {
   });
 
   it("works whatever the elements hold, even the separator's own characters", () => {
+    // a NUL inside an element becomes a space (as the TUI's redact_all), so the elements keep
+    // their number and order whatever they held
     const odd = ["x\n\u0000\ny", "\u0000", "password=hunter2"];
-    expect(maskDeep(odd)).toEqual(["x\n\u0000\ny", "\u0000", "password=••••"]);
+    expect(maskDeep(odd)).toEqual(["x\n \ny", " ", "password=••••"]);
     // the separator formed across a boundary by the join
-    expect(maskDeep(["a\n\u0000", "x"])).toEqual(["a\n\u0000", "x"]);
-    expect(maskDeep(["a\n", "\u0000\nx"])).toEqual(["a\n", "\u0000\nx"]);
-    expect(maskDeep(["a\n\u0000", "\n\u0000\nx", "password=hunter2"])).toEqual(["a\n\u0000", "\n\u0000\nx", "password=••••"]);
-    expect(maskDeep(["a\n\u00000", "\u00000\u0000\nx", "\u00001\u0000"])).toEqual(["a\n\u00000", "\u00000\u0000\nx", "\u00001\u0000"]);
+    expect(maskDeep(["a\n\u0000", "x"])).toEqual(["a\n ", "x"]);
+    expect(maskDeep(["a\n", "\u0000\nx"])).toEqual(["a\n", " \nx"]);
+    expect(maskDeep(["a\n\u0000", "\n\u0000\nx", "password=hunter2"])).toEqual(["a\n ", "\n \nx", "password=••••"]);
+    expect(maskDeep(["a\n\u00000", "\u00000\u0000\nx", "\u00001\u0000"])).toEqual(["a\n 0", " 0 \nx", " 1 "]);
+    // an element hiding a secret behind a control character is hidden, as one line
+    expect(maskDeep(["ok", "a\u0000token=abc", "password=hunter2"])).toEqual(["ok", "[line hidden: control codes around a secret]", "password=••••"]);
   });
 });
 

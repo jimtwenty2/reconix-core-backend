@@ -25,7 +25,7 @@ class Action(Base):
     __tablename__ = "actions"
 
     action_id: Mapped[uuid.UUID] = uuid_pk()
-    tool: Mapped[str] = mapped_column(String(100))  # e.g. nmap, nuclei, zap
+    tool: Mapped[str] = mapped_column(String(100))  # Kali catalog name, UPPERCASE, e.g. NMAP
     args: Mapped[list[str]] = mapped_column(JSONB, server_default=json_default("[]"))
     target: Mapped[str] = mapped_column(Text)
     purpose: Mapped[str] = mapped_column(Text)  # discovery, scan or validation

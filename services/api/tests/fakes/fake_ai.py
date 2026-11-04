@@ -33,6 +33,7 @@ SUPPORTED_TASKS = {
     AgentTask.ANALYZE,
     AgentTask.REPORT,
     AgentTask.CHAT,
+    AgentTask.VALIDATE,
 }
 
 
@@ -41,6 +42,7 @@ class FakeAgent:
         self.requests: list[AgentRequest] = []
         self.waiting: dict[UUID, tuple[UUID, Action]] = {}  # run -> (assessment, action)
         self.suggest: Action | None = None  # set by a test: the step the next plan suggests
+        self.verdict = "CONFIRMED"  # set by a test: the VALIDATE verdict the fake returns
         self.down = False  # set by a test: the model is not running
         self.error: Exception | None = None  # set by a test: a bug, not an ApiError
         self.fail_after_pieces = False  # set by a test: a CHAT fails after it streamed
@@ -62,6 +64,8 @@ class FakeAgent:
             raise ApiError(409, "RUN_IS_WAITING", "This run is waiting for a person to decide.")
         if request.task == AgentTask.ANALYZE:
             return self.analyze(request)
+        if request.task == AgentTask.VALIDATE:
+            return self.validate(request)
         if request.task == AgentTask.REPORT:
             return self.report(request)
         if request.task == AgentTask.CHAT:
@@ -88,6 +92,21 @@ class FakeAgent:
             text="Fake analysis.",
             analysis_summary="Fake analysis.",
             analysis=[unsure_analysis(finding) for finding in request.findings],
+            agent_run_id=request.agent_run_id,
+        )
+
+    def validate(self, request: AgentRequest) -> AgentResponse:
+        if len(request.findings) != 1:
+            raise ApiError(422, "ONE_FINDING", "A validation judges exactly one finding.")
+        if not any(result.strip() for result in request.tool_results):
+            raise ApiError(
+                422, "NO_TOOL_RESULT", "A validation needs the PoC tool output to judge."
+            )
+        finding = request.findings[0]
+        return AgentResponse(
+            text=f"Fake verdict {self.verdict} for {finding.code}.",
+            validation_status=self.verdict,
+            validation_reason=f"Fake PoC check of {finding.code}.",
             agent_run_id=request.agent_run_id,
         )
 

@@ -93,7 +93,7 @@ def test_arguments_as_one_string_are_dropped_not_split() -> None:
         step(title=""),
         "scan it",
         step(tool=5),
-        step(tool="nikto"),  # not one of the 5 tools
+        step(tool="nessus"),  # not in the Kali catalog
     ],
 )
 def test_malformed_steps_are_dropped(bad: object) -> None:

@@ -19,10 +19,14 @@ class HostCheckMiddleware(BaseHTTPMiddleware):
         self.allowed_hosts = set(allowed_hosts)
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        host = request.headers.get("host", "")
-        if _host_name(host) not in self.allowed_hosts:
+        if not host_is_allowed(request.headers.get("host", ""), self.allowed_hosts):
             return error_response(400, "INVALID_HOST", "The Host header is not allowed.")
         return await call_next(request)
+
+
+def host_is_allowed(host: str, allowed_hosts: list[str] | set[str]) -> bool:
+    """The middleware above only sees HTTP requests; WebSocket routes call this themselves."""
+    return _host_name(host) in set(allowed_hosts)
 
 
 def _host_name(host: str) -> str:

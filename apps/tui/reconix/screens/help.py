@@ -14,11 +14,16 @@ from ..widgets import ChoiceMenu, PromptInput
 
 Row = Tuple[str, str]
 
+# Keys of the flow screens. Inside a dialog (a menu or a form) its own keys apply instead,
+# so "/" and "?" typed into a field stay text; the rows say where a key does not reach.
 GLOBAL_ROWS: List[Row] = [
-    ("←  /  →", "previous / next screen in the flow"),
-    ("1 … 8", "jump to a screen (when not typing or in a menu)"),
-    ("/", "command suggestions (any screen)"),
-    ("?", "toggle this help"),
+    ("←  /  →", "previous / next step, unless you are typing; → waits at a step that still "
+                "needs your choice; Esc closes a chat first"),
+    ("Alt+1 … 8", "jump to a screen"),
+    ("/", "command suggestions (not inside a dialog); in a chat, start a line with / to "
+          "run a command"),
+    ("?", "toggle this help (not inside a dialog; on the prompt when it is empty)"),
+    ("^C", "stop the running assessment (asks first; copies selected text in a field)"),
     ("^O", "expand / collapse the steps Reconix finished (click one to open it)"),
     ("^Q", "quit"),
 ]
@@ -38,7 +43,7 @@ LIST_ROWS: List[Row] = [
 ]
 
 MENU_ROWS: List[Row] = LIST_ROWS + [
-    ("1 … 9", "pick a numbered choice"),
+    ("1 … 9", "pick a numbered choice (a red, unnumbered one needs ↑/↓ and Enter)"),
     ("type", "on \"Type something.\", write it, then Enter"),
 ]
 
@@ -93,6 +98,9 @@ class HelpScreen(ModalScreen):
         Binding("escape", "close", "close"),
     ]
 
+    # The help names the screen as the flow line does (not its internal mode).
+    SCREEN_NAMES = {"detail": "Finding detail"}
+
     def __init__(self, title: str = "⌨ Keyboard", rows: Sequence[Row] = ()) -> None:
         super().__init__()
         self._title = title
@@ -100,8 +108,9 @@ class HelpScreen(ModalScreen):
 
     @classmethod
     def for_screen(cls, screen: Screen) -> "HelpScreen":
-        mode = getattr(screen, "mode_name", "")
-        return cls(f"⌨ Shortcuts · {mode}" if mode else "⌨ Keyboard", context_rows(screen))
+        flow = getattr(screen, "flow_name", "")
+        name = cls.SCREEN_NAMES.get(flow, flow.capitalize())
+        return cls(f"⌨ Shortcuts · {name}" if name else "⌨ Keyboard", context_rows(screen))
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="help-box") as box:   # scrolls if the terminal is short
@@ -118,6 +127,19 @@ class HelpScreen(ModalScreen):
                 f"? or Esc closes this[/]",
                 markup=True,
             )
+
+    def on_mount(self) -> None:
+        box = self.query_one("#help-box", VerticalScroll)
+        box.focus()                         # ↑/↓ and PgUp/PgDn scroll it
+        self.call_after_refresh(self._scroll_hint)
+
+    def on_resize(self) -> None:
+        self.call_after_refresh(self._scroll_hint)
+
+    def _scroll_hint(self) -> None:
+        """Say so on the border when the rows don't all fit (a short terminal, 80×24)."""
+        box = self.query_one("#help-box", VerticalScroll)
+        box.border_subtitle = "↓ more · ↑/↓ PgUp/PgDn scroll" if box.max_scroll_y > 0 else ""
 
     @staticmethod
     def _row(keys: str, desc: str) -> Static:

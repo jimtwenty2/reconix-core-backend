@@ -30,7 +30,7 @@ ERRORS = {
     "UNREADABLE": (
         409,
         "HIDDEN_VALUE_UNREADABLE",
-        "The kept value cannot be read with RECONIX_FERNET_KEY.",
+        "The kept value cannot be read with RECONIX_PROVIDER_ENCRYPTION_KEY.",
     ),
 }
 

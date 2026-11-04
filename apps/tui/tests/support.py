@@ -17,6 +17,8 @@ TEST_PASSWORD = "s3cret-Pa55-for-tests"   # must never appear anywhere it is sho
 # template. The demo request (a URL) and IPv4/repo/path targets pick theirs themselves.
 ASK_REQUEST = "Assess staging.example.com"
 
+NETWORK = "10.0.0.0/24"   # a network scope: the scope's tick list shows ports and tools
+
 # Agent mode drives the backend `harness` package. It lives with the backend, not in apps/,
 # so the tests that need it skip when it isn't installed (the scripted demo needs no harness).
 needs_harness = pytest.mark.skipif(importlib.util.find_spec("harness") is None,
@@ -129,6 +131,21 @@ async def show(app, pilot, name: str) -> None:
     await settle(pilot)
 
 
+async def choose_by_keys(pilot, choice_id: str) -> None:
+    """Pick `choice_id` in the focused menu the way a person must pick a destructive choice
+    (no digit reaches it): move the highlight with ↓ / ↑, then press Enter."""
+    from reconix.widgets import ChoiceMenu
+
+    menu = pilot.app.screen.focused
+    assert isinstance(menu, ChoiceMenu), f"no menu has focus: {menu!r}"
+    ids = [choice.id for choice in menu._choices]
+    target = ids.index(choice_id)
+    while menu.highlighted != target:
+        await pilot.press("down" if menu.highlighted < target else "up")
+    await pilot.press("enter")
+    await settle(pilot)
+
+
 async def start_demo(pilot) -> None:
     """Type the demo request at the Start prompt; the run stops at the scope."""
     await type_request(pilot, store.DEMO_REQUEST)
@@ -211,3 +228,78 @@ def add_finding(title: str, path: str = "/x", *, severity: str = "LOW", descript
         fid="", severity=severity, title=title, path=path, validation="UNCONFIRMED",
         description=description, affected_url=path, impact="", remediation="", tool="agent",
         evidence=list(evidence or []), category="Web App")])
+
+
+# --- the step chat (screens/base.py, widgets/step_chat.py) ---------------------------------------
+def toasts(app) -> List[str]:
+    """The notifications shown so far, as text."""
+    return [str(n.message) for n in app._notifications]
+
+
+def fake_model(monkeypatch) -> list:
+    """Chat calls answer "model answer N"; returns the list of messages each call got."""
+    from reconix.llm import client
+
+    calls: list = []
+
+    def complete(pid, model, messages, **kw):
+        calls.append(messages)
+        return f"model answer {len(calls)}"
+
+    monkeypatch.setattr(client, "complete", complete)
+    return calls
+
+
+def step_menu(app):
+    """The step's own menu (the first ChoiceMenu on the screen)."""
+    from reconix.widgets import ChoiceMenu
+
+    return app.screen.query(ChoiceMenu).first()
+
+
+def type_in_menu(app, text: str) -> None:
+    """A line typed on the step menu's "Type something." row."""
+    from reconix.widgets import ChoiceMenu
+
+    app.screen.post_message(ChoiceMenu.Typed(step_menu(app), text))
+
+
+def chat_about_this(app) -> None:
+    """Choose "Chat about this" on the step's menu."""
+    from reconix.widgets import ChoiceMenu
+
+    app.screen.post_message(ChoiceMenu.Chosen(step_menu(app), "chat"))
+
+
+def chat_text(app) -> str:
+    """Everything the step chat shows ("" when no chat is open)."""
+    from reconix.widgets import StepChat
+
+    chats = app.screen.query(StepChat)
+    return screen_text(chats.first()) if chats else ""
+
+
+async def ask_in_chat(app, pilot, text: str) -> None:
+    """Type `text` into the step chat's input and press Enter."""
+    from reconix.widgets import StepChat
+
+    chat = app.screen.query_one(StepChat)
+    chat.input.value = text
+    chat.input.focus()
+    await pilot.press("enter")
+    await settle(pilot)
+
+
+def chat_menu(app):
+    """The newest menu inside the chat (an older one may still be leaving), or None."""
+    menus = [q.menu for q in app.screen.query(".chat-decision") if q.is_mounted]
+    return menus[-1] if menus else None
+
+
+async def chat_menu_ready(app, pilot):
+    """The menu inside the chat, focused and past its arm delay (a key now counts)."""
+    await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
+    menu = chat_menu(app)
+    await wait_until(pilot, lambda: menu.has_focus, what="the menu focused")
+    await pilot.pause(menu.ARM_DELAY + 0.1)
+    return menu

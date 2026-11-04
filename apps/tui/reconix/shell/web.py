@@ -36,8 +36,10 @@ class WebDashboardMixin:
             return
         why = web_server.problem()
         if why:
-            self._web_note(f"{why} Or start it yourself:  cd web && npm run dev",
-                           severity="warning")
+            # Without Node.js "start it yourself with npm" can't work either: say what to install.
+            has_folder = (web_server.WEB_DIR / "package.json").is_file()
+            how = " Install Node.js (nodejs.org), then type /web again." if has_folder else ""
+            self._web_note(f"{why}{how}", severity="warning")
             return
         first = " First time: installing its packages takes a few minutes." \
             if web_server.needs_install() else ""

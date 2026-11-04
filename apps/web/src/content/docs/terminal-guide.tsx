@@ -101,7 +101,7 @@ export const terminalGuide: GroupContent = {
             caption="Keys that work on every screen"
             rows={[
               { key: <><Kbd>←</Kbd> / <Kbd>→</Kbd></>, value: "Previous / next screen in the flow (Execution is skipped until the plan has run)." },
-              { key: <><Kbd>1</Kbd> … <Kbd>8</Kbd></>, value: "Jump to a screen when no menu has focus: 1 Start, 2 Template, 3 Plan, 4 Approval, 5 Execution, 6 Findings, 7 Finding Detail, 8 Report." },
+              { key: <><Kbd>Alt+1</Kbd> … <Kbd>Alt+8</Kbd></>, value: "Jump to a screen: 1 Start, 2 Template, 3 Plan, 4 Approval, 5 Execution, 6 Findings, 7 Finding Detail, 8 Report." },
               { key: <Kbd>/</Kbd>, value: "Command suggestions: inline above the Start prompt, a command bar on every other screen." },
               { key: <Kbd>?</Kbd>, value: "Toggle the help for the current screen (on Start: when the prompt is empty)." },
               { key: <Kbd>Ctrl+O</Kbd>, value: "Expand or collapse the steps Reconix finished: under its spinner line, and every folded block in the live output (click a block to open just that one)." },
@@ -128,7 +128,7 @@ export const terminalGuide: GroupContent = {
             rows={[
               { key: <><Kbd>↑</Kbd> / <Kbd>↓</Kbd></>, value: "Move between choices, suggestions, list rows and table rows." },
               { key: <Kbd>Enter</Kbd>, value: "Confirm the highlighted choice." },
-              { key: <><Kbd>1</Kbd> … <Kbd>9</Kbd></>, value: "Pick a numbered choice in the focused menu." },
+              { key: <><Kbd>1</Kbd> … <Kbd>9</Kbd></>, value: "Pick a numbered choice in the focused menu. A red choice (Reject, Cancel, Stop) has no number: use ↑/↓ and Enter." },
               { key: "type", value: "On “Type something.”, write an answer, then Enter." },
               { key: <Kbd>Esc</Kbd>, value: "Cancel a dialog or form." },
               { key: <><Kbd>PgUp</Kbd> / <Kbd>PgDn</Kbd></>, value: "Scroll a long dialog." },

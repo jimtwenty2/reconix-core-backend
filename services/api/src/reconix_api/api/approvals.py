@@ -26,8 +26,14 @@ def list_approvals(
     status: ApprovalStatus = ApprovalStatus.PENDING,
     kind: ApprovalKind | None = None,
 ) -> list[ApprovalOut]:
-    """Lists the approvals that are waiting for a person. Filter by status and kind to see others,
-    such as the ones already decided."""
+    """Lists the approval requests waiting for a person.
+
+    Business Rules:
+    - Filter by status and kind to see others, such as those already decided.
+
+    Security:
+    - Requires a valid session token.
+    """
     return decisions.list_approvals(db, settings.approval_ttl_minutes, status, kind)
 
 
@@ -35,8 +41,14 @@ def list_approvals(
 def read_approval(
     approval_id: UUID, db: Db, _: CurrentOperator, settings: CurrentSettings
 ) -> ApprovalOut:
-    """Returns one approval, whether it is still waiting or already decided, together with the time
-    it expires. Returns 404 APPROVAL_NOT_FOUND if there is no approval with this id."""
+    """Returns one approval request, whether it is waiting or already decided, with its expiry time.
+
+    Business Rules:
+    - Returns 404 APPROVAL_NOT_FOUND if no approval has this id.
+
+    Security:
+    - Requires a valid session token.
+    """
     return decisions.read_approval(db, approval_id, settings.approval_ttl_minutes)
 
 
@@ -50,8 +62,17 @@ async def approve(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> ApprovalOut:
-    """Approves a waiting approval. Approving an action also runs it, so read the action afterwards
-    to see its tool run."""
+    """Approves a waiting approval request.
+
+    Execution Behavior:
+    - Approving an action also runs it; read the action afterward to see its tool run.
+
+    State Changes:
+    - Marks the approval approved, and runs the approved action when the approval is for one.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await decisions.approve(db, interfaces, mask, settings, operator, approval_id, body)
 
 
@@ -64,9 +85,20 @@ async def reject(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> ApprovalOut:
-    """Rejects a waiting approval. Send a reason so the audit log shows why. A rejected action
-    never runs. Returns 409 APPROVAL_ALREADY_DECIDED if someone already decided it, or 409
-    APPROVAL_EXPIRED if it is older than its time limit."""
+    """Rejects a waiting approval request.
+
+    Business Rules:
+    - Send a reason so the audit log records it.
+    - A rejected action never runs.
+    - Returns 409 APPROVAL_ALREADY_DECIDED if it was already decided, or 409 APPROVAL_EXPIRED if it
+      is past its time limit.
+
+    State Changes:
+    - Marks the approval rejected.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await decisions.reject(
         db, interfaces, operator, settings.approval_ttl_minutes, approval_id, body
     )

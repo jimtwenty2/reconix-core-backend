@@ -67,7 +67,7 @@ def build_interfaces(
         graph = postgres_graph(database_url)
         ask_agent = make_ask_agent(graph, agent.AgentDeps(), provider_for_run)
     _, call_tool = _not_ready("call_tool")
-    if mcp_url and mcp_access_key:
+    if mcp_url:  # the auth token is optional
         call_tool = make_call_tool(mcp_url, mcp_access_key)
     return Interfaces(
         get_operator=get_operator,

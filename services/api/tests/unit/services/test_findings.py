@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from reconix_api.findings.shape import OutputUnreadable
 from reconix_api.schemas.findings import FindingOut
 from reconix_api.services import findings as findings_service
 from reconix_api.services.findings import READERS, parse_run, update_memory
@@ -113,3 +114,10 @@ def test_hidden_values_keep_nothing_for_labels_side_by_side():
 
 def test_no_labels_nothing_to_keep():
     assert findings_service.hidden_values("plain", "plain") == []
+
+
+@pytest.mark.parametrize("tool", ["ZAP", "zap", "zap_scan", "ZAP_SCAN"])
+def test_parse_run_finds_the_zap_reader_by_core_or_catalog_name(tool):
+    # The SARIF reader refuses ZAP's text summary; a tool with no reader would return ([], 0).
+    with pytest.raises(OutputUnreadable):
+        parse_run(tool, "Spider: 3 URL(s) discovered")

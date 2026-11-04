@@ -30,4 +30,4 @@ Scope: UI only; no agent logic.
 
 ## Done when
 
-`uv run --package reconix-tui pytest` passes (Textual pilot tests).
+`uv run --package reconix-tui pytest apps/tui/tests` passes (Textual pilot tests).

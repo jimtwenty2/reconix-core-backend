@@ -59,12 +59,13 @@ def test_an_unsafe_address_is_refused(base_url):
 @pytest.fixture(autouse=True)
 def default_ollama(monkeypatch):
     monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    monkeypatch.delenv("RECONIX_MODEL_URL", raising=False)
 
 
 @pytest.mark.parametrize(
     ("provider_type", "base_url", "local"),
     [
-        (ProviderType.RECONIX, None, True),
+        (ProviderType.RECONIX, None, False),  # no RECONIX_MODEL_URL: nothing local
         (ProviderType.OLLAMA, None, True),  # the local Ollama
         (ProviderType.OLLAMA, "http://127.0.0.1:11434", True),
         (ProviderType.OLLAMA, "http://[::1]:11434", True),
@@ -86,10 +87,18 @@ def test_which_providers_run_on_this_computer(provider_type, base_url, local):
     assert is_local(provider_type, base_url) is local
 
 
-def test_with_no_address_reconix_and_ollama_follow_reconix_ollama_url(monkeypatch):
+def test_reconix_follows_reconix_model_url(monkeypatch):
+    # The Reconix team's server sends prompts off this computer.
+    monkeypatch.setenv("RECONIX_MODEL_URL", "https://models.reconix.example/v1")
+    assert is_local(ProviderType.RECONIX, None) is False
+    # A team server run on this computer (e.g. for development) is local.
+    monkeypatch.setenv("RECONIX_MODEL_URL", "http://127.0.0.1:8080/v1")
+    assert is_local(ProviderType.RECONIX, None) is True
+
+
+def test_with_no_address_ollama_follows_reconix_ollama_url(monkeypatch):
     monkeypatch.setenv("RECONIX_OLLAMA_URL", "https://gpu.example.com")
 
-    assert is_local(ProviderType.RECONIX, None) is False
     assert is_local(ProviderType.OLLAMA, None) is False
     assert is_local(ProviderType.OLLAMA, "http://127.0.0.1:11434") is True
 

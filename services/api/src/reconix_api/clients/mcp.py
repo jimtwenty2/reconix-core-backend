@@ -16,7 +16,8 @@ from typing import Any
 
 import httpx
 
-from reconix_api.core.interfaces import CallTool, ToolJob, ToolName, ToolResult, ToolRunStatus
+from reconix_ai.harness.catalog import canonical, input_schema, is_known_tool
+from reconix_api.core.interfaces import CallTool, ToolJob, ToolResult, ToolRunStatus
 
 PROTOCOL_VERSION = "2025-06-18"
 NETWORK_MARGIN_SECONDS = 30  # on top of the tool's own timeout
@@ -32,22 +33,40 @@ class McpError(Exception):
 
 
 def tool_call(job: ToolJob) -> tuple[str, dict[str, Any]]:
-    """Our ToolJob -> the Kali tool name and its arguments."""
-    opts = shlex.join(job.arguments)
-    timeout = job.timeout_seconds
-    if job.tool == ToolName.NMAP:
-        return "nmap", {"target": job.target, "opts": opts, "timeout": timeout}
-    if job.tool == ToolName.NUCLEI:
-        return "nuclei", {"target": job.target, "opts": opts, "timeout": timeout}
-    if job.tool == ToolName.SEMGREP:
-        return "semgrep", {"path": job.target, "opts": opts, "timeout": timeout}
-    if job.tool == ToolName.GITLEAKS:
-        return "gitleaks", {"path": job.target, "opts": opts, "timeout": timeout}
-    if job.tool == ToolName.ZAP:
-        if job.arguments:
-            raise McpError("ZAP_TAKES_NO_ARGUMENTS")
-        return "zap_scan", {"url": job.target, "timeout": timeout}
-    raise McpError(f"UNKNOWN_TOOL: {job.tool}")
+    """Our ToolJob -> the Kali tool name and its arguments, from the tool's inputSchema.
+
+    The tool name is the catalog name (lowercased). The job's target fills the
+    tool's primary input param (the first required param that is not opts/timeout);
+    the approved arguments go in `opts` when the tool takes it, always sent (even
+    empty) so the server never falls back to its own unchecked defaults; arguments for
+    a tool without `opts` are refused, never dropped. `timeout` is sent when the tool
+    takes it.
+    """
+    name = canonical(str(job.tool))
+    schema = input_schema(name)
+    if not is_known_tool(name) or not schema:
+        raise McpError(f"UNKNOWN_TOOL: {job.tool}")
+    props = schema.get("properties", {}) or {}
+    if job.arguments and "opts" not in props:
+        raise McpError(f"TOOL_TAKES_NO_OPTIONS: {job.tool}")  # never drop approved arguments
+    args: dict[str, Any] = {}
+    primary = _primary_param(schema.get("required", []), props)
+    if primary:
+        args[primary] = job.target
+    if "opts" in props:
+        args["opts"] = shlex.join(job.arguments)
+    if "timeout" in props:
+        args["timeout"] = job.timeout_seconds
+    return name, args
+
+
+def _primary_param(required: list[str], props: dict[str, Any]) -> str | None:
+    """The tool's main input (target/url/path/command/...): the first required
+    param that is not opts/timeout, else the first such property."""
+    for name in [*required, *props]:
+        if name not in ("opts", "timeout"):
+            return name
+    return None
 
 
 def to_tool_result(text: str) -> ToolResult:
@@ -122,17 +141,18 @@ async def start_session(client: httpx.AsyncClient, url: str, headers: dict[str, 
 def make_call_tool(
     url: str, access_key: str, transport: httpx.AsyncBaseTransport | None = None
 ) -> CallTool:
-    """`transport` is only for tests."""
-    if not access_key:
-        raise ValueError("RECONIX_MCP_ACCESS_KEY is not set")
+    """`access_key` (RECONIX_MCP_AUTH_TOKEN) is optional: when empty, no Authorization
+    header is sent. The one-time job token is sent on every call either way.
+    `transport` is only for tests."""
 
     async def call_tool(job: ToolJob) -> ToolResult:
         name, arguments = tool_call(job)
         headers = {
-            "Authorization": f"Bearer {access_key}",
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
         }
+        if access_key:
+            headers["Authorization"] = f"Bearer {access_key}"
         call = {
             "jsonrpc": "2.0",
             "id": 2,

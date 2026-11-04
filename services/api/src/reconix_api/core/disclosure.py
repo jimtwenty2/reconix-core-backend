@@ -1,6 +1,6 @@
 """The vault that keeps the real values behind masked evidence (harness/disclosure.py).
 
-Values are encrypted with RECONIX_FERNET_KEY and kept in RECONIX_VAULT_DIR. A value is
+Values are encrypted with RECONIX_PROVIDER_ENCRYPTION_KEY and kept in RECONIX_VAULT_DIR. A value is
 shown only through services/disclosures.py, after a `disclosure` approval.
 """
 

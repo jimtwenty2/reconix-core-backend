@@ -2,8 +2,11 @@
 
 # Flow 4 · Local web from the TUI
 
-Mark each case in the app with `/tests` (p / f / s).
+Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
 
+## 4a Local web from the TUI
+
+Needs Node.js 20+ and npm. /web starts the web on 127.0.0.1:3100 (the first time it runs npm install, which takes a few minutes) and opens it with a sign-in link.
 
 #### WEB-01 · Open the web
 
@@ -42,7 +45,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 1. On a machine without node/npm type /web.
 
-**Expected:** "The web dashboard needs Node.js (node and npm)." The TUI keeps working.
+**Expected:** "The web dashboard needs Node.js (node and npm). Install Node.js (nodejs.org), then type /web again." The TUI keeps working.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -60,7 +63,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 #### WEB-AI-02 · Set the mock
 
-1. Click Choose a model (under the message box) → + Model → Provider: Reconix mock (offline). The address fills in and Model shows reconix-mock-1 at once.
+1. Click Choose a model (under the message box) → + Model → Provider: Reconix mock (offline). Its fixed local address is set for you (not shown) and Model shows reconix-mock-1 at once.
 2. API key: leave empty, or type the fake sk-mock-0000-1234 → Add model.
 
 **Expected:** No network is used; the chip under the message box shows reconix-mock-1 and "Ask anything about your assessments…" is ready. A typed key is saved encrypted and never shown again.
@@ -89,7 +92,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 summarize the findings
 ```
 
-1. Ask with All assessments (the mock then uses the newest run and says so), or pick your TUI run in the dashboard's top bar first.
+1. In the dashboard's top bar pick your TUI run first (Overview → Assessment), then open the AI Assistant and ask. With All assessments the mock uses the newest run and says so, which may be a different run.
 
 **Expected:** "3 findings (…): 001 … ; 002 … ; 003 …" for that run, with the findings card from the saved data.
 
@@ -105,7 +108,7 @@ explain finding 001
 
 1. Ask the question.
 
-**Expected:** 001's severity, title, impact and fix from that run.
+**Expected:** 001's severity, title, impact and fix from that run, with 001's card only.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -161,7 +164,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 #### WEB-AI-10 · Remove the mock
 
-1. Model picker → remove Reconix mock (offline).
+1. Model picker → remove Reconix mock (offline) → confirm Remove (No keeps it).
 
 **Expected:** Back to no model set up.
 

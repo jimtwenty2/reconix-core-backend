@@ -438,13 +438,25 @@ def test_the_passage_cap_is_reported(tmp_path, monkeypatch):
 
 # --- the name is cleaned and redacted at ingest --------------------------------------------
 def test_the_source_name_is_cleaned_redacted_and_capped(tmp_path):
-    p = tmp_path / f"password={TEST_PASSWORD} \x1b[31mred\nline.txt"
+    p = tmp_path / f"password={TEST_PASSWORD} red\nline.txt"
     p.write_text("reference material for the assessment")
     source = store.add_source(str(p))
     assert TEST_PASSWORD not in source.name and "password=••••" in source.name
-    assert "\x1b" not in source.name and "\n" not in source.name
+    assert "\n" not in source.name
     assert TEST_PASSWORD not in files.index_path().read_text(encoding="utf-8")
     assert TEST_PASSWORD not in files.source_path(source.id).read_text(encoding="utf-8")
+
+    coloured = tmp_path / "\x1b[31mred\x1b[0m notes.txt"     # control codes, no secret
+    coloured.write_text("more reference material")
+    name = store.add_source(str(coloured)).name
+    assert "\x1b" not in name and "[31m" not in name and "red" in name
+
+    # control codes AND a secret: no masking of the name is sure, so it is refused
+    both = tmp_path / f"password={TEST_PASSWORD} \x1b[31mred.txt"
+    both.write_text("reference material")
+    with pytest.raises(store.StoreValidationError, match="file name hides"):
+        store.add_source(str(both))
+    assert TEST_PASSWORD not in files.index_path().read_text(encoding="utf-8")
 
     long = tmp_path / ("n" * 200 + ".md")
     long.write_text("another reference document")

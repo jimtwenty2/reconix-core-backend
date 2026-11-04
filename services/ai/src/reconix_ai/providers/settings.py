@@ -8,9 +8,11 @@ import os
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-# Where Ollama listens. deploy/docker-compose.yml publishes it on this port.
+# Where Ollama listens: OLLAMA providers and the bge-m3 embeddings (knowledge search).
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
-# The built-in model, created from services/ai/models/Modelfile.
+# The built-in RECONIX model is served by the Reconix team on an OpenAI-compatible server.
+# Its address (RECONIX_MODEL_URL), key (RECONIX_MODEL_API_KEY) and model name are set in .env
+# by whoever installs Reconix; users never type them.
 RECONIX_MODEL_NAME = "reconix"
 # A reasoning model writes ~80-90 tokens a second, so a long think needs minutes.
 DEFAULT_TIMEOUT_SECONDS = 300
@@ -43,11 +45,13 @@ class ProviderConfig:
 
 
 def reconix_provider() -> ProviderConfig:
-    """The built-in RECONIX model on the local Ollama."""
+    """The built-in RECONIX model on the Reconix team's server. With no RECONIX_MODEL_URL
+    the call fails with PROVIDER_URL_MISSING; it never falls back to another server."""
     return ProviderConfig(
         provider_type=ProviderType.RECONIX,
-        model_name=RECONIX_MODEL_NAME,
-        base_url=ollama_url(),
+        model_name=os.environ.get("RECONIX_MODEL_NAME") or RECONIX_MODEL_NAME,
+        base_url=os.environ.get("RECONIX_MODEL_URL") or None,
+        api_key=os.environ.get("RECONIX_MODEL_API_KEY") or None,
     )
 
 

@@ -79,7 +79,7 @@ def db_app(session_factory, tmp_path_factory):
     settings = Settings(
         database_url=TEST_DATABASE_URL,
         job_token_secret=JOB_TOKEN_SECRET,
-        fernet_key=FERNET_KEY,
+        provider_encryption_key=FERNET_KEY,
         vault_dir=str(tmp_path_factory.mktemp("vault")),  # never the repo's data/vault
     )
     parts["mcp"].secret = JOB_TOKEN_SECRET  # checks tokens the way the Kali side does

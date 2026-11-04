@@ -247,7 +247,8 @@ OLLAMA_BASE_URL=http://localhost:11434`}</Code>
               <strong>Set the provider.</strong> <em>Provider</em>: OpenAI, Anthropic, DeepSeek, OpenRouter, Groq, Ollama
               (local), LM Studio (local) or Custom (OpenAI-compatible), every one usable; it starts on Ollama. A cloud one
               says where your data goes: &quot;Groq runs at api.groq.com: your questions, the assessment data they need and
-              relevant /add-on knowledge passages are sent there.&quot; <em>Base URL</em>, for Custom, Ollama and LM
+              relevant /add-on knowledge passages are sent there.&quot; Reconix mock (offline) says &quot;Reconix mock (offline)
+              answers here with prepared replies: nothing leaves this computer.&quot; <em>Base URL</em>, for Custom, Ollama and LM
               Studio only, filled in from the preset. <em>API key</em>, a password field that is never filled in (&quot;Needed
               by &lt;Provider&gt;&quot; or &quot;Optional&quot;; with a key saved for that provider, leave it empty to keep it, or tick{" "}
               <strong>Remove key</strong>); choosing another provider empties it. <em>Model</em>: the list{" "}
