@@ -178,10 +178,6 @@ export const gettingStarted: GroupContent = {
             Kali tool container and the services beside it. It needs Docker already running; see{" "}
             <DocRef>Requirements</DocRef>.
           </p>
-          <Callout>
-            Both commands pipe a script from the network into your shell. Open{" "}
-            <Mono>https://reconix.com/install.sh</Mono> in a browser and read it first if your policy requires it.
-          </Callout>
         </DocSection>
         <DocSection title="Start it where the reports should go">
           <Code>{`mkdir -p ~/engagements/acme && cd ~/engagements/acme
