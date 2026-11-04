@@ -180,7 +180,25 @@ newer templates.
 
 ### 4. Check that it works
 
-Every route lives under `/api/v1`. The health check is open; almost everything else needs a session
+The `api` container from step 3 is already running the API. To run the API yourself instead, for
+example while you change its code, use this one command:
+
+```bash
+uv run --package reconix-api python -m reconix_api.main   # http://127.0.0.1:8000/docs
+```
+
+This runs the API in your shell, not in Docker. First stop the Docker `api` service, because both
+use port 8000:
+
+```bash
+docker compose -f deploy/docker-compose.yml --env-file .env stop api
+```
+
+It also needs a migrated Postgres it can reach through `RECONIX_DATABASE_URL` in `.env`. The
+Docker Postgres has no port on your computer. See
+[`services/api/README.md`](services/api/README.md) for the full steps.
+
+Either way, every route lives under `/api/v1`. The health check is open; almost everything else needs a session
 token, so the second call below should answer 401:
 
 ```bash
