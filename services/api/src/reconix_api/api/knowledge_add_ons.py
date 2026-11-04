@@ -56,8 +56,9 @@ async def create_knowledge_add_on(
     Business Rules:
     - Send multipart/form-data: a .txt, .md, .json, .yaml, .yml, .docx, or .pdf file of at most
       10 MB, plus interface (web or cli).
-    - The optional name sets the display name, and its extension decides the file type; without it,
-      the file's own name is used.
+    - The file type comes from the uploaded file's own name. The optional name is only the
+      display name, except for a file whose own name has no supported type (such as a pasted
+      "blob"): its type then comes from name's extension.
 
     Execution Behavior:
     - Masks the text, splits it into passages, and saves them in the knowledge search, where the
@@ -79,9 +80,16 @@ async def create_knowledge_add_on(
             raise form_error("file", "Field required")
         fields = read_form(form.get("interface"), form.get("name"))
         data = await upload.read(MAX_FILE_BYTES + 1)
-        file_name = fields.name or upload.filename or ""
+        file_name = upload.filename or ""
     return await knowledge_add_ons.add(
-        store, interfaces.write_audit, mask, operator, file_name, data, fields.interface
+        store,
+        interfaces.write_audit,
+        mask,
+        operator,
+        file_name,
+        data,
+        fields.interface,
+        fields.name,
     )
 
 

@@ -6395,7 +6395,7 @@
         ]
       },
       "post": {
-        "description": "Adds your own file to the knowledge search.\n\nBusiness Rules:\n- Send multipart/form-data: a .txt, .md, .json, .yaml, .yml, .docx, or .pdf file of at most\n  10 MB, plus interface (web or cli).\n- The optional name sets the display name, and its extension decides the file type; without it,\n  the file's own name is used.\n\nExecution Behavior:\n- Masks the text, splits it into passages, and saves them in the knowledge search, where the\n  agent finds them from then on.\n\nState Changes:\n- Adds the passages to the knowledge search. No copy of the file itself is kept.\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Adds your own file to the knowledge search.\n\nBusiness Rules:\n- Send multipart/form-data: a .txt, .md, .json, .yaml, .yml, .docx, or .pdf file of at most\n  10 MB, plus interface (web or cli).\n- The file type comes from the uploaded file's own name. The optional name is only the\n  display name, except for a file whose own name has no supported type (such as a pasted\n  \"blob\"): its type then comes from name's extension.\n\nExecution Behavior:\n- Masks the text, splits it into passages, and saves them in the knowledge search, where the\n  agent finds them from then on.\n\nState Changes:\n- Adds the passages to the knowledge search. No copy of the file itself is kept.\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "create_knowledge_add_on_api_v1_knowledge_add_ons_post",
         "requestBody": {
           "content": {

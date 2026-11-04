@@ -30,9 +30,11 @@ async def add(
     file_name: str,
     data: bytes,
     interface: str,
+    name: str | None = None,
 ) -> KnowledgeAddOnOut:
-    """Read, mask and save one file. It is searchable once this returns."""
-    kind = knowledge_files.kind_of(file_name)
+    """Read, mask and save one file. It is searchable once this returns. name is the label
+    shown (the file's own name without it); the type comes from the file (pick_kind)."""
+    kind = pick_kind(file_name, name)
     async with store.adding:
         if len(await knowledge_add_ons.list_all(store)) >= MAX_ADD_ONS:
             raise ApiError(
@@ -43,7 +45,7 @@ async def add(
         passages, cut = await asyncio.to_thread(read_passages, mask, kind, data)
         add_on = AddOn(
             knowledge_add_on_id=str(uuid4()),
-            name=knowledge_files.display_name(mask(file_name)[0]),
+            name=knowledge_files.display_name(mask(name or file_name)[0]),
             kind=kind,
             size_bytes=len(data),
             chunk_count=len(passages),
@@ -53,6 +55,18 @@ async def add(
         await knowledge_add_ons.save(store, add_on, passages)
     _audit(write_audit, "KNOWLEDGE_ADD_ON_ADDED", operator, add_on)
     return add_on_out(add_on, cut)
+
+
+def pick_kind(file_name: str, name: str | None) -> str:
+    """The uploaded file's own extension decides the type, so a label (Swagger's "string",
+    "Company runbook") never changes how the file is read. Only a file whose own name has
+    no supported type (a pasted "blob", "upload.bin") takes it from name."""
+    try:
+        return knowledge_files.kind_of(file_name)
+    except ApiError:
+        if not name:
+            raise
+    return knowledge_files.kind_of(name)
 
 
 def read_passages(mask: MaskSecrets, kind: str, data: bytes) -> tuple[list[str], str | None]:
