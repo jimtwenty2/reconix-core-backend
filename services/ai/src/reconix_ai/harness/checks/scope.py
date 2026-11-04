@@ -104,6 +104,12 @@ TOOL_TARGET_KINDS = {
     "zap_scan": {TargetKind.URL},
     "semgrep": {TargetKind.PATH},
     "gitleaks": {TargetKind.PATH},
+    # The code scan's dependency and quality tools read only the stored code folder.
+    "trivy": {TargetKind.PATH},
+    "grype": {TargetKind.PATH},
+    "osv_scanner": {TargetKind.PATH},
+    "syft": {TargetKind.PATH},
+    "sonar_scan": {TargetKind.PATH},
 }
 
 

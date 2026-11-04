@@ -26,3 +26,10 @@ def test_kali_mcp_url_still_reads_the_old_name(monkeypatch):
     monkeypatch.delenv("RECONIX_KALI_MCP_URL", raising=False)
     monkeypatch.setenv("RECONIX_MCP_URL", "http://127.0.0.1:8766/mcp")
     assert Settings(_env_file=None).kali_mcp_url == "http://127.0.0.1:8766/mcp"
+
+
+def test_local_repo_roots_are_comma_separated_paths(monkeypatch):
+    monkeypatch.setenv("RECONIX_LOCAL_REPO_ROOTS", "/home/me/projects, /srv/repos,")
+    assert Settings(_env_file=None).local_repo_roots == ["/home/me/projects", "/srv/repos"]
+    monkeypatch.delenv("RECONIX_LOCAL_REPO_ROOTS")
+    assert Settings(_env_file=None).local_repo_roots == []

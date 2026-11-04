@@ -1,0 +1,25 @@
+# The Kali MCP container, standalone: the Kali repo's own compose file plus this override.
+# Kali gets a normal network (internet for semgrep rules and the trivy/grype databases) and
+# listens on 127.0.0.1:8096 only. Core reaches it at RECONIX_KALI_MCP_URL. From the
+# reconix-core-backend folder:
+#   docker compose -p reconix-kali --env-file .env \
+#     -f ../reconix-kali-backend/docker-compose.yml -f deploy/kali-standalone.yml pull
+#   (same flags) up -d --no-build
+# .env needs RECONIX_MCP_ACCESS_KEY and an absolute RECONIX_CODE_DIR.
+# shortcut: this Kali image checks only KALI_MCP_AUTH_TOKEN, not core's job tokens, so
+# whoever holds RECONIX_MCP_ACCESS_KEY can call any Kali tool directly; keep the old
+# kali-mcp path (deploy/docker-compose.yml) where that matters, until Kali checks them.
+
+services:
+  reconix-kali-container:
+    # Replaces the base file's "${HOST_PORT:-8096}:8080", which listens on every interface
+    # when HOST_PORT is not set.
+    ports: !override
+      - "127.0.0.1:8096:8080"
+    environment:
+      - KALI_MCP_AUTH_TOKEN=${RECONIX_MCP_ACCESS_KEY:?set RECONIX_MCP_ACCESS_KEY in .env}
+      # sonar_scan needs its in-container SonarQube server (about 1 minute on first start).
+      - KALI_AUTO_BOOTSTRAP=1
+    volumes:
+      # Source code written by the API, one folder per session. Read-only: the tools only read.
+      - ${RECONIX_CODE_DIR:?set an absolute RECONIX_CODE_DIR in .env}:/workspace/code:ro

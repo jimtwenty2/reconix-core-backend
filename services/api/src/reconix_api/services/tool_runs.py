@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_api.core import code_files
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Action, Interfaces, Operator, ToolJob, ToolResult
@@ -104,8 +105,10 @@ async def run_action(
 
 
 def _save_result(run: ToolRun, row: ActionRow, mask: MaskSecrets, result: ToolResult) -> None:
-    # The tool's own result file is what the parsers read; stdout is the fallback.
-    output, hidden = mask_output(mask, result.output_file or result.stdout)
+    # The tool's own result file is what the parsers read; stdout is the fallback. Paths in
+    # a code scan's copy folder become the code folder's before any finding is deduped.
+    raw = code_files.canonical_paths(result.output_file or result.stdout)
+    output, hidden = mask_output(mask, raw)
     # stderr is shown in the TUI and the web: no terminal codes from the tool reach them.
     stderr, hidden_in_stderr = mask(CONTROL.sub("", TERMINAL_CODES.sub("", result.stderr)))
     run.output_masked = output

@@ -42,7 +42,7 @@ from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import scopes as scope_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut, ToolRunOut
 from reconix_api.schemas.agent_runs import AgentRunDetailOut
-from reconix_api.services import agent_runs, tool_runs
+from reconix_api.services import agent_runs, scopes, tool_runs
 from reconix_api.services.audit import audit
 
 RECENT_MINUTES = 10  # the loop check looks at least this far back
@@ -127,6 +127,15 @@ async def send_action(
         is_validation=body.purpose == "validation",
     )
     result = interfaces.check(action, _check_context(db, interfaces, operator, assessment_id))
+    if result.decision != Decision.BLOCKED and not _fits_auto_scope(
+        db, manifest, body, agent_run_id
+    ):
+        result = CheckResult(
+            decision=Decision.BLOCKED,
+            risk=result.risk,
+            blocked_by=CheckName.SCOPE,
+            reason="CODE_SCAN_ONLY",
+        )
     row = ActionRow(
         tool=action.tool,
         args=action.arguments,
@@ -190,6 +199,20 @@ async def send_action(
         {**details, "approval_id": str(approval.approval_id)},
     )
     return read_action(db, row.action_id)
+
+
+def _fits_auto_scope(
+    db: Db, manifest: ScopeManifest, body: ActionIn, agent_run_id: UUID | None
+) -> bool:
+    """A scope the server approved on its own (only the session's code folder) takes only
+    a code scan's own tool calls, with no options: no person looked at anything else, and
+    an option such as -Dsonar.host.url could send the code away."""
+    approval = approval_repo.latest_for_manifest(db, manifest.manifest_id)
+    if approval is None or approval.reason != scopes.CODE_SESSION_FOLDER:
+        return True
+    run = agent_run_repo.get(db, agent_run_id) if agent_run_id else None
+    is_code_scan = run is not None and (run.plan or {}).get("task") == "CODE_SCAN"
+    return is_code_scan and not body.arguments
 
 
 def ensure_can_act(db: Db, assessment_id: UUID) -> ScopeManifest:

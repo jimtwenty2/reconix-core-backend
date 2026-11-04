@@ -37,6 +37,36 @@
 
     "arjun": {
       "high": ["-m post", "-m put", "-m delete", "-m patch"]
+    },
+
+    "_code_tools": "The 7 source code tools read the scanned code. An option that sends it, or what was found in it, to another server, or that reads another folder under /workspace/, is high: a person must look at it.",
+
+    "semgrep": {
+      "high": ["--metrics", "http://", "https://", "/workspace/"]
+    },
+
+    "gitleaks": {
+      "high": ["http://", "https://", "/workspace/"]
+    },
+
+    "trivy": {
+      "high": ["--server", "--token", "--db-repository", "--java-db-repository", "--checks-bundle-repository", "http://", "https://", "/workspace/"]
+    },
+
+    "grype": {
+      "high": ["http://", "https://", "/workspace/"]
+    },
+
+    "osv_scanner": {
+      "high": ["http://", "https://", "/workspace/"]
+    },
+
+    "syft": {
+      "high": ["http://", "https://", "/workspace/"]
+    },
+
+    "sonar_scan": {
+      "high": ["sonar.host.url", "sonar.token", "sonar.login", "sonar.password", "sonar.projectbasedir", "sonar.sources", "http://", "https://", "/workspace/"]
     }
   }
 }

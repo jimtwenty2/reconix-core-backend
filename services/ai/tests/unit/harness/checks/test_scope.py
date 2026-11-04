@@ -397,3 +397,29 @@ def test_catalog_tool_not_in_the_scope_is_blocked() -> None:
 def test_zap_and_zap_scan_are_the_same_tool(allowed: str, tool: str) -> None:
     scope = replace(SCOPE, allowed_tools=[allowed])
     assert_allowed("http://juice-shop.lab:3000/", tool=tool, scope=scope)
+
+
+CODE_TOOLS = ["TRIVY", "GRYPE", "OSV_SCANNER", "SYFT", "SONAR_SCAN"]
+CODE_SCOPE = replace(SCOPE, allowed_tools=CODE_TOOLS)
+
+
+@pytest.mark.parametrize("tool", [*CODE_TOOLS, "osv_scanner", "Sonar_Scan"])
+def test_code_scan_tools_take_a_repo_path(tool: str) -> None:
+    assert_allowed("/lab/vuln-repo", tool=tool, scope=CODE_SCOPE)
+    assert_allowed("/lab/vuln-repo/api/", tool=tool, scope=CODE_SCOPE)
+
+
+@pytest.mark.parametrize("tool", CODE_TOOLS)
+@pytest.mark.parametrize(
+    "target", ["172.20.0.5", "172.20.0.16/28", "juice-shop.lab", "http://juice-shop.lab:3000/"]
+)
+def test_code_scan_tools_take_no_host_or_url(tool: str, target: str) -> None:
+    assert_blocked(target, "TARGET_KIND_NOT_ALLOWED", tool=tool, scope=CODE_SCOPE)
+
+
+@pytest.mark.parametrize("tool", CODE_TOOLS)
+def test_code_scan_tools_keep_the_path_rules(tool: str) -> None:
+    assert_blocked("/lab/vuln-repo/../etc", "PATH_TRAVERSAL", tool=tool, scope=CODE_SCOPE)
+    assert_blocked("/lab/vuln-repo/.git", "TARGET_EXCLUDED", tool=tool, scope=CODE_SCOPE)
+    assert_blocked("/lab/other-repo", "TARGET_OUT_OF_SCOPE", tool=tool, scope=CODE_SCOPE)
+    assert_blocked("/lab/vuln-repo", "TOOL_NOT_ALLOWED", tool=tool)  # not in SCOPE's tools

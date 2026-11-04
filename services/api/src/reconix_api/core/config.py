@@ -2,9 +2,10 @@
 
 import ipaddress
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -41,12 +42,22 @@ class Settings(BaseSettings):
     # mounts this folder read-only at /workspace/code (deploy/docker-compose.yml).
     code_dir: str = "data/code"
     max_upload_mb: int = 100  # per upload, counted both packed and unpacked
+    # Folders searched (4 levels deep) for a clone of a GitHub repo before git clones it,
+    # comma-separated in the environment.
+    local_repo_roots: Annotated[list[str], NoDecode] = []
 
     # Approvals
     approval_ttl_minutes: int = 30
 
     # GET /stream sends a ping this often, and checks the session is still open
     stream_heartbeat_seconds: float = 15
+
+    @field_validator("local_repo_roots", mode="before")
+    @classmethod
+    def split_paths(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [path.strip() for path in value.split(",") if path.strip()]
+        return value
 
     @field_validator("host")
     @classmethod

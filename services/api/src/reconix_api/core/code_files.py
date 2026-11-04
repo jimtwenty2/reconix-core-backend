@@ -12,9 +12,11 @@ or past the size limits, so a bad upload changes nothing.
 
 import gzip
 import hashlib
+import os
 import posixpath
 import re
 import shutil
+import stat
 import tarfile
 import tempfile
 import zlib
@@ -33,6 +35,30 @@ HEADER_ROOM = MAX_FILES * 1024 + 64 * 1024
 # switch the scanners off, so these are never stored.
 TOOL_CONFIG_NAMES = frozenset({".gitleaks.toml", ".gitleaksignore", ".semgrepignore"})
 CHUNK = 1024 * 1024
+# Folders a cloned or copied tree never brings in: git's own data, installed packages,
+# build output and editor settings.
+SKIP_FOLDERS = frozenset(
+    {
+        ".git",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "dist",
+        "build",
+        "target",
+        ".idea",
+        ".vscode",
+    }
+)
+# A code scan copies the files it reads into <session>/_reconix_scan_<run8>/, every file
+# in reconix-<session hex>/ and the changed ones in changed/, so each run has its own
+# target folder. Tools report paths inside that copy.
+SCAN_FOLDER_PREFIX = "_reconix_scan_"
+SCAN_COPY = re.compile(
+    r"(/workspace/code/[A-Za-z0-9-]+)/_reconix_scan_[0-9a-f]{8}/(?:reconix-[0-9a-f]{32}|changed)"
+    r"(?![A-Za-z0-9._-])"
+)
 CODE_PATH = re.compile(r"/workspace/code/[A-Za-z0-9._-]+(/[A-Za-z0-9._ -]+)*")
 BAD_CHARACTERS = re.compile(r"[\x00-\x1f\x7f\\:]")
 
@@ -93,6 +119,45 @@ def remove_excluded(folder: Path, skip: list[str]) -> int:
             removed += 1
     _remove_empty_folders(folder)
     return removed
+
+
+def scan_files(folder: Path, paths: list[str]) -> dict[str, Path]:
+    """The stored files a code scan reads: all of them, or those at or under `paths`.
+    A scan's own copy folder is never part of it.
+
+    shortcut: an uploaded top folder named _reconix_scan_* is skipped (and deleted at
+    startup); refuse that name at upload if anyone ever needs it."""
+    return {
+        path: file
+        for path, file in stored_files(folder).items()
+        if not path.startswith(SCAN_FOLDER_PREFIX) and (not paths or is_excluded(path, paths))
+    }
+
+
+def all_copy_name(session_id: UUID) -> str:
+    """The name of a scan's copy folder of every file. sonar_scan names its SonarQube
+    project after the folder, so each session keeps a project of its own."""
+    return f"reconix-{session_id.hex}"
+
+
+def link_files(target: Path, files: dict[str, Path]) -> None:
+    """Hard links to the files under `target` (a copy where a link fails), plus an empty
+    .semgrepignore: without one, semgrep skips its default folders such as tests/."""
+    target.mkdir(parents=True, exist_ok=True)
+    for path, file in files.items():
+        copy = target / path
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(file, copy)
+        except OSError:
+            shutil.copy2(file, copy)
+    (target / ".semgrepignore").write_bytes(b"")
+
+
+def canonical_paths(text: str) -> str:
+    """Paths inside a scan's copy folder -> the same paths in the session's code folder:
+    ".../<session>/_reconix_scan_1a2b3c4d/changed/src/app.js" -> ".../<session>/src/app.js"."""
+    return SCAN_COPY.sub(r"\1", text)
 
 
 def is_tool_config(path: str) -> bool:
@@ -176,6 +241,31 @@ def unpack(
     return len(files), total
 
 
+def pack_folder(src: Path, max_bytes: int, private: list[Path]) -> BinaryIO:
+    """A tar.gz of the regular files under src, in a temporary file, ready for `unpack`.
+
+    Never follows a link. Links and anything that is not a regular file are left out, and
+    so are SKIP_FOLDERS and the `private` folders (Reconix's own data) anywhere in the tree.
+    Refuses a src inside a private folder, and stops as soon as the tree has more than
+    MAX_FILES files or max_bytes, so a huge folder never fills the disk."""
+    src = src.resolve()
+    private = [folder.resolve() for folder in private]
+    if any(src.is_relative_to(folder) for folder in private):
+        raise CodeFileError("this folder holds Reconix's own data")
+    spool = tempfile.SpooledTemporaryFile(max_size=8 * CHUNK)
+    try:
+        with tarfile.open(fileobj=spool, mode="w:gz", compresslevel=1) as tar:
+            _add_tree(tar, src, max_bytes, private)
+    except CodeFileError:
+        spool.close()
+        raise
+    except OSError as error:
+        spool.close()
+        raise CodeFileError("the folder could not be read") from error
+    spool.seek(0)
+    return spool
+
+
 def remove(folder: Path) -> None:
     """Deletes the session's code, e.g. when the session is closed."""
     shutil.rmtree(folder, ignore_errors=True)
@@ -195,6 +285,37 @@ class _LimitedReader:
         if self.left < 0:
             raise CodeFileError("the upload is larger than the size limit")
         return data
+
+
+def _add_tree(tar: tarfile.TarFile, src: Path, max_bytes: int, private: list[Path]) -> None:
+    files = 0
+    total = 0
+    # fwalk reads each folder through its own descriptor and never follows a link, so a
+    # folder swapped for a link during the walk is not read through.
+    for top, folders, names, top_fd in os.fwalk(src):
+        here = Path(top)
+        folders[:] = sorted(
+            name for name in folders if name not in SKIP_FOLDERS and here / name not in private
+        )
+        for name in sorted(names):
+            path = here / name
+            info = os.lstat(name, dir_fd=top_fd)
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            files += 1
+            total += info.st_size
+            if files > MAX_FILES:
+                raise CodeFileError(f"the folder has more than {MAX_FILES} files")
+            if total > max_bytes:
+                raise CodeFileError("the folder is larger than the size limit")
+            # A plain entry, never a hard link entry, which unpack would refuse.
+            entry = tarfile.TarInfo(path.relative_to(src).as_posix())
+            entry.size = info.st_size
+            entry.mtime = int(info.st_mtime)
+            # O_NOFOLLOW: a file swapped for a link after the lstat is not read.
+            descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=top_fd)
+            with os.fdopen(descriptor, "rb") as file:
+                tar.addfile(entry, file)
 
 
 def _unpack_to(

@@ -21,7 +21,7 @@ from reconix_api.core.interfaces import (
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets, mask_output
-from reconix_api.findings import json_mapping
+from reconix_api.findings import code_notes, json_mapping
 from reconix_api.findings import nmap as nmap_findings
 from reconix_api.findings import osv as osv_findings
 from reconix_api.findings import sarif as sarif_findings
@@ -56,6 +56,9 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     # ZAP's report is SARIF (zap_report, template sarif-json). Core's "ZAP" is zap_scan.
     "zap_scan": partial(sarif_findings.read, "zap_alert"),
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
+    "trivy": json_mapping.read_trivy,  # the manifest file is the target
+    "grype": json_mapping.read_grype,
+    "syft": code_notes.read_syft,  # a package list: no findings, a note in the code scan
 }
 
 # Control characters, except tab and newline. A scanned host can put terminal escape
