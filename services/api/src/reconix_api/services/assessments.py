@@ -14,6 +14,7 @@ from reconix_api.core.interfaces import Operator, WriteAudit
 from reconix_api.models import Assessment, Finding
 from reconix_api.models.enums import (
     ActionStatus,
+    ApprovalStatus,
     AssessmentStatus,
     FindingStatus,
     SeverityStatus,
@@ -126,11 +127,19 @@ def update_assessment(
 def cancel_assessment(
     db: Db, write_audit: WriteAudit, operator: Operator, assessment_id: UUID
 ) -> AssessmentOut:
-    """Cancelled, never erased: its actions, findings and audit lines stay."""
+    """Cancelled, never erased: its actions, findings and audit lines stay. Its PENDING
+    scope approval expires with it, so approving it later cannot bring the assessment back.
+    (A waiting action's approval is refused when someone tries it: ensure_can_act.)"""
     assessment = _get_open(db, assessment_id)
+    expired = approval_repo.pending_scope_approvals(db, assessment_id)
+    for approval in expired:
+        approval.approval_status = ApprovalStatus.EXPIRED
     assessment.assessment_status = AssessmentStatus.CANCELLED
     db.commit()
-    audit(write_audit, "ASSESSMENT_CANCELLED", operator, assessment_id)
+    details = {"expired_scope_approvals": ",".join(str(a.approval_id) for a in expired)}
+    audit(
+        write_audit, "ASSESSMENT_CANCELLED", operator, assessment_id, details if expired else None
+    )
     return _out(assessment)
 
 

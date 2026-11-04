@@ -109,3 +109,21 @@ def pending_limit_changes(db: Db, requested_after: datetime) -> list[Approval]:
             .order_by(Approval.requested_at.desc())
         )
     )
+
+
+def pending_scope_approvals(db: Db, assessment_id: UUID) -> list[Approval]:
+    """The PENDING scope approvals of one assessment, locked."""
+    manifests = select(ScopeManifest.manifest_id).where(
+        ScopeManifest.assessment_id == assessment_id
+    )
+    query = (
+        select(Approval)
+        .where(
+            Approval.kind == "scope",
+            Approval.approval_status == ApprovalStatus.PENDING,
+            Approval.manifest_id.in_(manifests),
+        )
+        .order_by(Approval.approval_id)
+        .with_for_update()
+    )
+    return list(db.scalars(query))

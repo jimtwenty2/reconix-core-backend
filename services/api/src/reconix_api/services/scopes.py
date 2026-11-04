@@ -223,7 +223,21 @@ def approve_scope(db: Db, write_audit: WriteAudit, operator: Operator, approval:
     targets = scope_repo.list_targets(db, manifest.manifest_id)
     if snapshot_hash(scope_snapshot(manifest, targets)) != approval.subject_hash:
         raise ApiError(409, "SCOPE_CHANGED", "The scope changed after it was submitted.")
-    assessment = assessment_repo.get(db, manifest.assessment_id)
+    assessment = assessment_repo.get_for_update(db, manifest.assessment_id)
+    if assessment.assessment_status != AssessmentStatus.DRAFT:
+        # Cancelled (or already started): approving must never bring it back to ACTIVE.
+        approval.approval_status = ApprovalStatus.EXPIRED
+        db.commit()
+        audit(
+            write_audit,
+            "APPROVAL_REFUSED",
+            operator,
+            assessment.assessment_id,
+            {"approval_id": str(approval.approval_id), "reason": "ASSESSMENT_NOT_DRAFT"},
+        )
+        raise ApiError(
+            409, "ASSESSMENT_NOT_DRAFT", "This assessment was cancelled or has already started."
+        )
 
     now = datetime.now(UTC)
     approval.approval_status = ApprovalStatus.APPROVED

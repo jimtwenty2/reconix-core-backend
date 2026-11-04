@@ -268,7 +268,7 @@ async def send_suggested_step(
         )
     except ApiError as error:
         if error.code == "ACTION_BLOCKED":  # the API's own check refused it: keep the record
-            return actions.read_action(db, UUID(error.details["action_id"]))
+            return actions.read_action(db, UUID(error.details["action_id"]), mask)
         raise
 
 

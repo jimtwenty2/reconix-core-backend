@@ -39,16 +39,18 @@ async def run_action(
     action: Action,
     action_hash: str,
     approval: Approval | None,
+    now: datetime | None = None,
 ) -> ToolRun:
     """`action` and `action_hash` must already be checked against the approval.
 
     A LOW action has no approval. Any other action needs an approval that is APPROVED,
-    not expired and not used; running it uses it up.
+    not expired and not used; running it uses it up. `now` is the time the approval was
+    checked at, so a just-approved action is never refused here as expired.
     """
     secret = settings.job_token_secret.get_secret_value()
     if not secret:
         raise ApiError(503, "NOT_READY", "RECONIX_JOB_TOKEN_SECRET is not set.")
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
     if approval is not None:
         ensure_can_use(approval_state(approval, settings.approval_ttl_minutes), now)
         approval.consumed_at = now
