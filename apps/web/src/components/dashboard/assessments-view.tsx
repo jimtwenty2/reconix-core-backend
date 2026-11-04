@@ -14,6 +14,7 @@ import { AssessmentsRows } from "@/components/dashboard/assessments-rows";
 import type { AssessmentsCards } from "@/components/dashboard/report-types";
 import { ViewHeader } from "@/components/dashboard/view-header";
 import { useQueryParams } from "@/components/dashboard/view-url";
+import { DOCS } from "@/lib/docs-nav";
 import { EmptyNote } from "@/components/ui/empty-note";
 import { Pagination } from "@/components/ui/pagination";
 import { paginate, slicePage } from "@/lib/paging";
@@ -32,7 +33,7 @@ export function AssessmentsView({ data }: { data: AssessmentsCards }) {
 
   return (
     <div className="dash-view dash-sheet" ref={top}>
-      <ViewHeader title="Assessments" tag={data.tag} about={data.about} />
+      <ViewHeader title="Assessments" tag={data.tag} about={data.about} docsHref={DOCS.panelAssessments} />
 
       <AssessmentsFilters rows={rows} filter={filter} active={active} shown={shown.length} onChange={(patch) => update({ ...patch, page: "" })} />
 

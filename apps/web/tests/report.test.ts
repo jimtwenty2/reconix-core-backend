@@ -40,11 +40,33 @@ describe("one run's report", () => {
     expect(stat(r.stats, "Requests sent").value).toBe(String(a.run.requests));
     const done = a.plan.filter((p) => p.status === "done").length;
     expect(stat(r.stats, "Plan steps").value).toBe(`${done}/${a.plan.length}`);
-    const masks = assessmentView(a).log.filter((l) => l.kind === "mask").length;
+    // the saved evidence lines a reader sees masked, not the log's masking lines (QAL-005)
+    const masks = assessmentView(a).findings.reduce((n, f) => n + f.evidence.filter((e) => e.tone === "masked").length, 0);
     expect(stat(r.stats, "Masked evidence").value).toBe(String(masks));
     expect(r.rows).toHaveLength(a.findings.length);
     expect(r.plan.map((p) => p.label)).toEqual(a.plan.map((p) => p.label));
     expect(r.uid).toBe(a.uid);
+  });
+
+  /* The card used to count the activity log's masking lines, so it read 0 on a run that ended
+     before the masking step although its evidence is masked, and 1 on a run whose evidence holds
+     nothing masked (QAL-005). It counts the evidence a reader sees masked. */
+  it("counts the masked evidence itself, not the log's masking lines", () => {
+    const maskedLines = (a: Assessment) => assessmentView(a).findings.reduce((n, f) => n + f.evidence.filter((e) => e.tone === "masked").length, 0);
+    const logLines = (a: Assessment) => assessmentView(a).log.filter((l) => l.kind === "mask").length;
+
+    const unlogged = samples.find((a) => maskedLines(a) > 0 && logLines(a) === 0);
+    expect(unlogged, "a sample run with masked evidence and no masking line").toBeDefined();
+    const shown = stat(report(unlogged!).stats, "Masked evidence");
+    expect(shown.value).toBe(String(maskedLines(unlogged!)));
+    expect(Number(shown.value)).toBeGreaterThan(0);
+    expect(shown.note).not.toBe("Nothing needed masking");
+
+    const nothing = samples.find((a) => maskedLines(a) === 0 && logLines(a) > 0);
+    expect(nothing, "a sample run with a masking line and no masked evidence").toBeDefined();
+    const none = stat(report(nothing!).stats, "Masked evidence");
+    expect(none.value).toBe("0");
+    expect(none.note).toBe("Nothing needed masking");
   });
 
   it("lists the worst findings first, each with its review state", () => {

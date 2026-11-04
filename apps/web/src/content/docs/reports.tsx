@@ -365,6 +365,54 @@ export const reports: GroupContent = {
             reload lands on the same one. A row opens that target&apos;s newest run report.
           </p>
         </DocSection>
+        <DocSection title="Assessments">
+          <p>
+            Every saved run, newest first, ten to a page: the run and its target, when it was saved, its status, the
+            template it used and how many findings it holds. A row opens that run&apos;s Overview.
+          </p>
+          <p>
+            The search box and the status and template chips narrow the rows, and what you pick lives in the address
+            (<Mono>?view=assessments&amp;q=api&amp;status=Completed&amp;page=2</Mono>), so a reload or a shared link
+            lands on the same rows. When nothing matches, the view says so and the chips stay, so one click clears it.
+          </p>
+        </DocSection>
+        <DocSection title="Findings list">
+          <p>
+            Every finding across the runs this view covers — one run, or all of them — worst severity first, with its
+            ID, severity, title, review state, tool and rating. Choosing a row opens that finding beside the list: its
+            description, its masked evidence, its remediation and its references.
+          </p>
+          <p>
+            The search box and the severity, review and tool filters narrow the list, and the open finding and the
+            filters live in the address (<Mono>?view=findings&amp;sev=MEDIUM&amp;finding=F-001</Mono>). False positives
+            are counted but hidden until you ask for them. Nothing here changes a run: decisions stay in the terminal.
+          </p>
+        </DocSection>
+        <DocSection title="Run log">
+          <p>
+            The open run&apos;s activity as it happened, newest last: what the operator did, what the policy engine
+            checked or blocked, what each tool ran, and the assistant&apos;s own lines. The note beside the title says
+            which run it is and how much of it is shown.
+          </p>
+          <p>
+            The model&apos;s longer reasoning is folded into a <strong>thinking</strong> block you can open. Sensitive
+            values were masked when the run saved them, so the log shows them as <Mono>••••</Mono> and never holds the
+            original. With no run open, the view asks you to pick one in the top bar&apos;s run switcher.
+          </p>
+        </DocSection>
+        <DocSection title="AI Assistant">
+          <p>
+            A conversation about the saved runs. It reads the same saved copies the rest of the dashboard shows and
+            answers from them; the numbers on any card it draws come from those files, never from the model. The header
+            names what the conversation is about — one run, or every run — with that scope&apos;s status.
+          </p>
+          <p>
+            The model is chosen in the composer&apos;s model chip, <strong>Security knowledge</strong> opens the
+            documents it may quote, and <strong>History</strong> lists earlier conversations, which survive a reload.
+            Questions are masked before they are sent, and the assistant can neither approve, reject nor change
+            anything: those stay in the terminal.
+          </p>
+        </DocSection>
       </>
     ),
   },

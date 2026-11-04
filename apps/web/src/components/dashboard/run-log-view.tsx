@@ -31,7 +31,7 @@ function Message({ m }: { m: RunLogMessage }) {
 export function RunLogView({ data }: { data: RunLogData | null }) {
   return (
     <div className="dash-view dash-sheet">
-      <ViewHeader title="Run log" tag={data?.tag} about={ABOUT}>
+      <ViewHeader title="Run log" tag={data?.tag} about={ABOUT} docsHref={DOCS.panelRunLog}>
         <DocsLink href={DOCS.assessmentGuide}>Assessment guide</DocsLink>
       </ViewHeader>
       {!data ? (

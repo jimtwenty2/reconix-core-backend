@@ -116,6 +116,7 @@ describe("GET /api/reports/combined, format=docx", () => {
     expect(res.status).toBe(413);
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await detail(res)).toBe(DOCX_TOO_LARGE);
-    expect((await getCombined(`uids=${uid}&format=docx&low=1`)).status).toBe(200);
+    // evidence=0: the route keeps every option that is not spelled out (QAL-010)
+    expect((await getCombined(`uids=${uid}&format=docx&evidence=0&low=1`)).status).toBe(200);
   });
 });

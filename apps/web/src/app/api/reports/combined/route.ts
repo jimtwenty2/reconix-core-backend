@@ -1,5 +1,7 @@
 /* One report that combines 1–5 saved runs (signed in), built in memory from the saved,
-   already-redacted files, masked once more at this boundary (lib/report/mask.ts), and streamed back: `?uids=a,b&format=preview|pdf|docx&evidence=1&low=1&appendix=1`.
+   already-redacted files, masked once more at this boundary (lib/report/mask.ts), and streamed back: `?uids=a,b&format=preview|pdf|docx&evidence=1&low=0&appendix=1`.
+   The three options are on unless the query turns one off with `=0`, so a hand-built link holds
+   the whole report, as the Report view's own links do (lib/report/combined/query.ts).
    `preview` is the report's HTML, served inline for the Report view's sandboxed frame (it is never
    offered as a download); the PDF is a download printed by the same headless Chrome the single
    export uses (501 with the Word document's link without one); `docx` is the Word document (413,

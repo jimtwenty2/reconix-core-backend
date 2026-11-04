@@ -253,5 +253,10 @@ export const DOCS = {
   panelRuns: "/docs/reports#panels-runs",
   panelCombine: "/docs/reports#panels-combine-runs",
   panelTargets: "/docs/reports#panels-targets",
+  // the views that are one panel, not a row of cards (QAL-009)
+  panelAssessments: "/docs/reports#panels-assessments",
+  panelFindingsList: "/docs/reports#panels-findings-list",
+  panelRunLog: "/docs/reports#panels-run-log",
+  panelAssistant: "/docs/reports#panels-ai-assistant",
 } as const;
 export type DocsLink = (typeof DOCS)[keyof typeof DOCS];
