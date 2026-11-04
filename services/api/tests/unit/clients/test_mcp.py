@@ -95,20 +95,10 @@ def test_arguments_for_a_tool_without_opts_are_refused_not_dropped():
         tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
 
 
-def test_a_catalog_tool_without_a_rule_is_refused():
-    with pytest.raises(McpError, match="TOOL_NOT_SUPPORTED"):
-        tool_call(job("run_command", "id", []))
-
-
-def test_the_target_goes_in_the_param_the_rule_names():
+def test_the_target_goes_in_the_primary_param():
     name, args = tool_call(job("sqlmap", "http://juice-shop:3000/?id=1", ["--level", "2"]))
     assert name == "sqlmap"
     assert args["url"] == "http://juice-shop:3000/?id=1"
-
-
-def test_forced_arguments_come_after_the_approved_ones():
-    _, args = tool_call(job("whatweb", "http://juice-shop:3000/", ["-a", "1"]))
-    assert args["opts"] == "-a 1 --follow-redirect=never"
 
 
 async def test_call_sends_the_key_session_and_job_token():

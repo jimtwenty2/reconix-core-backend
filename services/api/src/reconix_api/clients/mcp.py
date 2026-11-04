@@ -17,7 +17,6 @@ from typing import Any
 import httpx
 
 from reconix_ai.harness.catalog import canonical, input_schema, is_known_tool
-from reconix_ai.harness.tool_rules import rule_for
 from reconix_api.core.interfaces import CallTool, ToolJob, ToolResult, ToolRunStatus
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -36,29 +35,38 @@ class McpError(Exception):
 def tool_call(job: ToolJob) -> tuple[str, dict[str, Any]]:
     """Our ToolJob -> the Kali tool name and its arguments, from the tool's inputSchema.
 
-    The tool name is the catalog name (lowercased). The job's target fills the param
-    the tool's rule names (tool_rules.py), the one the scope check read; a tool with no
-    rule is refused. The approved arguments go in `opts` when the tool takes it, always sent (even
-    empty) so the server never falls back to its own unchecked defaults; `timeout`
-    is sent when the tool takes it.
+    The tool name is the catalog name (lowercased). The job's target fills the
+    tool's primary input param (the first required param that is not opts/timeout);
+    the approved arguments go in `opts` when the tool takes it, always sent (even
+    empty) so the server never falls back to its own unchecked defaults; arguments for
+    a tool without `opts` are refused, never dropped. `timeout` is sent when the tool
+    takes it.
     """
     name = canonical(str(job.tool))
     schema = input_schema(name)
-    tool_rule = rule_for(name)
     if not is_known_tool(name) or not schema:
         raise McpError(f"UNKNOWN_TOOL: {job.tool}")
     props = schema.get("properties", {}) or {}
-    if tool_rule is None or tool_rule.target_param not in props:
-        raise McpError(f"TOOL_NOT_SUPPORTED: {job.tool}")
     if job.arguments and "opts" not in props:
         raise McpError(f"TOOL_TAKES_NO_OPTIONS: {job.tool}")  # never drop approved arguments
-    args: dict[str, Any] = {tool_rule.target_param: job.target}
+    args: dict[str, Any] = {}
+    primary = _primary_param(schema.get("required", []), props)
+    if primary:
+        args[primary] = job.target
     if "opts" in props:
-        # The tool's forced arguments (e.g. no redirects) always come after the approved ones.
-        args["opts"] = shlex.join([*job.arguments, *tool_rule.forced])
+        args["opts"] = shlex.join(job.arguments)
     if "timeout" in props:
         args["timeout"] = job.timeout_seconds
     return name, args
+
+
+def _primary_param(required: list[str], props: dict[str, Any]) -> str | None:
+    """The tool's main input (target/url/path/command/...): the first required
+    param that is not opts/timeout, else the first such property."""
+    for name in [*required, *props]:
+        if name not in ("opts", "timeout"):
+            return name
+    return None
 
 
 def to_tool_result(text: str) -> ToolResult:

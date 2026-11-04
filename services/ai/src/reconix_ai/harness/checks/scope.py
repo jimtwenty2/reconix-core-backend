@@ -34,8 +34,7 @@ from typing import Protocol
 from urllib.parse import unquote, urlsplit
 
 from reconix_ai.harness.catalog import canonical
-from reconix_ai.harness.checks.result import ALLOWED, CheckOutcome, Decision, blocked
-from reconix_ai.harness.tool_rules import option_values, rule_for
+from reconix_ai.harness.checks.result import ALLOWED, CheckOutcome, blocked
 
 IpAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
@@ -60,11 +59,6 @@ METADATA_NETWORKS = [
     for net in ("169.254.0.0/16", "fe80::/10", "fd00:ec2::254/128", "100.100.100.200/32")
 ]
 METADATA_HOSTS = {"metadata", "metadata.google.internal", "metadata.goog"}
-# A value in the arguments that names a host: "x.lab", "x.lab:22" (a dotted name ending
-# in letters). URLs, IPs and networks are found by parsing.
-DOMAIN_LIKE = re.compile(
-    r"^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z][a-z0-9-]*\.?(:[0-9]+)?$", re.IGNORECASE
-)
 
 
 class ScopeRules(Protocol):
@@ -102,6 +96,17 @@ class TargetKind(StrEnum):
     PATH = "PATH"
 
 
+# Target kinds for the tools Core knows well, by catalog name. Any other catalog tool
+# takes any kind (scope membership, exclusions and path traversal still apply).
+TOOL_TARGET_KINDS = {
+    "nmap": {TargetKind.IP, TargetKind.NETWORK, TargetKind.DOMAIN},
+    "nuclei": {TargetKind.URL, TargetKind.DOMAIN},
+    "zap_scan": {TargetKind.URL},
+    "semgrep": {TargetKind.PATH},
+    "gitleaks": {TargetKind.PATH},
+}
+
+
 @dataclass(frozen=True)
 class Url:
     scheme: str
@@ -128,9 +133,6 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
     # By catalog name, so case and aliases do not matter: "zap" == "ZAP" == "ZAP_SCAN".
     if canonical(tool) not in {canonical(str(allowed)) for allowed in scope.allowed_tools}:
         return blocked("TOOL_NOT_ALLOWED")
-    tool_rule = rule_for(tool)
-    if tool_rule is None:
-        return blocked("TOOL_NOT_SUPPORTED")  # in the catalog, but Core has no rule for it
     if has_path_traversal(target):
         return blocked("PATH_TRAVERSAL")
 
@@ -139,7 +141,8 @@ def check_scope(tool: str, target: str, scope: ScopeRules, now: datetime) -> Che
         return blocked("INVALID_TARGET")
     if not is_plain_form(target, parsed):
         return blocked("TARGET_NOT_NORMALIZED")
-    if parsed.kind not in tool_rule.kinds:
+    kinds = TOOL_TARGET_KINDS.get(canonical(tool))
+    if kinds is not None and parsed.kind not in kinds:
         return blocked("TARGET_KIND_NOT_ALLOWED")
     return target_in_scope(parsed, scope)
 
@@ -152,42 +155,6 @@ def target_in_scope(parsed: Target, scope: ScopeRules) -> CheckOutcome:
     if not is_in_scope(parsed, scope):
         return blocked("TARGET_OUT_OF_SCOPE")
     return ALLOWED
-
-
-def check_argument_targets(tool: str, arguments: Sequence[str], scope: ScopeRules) -> CheckOutcome:
-    """Every host, IP, network or URL written in an option's value must be in the scope
-    too, and use an allowed port. Unknown options are blocked by the command check."""
-    allowed = set(scope.allowed_ports)
-    for value in option_values(tool, list(arguments)) or []:
-        for part in value.split(","):
-            part = part.strip()
-            if not looks_like_target(part):
-                continue
-            if has_path_traversal(part):
-                return blocked("PATH_TRAVERSAL")
-            parsed = parse_target(part)
-            if parsed is None:
-                return blocked("INVALID_TARGET")
-            outcome = target_in_scope(parsed, scope)
-            if outcome.decision == Decision.BLOCKED:
-                return outcome
-            if allowed and parsed.kind == TargetKind.URL:
-                outcome = check_url_port(part, allowed)
-            elif allowed:
-                outcome = blocked("PORTS_NOT_SUPPORTED")
-            if outcome.decision == Decision.BLOCKED:
-                return outcome
-    return ALLOWED
-
-
-def looks_like_target(value: str) -> bool:
-    if "://" in value or value.startswith("["):
-        return True
-    if parse_ip(strip_port(value)) is not None:
-        return True
-    if "/" in value and not value.startswith("/") and parse_network(value) is not None:
-        return True
-    return bool(DOMAIN_LIKE.match(value))
 
 
 def is_metadata(target: Target) -> bool:

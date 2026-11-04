@@ -393,11 +393,6 @@ def test_catalog_tool_not_in_the_scope_is_blocked() -> None:
     assert_blocked("172.20.0.5", "TOOL_NOT_ALLOWED", tool="MASSCAN")
 
 
-def test_masscan_takes_no_url() -> None:
-    scope = replace(SCOPE, allowed_tools=["MASSCAN"])
-    assert_blocked("http://juice-shop.lab:3000/", "TARGET_KIND_NOT_ALLOWED", "MASSCAN", scope)
-
-
 @pytest.mark.parametrize(("allowed", "tool"), [("ZAP", "ZAP_SCAN"), ("ZAP_SCAN", "zap")])
 def test_zap_and_zap_scan_are_the_same_tool(allowed: str, tool: str) -> None:
     scope = replace(SCOPE, allowed_tools=[allowed])

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from reconix_ai.harness.tool_rules import is_supported, supported_tools
+from reconix_ai.harness.catalog import is_known_tool
 from reconix_api.models.enums import ActionStatus, RiskLevel, ToolRunStatus
 
 
@@ -21,8 +21,8 @@ class ActionIn(BaseModel):
     @field_validator("tool")
     @classmethod
     def tool_is_in_catalog(cls, value: str) -> str:
-        if not is_supported(value):
-            raise ValueError(f"tool is not supported; use one of {supported_tools()}")
+        if not is_known_tool(value):
+            raise ValueError("tool is not in the Kali catalog (tool_specs.json)")
         return value.strip().upper()  # one form everywhere: "masscan" -> "MASSCAN"
 
 

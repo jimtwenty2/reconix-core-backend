@@ -9,19 +9,19 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from reconix_ai.harness.tool_rules import is_supported, supported_tools
+from reconix_ai.harness.catalog import is_known_tool
 from reconix_api.core.code_files import check_code_path
 from reconix_api.core.interfaces import upper_tools
 from reconix_api.models.enums import AssessmentStatus, ManifestStatus, RiskLevel
 
 
 def _check_tools(tools: list[str] | None) -> list[str] | None:
-    """Every tool must be one Core can run safely (tool_rules.py). Saved UPPERCASE."""
+    """Every tool must be in the Kali catalog (tool_specs.json). Saved UPPERCASE."""
     if tools is None:
         return None
     for tool in tools:
-        if not is_supported(tool):
-            raise ValueError(f"tool {tool!r} is not supported; use one of {supported_tools()}")
+        if not is_known_tool(tool):
+            raise ValueError(f"tool {tool!r} is not in the Kali catalog (tool_specs.json)")
     return upper_tools(tools)
 
 
