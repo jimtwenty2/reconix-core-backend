@@ -4231,7 +4231,7 @@
     }
   },
   "info": {
-    "description": "This is the local API of Reconix Core. It runs only on this computer (127.0.0.1), and the\nterminal app, the local web and the VS Code extension all talk to it.\n\n**How a test goes.** You write a scope, the agent plans the test and suggests each step, a\nperson approves the steps that need it, the tools run, and the results become findings, an\nanalysis and finally a report you can download.\n\n**Signing in.** Call `POST /api/v1/sessions` to get a session token. It is shown only once, so\nkeep it. Send it on every other call as `Authorization: Bearer <token>`; in this page, use the\n**Authorize** button. Only `GET /health`, `POST /sessions` and `POST /sessions/web-sign-in`\nwork without a token.\n\n**The AI suggests, the API decides.** The agent never runs a tool itself. Every action it\nsuggests is checked first: its input, its scope, its command, its risk and whether it repeats\nitself. A `LOW` risk action runs right away. A `MEDIUM` or `HIGH` one waits until a person\napproves it. Anything riskier than the scope allows is `BLOCKED` with a 422. An approval\nexpires after 30 minutes and can be used only once.\n\n**Terminal.** `WS /api/v1/terminal` opens the terminal app for the web Terminal page (WebSockets\nare not listed below). Send the token as the subprotocol `token.<token>` next to\n`reconix.terminal`; only the local web's Origin is accepted, and one terminal per session.\n\n**Errors.** Every error has the same shape:\n`{\"code\": \"UPPER_CASE\", \"message\": \"...\", \"details\": {...}}`. Secrets are masked in every\nanswer the API gives. Each session token may send a set number of requests a minute (signing\nin has a smaller limit); after that the API answers 429 TOO_MANY_REQUESTS with a Retry-After\nheader.\n",
+    "description": "Reconix is an AI-assisted penetration testing tool that runs on your own computer. You set the\nscope, the AI plans the test and suggests each step, you approve the risky ones, and approved\nsteps run real security tools in a locked-down Kali container. The results become findings,\nan analysis and a report.\n",
     "title": "Reconix API",
     "version": "0.0.0"
   },
@@ -8508,6 +8508,10 @@
       "name": "messages"
     },
     {
+      "description": "Chat from the VS Code extension. A message can call a chat function, such as listing findings or starting a scan.",
+      "name": "vscode chat"
+    },
+    {
       "description": "Send a workspace's source code to a session so it can be scanned.",
       "name": "code"
     },
@@ -8558,6 +8562,10 @@
     {
       "description": "Choose which AI model Reconix uses. Only one provider is active at a time.",
       "name": "llm providers"
+    },
+    {
+      "description": "How often a command may repeat, and how many tool runs are allowed. A change waits for a person's approval.",
+      "name": "limit settings"
     },
     {
       "description": "Add your own files to the knowledge search, and search it together with CVE, CWE, OWASP, ATT&CK and the tool guides.",
