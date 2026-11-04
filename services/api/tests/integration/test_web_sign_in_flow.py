@@ -79,3 +79,12 @@ def test_the_web_session_names_the_session_that_asked(db_client, db_app):
 
     opened = [e for e in db_app.state.parts["audit"].events if e.event_type == "SESSION_OPENED"]
     assert opened[-1].details["issued_by_session"] == session["session_id"]
+
+
+def test_the_web_session_has_the_name_of_who_asked_for_the_code(db_client):
+    opened = db_client.post("/sessions", json={"interface": "cli", "operator": "vanneth@laptop"})
+    headers = {"Authorization": f"Bearer {opened.json()['token']}"}
+    web = sign_in(db_client, issue_code(db_client, headers)["code"]).json()
+
+    web_headers = {"Authorization": f"Bearer {web['token']}"}
+    assert db_client.get("/operator", headers=web_headers).json()["actor"] == "vanneth@laptop"

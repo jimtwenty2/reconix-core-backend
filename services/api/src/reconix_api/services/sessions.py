@@ -1,6 +1,7 @@
 """Opening, reading and closing sessions."""
 
 import getpass
+import re
 import socket
 from datetime import UTC, datetime
 from uuid import UUID
@@ -20,6 +21,7 @@ from reconix_api.services.audit import audit
 
 FALLBACK_USER = "operator"  # when the OS gives no user name
 MAX_ACTOR = 100  # decided_by, reviewed_by, created_by ... are String(100)
+CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 def open_session(
@@ -28,14 +30,17 @@ def open_session(
     write_audit: WriteAudit,
     interface: str,
     issued_by: UUID | None = None,
+    sent_operator: str | None = None,
 ) -> tuple[Session, Operator, str]:
     """Opens a session for the person at this computer. There are no roles: the token
-    may do everything. issued_by is the session whose sign-in code opened this one."""
+    may do everything. issued_by is the session whose sign-in code opened this one.
+    sent_operator is the user@host the client sent; without it, local_actor()."""
     session = session_repo.add(db, Session(interface=interface))
     db.commit()
-    operator = Operator(session_id=session.session_id, actor=local_actor())
+    sent = clean_actor(sent_operator or "")
+    operator = Operator(session_id=session.session_id, actor=sent or local_actor())
     token = tokens.issue(operator)
-    details = {"interface": interface}
+    details = {"interface": interface, "operator_from": "client" if sent else "server"}
     if issued_by is not None:
         details["issued_by_session"] = str(issued_by)
     audit(write_audit, "SESSION_OPENED", operator, details=details)
@@ -57,12 +62,13 @@ def open_web_session(
     """Trades a sign-in code for a new web session and its token. Each code works once,
     and only while the session that asked for it is open."""
     try:
-        issued_by = tokens.use_sign_in_code(code, datetime.now(UTC))
+        used = tokens.use_sign_in_code(code, datetime.now(UTC))
     except PermissionError as error:
         raise ApiError(
             401, "INVALID_SIGN_IN_CODE", "This sign-in link is not valid. Run /web again."
         ) from error
-    return open_session(db, tokens, write_audit, "web", issued_by)
+    # The web session is the same person as the session that asked for the code.
+    return open_session(db, tokens, write_audit, "web", used.issued_by, used.actor)
 
 
 def list_sessions(
@@ -109,10 +115,15 @@ def _get(db: Db, session_id: UUID) -> Session:
 
 
 def local_actor() -> str:
-    """Who is at this computer, e.g. "vanneth@kshrd-laptop". Reconix only runs locally,
-    so the OS user and host name say who decided, in approvals, reviews and the audit log."""
+    """The API process's own OS user and host name, e.g. "vanneth@kshrd-laptop": the name
+    used when the client sends none. Inside Docker they are the container's."""
     try:
         user = getpass.getuser()
     except (KeyError, OSError):  # no user name in the environment or the user database
         user = FALLBACK_USER
     return f"{user}@{socket.gethostname()}"[:MAX_ACTOR]
+
+
+def clean_actor(name: str) -> str:
+    """A name as it may be saved: no control characters, no outer spaces, at most MAX_ACTOR."""
+    return CONTROL.sub("", name).strip()[:MAX_ACTOR]
