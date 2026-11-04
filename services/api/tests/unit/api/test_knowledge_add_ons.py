@@ -220,6 +220,16 @@ def test_remove_clears_pieces_a_failed_save_left_behind(client, operator_headers
     assert records == []
 
 
+def test_removing_an_unknown_add_on_is_audited(client, operator_headers, audit_events):
+    unknown = "c0000000-0000-4000-8000-000000000004"
+
+    response = client.delete(f"/knowledge-add-ons/{unknown}", headers=operator_headers)
+
+    assert response.status_code == 404
+    assert audit_events[-1].event_type == "KNOWLEDGE_ADD_ON_NOT_FOUND"
+    assert audit_events[-1].details["knowledge_add_on_id"] == unknown
+
+
 def test_secrets_in_json_are_masked_by_key_name(client, operator_headers, qdrant):
     data = b'{"Authorization": "ZXhhbXBsZTpzZWNyZXQ=", "db": {"password": "Pa\\"ss-Tail-1234"}}'
 

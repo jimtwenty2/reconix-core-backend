@@ -360,9 +360,18 @@ def request_review(
 
 def approve_review(db: Db, write_audit: WriteAudit, operator: Operator, approval: Approval) -> None:
     """Called from services/decisions.py. The sign-off is for exactly what was reviewed:
-    if the copy, the texts or a file changed since, it is refused. Approving uses it."""
+    if the copy, the texts or a file changed since, the review is EXPIRED (one audit line)
+    and refused, so a new review must be asked. Approving uses it."""
     report = get(db, approval.report_id, lock=True)
     if review_hash(report) != approval.subject_hash:
+        approval.approval_status = ApprovalStatus.EXPIRED
+        db.commit()
+        details = {
+            "approval_id": str(approval.approval_id),
+            "report_id": str(report.report_id),
+            "reason": "REPORT_CHANGED",
+        }
+        audit(write_audit, "APPROVAL_EXPIRED", operator, report.assessment_id, details)
         raise ApiError(409, "REPORT_CHANGED", "The report changed after the review was asked.")
     now = datetime.now(UTC)
     approval.approval_status = ApprovalStatus.APPROVED
