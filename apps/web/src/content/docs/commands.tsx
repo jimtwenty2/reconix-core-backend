@@ -61,7 +61,7 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
       </>
     ),
     errors: [
-      { message: "Keep the request under 500 characters.", meaning: "The target line is too long." },
+      { message: "Keep the request to at most 500 characters.", meaning: "The target line is too long." },
       { message: "<the reason a target is malformed>", meaning: <>An address like <Mono>10.0.0.300</Mono> or a range wider than /16 is refused with the reason; nothing starts.</> },
     ],
   },
@@ -415,7 +415,7 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
       { message: "The web dashboard needs Node.js (node and npm).", meaning: "Install Node.js 20 or later." },
       { message: "Another web dashboard already uses its port on 127.0.0.1 (an older one left running?). Stop it, then run /web again.", meaning: "The launcher exited with code 2: its port is taken." },
       { message: "Couldn't install the web dashboard's packages. / The web dashboard stopped while starting. / The web dashboard is taking a while to start.", meaning: <>Read the log; see <DocRef>Troubleshooting</DocRef>.</> },
-      { message: "Open it in your browser: <link>", meaning: "The dashboard runs but no browser could be launched here." },
+      { message: "Couldn't open a browser. The sign-in link is in <file>", meaning: "The dashboard runs but no browser could be launched here: open the link in that file yourself." },
     ],
   },
   tests: {

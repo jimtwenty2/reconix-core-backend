@@ -10,6 +10,7 @@ from typing import NoReturn
 from sqlalchemy.orm import Session, sessionmaker
 
 from reconix_ai import agent, harness
+from reconix_ai.harness.limits import limits_from_json
 from reconix_api.clients.mcp import make_call_tool
 from reconix_api.core.agent import make_ask_agent, postgres_graph
 from reconix_api.core.config import Settings
@@ -33,7 +34,10 @@ def _not_ready(part: str):
 
 def check(action: Action, context: CheckContext) -> CheckResult:
     """The harness pipeline, returned as the shared CheckResult."""
-    return CheckResult(**asdict(harness.check(action, context)))
+    if context.loop_limits is None:
+        return CheckResult(**asdict(harness.check(action, context)))
+    limits = limits_from_json(context.loop_limits.model_dump())
+    return CheckResult(**asdict(harness.check(action, context, limits)))
 
 
 def build_interfaces(
@@ -41,7 +45,7 @@ def build_interfaces(
     session_factory: sessionmaker[Session] | None = None,
     audit_log_path: str | None = None,
     mcp_url: str | None = None,
-    mcp_access_key: str = "",
+    mcp_auth_token: str = "",
     database_url: str | None = None,
     settings: Settings | None = None,
 ) -> Interfaces:
@@ -63,8 +67,8 @@ def build_interfaces(
         graph = postgres_graph(database_url)
         ask_agent = make_ask_agent(graph, agent.AgentDeps(), provider_for_run)
     _, call_tool = _not_ready("call_tool")
-    if mcp_url and mcp_access_key:
-        call_tool = make_call_tool(mcp_url, mcp_access_key)
+    if mcp_url:  # the auth token is optional
+        call_tool = make_call_tool(mcp_url, mcp_auth_token)
     return Interfaces(
         get_operator=get_operator,
         check=check,

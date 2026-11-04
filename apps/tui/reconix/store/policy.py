@@ -148,21 +148,42 @@ def _host_in_scope(host: str, scope_target: str) -> bool:
         return False
 
 
+def _leaves_repo(text: str) -> bool:
+    return (".." in text.replace("\\", "/").split("/") or ":" in text or "\\" in text
+            or text.strip().startswith("~"))
+
+
+def _segments(path: str) -> list:
+    """The canonical (case-folded) segments of a path, without empty ones."""
+    return [seg for seg in posixpath.normpath("/" + path).casefold().split("/") if seg]
+
+
+def _excluded_at_any_depth(path: str, entry: str) -> bool:
+    """True when the excluded `entry`'s segments occur as a run anywhere in `path`: ".git"
+    covers ".git/config" and "app/.git/config", "config/keys" covers "x/config/keys/a". An
+    entry with no segment ("/") covers everything, as it does at the root."""
+    wanted, parts = _segments(entry.strip()), _segments(path)
+    if not wanted:
+        return True
+    return any(parts[i:i + len(wanted)] == wanted for i in range(len(parts) - len(wanted) + 1))
+
+
 def repo_path_reason(target: str, excluded: list) -> str:
     """"" when a repo-relative path is in scope, else why it is blocked.
 
     The text is what a tool would open, so it must stay in the repository as written: no
-    "..", no "~" or drive/URL colon, no backslash. Normalizing "../../etc/passwd" to
-    "/etc/passwd" would judge a path that isn't the one that runs.
+    "..", no "~" or drive/URL colon, no backslash, and none of them percent-encoded ("%2e%2e",
+    "%2f"). Normalizing "../../etc/passwd" to "/etc/passwd" would judge a path that isn't the
+    one that runs. An excluded entry covers its folder at any depth of the repository.
     """
-    if (".." in target.replace("\\", "/").split("/") or ":" in target or "\\" in target
-            or target.strip().startswith("~")):
+    if (_leaves_repo(target) or _leaves_repo(unquote(target))
+            or any(code in target.lower() for code in ("%2f", "%5c"))):
         return "Path leaves the repository"
     try:
         path = canonical_path("/" + target.lstrip("/"), "file://repo")
     except TargetError as exc:
         return str(exc)
-    if any(is_under(path, "/" + e.strip().lstrip("/")) for e in excluded):
+    if any(_excluded_at_any_depth(path, e) for e in excluded):
         return "Path excluded from the review"
     return ""
 

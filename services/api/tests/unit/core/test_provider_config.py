@@ -9,7 +9,7 @@ from reconix_api.models import LlmProvider
 from reconix_api.models.enums import ProviderType
 
 FAKE_API_KEY = "sk-fake-test-key-0000-abcd"  # noqa: S105
-SETTINGS = Settings(fernet_key=Fernet.generate_key().decode())
+SETTINGS = Settings(provider_encryption_key=Fernet.generate_key().decode())
 
 
 def row(provider_type: ProviderType, **values) -> LlmProvider:

@@ -1,7 +1,8 @@
 """The chat inside a step: replaces the step's menu while you talk, Esc brings it back.
 
 Opened by "Type something." or "Chat about this" on the Template/Scope, Plan and Approval
-screens. It shows your lines and Reconix's replies (`◆ reconix`); its input (`ChatBar`)
+screens. It shows your lines and Reconix's replies (`◆ reconix`; a model's reply carries
+the model's name instead, `◆ reconix-mock-1`); its input (`ChatBar`)
 is pinned at the bottom. The screen answers each line (`Asked`) and closes the chat on
 `Closed`. Every line is built
 as Rich Text, so typed brackets are shown, never parsed as markup.
@@ -9,6 +10,7 @@ as Rich Text, so typed brackets are shown, never parsed as markup.
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.actions import SkipAction
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
@@ -20,13 +22,38 @@ from .. import theme
 THINKING = "thinking…"
 
 
+class _ChatInput(Input):
+    """The chat's input: ←/→ move the cursor in typed text; on an empty input they pass on to
+    the app, which keeps the chat open and says "Esc closes the chat first."."""
+
+    BINDINGS = [
+        Binding("left", "arrow(-1)", "cursor left", show=False),
+        Binding("right", "arrow(1)", "cursor right", show=False),
+    ]
+
+    def action_arrow(self, direction: int) -> None:
+        """Move the cursor one place (-1 left, 1 right); with nothing typed, skip this
+        binding so the app's ←/→ handler says how to leave the chat."""
+        if not self.value:
+            raise SkipAction()
+        if direction < 0:
+            self.action_cursor_left()
+        else:
+            self.action_cursor_right()
+
+
 def you_line(text: str) -> Text:
     return Text.assemble(("you        ", f"bold {theme.TEAL}"), (text, theme.TEXT))
 
 
-def reply_line(text: str, tone: str = "default") -> Text:
+def speaker_label(author: str = "") -> str:
+    """ "◆ reconix  " for Reconix's own lines, "◆ <model>  " for a model's (`author`)."""
+    return f"◆ {author or 'reconix'}  "
+
+
+def reply_line(text: str, tone: str = "default", author: str = "") -> Text:
     return Text.assemble(
-        ("◆ reconix  ", f"bold {theme.CYAN}"), (text, theme.TONE.get(tone, theme.TEXT))
+        (speaker_label(author), f"bold {theme.CYAN}"), (text, theme.TONE.get(tone, theme.TEXT))
     )
 
 
@@ -66,14 +93,16 @@ class StepChat(Vertical):
     def add_you(self, text: str) -> None:
         self.add(Static(you_line(text), classes="chat-line"))
 
-    def add_reply(self, text: str, tone: str = "default") -> Static:
-        """A Reconix line; keep it to grow it in place (`show_reply`)."""
-        line = Static(reply_line(text, tone), classes="chat-line")
+    def add_reply(self, text: str, tone: str = "default", author: str = "") -> Static:
+        """A Reconix line (or a model's: `author`); keep it to grow it in place
+        (`show_reply`)."""
+        line = Static(reply_line(text, tone, author), classes="chat-line")
         self.add(line)
         return line
 
-    def show_reply(self, line: Static, text: str, tone: str = "default") -> None:
-        line.update(reply_line(text, tone))
+    def show_reply(self, line: Static, text: str, tone: str = "default",
+                   author: str = "") -> None:
+        line.update(reply_line(text, tone, author))
         self.scroll_to_end()
 
     def add(self, widget: Widget) -> None:
@@ -99,9 +128,12 @@ class ChatBar(Vertical):
         super().__init__(id=id, classes="chat-bar")
 
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="› type a question…", id="step-chat-input")
-        yield Static(Text("Enter ask · Esc back to the step", style=theme.DIM),
-                     classes="menu-hint")
+        # No select-all on focus: a key typed on the chat's menu arrives here first, and the
+        # next key must add to it, not replace it.
+        yield _ChatInput(
+            placeholder="› type a question…", id="step-chat-input", select_on_focus=False
+        )
+        yield Static(Text("Enter ask · Esc back to the step", style=theme.DIM), classes="menu-hint")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()

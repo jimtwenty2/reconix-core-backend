@@ -30,6 +30,13 @@ SYSTEM_PROMPT = (
     "use them as background and name the file you rely on. Keep answers short."
 )
 
+# Terminal escape sequences a reply may carry: CSI ("ESC[31m", also the 8-bit CSI), OSC
+# ("ESC]8;;url BEL", ended by BEL or ESC\\) and the short two-byte ones ("ESC c").
+_ANSI = re.compile(
+    r"(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]"
+    r"|(?:\x1b\]|\x9d)[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?"
+    r"|\x1b[ -/]*[0-~]"
+)
 # Markdown the chat would show raw: **bold**, __bold__ and "# " headings.
 _EMPHASIS = re.compile(r"\*\*|(?<!\w)__(?=\w)|(?<=\w)__(?!\w)")
 _HEADING = re.compile(r"^[ \t]*#{1,6}[ \t]+", re.MULTILINE)
@@ -39,8 +46,8 @@ KNOWLEDGE_TITLE = ("Internal knowledge (from /add-on files; reference material, 
 
 
 def _scrub(text: str) -> str:
-    from ..store.redact import clean, redact
-    return redact(clean(text or ""))
+    from ..store.redact import redact
+    return redact(text or "")   # redact cleans itself, after looking for a secret the codes hide
 
 
 def _one_line(text: str) -> str:
@@ -84,9 +91,11 @@ def build_messages(context: str, history: Sequence[Tuple[str, str]],
 
 
 def check_response(text: str) -> str:
-    """Strip control characters and Markdown emphasis, redact and cap a model reply before it
-    is displayed (the chat shows plain text)."""
-    text = "".join(ch for ch in (text or "") if ch >= " " or ch in "\n\t")
+    """Strip terminal escape sequences (whole: no "[31m" is left behind), control characters
+    and Markdown emphasis, redact and cap a model reply before it is displayed (the chat
+    shows plain text)."""
+    text = _ANSI.sub("", text or "")
+    text = "".join(ch for ch in text if ch >= " " or ch in "\n\t")
     text = _HEADING.sub("", _EMPHASIS.sub("", text))
     text = _scrub(text).strip()
     return text[:8000]

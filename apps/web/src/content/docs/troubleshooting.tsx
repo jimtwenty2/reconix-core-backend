@@ -240,7 +240,7 @@ export const troubleshooting: GroupContent = {
         <DocSection title="What /web does">
           <p>
             The first <Mono>/web</Mono> of a session starts <Mono>npm run dev</Mono> in <Mono>web/</Mono> in the background
-            (after <Mono>npm install</Mono> if packages are missing, which takes a few minutes), waits up to three minutes
+            (after <Mono>npm install</Mono> if packages are missing or older than <Mono>package-lock.json</Mono> names, which takes a few minutes), waits up to three minutes
             for it to answer, and the dashboard opens your browser itself. Later calls open the running dashboard. Its
             output goes to <Mono>~/.reconix/web.log</Mono> (or <Mono>RECONIX_WEB_LOG</Mono>), never to the terminal.
           </p>
@@ -257,7 +257,7 @@ export const troubleshooting: GroupContent = {
               { key: "The web dashboard stopped while starting.", value: "It exited for another reason; read the log." },
               { key: "The web dashboard is taking a while to start.", value: "Three minutes passed without an answer; a first compile can be slow. Wait, then /web again, or read the log." },
               { key: "The web dashboard is still starting. It opens in your browser when it's ready.", value: "Not an error: a start is in progress." },
-              { key: "Open it in your browser: http://127.0.0.1:…", value: "The dashboard runs but no browser could be launched here (for example over SSH): open the link yourself." },
+              { key: "Couldn't open a browser. The sign-in link is in …", value: "The dashboard runs but no browser could be launched here (for example over SSH): open the link from that file yourself (only you can read it; the TUI never shows the link, its token signs in)." },
             ]}
           />
         </DocSection>

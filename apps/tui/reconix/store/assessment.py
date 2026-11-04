@@ -1,6 +1,5 @@
 """The current assessment, the operator's typed requests, and the session's assessments."""
 
-import re
 from dataclasses import dataclass
 from typing import List
 
@@ -8,7 +7,7 @@ from ..models import Assessment, UserRequest
 from . import lists
 from .activity import log_event
 from .errors import StoreValidationError
-from .redact import clean, redact
+from .redact import HIDDEN_LINE, clean, escaped_secret, redact
 
 MAX_REQUEST_LENGTH = 500
 
@@ -99,14 +98,35 @@ def list_requests() -> List[UserRequest]:
     return list(lists.current().requests)
 
 
-# A pasted terminal escape sequence: CSI (ESC [ … letter) and OSC (ESC ] … BEL or ESC \).
-# `clean()` drops the ESC byte itself; this drops the rest, so no "[31m" is left behind.
-_ESCAPE_SEQUENCE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?")
+# A typed line refused because control codes (colour codes, invisible characters…) sit in it
+# next to a secret: with a code inside a word, neither the spaced form ("pass word=…") nor the
+# glued one ("10.0.0.1token=…") can be masked reliably (`redact.escaped_secret`).
+ESCAPED_SECRET = (
+    "Remove the colour or control codes from the line and type it again: it holds a "
+    "password, token or key."
+)
+
+
+def refuse_escaped_secret(text: str) -> None:
+    """Raise for a typed line that holds control codes and a secret: it is never kept."""
+    if escaped_secret(text):
+        raise StoreValidationError(ESCAPED_SECRET)
 
 
 def fold_line(text: str) -> str:
-    """`text` without control bytes or terminal escape sequences, its whitespace folded."""
-    return " ".join(clean(_ESCAPE_SEQUENCE.sub("", text)).split())
+    """`text` with every control byte and escape sequence turned into a space (`clean`), its
+    whitespace folded. So "10.0.0.1<ESC>[31mred" is "10.0.0.1 red", not one word the target
+    parser can't read. Never raises: a line with control codes and a secret comes back as
+    `HIDDEN_LINE`. Typed lines are refused before that (`refuse_escaped_secret`).
+    """
+    if escaped_secret(text):
+        return HIDDEN_LINE
+    return " ".join(clean(text).split())
+
+
+def shown_line(text: str) -> str:
+    """Typed text as an error message may repeat it: folded and masked. Never raises."""
+    return redact(fold_line(text))
 
 
 def clean_request(text: str) -> str:
@@ -114,13 +134,16 @@ def clean_request(text: str) -> str:
     whitespace folded; raises if it is empty or too long.
 
     The result can still hold a secret (https://user:pass@host): the target parser reads it
-    as typed, and `recorded_line()` masks it before it is stored, shown or logged.
+    as typed, and `recorded_line()` masks it before it is stored, shown or logged. A line
+    with control codes and a secret is refused (`refuse_escaped_secret`).
     """
+    refuse_escaped_secret(text)
     text = fold_line(text)
     if not text:
         raise StoreValidationError("Type a request first.")
     if len(text) > MAX_REQUEST_LENGTH:
-        raise StoreValidationError(f"Keep the request under {MAX_REQUEST_LENGTH} characters.")
+        raise StoreValidationError(
+            f"Keep the request to at most {MAX_REQUEST_LENGTH} characters.")
     return text
 
 

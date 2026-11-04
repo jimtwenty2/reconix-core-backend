@@ -1,15 +1,19 @@
-"""Text to vectors for the knowledge search, with BGE-M3 on the local Ollama.
+"""Text to vectors for the knowledge search, with BGE-M3.
 
-Same rules as client.py: texts are masked before they leave, and errors come
-back as a masked ProviderError.
+BGE-M3 runs on CPU in the `embeddings` container (Hugging Face text-embeddings-inference,
+deploy/docker-compose.yml), which answers OpenAI-style at /v1/embeddings. No Ollama needed.
+Same rules as client.py: texts are masked before they leave, and errors come back as a
+masked ProviderError.
 """
 
+import os
 from dataclasses import dataclass
 
 from reconix_ai.harness import mask_secrets
+from reconix_ai.providers.base_url import BaseUrlError, check_base_url
 from reconix_ai.providers.client import (
+    NO_KEY,
     ProviderError,
-    checked_base_url,
     litellm,
     openai,
     provider_error,
@@ -19,12 +23,14 @@ from reconix_ai.providers.settings import DEFAULT_TIMEOUT_SECONDS, ProviderConfi
 EMBEDDING_MODEL_NAME = "bge-m3"
 EMBEDDING_SIZE = 1024  # BGE-M3 dense vectors
 BATCH_SIZE = 32
+# The embedding server when RECONIX_EMBEDDINGS_URL is not set: one on this computer.
+DEFAULT_EMBEDDINGS_URL = "http://127.0.0.1:8081/v1"
 
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
     model_name: str = EMBEDDING_MODEL_NAME
-    base_url: str | None = None  # None: RECONIX_OLLAMA_URL or the local default
+    base_url: str | None = None  # None: RECONIX_EMBEDDINGS_URL or the local default
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
 
 
@@ -37,21 +43,27 @@ async def embed_texts(texts: list[str], config: EmbeddingConfig | None = None) -
     return vectors
 
 
+def embeddings_url() -> str:
+    """RECONIX_EMBEDDINGS_URL, or the local default."""
+    return os.environ.get("RECONIX_EMBEDDINGS_URL") or DEFAULT_EMBEDDINGS_URL
+
+
 async def embed_batch(texts: list[str], config: EmbeddingConfig) -> list[list[float]]:
-    # Reuse the chat client's URL check and error masking.
-    provider = ProviderConfig(
-        provider_type=ProviderType.OLLAMA,
-        model_name=config.model_name,
-        base_url=config.base_url,
-    )
-    base_url = checked_base_url(provider)
+    base_url = config.base_url or embeddings_url()
+    try:
+        check_base_url(base_url)  # the same address rules as a model call
+    except BaseUrlError as error:
+        raise ProviderError("PROVIDER_URL_NOT_ALLOWED", str(error)) from None
+    # Only for the error message, which reuses the chat client's masking.
+    provider = ProviderConfig(ProviderType.OPENAI_API_COMPATIBLE, config.model_name, base_url)
     masked = [mask_secrets(text)[0] for text in texts]
     failure = None
     try:
         response = await litellm.aembedding(
-            model=f"ollama/{config.model_name}",
+            model=f"openai/{config.model_name}",  # the server only serves BGE-M3
             input=masked,
             api_base=base_url,
+            api_key=NO_KEY,
             timeout=config.timeout_seconds,
         )
     except openai.OpenAIError as error:

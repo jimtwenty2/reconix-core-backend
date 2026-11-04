@@ -3,6 +3,7 @@
 import pytest
 
 from reconix import store
+from reconix.store import replies
 
 from .support import TEST_PASSWORD, run_to
 
@@ -56,7 +57,8 @@ def test_during_a_run_greetings_get_a_friendly_line():
     assert store.submit_prompt("hello") == "answered"
     assert last_reply().startswith("Hi! The assessment is running.")
     store.submit_prompt("run nmap on everything")
-    assert last_reply().startswith("I can't take new instructions")
+    assert last_reply() == replies.RUNNING
+    assert "changes nothing" in last_reply() and "take new instructions" not in last_reply()
 
 
 def test_the_login_gate_still_refuses_chat():

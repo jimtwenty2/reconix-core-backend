@@ -35,13 +35,14 @@ def list_activity() -> List[ActivityEntry]:
 
 def add_chat(
     kind: str, speaker: str, text: str, tone: str = "default",
-    rows: Sequence[Tuple[str, str]] = (),
+    rows: Sequence[Tuple[str, str]] = (), author: str = "",
 ) -> ChatEntry:
     if kind not in CHAT_KINDS:
         raise StoreValidationError(f"Unknown chat entry kind {kind}.")
     if tone not in TONES:
         raise StoreValidationError(f"Unknown tone {tone}.")
-    entry = ChatEntry(kind, speaker, text, tone, tuple(rows), seq=lists.next_seq())
+    entry = ChatEntry(kind, speaker, text, tone, tuple(rows), seq=lists.next_seq(),
+                      author=author)
     lists.current().chat.append(entry)
     return entry
 

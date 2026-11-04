@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 import { ALL_DOCS_REDIRECTS } from "./src/lib/docs-redirects";
-import { MAX_BODY_BYTES } from "./src/lib/knowledge/rules";
+import { MAX_BODY_BYTES } from "./src/lib/knowledge/limits";
 
 /* The dashboard is local and read-only, but it shows security findings, so it ships the
    usual hardening headers. The Content-Security-Policy (with a per-request script nonce)

@@ -6,7 +6,7 @@ from sqlalchemy import String, cast, func, insert, or_, select
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.orm import Session as Db
 
-from reconix_api.core.interfaces import ToolName
+from reconix_ai.harness.catalog import same_tool_names
 from reconix_api.models import Action, Evidence, Finding, ToolRun, ValidationRun, finding_sources
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 
@@ -115,7 +115,7 @@ def list_matching(
     severity_status: SeverityStatus | None = None,
     validation_status: ValidationStatus | None = None,
     finding_status: FindingStatus | None = None,
-    tool: ToolName | None = None,
+    tool: str | None = None,
     target: str | None = None,
     q: str | None = None,
 ) -> list[Finding]:
@@ -138,7 +138,7 @@ def list_matching(
             select(finding_sources.c.finding_id)
             .join(ToolRun, ToolRun.tool_run_id == finding_sources.c.tool_run_id)
             .join(Action, Action.action_id == ToolRun.action_id)
-            .where(Action.tool == tool)
+            .where(func.upper(Action.tool).in_(same_tool_names(tool)))
         )
         query = query.where(Finding.finding_id.in_(found_by_tool))
     if target:

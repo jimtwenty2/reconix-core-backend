@@ -120,6 +120,18 @@ function add() {
   if (!text) refuse("That file has no readable text to add.");
   const sources = readIndex();
   if (sources.length >= MAX_SOURCES) refuse(`The knowledge limit is ${MAX_SOURCES} files. Remove one first.`);
+  // the same file again (name, size and the original's SHA-256), as the real CLI refuses it
+  const cleanName = name.replace(/\s+/g, " ").trim().slice(0, 120) || "untitled";
+  const sha = (b) => createHash("sha256").update(b).digest("hex");
+  const same = (s) => {
+    if (s.name !== cleanName || s.bytes !== bytes.length) return false;
+    try {
+      return sha(readFileSync(path.join(dir, `${s.id}.orig`))) === sha(bytes);
+    } catch {
+      return false;
+    }
+  };
+  if (sources.some(same)) refuse(`${cleanName} is already added (the same file). Remove it first to add it again.`);
 
   ensureDir();
   let id;
@@ -128,7 +140,7 @@ function add() {
   const chunks = text.slice(0, 2 * 1024 * 1024).match(/[\s\S]{1,1200}/g).slice(0, 2000); // /add-on's caps
   const entry = {
     id,
-    name: name.replace(/\s+/g, " ").trim().slice(0, 120) || "untitled",
+    name: cleanName,
     kind,
     bytes: bytes.length,
     chunks: chunks.length,

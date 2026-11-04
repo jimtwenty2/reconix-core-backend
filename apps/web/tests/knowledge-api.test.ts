@@ -14,7 +14,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { COOKIE, sessionValue } from "@/lib/auth/session";
-import { cleanName, DOC_REFUSED, MAX_UPLOAD_BYTES, TOO_LARGE, TYPE_REFUSED, uploadProblem } from "@/lib/knowledge/rules";
+import { cleanName, DOC_REFUSED, MAX_UPLOAD_BYTES, NAME_SECRET_REFUSED, TOO_LARGE, TYPE_REFUSED, uploadProblem } from "@/lib/knowledge/rules";
 import { contentDisposition, downloadName } from "@/lib/knowledge/original";
 
 import { writeKnowledge } from "./knowledge-fixtures";
@@ -106,11 +106,23 @@ describe("the upload rules", () => {
     expect(uploadProblem({ name: "a.pdf", size: 0 })).toBe("The file is empty.");
   });
 
+  it("refuse a name hiding a secret behind control or invisible characters (never glued)", () => {
+    // glued, "a<ZWSP>token=…" read "atoken=…" and the CLI's check never saw a secret
+    for (const name of ["a\u200btoken=SECRET1.txt", "pass\u2066word=SECRET1.md", "dir/x\u001b[0mtoken=SECRET1.pdf", "pass\rword=SECRET1.txt"]) {
+      expect(uploadProblem({ name, size: 10 }), name).toBe(NAME_SECRET_REFUSED);
+      expect(cleanName(name)).not.toMatch(/SECRET1/);
+    }
+    expect(NAME_SECRET_REFUSED).toContain("Rename the file");
+    expect(uploadProblem({ name: "notes\u200bv2.txt", size: 10 })).toBeNull(); // no secret: allowed
+    expect(cleanName("notes\u200bv2.txt")).toBe("notes v2.txt");
+  });
+
   it("clean a name to its base name, one line, no markup or leading dash, at most 120 characters", () => {
     expect(cleanName("C:\\Users\\me\\run<book>.md")).toBe("runbook.md");
     expect(cleanName("../../etc/passwd.txt")).toBe("passwd.txt");
     expect(cleanName("--help.md")).toBe("help.md");
-    expect(cleanName("a\u0000b\u202ec\nd.json")).toBe("abcd.json");
+    // control and invisible characters are spaces, never glued
+    expect(cleanName("a\u0000b\u202ec\nd.json")).toBe("a b c d.json");
     expect(cleanName("<>.pdf")).toBe("upload.pdf");
     const long = cleanName(`${"x".repeat(300)}.yaml`);
     expect([...long].length).toBe(120);
@@ -267,6 +279,15 @@ describe("POST /api/knowledge", () => {
     const detail = (await failed.json()).detail as string;
     expect(detail).toMatch(/^The knowledge tool failed/);
     expect(detail).not.toContain("Traceback");
+    expect(leftovers()).toEqual([]);
+  });
+
+  it("passes the CLI's refusal of the very same file on as a 400 with its message", async () => {
+    expect((await upload({ "notes.md": "same text" })).status).toBe(201);
+    const again = await upload({ "notes.md": "same text" });
+    expect(again.status).toBe(400);
+    expect((await again.json()).detail).toBe("notes.md is already added (the same file). Remove it first to add it again.");
+    expect((await upload({ "notes.md": "other text" })).status).toBe(201); // another file of that name is taken
     expect(leftovers()).toEqual([]);
   });
 

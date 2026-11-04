@@ -10,6 +10,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_ai.harness.catalog import canonical, is_known_tool
+from reconix_api.core.disclosure import HiddenValue
 from reconix_api.core.errors import ApiError
 from reconix_api.core.finding_memory import FindingMemory, MemoryUnavailable
 from reconix_api.core.interfaces import (
@@ -17,7 +19,6 @@ from reconix_api.core.interfaces import (
     AgentTask,
     Interfaces,
     Operator,
-    ToolName,
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets, mask_output
@@ -53,8 +54,8 @@ MEMORY_TIMEOUT_SECONDS = 30  # one embedding and one Qdrant write; the review is
 READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     "nmap": nmap_findings.read,
     "osv_scanner": osv_findings.read,
-    # ZAP's report is SARIF (zap_report, template sarif-json).
-    "zap": partial(sarif_findings.read, "zap_alert"),
+    # ZAP's report is SARIF (zap_report, template sarif-json). Core's "ZAP" is zap_scan.
+    "zap_scan": partial(sarif_findings.read, "zap_alert"),
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
 }
 
@@ -63,47 +64,113 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
-def parse_run(tool: ToolName | str, output: str) -> tuple[list[NewFinding], int]:
+def parse_run(tool: str, output: str) -> tuple[list[NewFinding], int]:
     """A tool's masked output -> (findings, requests sent). Tools without a reader: none.
 
+    Looked up by the catalog name, so "ZAP", "zap" and "zap_scan" find the same reader.
     A tool with no reader still keeps its masked output on the tool run.
     """
-    reader = READERS.get(str(tool).lower())
+    reader = READERS.get(canonical(str(tool)))
     return reader(output) if reader else ([], 0)
 
 
+# The real values behind one saved evidence's labels, for the disclosure vault.
+KeptValues = tuple[UUID, list[HiddenValue]]
+
+
 def save_findings(
-    db: Db, mask: MaskSecrets, assessment_id: UUID, run: ToolRun, new: list[NewFinding]
-) -> list[Finding]:
-    """One finding per dedupe_key in the assessment. Found again: add this run as a source."""
+    db: Db,
+    mask: MaskSecrets,
+    assessment_id: UUID,
+    run: ToolRun,
+    new: list[NewFinding],
+    raw: list[NewFinding] | None = None,
+) -> tuple[list[Finding], list[KeptValues]]:
+    """One finding per dedupe_key in the assessment. Found again: add this run as a source.
+
+    `new` comes from the masked output. `raw` is the same output parsed before masking (in
+    memory only); it is used only to find the real value behind each label of the saved
+    evidence, for a `disclosure` approval. Nothing from `raw` is saved here.
+    """
     if new:
         assessment_repo.lock(db, assessment_id)  # RCX codes are given out one run at a time
-    saved = []
-    for item in new:
+    raw_proofs = _raw_proofs(new, raw)
+    saved: list[Finding] = []
+    kept: list[KeptValues] = []
+    for item_no, item in enumerate(new):
         finding = finding_repo.get_by_dedupe_key(db, assessment_id, item.dedupe_key)
         if finding is None:
             finding = _new_finding(db, mask, assessment_id, item)
         finding_repo.add_source(db, finding.finding_id, run.tool_run_id)
-        for proof in item.evidence:
+        for proof_no, proof in enumerate(item.evidence):
             content, _ = mask_output(mask, CONTROL.sub("", proof.content))
-            location = _clean(mask, proof.location)
-            finding_repo.add(
-                db,
-                Evidence(
-                    kind=proof.kind,
-                    content=content,
-                    location=location,
-                    finding_id=finding.finding_id,
-                    tool_run_id=run.tool_run_id,
-                ),
+            evidence = Evidence(
+                kind=proof.kind,
+                content=content,
+                location=_clean(mask, proof.location),
+                finding_id=finding.finding_id,
+                tool_run_id=run.tool_run_id,
             )
+            finding_repo.add(db, evidence)
+            raw_proof = raw_proofs.get((item_no, proof_no))
+            hidden = hidden_values(content, raw_proof) if raw_proof is not None else []
+            if hidden:
+                kept.append((evidence.evidence_id, hidden))
         saved.append(finding)
-    return saved
+    return saved, kept
+
+
+LABEL = re.compile(r"\[MASKED:(?P<kind>[a-z_]+)\]")
+
+
+def hidden_values(masked: str, raw_proof: str) -> list[HiddenValue]:
+    """The real value behind each label of a saved evidence, found by lining the masked
+    text up with the same evidence from the raw output. The raw text first goes through
+    the same shaping as the masked one (JSON written the same way, nmap's raw replies
+    dropped), with nothing masked. If the two do not line up exactly: nothing is kept.
+    """
+    labels = list(LABEL.finditer(masked))
+    if not labels:
+        return []
+    shaped, _ = mask_output(lambda text: (text, 0), CONTROL.sub("", raw_proof))
+    pattern, last = "", 0
+    for label in labels:
+        if label.start() == last and last != 0:
+            return []  # two labels side by side: no way to tell where one value ends
+        pattern += re.escape(masked[last : label.start()]) + "(.+?)"
+        last = label.end()
+    match = re.fullmatch(pattern + re.escape(masked[last:]), shaped, re.DOTALL)
+    if match is None:
+        return []
+    return [
+        HiddenValue(index=index, kind=label["kind"], start=label.start(), value=match[index + 1])
+        for index, label in enumerate(labels)
+    ]
+
+
+def _raw_proofs(new: list[NewFinding], raw: list[NewFinding] | None) -> dict[tuple[int, int], str]:
+    """The raw evidence text for each (finding, evidence) position, only when both parses
+    found the same findings with the same evidence in the same order."""
+    if raw is None or len(raw) != len(new):
+        return {}
+    pairs: dict[tuple[int, int], str] = {}
+    for item_no, (item, raw_item) in enumerate(zip(new, raw, strict=True)):
+        if len(item.evidence) != len(raw_item.evidence):
+            return {}
+        for proof_no, (proof, raw_proof) in enumerate(
+            zip(item.evidence, raw_item.evidence, strict=True)
+        ):
+            if proof.kind != raw_proof.kind:
+                return {}
+            pairs[(item_no, proof_no)] = raw_proof.content
+    return pairs
 
 
 def list_findings(db: Db, filters: FindingFilters | None = None) -> list[FindingOut]:
     """Every finding, or one assessment's; each filter given must match."""
     filters = filters or FindingFilters()
+    if filters.tool is not None and not is_known_tool(filters.tool):
+        raise ApiError(422, "UNKNOWN_TOOL", "This tool is not in the Kali catalog.")
     if filters.assessment_id is not None and assessment_repo.get(db, filters.assessment_id) is None:
         raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
     rows = finding_repo.list_matching(db, **filters.model_dump())
@@ -236,7 +303,7 @@ async def update_memory(memory: FindingMemory, finding: FindingOut) -> None:
 
 
 def read_evidence(db: Db, evidence_id: UUID) -> EvidenceOut:
-    """Masked evidence. The raw value needs a disclosure approval (not built yet)."""
+    """Masked evidence. A real value needs a disclosure approval (services/disclosures.py)."""
     evidence = finding_repo.get_evidence(db, evidence_id)
     if evidence is None:
         raise ApiError(404, "EVIDENCE_NOT_FOUND", "No evidence with this id.")

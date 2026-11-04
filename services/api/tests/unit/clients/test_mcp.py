@@ -8,6 +8,7 @@ from reconix_api.clients.mcp import McpError, make_call_tool, to_tool_result, to
 from reconix_api.core.interfaces import ToolJob, ToolName, ToolRunStatus
 
 URL = "http://kali:8096/mcp"
+FAKE_AUTH_TOKEN = "fake-auth-token"
 
 
 def job(tool: ToolName = ToolName.NMAP, target: str = "172.20.0.5", arguments=None) -> ToolJob:
@@ -60,8 +61,8 @@ class FakeKali:
         return self.requests[-1]
 
 
-async def run(kali: FakeKali, the_job: ToolJob):
-    call_tool = make_call_tool(URL, "access-key", transport=httpx.MockTransport(kali))
+async def run(kali: FakeKali, the_job: ToolJob, auth_token: str = FAKE_AUTH_TOKEN):
+    call_tool = make_call_tool(URL, auth_token, transport=httpx.MockTransport(kali))
     return await call_tool(the_job)
 
 
@@ -84,12 +85,21 @@ def test_source_tools_send_a_path():
     assert arguments["path"] == "/workspace/app"
 
 
-def test_zap_maps_to_zap_scan_and_ignores_extra_arguments():
-    # zap_scan's inputSchema has no `opts`, so arguments have nowhere to go and are
-    # dropped; the scan is driven by the URL alone.
-    name, args = tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+def test_zap_maps_to_zap_scan():
+    name, args = tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", []))
     assert name == "zap_scan"
     assert args == {"url": "http://juice-shop:3000/", "timeout": args["timeout"]}
+
+
+def test_arguments_for_a_tool_without_opts_are_refused_not_dropped():
+    with pytest.raises(McpError, match="TOOL_TAKES_NO_OPTIONS"):
+        tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+
+
+def test_the_target_goes_in_the_primary_param():
+    name, args = tool_call(job("sqlmap", "http://juice-shop:3000/?id=1", ["--level", "2"]))
+    assert name == "sqlmap"
+    assert args["url"] == "http://juice-shop:3000/?id=1"
 
 
 async def test_call_sends_the_key_session_and_job_token():
@@ -100,7 +110,7 @@ async def test_call_sends_the_key_session_and_job_token():
     assert result.stdout == "<nmaprun/>"
     assert result.duration_ms == 1500
     headers, body = kali.call()
-    assert headers["authorization"] == "Bearer access-key"
+    assert headers["authorization"] == f"Bearer {FAKE_AUTH_TOKEN}"
     assert headers["mcp-session-id"] == "s1"
     assert body["method"] == "tools/call"
     assert body["params"]["name"] == "nmap"
@@ -142,6 +152,10 @@ def test_plain_text_results_from_zap():
     assert failed.stderr == "[error] url is required"
 
 
-def test_no_access_key_is_refused():
-    with pytest.raises(ValueError):
-        make_call_tool(URL, "")
+async def test_without_an_auth_token_no_authorization_header_is_sent():
+    kali = FakeKali()
+    result = await run(kali, job(), auth_token="")
+    assert result.status == ToolRunStatus.COMPLETED
+    headers, body = kali.call()
+    assert "authorization" not in headers
+    assert body["params"]["_meta"] == {"job_token": "job-token"}  # the job token still goes

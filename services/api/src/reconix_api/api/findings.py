@@ -6,7 +6,6 @@ from fastapi import APIRouter, BackgroundTasks, Query, status
 
 from reconix_api.core.db import Db
 from reconix_api.core.finding_memory import CurrentFindingMemory
-from reconix_api.core.interfaces import ToolName
 from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
@@ -30,7 +29,7 @@ def list_findings(
     severity_status: SeverityStatus | None = None,
     validation_status: ValidationStatus | None = None,
     finding_status: FindingStatus | None = None,
-    tool: ToolName | None = None,
+    tool: str | None = Query(default=None, max_length=100),
     target: str | None = Query(default=None, max_length=200),
     q: str | None = Query(default=None, max_length=200),
 ) -> list[FindingOut]:
@@ -38,10 +37,11 @@ def list_findings(
 
     Business Rules:
     - With ?assessment_id=, lists only that assessment's findings, in the order they were found.
-    - Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (the tool that
-      found it), ?target= (part of the target), and ?q= (part of the code, title, target,
-      description, or a CWE id).
+    - Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (a Kali
+      catalog tool that found it, in any case), ?target= (part of the target), and ?q= (part
+      of the code, title, target, description, or a CWE id).
     - Every filter you provide must match.
+    - A ?tool= that is not in the Kali catalog returns 422 UNKNOWN_TOOL.
 
     Security:
     - Requires a valid session token.

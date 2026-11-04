@@ -89,7 +89,7 @@ def build_run(assessment) -> RunBundle:
             impact="Low. Reads one file in the repo, changes nothing",
             command="read {path} lines 40-44"),
         high=approval(
-            "approval-002", risk="HIGH", action="secret_validation",
+            "approval-002", risk="HIGH", action="Check the flagged credential once",
             target="check the credential in {path} against a test endpoint", method="read",
             path="app/config/settings.py", param="File",
             purpose="Check whether the flagged credential still authenticates",

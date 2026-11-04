@@ -23,7 +23,7 @@ class ActionIn(BaseModel):
     def tool_is_in_catalog(cls, value: str) -> str:
         if not is_known_tool(value):
             raise ValueError("tool is not in the Kali catalog (tool_specs.json)")
-        return value
+        return value.strip().upper()  # one form everywhere: "masscan" -> "MASSCAN"
 
 
 class ToolRunOut(BaseModel):

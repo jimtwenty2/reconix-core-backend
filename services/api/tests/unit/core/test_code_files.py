@@ -14,6 +14,9 @@ from reconix_api.core.code_files import (
     check_code_path,
     check_rel_path,
     container_path,
+    excluded_inside,
+    is_excluded,
+    remove_excluded,
     stored_files,
     sync,
     unpack,
@@ -252,3 +255,60 @@ def test_unpack_reads_a_file_opened_for_writing_too(tmp_path):
         spooled.write(tar_gz({"a.py": b"a"}).getvalue())
         spooled.seek(0)
         assert unpack(spooled, tmp_path / "code", 100) == (1, 1)
+
+
+def test_excluded_inside_keeps_only_paths_in_this_code_folder():
+    target = "/workspace/code/abc"
+    excluded = [
+        f"{target}/node_modules",
+        f"{target}/src/secrets",
+        f"{target}/.git",
+        "/workspace/code/abcd/x",  # another folder that starts the same
+        "/workspace/code/other/node_modules",
+        "10.0.0.1",
+        target,  # the whole folder: start_scan refuses that on its own
+    ]
+    assert excluded_inside(excluded, target) == [".git", "node_modules", "src/secrets"]
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("node_modules/x/index.js", True),
+        ("node_modules", True),
+        ("src/secrets/key.pem", True),
+        ("node_modules_backup/a.js", False),
+        ("src/app.js", False),
+        ("src/secrets.js", False),
+    ],
+)
+def test_is_excluded_matches_whole_names(path, expected):
+    assert is_excluded(path, ["node_modules", "src/secrets"]) is expected
+
+
+def test_remove_excluded_deletes_only_skipped_files(tmp_path):
+    for path in ("node_modules/a/index.js", "src/app.js", "src/secrets/key.pem"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_bytes(b"x")
+
+    assert remove_excluded(tmp_path, ["node_modules", "src/secrets"]) == 2
+
+    assert set(stored_files(tmp_path)) == {"src/app.js"}
+    assert not (tmp_path / "node_modules").exists()
+
+
+def test_sync_skips_excluded_files_and_drops_stored_ones(tmp_path):
+    (tmp_path / "vendor").mkdir()
+    (tmp_path / "vendor/lib.js").write_bytes(b"old")
+    wanted = {"src/app.js": sha(b"a"), "vendor/lib.js": sha(b"v"), "vendor/x.js": sha(b"x")}
+
+    assert sync(tmp_path, wanted, ["vendor"]) == ["src/app.js"]
+    assert not (tmp_path / "vendor").exists()
+
+
+def test_unpack_does_not_store_excluded_files(tmp_path):
+    folder = tmp_path / "code"
+    archive = tar_gz({"src/app.js": b"a", "node_modules/big.js": b"b" * 50})
+
+    assert unpack(archive, folder, 1000, ["node_modules"]) == (1, 1)
+    assert set(stored_files(folder)) == {"src/app.js"}

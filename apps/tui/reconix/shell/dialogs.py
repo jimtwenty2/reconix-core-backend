@@ -12,6 +12,7 @@ from ..models import Choice
 from ..screens import ChoiceScreen, TestGuideScreen
 from ..screens.choice import details_body
 from ..widgets.findings import mask
+from ..wording import clock, counted
 
 # The summary's status colour, for the statuses `store.assessment_status()` returns.
 STATUS_COLORS = {"Completed": theme.GREEN, "Stopped": theme.CRITICAL,
@@ -30,7 +31,7 @@ class DialogsMixin:
     def open_assessments(self) -> None:
         cards = store.list_assessments()
         choices = [Choice(str(c.index), f"{mask(c.label)} · {mask(c.target)}",
-                          f"{c.template} · {c.status} · {c.findings} finding(s)",
+                          f"{c.template} · {c.status} · {counted(c.findings, 'finding')}",
                           tag="CURRENT" if c.current else "") for c in cards]
         choices.append(Choice("new", "New assessment", "Start fresh; these stay listed.",
                               separated=True))
@@ -114,9 +115,9 @@ class DialogsMixin:
         what was typed is kept as typed in the store, but a token or a password in it never
         reaches the dialog.
         """
-        activity = [(e.created_at.strftime("%H:%M:%S"), mask(f"[{e.source}] {e.message}"),
+        activity = [(clock(e.created_at), mask(f"[{e.source}] {e.message}"),
                      theme.TONE.get(e.tone, theme.MUTED)) for e in store.list_activity()[-40:]]
-        events = [(e.created_at.strftime("%H:%M:%S"),
+        events = [(clock(e.created_at),
                    mask(f"{e.kind} · {e.detail}" if e.detail else e.kind), theme.MUTED)
                   for e in store.current_events()[-40:]] or [("", "No actions recorded yet.",
                                                              theme.DIM)]

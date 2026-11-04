@@ -36,11 +36,13 @@ from .assessment import (
     get_assessment,
     is_empty_assessment,
     recorded_line,
+    shown_line,
 )
+from .confirm_check import checks_finding, elsewhere_note
 from .errors import StoreValidationError
 from .findings import finding_exists, findings_line, list_findings
-from .parser import keyword_hint, parse_request
-from .replies import reply_after_run, reply_to, reply_while_running
+from .parser import parse_request
+from .replies import reply_after_run, reply_to, reply_while_running, template_hint
 from .scope import (
     blocked_count,
     check_request,
@@ -101,7 +103,8 @@ def submit_prompt(text: str) -> str:
     Before a run, a line that names a target starts the run on it; anything else (a
     greeting, a question, "scan my network" without an address) gets a short answer and
     nothing starts. With the offline mock model active that answer is the mock's (except for
-    a line a template keyword names, which gets the template hint): "ask" tells
+    a line a template keyword names and that isn't a question, which gets the template
+    hint): "ask" tells
     the app to call `llm_answer` off the UI thread (a real provider keeps the built-in reply
     here, so nothing typed before a run leaves this computer). A malformed target (10.0.0.300)
     raises, so the operator can fix it. During a run the line goes to the assistant.
@@ -118,7 +121,7 @@ def submit_prompt(text: str) -> str:
         add_chat("text", "you", line)
         # A line that names a kind of test but no target ("scan my network") gets Reconix's
         # own template hint first, with or without the mock: it says what to type next.
-        if active_is_mock() and keyword_hint(line) is None:
+        if active_is_mock() and not template_hint(line):  # a question: never a template
             return "ask"  # the app asks the mock (llm_answer) in a worker
         add_chat("text", "reconix", reply_to(line), tone="muted")
         return "answered"
@@ -168,25 +171,30 @@ def _start(text: str, parsed: ParsedTarget, *, picked: bool) -> None:
         apply_template(parsed.template_id, auto=not picked)
 
 
+def login_refusal() -> Optional[str]:
+    """Why a typed line must not be taken right now (the run waits for, or stopped at, the
+    target login: the line may be the password), or None. Records nothing."""
+    if get_run().waiting_gate in (GATE_ACCOUNT, GATE_CODE):
+        # Don't record it: an operator may be pasting the login into the wrong place.
+        return ("Reconix is waiting for the target login. Press Enter on "
+                "the Execution screen to open the secure input; never "
+                "paste credentials into the chat.")
+    if get_run().stopped_at_gate in (GATE_ACCOUNT, GATE_CODE):
+        # Stopped at the login: the next line may still be the password. Never echo, record
+        # or send it to a model.
+        return ("This run stopped at the target login. Use /new to start "
+                "another assessment; never paste credentials into the "
+                "chat.")
+    return None
+
+
 def say_operator_line(text: str) -> str:
     """Record the operator's chat line and return it. Raises before any model is called."""
     if not get_run().started:
         raise StoreValidationError("Start an assessment first.")
-    if get_run().waiting_gate in (GATE_ACCOUNT, GATE_CODE):
-        # Don't record it: an operator may be pasting the login into the wrong place.
-        raise StoreValidationError(
-            "Reconix is waiting for the target login. Press Enter on "
-            "the Execution screen to open the secure input; never "
-            "paste credentials into the chat."
-        )
-    if get_run().stopped_at_gate in (GATE_ACCOUNT, GATE_CODE):
-        # Stopped at the login: the next line may still be the password. Never echo, record
-        # or send it to a model.
-        raise StoreValidationError(
-            "This run stopped at the target login. Use /new to start "
-            "another assessment; never paste credentials into the "
-            "chat."
-        )
+    refusal = login_refusal()
+    if refusal:
+        raise StoreValidationError(refusal)
     request = add_request(text)
     add_chat("text", "you", request.text)
     return request.text
@@ -299,7 +307,7 @@ def stop_run() -> None:
     if not run.started or is_finished():
         raise StoreValidationError("No assessment is running.")
     add_activity("USER", "Stop requested", tone="block")
-    _stop("you stopped it", "Stopped by the operator. Nothing else will run.")
+    _stop("you stopped it", "You stopped it. Nothing else will run.")
 
 
 # --- playing steps ---------------------------------------------------------------------------
@@ -409,6 +417,26 @@ def _confirmed_later(fid: str) -> bool:
                for step in lists.current().script[run.cursor + 1:])
 
 
+def _check_before(index: int) -> Optional[ApprovalRequest]:
+    """The gated check whose steps hold `script[index]` (None: no gate before it)."""
+    script = lists.current().script
+    for step in reversed(script[:index]):
+        if step.kind == "gate" and step.name.startswith(GATE_APPROVAL_PREFIX):
+            return get_approval(step.name[len(GATE_APPROVAL_PREFIX):])
+        if step.kind == "phase":
+            return None
+    return None
+
+
+def _ran_elsewhere(finding, request: ApprovalRequest) -> None:
+    """The check was moved (Edit params) off the finding's own location: it can't confirm
+    the finding, and what it saw is not the finding's evidence."""
+    where = shown_line(request.path)
+    finding.evidence = [elsewhere_note(request, where)]
+    add_activity("POLICY", f"{finding.fid} stays unconfirmed: the check ran on {where}, "
+                 "not on the finding's own location", tone="warn")
+
+
 def _finding(fid: str):
     """The live finding row `fid` (the store's own; getters hand out copies)."""
     for finding in lists.current().findings:
@@ -488,6 +516,10 @@ def _apply(step: RunStep) -> None:
         finding = _finding(step.name)
         if step.text:
             finding.description = step.text
+        request = _check_before(run.cursor)
+        if request is not None and not checks_finding(request, finding):
+            _ran_elsewhere(finding, request)  # stays UNCONFIRMED: it tested something else
+            return
         finding.evidence = [line for _, line in step.rows]
         if step.value:
             finding.validation = "CONFIRMED"

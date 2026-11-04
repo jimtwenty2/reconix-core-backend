@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -55,22 +55,30 @@ async def start_scan(
     assessment_id: UUID,
     body: CodeScanIn,
 ) -> CodeScanOut:
-    """Scans the code sent to the assessment's session. 409 SCAN_RUNNING while another
-    scan of it runs; 422 NO_CODE before any code was sent."""
+    """Scans the code sent to the assessment's session. Files in the scope's excluded
+    folders are deleted from the stored code first, so the tools never read them.
+    409 SCAN_RUNNING while another scan of it runs; 422 NO_CODE when no code is left
+    to scan; 422 CODE_EXCLUDED when the scope excludes the whole code folder."""
     actions.ensure_can_act(db, assessment_id)
     session_id = assessment_repo.get(db, assessment_id).session_id
     target = code_files.container_path(session_id)
-    if not code_files.stored_files(code_files.session_folder(settings.code_dir, session_id)):
-        raise ApiError(422, "NO_CODE", "Send the code first with /sessions/{id}/code.")
-    ensure_no_excluded_folder(plans.approved_scope(interfaces, assessment_id), target)
+    skip = excluded_folders(plans.approved_scope(interfaces, assessment_id), target)
     assessment_repo.lock(db, assessment_id)  # two starts at once: the second one waits
     if agent_run_repo.running_code_scan(db, assessment_id) is not None:
         raise ApiError(409, "SCAN_RUNNING", "A code scan of this assessment is still running.")
+    folder = code_files.session_folder(settings.code_dir, session_id)
+    removed = code_files.remove_excluded(folder, skip)
+    if not code_files.stored_files(folder):
+        raise ApiError(422, "NO_CODE", "Send the code first with /sessions/{id}/code.")
 
     run = agent_runs.new_agent_run(db, operator, assessment_id, task=TASK)
     run.plan = {"task": TASK, "stage": "SCANNING", "progress": 0, "notes": []}
     db.commit()
-    details = {"agent_run_id": str(run.agent_run_id), "analyze": str(body.analyze)}
+    details = {
+        "agent_run_id": str(run.agent_run_id),
+        "analyze": str(body.analyze),
+        "excluded_files_removed": str(removed),
+    }
     audit(interfaces.write_audit, "CODE_SCAN_STARTED", operator, assessment_id, details)
 
     scan = run_scan(
@@ -102,18 +110,14 @@ async def run_scan(
             _fail(db, interfaces, operator, agent_run_id, error)
 
 
-def ensure_no_excluded_folder(scope: ApprovedScope, target: str) -> None:
-    """A scan reads the whole code folder, and tools have no exclude list here, so a
-    scope that excludes a folder inside it is refused rather than half kept."""
-    inside = PurePosixPath(target)
-    for excluded in scope.excluded_targets:
-        if excluded.startswith("/") and PurePosixPath(excluded).is_relative_to(inside):
-            raise ApiError(
-                422,
-                "EXCLUDED_PATH_NOT_SUPPORTED",
-                "The scope excludes a folder inside the code, and a code scan reads all "
-                "of it. Remove that folder from the code instead.",
-            )
+def excluded_folders(scope: ApprovedScope, target: str) -> list[str]:
+    """The scope's excluded paths inside the code folder, relative to it. The tools get
+    no exclude list, so the scan removes these from the stored code instead. A scope
+    that excludes the whole code folder leaves nothing to scan."""
+    for entry in scope.excluded_targets:
+        if target == entry.rstrip("/") or target.startswith(entry.rstrip("/") + "/"):
+            raise ApiError(422, "CODE_EXCLUDED", "The scope excludes the whole code folder.")
+    return code_files.excluded_inside(scope.excluded_targets, target)
 
 
 def cancel_for_session(

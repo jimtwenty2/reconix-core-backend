@@ -18,7 +18,7 @@ import { cleanTitle } from "../history-schema";
 import { assistantDir, code, type Folder, inFolder, openFolder, readText, serial, tempSuffix, writeAtomic } from "../secure-fs";
 import { ensureKey, hasKey, open, readKey, seal } from "./crypto";
 import { folderFault, MODELS_FAIL, ModelsError } from "./errors";
-import { CLOUD_FIXED, fitsPreset, MOCK_FIXED, type PresetId, presetOf } from "./presets";
+import { MOCK_LOCKED, type PresetId, presetOf, presetProblem } from "./presets";
 import type { AddProvider, UpdateProvider } from "./requests";
 import { type Active, EMPTY_MODELS, MAX_FILE_BYTES, MAX_NAME, MAX_PROVIDERS, type ModelsFile, ModelsFileSchema, type SavedProvider } from "./schema";
 import type { ProviderView } from "./view";
@@ -159,9 +159,10 @@ function addressFor(baseUrl: string, withKey: boolean): string {
 }
 
 /** A cloud preset names its own address only (the origin of its base URL): another address is
-    saved as Custom. */
+    saved as Custom. The mock and its reserved address go together only. */
 function checkPreset(preset: PresetId, baseUrl: string): void {
-  if (!fitsPreset(presetOf(preset), baseUrl)) throw bad(preset === "mock" ? MOCK_FIXED : CLOUD_FIXED);
+  const problem = presetProblem(presetOf(preset), baseUrl);
+  if (problem) throw bad(problem);
 }
 
 const hostOf = (url: string) => {
@@ -190,13 +191,17 @@ export function addProvider(input: AddProvider): Promise<ProviderView> {
 /** Changes a saved provider (null: there is none). No `apiKey` keeps the saved key, unless the
     address moves to another host: then it must be entered again (or removed). A change of the
     preset or the address is checked against the preset (a cloud one at its own address only; a
-    provider saved before that rule keeps working until either changes). When the active model
+    provider saved before that rule keeps working until either changes); a provider never moves
+    onto or off the mock preset. When the active model
     leaves the list, the provider's first model takes its place. */
 export function updateProvider(id: string, patch: UpdateProvider): Promise<ProviderView | null> {
   return change(async (file, f) => {
     const at = file.providers.findIndex((p) => p.id === id);
     if (at < 0) throw new ModelsError(GONE, 404);
     const old = file.providers[at];
+    // the mock stays the mock, and nothing else becomes it (it would answer offline under
+    // another provider's name, or a real model under the mock's)
+    if (patch.preset !== undefined && (patch.preset === "mock") !== (old.preset === "mock")) throw bad(MOCK_LOCKED);
     const keep = Boolean(old.key) && !patch.apiKey && !patch.removeKey;
     const nextUrl = patch.baseUrl ?? old.baseUrl;
     if (keep && hostOf(nextUrl) !== hostOf(old.baseUrl)) throw bad("The address moved to another host: enter the API key again, or remove the saved key.");

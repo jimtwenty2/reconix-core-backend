@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { MODELS_FAIL } from "@/lib/assistant/models/errors";
 import { chipState } from "@/components/assistant/model-picker-rules";
-import { CLOUD_FIXED, presetOf } from "@/lib/assistant/models/presets";
+import { CLOUD_FIXED, MOCK_FIXED, MOCK_LOCKED, MOCK_RESERVED, presetOf } from "@/lib/assistant/models/presets";
 import { NO_MODEL } from "@/lib/assistant/models/resolve";
 import { COOKIE, sessionValue } from "@/lib/auth/session";
 
@@ -271,6 +271,26 @@ describe("the providers", () => {
     expect(moved.body.provider).toMatchObject({ preset: "custom", baseUrl: "https://other.example/v1", keySaved: true });
     expect((await patch(id, { preset: "openai" })).body.detail).toBe(CLOUD_FIXED);
     expect((await patch(id, { preset: "openai", baseUrl: "https://api.openai.com/v1", apiKey: SECRET })).status).toBe(200);
+    expect(seen).toHaveLength(0);
+  });
+  it("keep the mock the mock: its preset can't change, nothing else becomes it or takes its address", async () => {
+    const MOCK = presetOf("mock").baseUrl;
+    const mock = { name: "Reconix mock (offline)", preset: "mock", baseUrl: MOCK, models: ["reconix-mock-1"] };
+    const added = await add(mock);
+    expect(added.status).toBe(201);
+    const id = (added.body.provider as { id: string }).id;
+    for (const preset of ["ollama", "custom", "openai"]) {
+      expect(await patch(id, { preset })).toEqual({ status: 400, body: { detail: MOCK_LOCKED } });
+    }
+    expect((await patch(id, { baseUrl: `${base}/v1` })).body.detail).toBe(MOCK_FIXED);
+    expect((await list()).body.providers).toEqual([expect.objectContaining({ id, preset: "mock", baseUrl: MOCK })]); // unchanged
+    expect((await patch(id, { models: ["reconix-mock-1", "reconix-mock-2"] })).status).toBe(200); // the rest still changes
+
+    const local = (await add(provider({ name: "Local", preset: "ollama" }))).body.provider as { id: string };
+    expect(await patch(local.id, { preset: "mock" })).toEqual({ status: 400, body: { detail: MOCK_LOCKED } });
+    expect(await patch(local.id, { preset: "mock", baseUrl: MOCK })).toEqual({ status: 400, body: { detail: MOCK_LOCKED } });
+    expect((await patch(local.id, { baseUrl: MOCK, removeKey: true })).body.detail).toBe(MOCK_RESERVED);
+    expect((await add({ ...mock, name: "Fake Ollama", preset: "ollama" })).body.detail).toBe(MOCK_RESERVED);
     expect(seen).toHaveLength(0);
   });
   it("leave a cloud preset saved at another address before that rule working until its preset or address changes", async () => {

@@ -22,7 +22,7 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Shared values (UPPERCASE everywhere, as in ERD V3)
@@ -54,7 +54,9 @@ class CheckName(StrEnum):
 
 
 class ToolName(StrEnum):
-    """The only 5 tools. The MCP client maps these to the Kali tool names."""
+    """Tools Core names in its own code (the code scan, the parsers). Not the full list:
+    any tool in the Kali catalog (tool_specs.json) may be allowed and run, written as an
+    UPPERCASE name such as "MASSCAN"."""
 
     NMAP = "NMAP"
     NUCLEI = "NUCLEI"
@@ -90,6 +92,11 @@ class Operator(BaseModel):
     actor: str
 
 
+def upper_tools(tools: list[str]) -> list[str]:
+    """Tool names in one form: UPPERCASE, like every enum value ("nmap" -> "NMAP")."""
+    return [str(tool).strip().upper() for tool in tools]
+
+
 class ApprovedScope(BaseModel):
     """The approved scope of one assessment. Checks read this; they never read the database."""
 
@@ -99,11 +106,16 @@ class ApprovedScope(BaseModel):
     url_prefixes: list[str] = Field(default_factory=list)  # e.g. "http://juice-shop:3000/"
     repo_paths: list[str] = Field(default_factory=list)  # folders the source tools may read
     excluded_targets: list[str] = Field(default_factory=list)  # always blocked
-    allowed_tools: list[ToolName] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)  # Kali catalog names, UPPERCASE
     max_risk: RiskLevel = RiskLevel.LOW
     window_start: datetime | None = None
     window_end: datetime | None = None
-    allowed_ports: list[int] = Field(default_factory=list)  # nmap's ports; empty: no limit
+    allowed_ports: list[int] = Field(default_factory=list)  # ports tools may reach; empty: no limit
+
+    @field_validator("allowed_tools")
+    @classmethod
+    def tools_upper(cls, tools: list[str]) -> list[str]:
+        return upper_tools(tools)
 
 
 class ChatScope(BaseModel):
@@ -118,11 +130,16 @@ class ChatScope(BaseModel):
     url_prefixes: list[str] = Field(default_factory=list)
     repo_paths: list[str] = Field(default_factory=list)
     excluded_targets: list[str] = Field(default_factory=list)
-    allowed_tools: list[ToolName] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)  # Kali catalog names, UPPERCASE
     max_risk: RiskLevel = RiskLevel.LOW
     window_start: datetime | None = None
     window_end: datetime | None = None
     allowed_ports: list[int] = Field(default_factory=list)
+
+    @field_validator("allowed_tools")
+    @classmethod
+    def tools_upper(cls, tools: list[str]) -> list[str]:
+        return upper_tools(tools)
 
 
 class Action(BaseModel):
@@ -147,6 +164,15 @@ class RecentRun(BaseModel):
     started_at: datetime
 
 
+class LoopLimitSettings(BaseModel):
+    """The loop check's limits, once a `configuration` approval changed them."""
+
+    max_same_command: int
+    same_command_window_minutes: int
+    max_actions_per_minute: int
+    max_runs_per_assessment: int
+
+
 class CheckContext(BaseModel):
     """Everything the checks need. The API builds it from the database."""
 
@@ -156,6 +182,7 @@ class CheckContext(BaseModel):
     recent_runs: list[RecentRun] = Field(default_factory=list)  # at least the last 10 minutes
     runs_in_assessment: int = 0
     input_text: str | None = None  # the chat text that led to this action, if any
+    loop_limits: LoopLimitSettings | None = None  # None: the plan's limits (3, 10, 20, 200)
 
 
 class CheckResult(BaseModel):

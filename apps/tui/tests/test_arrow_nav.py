@@ -18,21 +18,12 @@ from reconix.screens import (
     TemplateScreen,
 )
 from reconix.screens.help import HelpScreen
-from reconix.shell.navigation import PANEL_OPEN, gate_hint
+from reconix.shell.navigation import PANEL_OPEN, gate_blocks, gate_hint
 from reconix.widgets import ChoiceMenu, PlanOrder, PromptBox, TickList
 
-from .support import SIZE, run_to, run_ui_to, settle, start_demo, wait_until
-
-NETWORK = "10.0.0.0/24"
-
-
-def _toasts(app) -> list:
-    return [str(n.message) for n in app._notifications]
-
-
-def _type_in_menu(app, text: str) -> None:
-    menu = app.screen.query(ChoiceMenu).first()
-    app.screen.post_message(ChoiceMenu.Typed(menu, text))
+from .support import (
+    NETWORK, SIZE, run_to, run_ui_to, settle, start_demo, toasts, type_in_menu, wait_until,
+)
 
 
 # --- open panels are kept ----------------------------------------------------------------------
@@ -40,21 +31,21 @@ async def test_arrows_keep_an_open_tick_list(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
-        _type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 3389")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
         app.screen.query_one(SelectionList).focus()
         await pilot.press("right", "left")
         await settle(pilot)
         assert isinstance(app.screen, TemplateScreen)
         assert app.screen.query(TickList)  # still open, nothing lost
-        assert PANEL_OPEN in _toasts(app)
+        assert PANEL_OPEN in toasts(app)
         assert store.get_scope().allowed_ports == before  # and nothing changed
 
 
 async def test_arrows_keep_an_open_order_list(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "plan", request=NETWORK)
-        _type_in_menu(app, "move 3b before 3a")
+        type_in_menu(app, "move 3b before 3a")
         await wait_until(pilot, lambda: bool(app.screen.query(PlanOrder)), what="the order")
         await pilot.press("left")
         await settle(pilot)
@@ -136,7 +127,7 @@ async def test_leaving_the_scope_with_an_arrow_decides_nothing_and_says_how_back
         await settle(pilot)
         assert isinstance(app.screen, StartScreen)
         assert store.waiting_gate() == "scope" and not store.is_scope_approved()
-        assert gate_hint("scope") in _toasts(app)
+        assert gate_hint("scope") in toasts(app)
         assert "Alt+2" in gate_hint("scope")
 
 
@@ -145,15 +136,15 @@ async def test_arrows_at_an_approval_decide_nothing(app):
         await run_ui_to(app, pilot, "approval:approval-001")
         await settle(pilot)
         assert isinstance(app.screen, ApprovalScreen)
-        await pilot.press("right")
+        await pilot.press("right")                   # → stays: the approval is decided first
         await settle(pilot)
+        assert isinstance(app.screen, ApprovalScreen)
         assert store.decision_for("approval-001") is None
-        assert gate_hint("approval:approval-001") in _toasts(app)
-        app.goto("approval")
-        await settle(pilot)
+        assert gate_blocks("approval:approval-001") in toasts(app)
         await pilot.press("left")
         await settle(pilot)
         assert isinstance(app.screen, PlanScreen)
+        assert gate_hint("approval:approval-001") in toasts(app)
         assert store.decision_for("approval-001") is None
         assert store.waiting_gate() == "approval:approval-001"
 

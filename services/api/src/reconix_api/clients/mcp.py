@@ -38,14 +38,17 @@ def tool_call(job: ToolJob) -> tuple[str, dict[str, Any]]:
     The tool name is the catalog name (lowercased). The job's target fills the
     tool's primary input param (the first required param that is not opts/timeout);
     the approved arguments go in `opts` when the tool takes it, always sent (even
-    empty) so the server never falls back to its own unchecked defaults; `timeout`
-    is sent when the tool takes it.
+    empty) so the server never falls back to its own unchecked defaults; arguments for
+    a tool without `opts` are refused, never dropped. `timeout` is sent when the tool
+    takes it.
     """
     name = canonical(str(job.tool))
     schema = input_schema(name)
     if not is_known_tool(name) or not schema:
         raise McpError(f"UNKNOWN_TOOL: {job.tool}")
     props = schema.get("properties", {}) or {}
+    if job.arguments and "opts" not in props:
+        raise McpError(f"TOOL_TAKES_NO_OPTIONS: {job.tool}")  # never drop approved arguments
     args: dict[str, Any] = {}
     primary = _primary_param(schema.get("required", []), props)
     if primary:
@@ -136,19 +139,20 @@ async def start_session(client: httpx.AsyncClient, url: str, headers: dict[str, 
 
 
 def make_call_tool(
-    url: str, access_key: str, transport: httpx.AsyncBaseTransport | None = None
+    url: str, auth_token: str, transport: httpx.AsyncBaseTransport | None = None
 ) -> CallTool:
-    """`transport` is only for tests."""
-    if not access_key:
-        raise ValueError("RECONIX_MCP_ACCESS_KEY is not set")
+    """`auth_token` (RECONIX_MCP_AUTH_TOKEN) is optional: when empty, no Authorization
+    header is sent. The one-time job token is sent on every call either way.
+    `transport` is only for tests."""
 
     async def call_tool(job: ToolJob) -> ToolResult:
         name, arguments = tool_call(job)
         headers = {
-            "Authorization": f"Bearer {access_key}",
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
         }
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
         call = {
             "jsonrpc": "2.0",
             "id": 2,

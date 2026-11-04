@@ -4,6 +4,7 @@ A destructive choice (`tone="danger"`: Reject, Stop, Remove…) never gets a num
 digit must not be able to stop a run or reject a scope. It takes ↑/↓ and Enter.
 """
 
+import textwrap
 from typing import Any, List, Optional, Sequence, Tuple
 
 from rich.text import Text
@@ -70,18 +71,37 @@ class ChoiceMenu(OptionList):
         def control(self) -> "ChoiceMenu":
             return self.menu
 
+    class TypedOut(Message):
+        """A key typed on a `type_out` menu: it belongs in the input the menu stands in for."""
+
+        def __init__(self, menu: "ChoiceMenu", text: str) -> None:
+            super().__init__()
+            self.menu = menu
+            self.text = text
+
+        @property
+        def control(self) -> "ChoiceMenu":
+            return self.menu
+
     def __init__(
         self, choices: Sequence[Choice] = (), *, default: int = 0,
-        numbered: Optional[bool] = None, inline: bool = False,
+        numbered: Optional[bool] = None, inline: bool = False, type_out: bool = False,
         id: Optional[str] = None, classes: Optional[str] = None,
     ) -> None:
         self._choices: List[Choice] = list(choices)
         self._default = default
         self._numbered = self.NUMBERED if numbered is None else numbered
+        if type_out:
+            self._numbered = False      # digits type there, so no number would pick
         self._inline = inline           # keep each choice on one line (hint beside the label)
+        # `type_out`: typed keys (digits too) leave as `TypedOut`, so a typed line never picks
+        # a choice; ↑/↓, Space and Enter still work the menu.
+        self._type_out = type_out
+        self._typed_out = False         # a key already left: the input is taking over
         self._pointer: Optional[int] = None
         self._draft = ""                # text typed into the input row
         self._armed_at = 0.0            # when picks start to count (see ARM_DELAY)
+        self._width = 0                 # the width hints wrap to (0 until laid out)
         super().__init__(*self._build_options(), id=id, classes=classes)
 
     # --- public API -----------------------------------------------------------------
@@ -180,7 +200,7 @@ class ChoiceMenu(OptionList):
             number = " " * len(number)              # destructive: no digit picks it
         if choice.disabled:                         # dead end: visible but not pickable
             line.append(number + choice.label, style=theme.DIM)
-            line.append("  (not in demo)", style=f"italic {theme.DIM}")
+            line.append(f"  ({choice.reason or 'not in demo'})", style=f"italic {theme.DIM}")
             return line
         line.append(number, style=accent if highlighted else theme.DIM)
         if choice.kind == "input":
@@ -203,8 +223,28 @@ class ChoiceMenu(OptionList):
             if self._inline:        # one line per choice: the hint sits beside the label
                 line.append(f"  {choice.hint}", style=theme.MUTED)
             else:
-                line.append("\n" + " " * (2 + len(number)) + choice.hint, style=theme.MUTED)
+                indent = " " * (2 + len(number))
+                for part in self._hint_lines(choice.hint, len(indent)):
+                    line.append("\n" + indent + part, style=theme.MUTED)
         return line
+
+    def _hint_lines(self, hint: str, indent: int) -> List[str]:
+        """The hint in lines that fit beside its indent, so a long one wraps under itself
+        (never back to column 0). Before the menu has a width it stays one line."""
+        room = self._width - indent - 1
+        if room < 12 or len(hint) <= room:
+            return [hint]
+        return textwrap.wrap(hint, room, break_on_hyphens=False) or [hint]
+
+    def on_resize(self) -> None:
+        """Re-wrap the hints to the new width."""
+        width = self.scrollable_content_region.width
+        if width == self._width:
+            return
+        self._width = width
+        for i, choice in enumerate(self._choices):
+            self.replace_option_prompt_at_index(
+                i, self._render_choice(i, choice, i == self._pointer))
 
     def _move_pointer(self, index: Optional[int]) -> None:
         old, self._pointer = self._pointer, index
@@ -231,6 +271,16 @@ class ChoiceMenu(OptionList):
         self.call_later(self._move_pointer, self.highlighted)
 
     def _on_key(self, event: events.Key) -> None:
+        if self._type_out and self._types_out(event):
+            event.stop()
+            event.prevent_default()  # digits too: they type, they don't pick
+            self._typed_out = True
+            self.post_message(self.TypedOut(self, event.character or ""))
+            return
+        if self._typed_out and event.key == "enter":
+            event.stop()             # the typed line's Enter, before the input has the focus:
+            event.prevent_default()  # it must never choose the highlighted row
+            return
         if event.time < self._armed_at and (event.key == "enter" or event.key.isdigit()):
             event.stop()             # pressed before the menu was armed: typed ahead
             event.prevent_default()
@@ -245,11 +295,23 @@ class ChoiceMenu(OptionList):
             self._draft = self._draft[:-1]
         elif event.key == "escape" and self._draft:
             self._draft = ""
+        elif event.key in ("left", "right") and self._draft:
+            pass                     # a typed draft is kept: ←/→ never leave the screen with it
         else:
             return
         event.stop()
         event.prevent_default()
         self._move_pointer(self.highlighted)
+
+    def _types_out(self, event: events.Key) -> bool:
+        """A printable key with no Ctrl/Alt (Alt+1…8 still jump screens). Space moves the
+        menu, "/" opens the command bar and "?" the help until a key has left; after that
+        they are part of the typed line."""
+        if not (event.is_printable and event.character):
+            return False
+        if event.key.startswith(("ctrl+", "alt+", "meta+", "super+")):
+            return False
+        return self._typed_out or event.character not in (" ", "/", "?")
 
     def _on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         event.stop()

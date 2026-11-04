@@ -5,7 +5,7 @@ from typing import List, Sequence, Tuple
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.widgets import DataTable, OptionList, Static
 
@@ -17,9 +17,11 @@ Row = Tuple[str, str]
 # Keys of the flow screens. Inside a dialog (a menu or a form) its own keys apply instead,
 # so "/" and "?" typed into a field stay text; the rows say where a key does not reach.
 GLOBAL_ROWS: List[Row] = [
-    ("←  /  →", "previous / next screen (not while typing or with a chat open)"),
+    ("←  /  →", "previous / next step, unless you are typing; → waits at a step that still "
+                "needs your choice; Esc closes a chat first"),
     ("Alt+1 … 8", "jump to a screen"),
-    ("/", "command suggestions (not inside a dialog)"),
+    ("/", "command suggestions (not inside a dialog); in a chat, start a line with / to "
+          "run a command"),
     ("?", "toggle this help (not inside a dialog; on the prompt when it is empty)"),
     ("^C", "stop the running assessment (asks first; copies selected text in a field)"),
     ("^O", "expand / collapse the steps Reconix finished (click one to open it)"),
@@ -129,20 +131,33 @@ class HelpScreen(ModalScreen):
     def on_mount(self) -> None:
         box = self.query_one("#help-box", VerticalScroll)
         box.focus()                         # ↑/↓ and PgUp/PgDn scroll it
+        self.watch(box, "scroll_y", lambda _old, _new: self._scroll_hint(), init=False)
         self.call_after_refresh(self._scroll_hint)
 
     def on_resize(self) -> None:
         self.call_after_refresh(self._scroll_hint)
 
     def _scroll_hint(self) -> None:
-        """Say so on the border when the rows don't all fit (a short terminal, 80×24)."""
+        """Say so on the border while rows are hidden (a short terminal, 80×24): "↓ more"
+        until the end is in view, "↑ more" once scrolled down, nothing when all of it fits."""
         box = self.query_one("#help-box", VerticalScroll)
-        box.border_subtitle = "↓ more · ↑/↓ PgUp/PgDn scroll" if box.max_scroll_y > 0 else ""
+        below = box.scroll_y < box.max_scroll_y
+        above = box.scroll_y > 0
+        if below:
+            hint = "↓ more · ↑/↓ PgUp/PgDn scroll"
+        elif above:
+            hint = "↑ more above · ↑/PgUp scroll"
+        else:
+            hint = ""
+        box.border_subtitle = hint
 
     @staticmethod
-    def _row(keys: str, desc: str) -> Static:
-        return Static(
-            Text.assemble((f"{keys:<10}", f"bold {theme.CYAN}"), " ", (desc, theme.MUTED)))
+    def _row(keys: str, desc: str) -> Horizontal:
+        """Keys in their own column; a long description wraps under itself, not the keys."""
+        return Horizontal(
+            Static(Text(keys, style=f"bold {theme.CYAN}"), classes="help-keys"),
+            Static(Text(desc, style=theme.MUTED), classes="help-desc"),
+            classes="help-row")
 
     def action_close(self) -> None:
         self.app.pop_screen()

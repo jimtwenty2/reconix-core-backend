@@ -4,6 +4,8 @@ combined reports, and testing an AI provider."""
 
 import json
 
+import pytest
+
 from reconix_api.core import provider_checks
 from reconix_api.core.interfaces import AgentTask
 from tests.integration.test_action_flow import active_assessment, event_types
@@ -38,6 +40,7 @@ def test_findings_filter_by_tool_target_and_text(db_client):
 
     mine = {"assessment_id": assessment_id}
     assert codes(**mine, tool="NMAP") == ["RCX-001", "RCX-002"]
+    assert codes(**mine, tool="nmap") == ["RCX-001", "RCX-002"]  # any case
     assert codes(**mine, tool="NUCLEI") == []
     assert codes(**mine, target="172.20") == ["RCX-001", "RCX-002"]
     assert codes(**mine, target="10.9.9") == []
@@ -48,7 +51,15 @@ def test_findings_filter_by_tool_target_and_text(db_client):
 
 def test_an_unknown_tool_filter_is_422(db_client):
     headers = open_session(db_client)
-    assert db_client.get("/findings", params={"tool": "nmap"}, headers=headers).status_code == 422
+    response = db_client.get("/findings", params={"tool": "not_a_tool"}, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["code"] == "UNKNOWN_TOOL"
+
+
+@pytest.mark.parametrize("tool", ["nmap", "NMAP", "masscan"])
+def test_any_catalog_tool_filter_in_any_case_is_200(db_client, tool):
+    headers = open_session(db_client)
+    assert db_client.get("/findings", params={"tool": tool}, headers=headers).status_code == 200
 
 
 # --- PoC finding checks (the AI judges a completed tool run) -------------------------------
@@ -83,9 +94,11 @@ def test_a_poc_cannot_use_another_assessments_tool_run(db_client):
     run_nmap(db_client, headers, mine)
     finding = findings(db_client, headers, mine)[0]
 
-    other = active_assessment(db_client, headers)
-    run_nmap(db_client, headers, other)
-    other_run = findings(db_client, headers, other)[0]["source_tool_run_ids"][0]
+    # A session has one assessment, so the other assessment needs a session of its own.
+    other_headers = open_session(db_client)
+    other = active_assessment(db_client, other_headers)
+    run_nmap(db_client, other_headers, other)
+    other_run = findings(db_client, other_headers, other)[0]["source_tool_run_ids"][0]
 
     response = db_client.post(
         f"/findings/{finding['finding_id']}/validation-runs",
@@ -257,15 +270,26 @@ def test_a_provider_that_does_not_answer_is_not_ok(db_client, monkeypatch):
 
 def test_an_ollama_provider_lists_its_models(db_client, monkeypatch):
     headers = open_session(db_client)
-    provider_id = builtin_provider_id(db_client, headers)
+    ollama = {"provider_type": "OLLAMA", "display_name": "Local", "model_name": "llama3.1:8b"}
+    added = db_client.post("/llm-providers", json=ollama, headers=headers)
+    assert added.status_code == 201, added.json()
 
     async def models(base_url):
-        return ["bge-m3:latest", "reconix:latest"]
+        return ["bge-m3:latest", "llama3.1:8b"]
 
     monkeypatch.setattr(provider_checks, "local_models", models)
-    listed = get(db_client, headers, f"/llm-providers/{provider_id}/models")
+    listed = get(db_client, headers, f"/llm-providers/{added.json()['llm_provider_id']}/models")
 
-    assert listed == {"models": ["bge-m3:latest", "reconix:latest"]}
+    assert listed == {"models": ["bge-m3:latest", "llama3.1:8b"]}
+
+
+def test_the_built_in_provider_lists_no_models(db_client):
+    # RECONIX is the Reconix team's server, not an Ollama on this computer.
+    headers = open_session(db_client)
+    provider_id = builtin_provider_id(db_client, headers)
+    response = db_client.get(f"/llm-providers/{provider_id}/models", headers=headers)
+    assert response.status_code == 422
+    assert response.json()["code"] == "MODEL_LIST_NOT_SUPPORTED"
 
 
 def add_compatible(client, headers, base_url="https://llm.example.com/v1") -> str:

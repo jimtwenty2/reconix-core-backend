@@ -1,0 +1,26 @@
+# Keep the build small and never copy secrets or local data into an image.
+.git
+.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+**/node_modules
+**/.pytest_cache
+**/.ruff_cache
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+data/
+services/api/data/
+.claude/
+graphify-out/
+plan.md
+CLAUDE.local.md
+# apps/: only the TUI's pyproject.toml is needed (uv reads every workspace member).
+apps/*
+!apps/tui/
+apps/tui/*
+!apps/tui/pyproject.toml
