@@ -139,6 +139,7 @@ const GROUPS: GroupSpec[] = [
       { title: "Understanding findings", slug: "understanding-findings", description: "Severity, validation, CVSS, triage, filters and imports." },
       { title: "Exporting", slug: "exporting", description: "PDF, JSON and DOCX from the terminal, saved under ./reports/." },
       { title: "The web dashboard", slug: "dashboard", description: "Single downloads, the preview, and the combined report of up to five runs." },
+      { title: "Dashboard panels", slug: "panels", description: "What each panel on the dashboard shows, how its numbers are counted and what you can click." },
     ],
   },
   {
@@ -199,16 +200,24 @@ export const DOCS_ENTRIES: DocEntry[] = DOCS_NAV.flatMap((g) => [
 /** The docs' routes: `/docs` and one page per group (a page of a group is an anchor on it). */
 export const DOCS_ROUTES: string[] = ["/docs", ...DOCS_NAV.map((g) => g.href)];
 
+/** The section part of a `<page>-<section>` anchor (docs-primitives.ts slugify). */
+const SECTION_PART = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
 /**
  * Whether `href` is a live docs address: a docs route, optionally with the anchor of one of the
- * pages that route shows. (Section anchors, `#<page>-<section>`, are checked by the tests
- * against the content: lib/docs-search-index.ts.)
+ * pages that route shows, or of a section of one of them (`#<page>-<section>`). Only the shape
+ * of a section anchor is checked here, since the content lives elsewhere; that the section is
+ * really rendered is checked against it in tests/docs-nav.test.ts and tests/docs-links.test.ts.
  */
 export function isDocsAddress(href: string): boolean {
   const [path, anchor] = href.split("#", 2);
   if (!DOCS_ROUTES.includes(path)) return false;
   if (anchor === undefined) return true;
-  return docsGroupOf(path)?.pages.some((p) => p.slug === anchor) ?? false;
+  const pages = docsGroupOf(path)?.pages ?? [];
+  if (pages.some((p) => p.slug === anchor)) return true;
+  // a section of one of those pages: `<page>-<section>` (docs-primitives.ts sectionId). Only the
+  // shape is checked here; that the section exists is checked against the content in the tests.
+  return pages.some((p) => anchor.startsWith(`${p.slug}-`) && SECTION_PART.test(anchor.slice(p.slug.length + 1)));
 }
 
 /**
@@ -233,5 +242,16 @@ export const DOCS = {
   exporting: "/docs/reports#exporting",
   dashboard: "/docs/reports#dashboard",
   knowledge: "/docs/ai-models#configuration", // its "Security knowledge page" section
+  // One section per dashboard panel ("Dashboard panels"), so a card's help icon lands on the
+  // part that explains that panel. The ids are sectionId("panels", <the DocSection's title>).
+  panelActivity: "/docs/reports#panels-activity-timeline",
+  panelExecution: "/docs/reports#panels-execution-timeline",
+  panelFindingsBySeverity: "/docs/reports#panels-findings-by-severity",
+  panelAssessment: "/docs/reports#panels-assessment",
+  panelReportFindings: "/docs/reports#panels-findings",
+  panelPreview: "/docs/reports#panels-preview",
+  panelRuns: "/docs/reports#panels-runs",
+  panelCombine: "/docs/reports#panels-combine-runs",
+  panelTargets: "/docs/reports#panels-targets",
 } as const;
 export type DocsLink = (typeof DOCS)[keyof typeof DOCS];

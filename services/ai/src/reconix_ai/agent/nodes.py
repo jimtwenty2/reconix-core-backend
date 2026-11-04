@@ -20,6 +20,7 @@ from reconix_ai.agent.answers import (
     MAX_GOAL_CHARS,
     MAX_QUERY_CHARS,
     BadAnswer,
+    answer_so_far,
     json_object,
     read_chat,
     read_plan,
@@ -33,11 +34,12 @@ from reconix_ai.agent.prompts import (
     reflect_messages,
     report_messages,
     understand_messages,
+    validate_messages,
 )
 from reconix_ai.agent.state import AgentScope, AgentState, scope_from_dict
-from reconix_ai.analysis.answers import read_analysis
+from reconix_ai.analysis.answers import read_analysis, read_validation
 from reconix_ai.contracts import ProposedAction
-from reconix_ai.harness import check, mask_secrets
+from reconix_ai.harness import StreamMasker, check, mask_secrets
 from reconix_ai.harness.checks.input import check_input
 from reconix_ai.harness.checks.result import Decision
 from reconix_ai.knowledge import KnowledgeHit, search_knowledge
@@ -45,6 +47,7 @@ from reconix_ai.knowledge.search import ref_ids_in
 from reconix_ai.providers import (
     Completion,
     Message,
+    OnPiece,
     ProviderConfig,
     ProviderError,
     complete,
@@ -60,6 +63,7 @@ DEFAULT_TOKEN_BUDGET = 60_000
 HITS_PER_QUERY = 3
 # An analysis answers for up to 10 findings at once, so it may write more than a plan.
 ANALYZE_MAX_TOKENS = 20_000  # thinking included, as for every call
+VALIDATE_MAX_TOKENS = 8_000  # one finding, one verdict
 REPORT_MAX_TOKENS = 16_000
 MAX_HITS = 6
 MAX_REFLECTIONS = 5
@@ -90,6 +94,8 @@ class AgentDeps:
     search: Search = search_knowledge
     now: Callable[[], datetime] = lambda: datetime.now(UTC)
     token_budget: int = DEFAULT_TOKEN_BUDGET
+    # CHAT only: gets the answer's text in masked pieces while the model writes it.
+    on_piece: OnPiece | None = None
 
 
 @dataclass(frozen=True)
@@ -222,6 +228,23 @@ async def analyze(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, A
     }
 
 
+async def validate(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
+    """Judge whether the PoC tool output confirms one finding. The verdict is the AI's,
+    grounded in the real (masked) tool output; the API records it as the finding's status."""
+    deps = runtime.context
+    longer = replace(deps, provider=replace(deps.provider, max_tokens=VALIDATE_MAX_TOKENS))
+    answer, usage = await ask_json(
+        longer, validate_messages(state), read_validation, tokens_used(state)
+    )
+    if answer is None:
+        raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable verdict.")
+    status, reason = answer
+    reason, count = mask_secrets(reason)
+    update = {"validation_status": status, "validation_reason": reason, **added(state, usage)}
+    update["masked_count"] += count
+    return update
+
+
 async def report(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
     """The executive summary and the methodology, written from the locked copy."""
     deps = runtime.context
@@ -239,8 +262,10 @@ async def report(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, An
 
 async def chat(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
     """One answer to the person's last message. It only answers: no step, no wait."""
+    deps = runtime.context
+    on_piece = ChatPieces(deps.on_piece) if deps.on_piece else None
     answer, usage = await ask_json(
-        runtime.context, chat_messages(state), read_chat, tokens_used(state)
+        deps, chat_messages(state), read_chat, tokens_used(state), on_piece=on_piece
     )
     if answer is None:
         raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable answer.")
@@ -254,6 +279,26 @@ async def chat(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]
         "chat_references": [ref for ref in named if ref in known],
         **added(state, usage),
     }
+
+
+class ChatPieces:
+    """Turns the model's JSON, as it arrives, into pieces of the answer's text. The text
+    is masked once more, as the API masks the saved answer, because a secret can hide
+    behind a JSON escape. A piece is never taken back: the saved answer may still differ."""
+
+    def __init__(self, send: OnPiece) -> None:
+        self._send = send
+        self._json = ""
+        self._read = 0  # answer characters already given to the masker
+        self._masker = StreamMasker()
+
+    async def __call__(self, piece: str) -> None:
+        self._json += piece
+        text = answer_so_far(self._json)
+        new = text[self._read :]
+        self._read = max(self._read, len(text))
+        if new and (shown := self._masker.feed(new)):
+            await self._send(shown)
 
 
 def checked_next_step(analysis: dict[str, Any], context: "CheckInput") -> dict[str, Any]:
@@ -286,7 +331,12 @@ def wait(state: AgentState) -> dict[str, Any]:
 
 def start_task(state: AgentState) -> str:
     task = state.get("task")
-    return {"ANALYZE": "analyze", "REPORT": "report", "CHAT": "chat"}.get(task, "plan")
+    return {
+        "ANALYZE": "analyze",
+        "REPORT": "report",
+        "CHAT": "chat",
+        "VALIDATE": "validate",
+    }.get(task, "plan")
 
 
 def after_find(state: AgentState) -> str:
@@ -309,16 +359,18 @@ async def ask_json(
     read: Callable[[dict[str, Any]], Any],
     spent: int,
     attempts: int = ATTEMPTS,
+    on_piece: OnPiece | None = None,
 ) -> tuple[Any | None, dict[str, int]]:
     """Ask for a JSON answer and read it with `read`. None after `attempts` bad answers.
 
     spent is the tokens this ask used before this step; no call starts once the
-    budget is used up.
+    budget is used up. on_piece streams the first attempt only, so a bad answer's
+    retry never runs on after it on a screen.
     """
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "masked_count": 0}
-    for _ in range(attempts):
+    for attempt in range(attempts):
         check_budget(deps, spent + usage["prompt_tokens"] + usage["completion_tokens"])
-        completion = await safe_complete(deps, messages)
+        completion = await safe_complete(deps, messages, on_piece if attempt == 0 else None)
         usage["prompt_tokens"] += completion.prompt_tokens
         usage["completion_tokens"] += completion.completion_tokens
         usage["masked_count"] += completion.masked_count
@@ -329,7 +381,9 @@ async def ask_json(
     return None, usage
 
 
-async def safe_complete(deps: AgentDeps, messages: list[Message]) -> Completion:
+async def safe_complete(
+    deps: AgentDeps, messages: list[Message], on_piece: OnPiece | None = None
+) -> Completion:
     """A model call whose errors carry only a code and a masked message.
 
     LangGraph saves a failing step's exception in the checkpoint, so nothing raw
@@ -337,7 +391,9 @@ async def safe_complete(deps: AgentDeps, messages: list[Message]) -> Completion:
     """
     failure = None
     try:
-        return await deps.complete(messages, deps.provider, json_answer=True)
+        if on_piece is None:
+            return await deps.complete(messages, deps.provider, json_answer=True)
+        return await deps.complete(messages, deps.provider, json_answer=True, on_piece=on_piece)
     except ProviderError as error:
         failure = AgentError(error.code, error.message)  # already masked
     except Exception:

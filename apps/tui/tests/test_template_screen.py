@@ -3,11 +3,11 @@
 from textual.widgets import Input, Static
 
 from reconix import store
-from reconix.screens import PlanScreen, StartScreen, TemplateScreen
+from reconix.screens import PlanScreen, TemplateScreen
 from reconix.screens.forms import ScopeEditForm
 from reconix.widgets import PromptBox, ScopeManifestView
 
-from .support import ASK_REQUEST, SIZE, event_kinds, run_to, settle, start_demo
+from .support import ASK_REQUEST, SIZE, choose_by_keys, event_kinds, run_to, settle, start_demo
 
 WEB_URL = 4      # the catalog order: Network, API, Source Code, Web URL
 
@@ -115,25 +115,48 @@ async def test_a_bad_edit_shows_the_store_error_and_changes_nothing(app):
         assert store.get_scope().time_limit_minutes == 30
 
 
-async def test_reject_stops_it_and_starts_fresh(app):
+async def test_reject_stops_it_and_stays_on_the_assessment(app):
     async with app.run_test(size=SIZE) as pilot:
         await start_demo(pilot)
-        await pilot.press("3")                                      # Reject
+        await pilot.press("3")              # a digit never picks Reject: nothing happens
         await settle(pilot)
-        assert isinstance(app.screen, StartScreen)
-        assert not store.get_run().started
-        cards = store.list_assessments()
-        assert [c.status for c in cards] == ["Stopped", "New"]
+        assert not store.get_run().stopped
+        await choose_by_keys(pilot, "reject")
+        assert isinstance(app.screen, TemplateScreen)
+        assert app.screen.state() == "stopped"                     # "Start again?"
+        assert store.get_run().started and store.get_run().stopped
+        assert [c.status for c in store.list_assessments()] == ["Stopped"]   # no new one
+        chat = [entry.text for entry in store.get_assessment().chat]
+        assert "Scope rejected. Nothing was tested." in chat
+        assert store.step_states()["template"] == "stopped"
         assert "scope.rejected" in event_kinds()
 
 
+async def test_start_again_after_a_rejected_scope_opens_a_new_assessment(app):
+    async with app.run_test(size=SIZE) as pilot:
+        await start_demo(pilot)
+        await choose_by_keys(pilot, "reject")
+        await choose_by_keys(pilot, "new")
+        assert [c.status for c in store.list_assessments()] == ["Stopped", "New"]
+
+
 async def test_template_past_the_scope_starts_a_new_assessment(app):
-    run_to("account")
+    run_to("plan")
     async with app.run_test(size=SIZE) as pilot:
         await open_template(app, pilot)
         assert app.screen.state() == "pick"
         assert len(store.list_assessments()) == 2
         assert store.list_assessments()[0].status == "Awaiting input"
+
+
+async def test_template_at_the_target_login_is_refused(app):
+    """At the login only /stop, /new, /help and /quit run: the line may be the password."""
+    run_to("account")
+    async with app.run_test(size=SIZE) as pilot:
+        assert app.run_command_line("/template") is False
+        await settle(pilot)
+        assert not isinstance(app.screen, TemplateScreen)
+        assert len(store.list_assessments()) == 1
 
 
 async def test_template_during_the_scope_review_shows_it(app):

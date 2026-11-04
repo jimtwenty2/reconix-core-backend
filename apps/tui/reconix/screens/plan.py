@@ -231,7 +231,7 @@ class PlanScreen(ReconixScreen):
         if lists:
             # Without a highlight, Enter on the step list is swallowed and does nothing.
             lists.first(OptionList).highlighted = 0
-        self.focus_menu("plan-menu")
+        self.focus_menu("plan-menu", top=True)
         self.call_after_refresh(self.refresh_live)   # redraw rows at the laid-out width
 
     def _plan_list(self) -> Optional[OptionList]:

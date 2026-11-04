@@ -16,10 +16,15 @@ from .targets import needs
 
 START = ("Type a target to start — a URL, an IPv4 address or range, or a git repo or local "
          "path — or /template to pick a template.")
-RUNNING = ("I can't take new instructions in this demo while an assessment runs. Use "
-           "/status, /findings, /audit and /report, or /new to start over.")
+# Fits every step (a gate still waiting, or a plan running): a typed line decides nothing,
+# and commands work in a chat too (a line starting with /).
+RUNNING = ("Without a model I can't answer that, and a typed line changes nothing: you "
+           "decide with the step's menu. Commands work here too: /findings, /audit, "
+           "/report, /status once the plan runs, or /new to start over.")
 AFTER_RUN = ("The assessment is finished. With a model set (/model) you can ask about its "
              "findings; otherwise use /findings, /report, or /new to start another.")
+
+NO_MODEL = "No AI model is set: /provider sets one (the offline mock needs no key)."
 
 _GREETING = re.compile(r"^\W*(?:hi|hello|hey|hiya|howdy|yo|greetings|"
                        r"good (?:morning|afternoon|evening))\b", re.IGNORECASE)
@@ -41,7 +46,8 @@ def reply_to(text: str) -> str:
     if _GREETING.search(text):
         return f"Hi! {START}"
     if _HELP.search(text):
-        return f"I run authorized security tests and ask before every risky step. {START}"
+        return (f"I run authorized security tests and ask before every risky step. {START} "
+                f"{NO_MODEL}")
     return f"I didn't find a target in that. {START}"
 
 

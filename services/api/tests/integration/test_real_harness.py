@@ -41,9 +41,9 @@ def test_nmap_waits_for_approval_then_runs(harness_client, harness_app):
     assessment_id = active_assessment(harness_client, headers)
 
     action = send(
-        harness_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+        harness_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sU"]
     ).json()
-    assert action["risk_level"] == "MEDIUM"  # nmap's base level in the harness
+    assert action["risk_level"] == "MEDIUM"  # -sU is a MEDIUM option; nmap's base is LOW
     assert action["action_status"] == "PENDING"
 
     path = f"/approvals/{action['approval_id']}/approve"
@@ -91,9 +91,9 @@ def test_approving_after_the_scope_window_ended_runs_nothing(
     headers = open_session(harness_client)
     assessment_id = active_assessment(harness_client, headers)
     action = send(
-        harness_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sV"]
+        harness_client, headers, assessment_id, tool="NMAP", target="172.20.0.5", arguments=["-sU"]
     ).json()
-    assert action["action_status"] == "PENDING"
+    assert action["action_status"] == "PENDING"  # -sU is MEDIUM, so it waits for a person
     now = datetime.now(UTC)
     with session_factory() as db:  # the window ends while the action waits for a person
         db.execute(

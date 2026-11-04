@@ -6,10 +6,11 @@ command from a string.
 """
 
 import json
+import re
 import unicodedata
 from typing import Any
 
-from reconix_ai.contracts import TOOL_NAMES
+from reconix_ai.harness.catalog import is_known_tool
 
 MAX_GOAL_CHARS = 500
 MAX_QUERIES = 3
@@ -24,6 +25,20 @@ MAX_ARGUMENTS = 20
 MAX_ANSWER_CHARS = 4000
 MAX_CHAT_REFERENCES = 10
 NO_TOOL = {"", "NONE", "NULL"}
+
+
+# A chat answer as it arrives: {"answer": "... (the rest may not have come yet)
+ANSWER_START = re.compile(r'\{\s*"answer"\s*:\s*"')
+JSON_ESCAPES = {
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+}
 
 
 class BadAnswer(Exception):
@@ -130,7 +145,7 @@ def read_reason(reason: Any) -> str:
 
 
 def read_action(tool: Any, target: Any, arguments: Any) -> dict[str, Any] | None:
-    if not isinstance(tool, str) or tool.strip().upper() not in TOOL_NAMES:
+    if not isinstance(tool, str) or not is_known_tool(tool.strip()):
         return None
     if not isinstance(target, str) or not target.strip():
         return None
@@ -161,3 +176,35 @@ def read_chat(data: dict[str, Any]) -> tuple[str, list[str]]:
     if isinstance(named, list):
         references = [item.strip() for item in named if isinstance(item, str) and item.strip()]
     return text, references[:MAX_CHAT_REFERENCES]
+
+
+def answer_so_far(text: str) -> str:
+    """The chat answer's text from a JSON object that is still arriving: the "answer"
+    string up to its end or to the last character that is whole. Empty when the object
+    does not start with "answer". Only for showing; read_chat reads the final answer."""
+    start = ANSWER_START.search(text)
+    if start is None:
+        return ""
+    parts, index = [], start.end()
+    while index < len(text):
+        char = text[index]
+        if char == '"':
+            break
+        if char != "\\":
+            parts.append(char)
+            index += 1
+            continue
+        escape = text[index + 1 : index + 2]
+        if escape == "u":
+            code = text[index + 2 : index + 6]
+            if len(code) < 4 or not all(c in "0123456789abcdefABCDEF" for c in code):
+                break
+            parts.append(chr(int(code, 16)))
+            index += 6
+        elif escape in JSON_ESCAPES:
+            parts.append(JSON_ESCAPES[escape])
+            index += 2
+        else:
+            break  # not arrived yet, or not JSON
+    shown = "".join(c for c in "".join(parts) if c in "\n\t" or unicodedata.category(c) != "Cc")
+    return shown.lstrip()[:MAX_ANSWER_CHARS]

@@ -35,7 +35,7 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
     behaviour: (
       <>
         An overlay lists &quot;This screen&quot; (the focused widget&apos;s keys, then the screen&apos;s own) and
-        &quot;Everywhere&quot; (<Kbd>←</Kbd>/<Kbd>→</Kbd>, <Kbd>1</Kbd>…<Kbd>8</Kbd>, <Kbd>/</Kbd>, <Kbd>?</Kbd>,{" "}
+        &quot;Everywhere&quot; (<Kbd>←</Kbd>/<Kbd>→</Kbd>, <Kbd>Alt+1</Kbd>…<Kbd>Alt+8</Kbd>, <Kbd>/</Kbd>, <Kbd>?</Kbd>,{" "}
         <Kbd>Ctrl+O</Kbd>, <Kbd>Ctrl+Q</Kbd>). <Kbd>?</Kbd> or <Kbd>Esc</Kbd> closes it. The full list is on{" "}
         <DocRef>Keys</DocRef>.
       </>
@@ -143,14 +143,31 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
     example: "/status",
     behaviour: (
       <>
-        Same as <Kbd>5</Kbd> or <Kbd>→</Kbd> from the Approval screen. The screen exists only once the plan has run;
+        Same as <Kbd>Alt+5</Kbd> or <Kbd>→</Kbd> from the Approval screen. The screen exists only once the plan has run;
         before that the command only shows a notice. On it, <Kbd>Enter</Kbd> opens what the run waits for, <Kbd>End</Kbd>{" "}
         follows the newest output and <Kbd>Ctrl+C</Kbd> asks before stopping. See{" "}
         <DocRef>Execution</DocRef>.
       </>
     ),
     errors: [
-      { message: "Execution starts after you run the plan (3 or /plan).", meaning: "The plan has not been run yet; the screen stays where it is." },
+      { message: "Execution starts after you run the plan (Alt+3 or /plan).", meaning: "The plan has not been run yet; the screen stays where it is." },
+    ],
+  },
+  stop: {
+    purpose: "Stops the running assessment, after asking first.",
+    when: "Whenever a run is in progress and should not go on: at the scope review, the plan, an approval, on Execution or Findings.",
+    syntax: "/stop",
+    example: "/stop",
+    behaviour: (
+      <>
+        Same as <Kbd>Ctrl+C</Kbd> on any flow screen. A dialog asks <strong>Stop this assessment?</strong> with{" "}
+        <strong>Keep running</strong> highlighted; <strong>Stop now</strong> ends the run. Nothing else plays, the
+        findings so far are kept, and the assessment stays listed under <Mono>/assessments</Mono>. With no run in
+        progress it only says so.
+      </>
+    ),
+    errors: [
+      { message: "No assessment is running. Ctrl+Q quits Reconix.", meaning: "There is no run in progress to stop." },
     ],
   },
   findings: {
@@ -192,7 +209,7 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
     example: "/report",
     behaviour: (
       <>
-        Same as <Kbd>8</Kbd>. The buttons <Kbd>p</Kbd> PDF, <Kbd>j</Kbd> JSON and <Kbd>w</Kbd> DOCX are enabled once
+        Same as <Kbd>Alt+8</Kbd>. The buttons <Kbd>p</Kbd> PDF, <Kbd>j</Kbd> JSON and <Kbd>w</Kbd> DOCX are enabled once
         the run completed; <Mono>/web</Mono> opens the web dashboard. See{" "}
         <DocRef>Reviewing results</DocRef>.
       </>
@@ -400,6 +417,21 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
       { message: "Couldn't install the web dashboard's packages. / The web dashboard stopped while starting. / The web dashboard is taking a while to start.", meaning: <>Read the log; see <DocRef>Troubleshooting</DocRef>.</> },
       { message: "Open it in your browser: <link>", meaning: "The dashboard runs but no browser could be launched here." },
     ],
+  },
+  tests: {
+    purpose: "Opens the evaluator checklist: every flow and test case, to mark Pass, Fail or Skip.",
+    when: "While testing Reconix against the evaluator guide (apps/tui/docs/evaluator).",
+    syntax: "/tests",
+    example: "/tests",
+    behaviour: (
+      <>
+        An overlay over the current screen; the assessment underneath is not changed. ↑/↓ picks a case, <Mono>p</Mono>,{" "}
+        <Mono>f</Mono> and <Mono>s</Mono> mark it (the same key again clears it), <Mono>n</Mono> adds a note (a secret typed in
+        it is masked), <Mono>e</Mono> exports <Mono>results-&lt;date&gt;.md</Mono> and <Mono>.json</Mono> to{" "}
+        <Mono>~/.reconix/test-results</Mono>, Esc closes it. Marks are saved at once.
+      </>
+    ),
+    errors: [],
   },
   quit: {
     purpose: "Quits Reconix.",

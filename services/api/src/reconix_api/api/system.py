@@ -15,9 +15,19 @@ class Health(BaseModel):
 
 @router.get("/health")
 def health() -> Health:
+    """Returns OK while the API is running.
+
+    Security:
+    - Open. Works without a session token.
+    """
     return Health(status="OK")
 
 
 @router.get("/operator")
 def read_operator(operator: CurrentOperator) -> Operator:
+    """Returns the owner of the session token: its session id and the person's name.
+
+    Security:
+    - Requires a valid session token.
+    """
     return operator

@@ -9,18 +9,27 @@ from rich.text import Text
 
 from .. import browser, store, theme
 from ..models import Choice
-from ..screens import ChoiceScreen
+from ..screens import ChoiceScreen, TestGuideScreen
 from ..screens.choice import details_body
 from ..widgets.findings import mask
+
+# The summary's status colour, for the statuses `store.assessment_status()` returns.
+STATUS_COLORS = {"Completed": theme.GREEN, "Stopped": theme.CRITICAL,
+                 "Awaiting input": theme.MEDIUM, "New": theme.MUTED}
 
 
 class DialogsMixin:
     """Mixed into ReconixApp."""
 
+    # --- /tests: the evaluator checklist (an overlay; the assessment is untouched) -------------
+    def open_test_guide(self) -> None:
+        if not isinstance(self.screen, TestGuideScreen):
+            self.push_screen(TestGuideScreen())
+
     # --- assessments ----------------------------------------------------------------------------
     def open_assessments(self) -> None:
         cards = store.list_assessments()
-        choices = [Choice(str(c.index), f"{c.label} · {c.target}",
+        choices = [Choice(str(c.index), f"{mask(c.label)} · {mask(c.target)}",
                           f"{c.template} · {c.status} · {c.findings} finding(s)",
                           tag="CURRENT" if c.current else "") for c in cards]
         choices.append(Choice("new", "New assessment", "Start fresh; these stay listed.",
@@ -65,8 +74,20 @@ class DialogsMixin:
 
     # --- report exports ------------------------------------------------------------------------
     def export_report(self, fmt: Optional[str]) -> None:
+        """Write the report in `fmt`. The store refuses with its own sentence (not complete
+        yet, not installed), shown as a warning. Writing blocks (a PDF takes seconds), so a
+        "Writing…" note is drawn first and the work runs after that redraw."""
+        fmt = (fmt or "").lower()
+        if not store.is_completed():
+            self._write_report(fmt)              # refused at once, with the store's reason
+            return
+        self.notify(f"Writing the {fmt.upper() or 'report'} report…", title="Report",
+                    timeout=3, markup=False)
+        self.call_after_refresh(self._write_report, fmt)
+
+    def _write_report(self, fmt: str) -> None:
         try:
-            path = store.generate_report((fmt or "").lower())
+            path = store.generate_report(fmt)
         except (store.StoreValidationError, OSError) as exc:
             self._warn(exc)
             return
@@ -86,17 +107,24 @@ class DialogsMixin:
 
     # --- read-only views --------------------------------------------------------------------------
     def show_audit(self) -> None:
-        """The activity log, the audit trail and any feedback typed at questions."""
-        activity = [(e.created_at.strftime("%H:%M:%S"), f"[{e.source}] {e.message}",
+        """The activity log, the audit trail and any feedback typed at questions.
+
+        The current assessment's rows only (`current_events`/`current_feedback`), so another
+        run's trail is never shown here, and every value is masked on its way to the screen:
+        what was typed is kept as typed in the store, but a token or a password in it never
+        reaches the dialog.
+        """
+        activity = [(e.created_at.strftime("%H:%M:%S"), mask(f"[{e.source}] {e.message}"),
                      theme.TONE.get(e.tone, theme.MUTED)) for e in store.list_activity()[-40:]]
         events = [(e.created_at.strftime("%H:%M:%S"),
-                   f"{e.kind} · {e.detail}" if e.detail else e.kind, theme.MUTED)
-                  for e in store.list_events()[-40:]] or [("", "No actions recorded yet.",
-                                                          theme.DIM)]
+                   mask(f"{e.kind} · {e.detail}" if e.detail else e.kind), theme.MUTED)
+                  for e in store.current_events()[-40:]] or [("", "No actions recorded yet.",
+                                                             theme.DIM)]
         sections = [("Activity log", activity), ("Audit trail", events)]
-        feedback = store.list_feedback()
+        feedback = store.current_feedback()
         if feedback:
-            sections.append(("Your feedback", [(f.gate, f.text, theme.MUTED) for f in feedback]))
+            sections.append(("Your feedback",
+                             [(f.gate, mask(f.text), theme.MUTED) for f in feedback]))
         self.open_dialog(ChoiceScreen("▤ ACTIVITY & AUDIT TRAIL", "", [Choice("close", "Close")],
                                       body=details_body(sections), chip="Audit"))
 
@@ -113,20 +141,26 @@ class DialogsMixin:
 
     @staticmethod
     def _summary_body() -> List[RenderableType]:
+        """The summary rows. `status` and `template` come from this run's row in the
+        assessments list (New, Awaiting input, Running, Completed, Stopped), so the summary
+        and the card can never disagree."""
         summary = store.assessment_summary()
-        color = {"Completed": theme.GREEN, "Stopped": theme.CRITICAL}.get(summary.status,
-                                                                          theme.CYAN)
+        card = next((c for c in store.list_assessments() if c.current), None)
+        status = card.status if card else store.assessment_status(store.get_assessment())
+        color = STATUS_COLORS.get(status, theme.CYAN)
+        template = card.template if card else "—"
         approvals = (f"{len(summary.approvals)} ({', '.join(summary.approvals)})"
                      if summary.approvals else "none")
         body = details_body([("Assessment", [
             ("id", summary.assessment_id, theme.KEY),
-            ("target", summary.target or "—", theme.TEXT),
-            ("status", summary.status, color),
+            ("target", mask(summary.target) or "—", theme.TEXT),
+            ("status", status, color),
+            ("template", template, theme.TEXT),
             ("findings", f"{summary.confirmed} confirmed · {summary.for_review} for review",
              theme.TEXT),
             ("human approvals", approvals, theme.MUTED),
             ("blocked actions", f"{summary.blocked} (out of scope)", theme.MUTED),
-            ("report", summary.report_path or "not exported yet (8 or /export)", theme.MUTED),
+            ("report", summary.report_path or "not exported yet (Alt+8 or /export)", theme.MUTED),
         ])])
         body += [Text(""), Text("Plan → Approve scope → Run plan → Test → Validate → Report",
                                 style=f"bold {theme.CYAN}")]

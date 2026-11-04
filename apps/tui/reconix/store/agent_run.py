@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 from ..models import PlanTask
 from ..models.base import utc_now
 from . import agent_guard, lists, providers
-from .assessment import get_assessment
+from .assessment import fold_line, get_assessment
 from .errors import StoreValidationError
 from .redact import MASK, redact, redact_all
 from .scope import record_verdict
@@ -279,8 +279,8 @@ def finish(stopped: str = "") -> None:
 # --- recording streamed events into the transcript -----------------------------------------
 
 def record_user(text: str) -> None:
-    """The operator's line that starts/continues an agent turn."""
-    add_chat("text", "you", text)
+    """The operator's line that starts/continues an agent turn (masked, no control bytes)."""
+    add_chat("text", "you", redact(fold_line(text)))
 
 
 def note(text: str, tone: str = "muted") -> None:

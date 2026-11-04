@@ -117,7 +117,7 @@ class ReportScreen(ReconixScreen):
         footer = (Text.assemble(("✓ report saved: ", theme.GREEN), (path, theme.TEXT),
                                 ("  ·  ", theme.DIM), ("/summary", f"bold {theme.TEAL}"),
                                 (" to open it", theme.DIM))
-                  if path else Text("← back · 1 to restart · ^Q quit", style=theme.DIM))
+                  if path else Text("← back · Alt+1 to restart · ^Q quit", style=theme.DIM))
         yield Static(footer)
 
     @staticmethod
@@ -138,8 +138,8 @@ class ReportScreen(ReconixScreen):
 
     # --- actions ----------------------------------------------------------------------------
     def action_export(self, fmt: str) -> None:
-        if not can_export(fmt):      # not ready or not installed: the key does nothing
-            return
+        # Not ready or not installed: the store refuses and the app shows its reason
+        # ("The report is available once the assessment is complete."), never silence.
         self.app.export_report(fmt)
 
     def action_back(self) -> None:

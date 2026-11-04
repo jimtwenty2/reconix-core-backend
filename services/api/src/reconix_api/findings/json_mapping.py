@@ -151,6 +151,20 @@ MAPPINGS: dict[str, JsonMapping] = {
         # The leak itself, the line around it and the commit author never become evidence.
         hidden=("Secret", "Match", "Line", "Commit", "Author", "Email", "Message"),
     ),
+    "grype": JsonMapping(
+        kind="grype_vulnerability",
+        items="matches[]",
+        title="vulnerability.description",  # e.g. "Improper Input Validation in PyYAML"
+        target="artifact.name",
+        location=("artifact.name", "artifact.version"),
+        key=("vulnerability.id", "artifact.name", "artifact.version"),
+        severity="vulnerability.severity",
+        severity_map={**SEVERITY_WORDS, "negligible": SeverityStatus.NONE},
+        description="vulnerability.description",
+        # grype keeps CWEs (and the related CVE) in vulnerability.cwes; _ids regexes the text.
+        cwe="vulnerability.cwes",
+        cve="vulnerability.cwes",
+    ),
     "trivy": JsonMapping(
         kind="trivy_vulnerability",
         items="Results[].Vulnerabilities[]",

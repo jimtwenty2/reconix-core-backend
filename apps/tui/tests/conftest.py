@@ -34,6 +34,7 @@ def instant_ui(monkeypatch, tmp_path):
     """Steps play at once, menus take a pick at once (tests press keys on purpose); reports,
     saved assessments and the web link live in temp."""
     monkeypatch.setattr(RunController, "SPEED", 0)
+    monkeypatch.setattr(ReconixApp, "ASK_PROVIDER_ON_START", False)   # tests opt in
     monkeypatch.setattr(ChoiceMenu, "ARM_DELAY", 0)
     monkeypatch.setattr(report, "REPORTS_DIR", tmp_path / "reports")
     monkeypatch.setattr(persist, "DATA_DIR", tmp_path / "assessments")

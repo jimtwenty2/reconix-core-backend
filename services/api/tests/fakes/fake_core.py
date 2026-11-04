@@ -96,12 +96,12 @@ def fake_check(action: Action, context: CheckContext) -> CheckResult:
         return _blocked(CheckName.INPUT, "INPUT_TOO_LONG")
     if ".." in action.target or not _in_scope(action.target, context.scope):
         return _blocked(CheckName.SCOPE, "TARGET_OUT_OF_SCOPE")
-    if action.tool not in context.scope.allowed_tools:
+    if action.tool.upper() not in {tool.upper() for tool in context.scope.allowed_tools}:
         return _blocked(CheckName.SCOPE, "TOOL_NOT_ALLOWED")
     if any(SHELL_CHARACTERS & set(argument) for argument in action.arguments):
         return _blocked(CheckName.COMMAND, "SHELL_CHARACTERS")
 
-    risk = FAKE_RISK[action.tool]
+    risk = FAKE_RISK.get(action.tool.upper(), RiskLevel.HIGH)  # other catalog tools: HIGH
     if action.is_validation and RISK_ORDER[risk] < RISK_ORDER[RiskLevel.MEDIUM]:
         risk = RiskLevel.MEDIUM
     if RISK_ORDER[risk] > RISK_ORDER[context.scope.max_risk]:

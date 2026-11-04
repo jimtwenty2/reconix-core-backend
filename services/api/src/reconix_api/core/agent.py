@@ -29,6 +29,7 @@ from reconix_api.core.interfaces import (
     ChatMessage,
     ChatScope,
     FindingInput,
+    OnPiece,
     ReportInput,
 )
 from reconix_api.models import LlmProvider
@@ -118,8 +119,9 @@ def make_ask_agent(
     """provider_for_run gives the model settings of the provider the run was started
     with, so the model that is called is the one the run records."""
 
-    async def ask_agent(request: AgentRequest) -> AgentResponse:
-        run_deps = replace(deps, provider=provider_for_run(request.agent_run_id))
+    async def ask_agent(request: AgentRequest, on_piece: OnPiece | None = None) -> AgentResponse:
+        provider = provider_for_run(request.agent_run_id)
+        run_deps = replace(deps, provider=provider, on_piece=on_piece)
         async with open_graph() as graph:
             try:
                 answer = await run_agent(graph, request, run_deps)

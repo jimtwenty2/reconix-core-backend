@@ -1,0 +1,42 @@
+{
+  "_note": "Operation-level risk escalation data for the backend. The MCP server does NOT read this; it is policy the backend owns. Baseline per-tool risk comes from list_tools (_meta.reconix.risk). This file lists, per tool, the operations (flags/subcommands) that push a call ABOVE that tool's baseline.",
+  "match": "For a call, lowercase its argument VALUES, join with spaces, and substring-test each pattern listed under that call's tool. A call's risk = max(tool baseline, highest tier whose pattern matches). Patterns are conservative; a match on a legit value (e.g. a target literally named 'exploit') is a rare, safe-side false positive. Extend per engagement.",
+  "tiers": ["low", "medium", "high"],
+
+  "per_tool": {
+    "_comment": "Escalations defined per tool (no global block). Only tools whose baseline (medium/low) can actually jump are listed; the 14 already-high tools are omitted because the backend gates them at baseline, so any pattern on them is a no-op under max(). This also drops the former global-medium patterns, which only owned already-medium tools and so could never escalate.",
+
+    "nmap": {
+      "_comment": "Baseline is low (a plain port/service scan). These raise a call above that: medium for intrusive-but-safe options, high for offensive NSE categories.",
+      "medium": ["--script", "-su", "-a ", "-o "],
+      "high": ["--script=exploit", "--script exploit", "--script=vuln", "--script=dos", "--script=brute"]
+    },
+
+    "msfvenom": {
+      "high": [
+        "reverse_tcp", "bind_tcp", "meterpreter", "shell_reverse",
+        "/bin/sh", "/bin/bash", "bash -i", "sh -i", "cmd.exe", "powershell -"
+      ]
+    },
+
+    "smbclient": {
+      "high": ["put ", "mput", "deltree", "rmdir", "rm "]
+    },
+
+    "gobuster": {
+      "high": ["-m post", "-m put", "-m delete", "-m patch"]
+    },
+
+    "ffuf": {
+      "high": ["-x post", "-x put", "-x delete", "-x patch"]
+    },
+
+    "wfuzz": {
+      "high": ["-x post", "-x put", "-x delete", "-x patch"]
+    },
+
+    "arjun": {
+      "high": ["-m post", "-m put", "-m delete", "-m patch"]
+    }
+  }
+}

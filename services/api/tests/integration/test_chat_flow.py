@@ -1,10 +1,17 @@
 """Chat with the agent: the message and the answer are saved masked, the agent sees the
 session's own scope and plan, and the chat changes nothing."""
 
+import asyncio
+import dataclasses
+import json
 from uuid import UUID
+
+import pytest
 
 from reconix_api.core.interfaces import Operator
 from reconix_api.services import agent_runs
+from reconix_api.services import chat as chat_service
+from tests.fakes import fake_mask_secrets
 from tests.integration.test_action_flow import active_assessment, event_types
 from tests.integration.test_plan_flow import plan, runs
 from tests.integration.test_scope_flow import DRAFT, open_session, scopes_path
@@ -170,3 +177,103 @@ def test_one_chat_at_a_time_in_a_session(db_client, session_factory):
     response = chat(db_client, headers, "And now?")
 
     assert (response.status_code, response.json()["code"]) == (409, "CHAT_IN_PROGRESS")
+
+
+def chat_stream(client, headers, content: str):
+    path = f"/sessions/{session_id(client, headers)}/chat/stream"
+    return client.post(path, json={"content": content}, headers=headers)
+
+
+def sse_events(text: str) -> list[tuple[str, dict]]:
+    events = []
+    for message in text.strip().split("\n\n"):
+        event, data = message.split("\n")
+        events.append((event.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return events
+
+
+def test_a_streamed_chat_sends_pieces_then_the_saved_answer(db_client, db_app):
+    headers = open_session(db_client)
+    question = "What does nmap -sV do? " + "Please explain it in plain words. " * 8
+
+    response = chat_stream(db_client, headers, question)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = sse_events(response.text)
+    names = [name for name, _ in events]
+    assert names[-1] == "DONE" and set(names[:-1]) == {"PIECE"}
+    shown = "".join(data["text"] for name, data in events if name == "PIECE")
+    done = events[-1][1]
+    assert done["reply"]["content_masked"].startswith(shown.strip()[:20])
+    [run] = runs(db_client, headers)
+    assert (run["agent_run_id"], run["agent_runs_status"]) == (done["agent_run_id"], "COMPLETED")
+    listed = db_client.get(
+        f"/sessions/{session_id(db_client, headers)}/messages", headers=headers
+    ).json()
+    assert [m["role"] for m in listed] == ["user", "assistant"]
+    assert event_types(db_app)[-1] == "AGENT_RUN_COMPLETED"  # still one line for the run
+
+
+def test_a_failed_streamed_chat_ends_with_an_error_and_a_failed_run(db_client, db_app):
+    headers = open_session(db_client)
+    db_app.state.parts["agent"].fail_after_pieces = True
+
+    response = chat_stream(db_client, headers, "What does nmap -sV do?")
+
+    name, data = sse_events(response.text)[-1]
+    assert (name, data["code"]) == ("ERROR", "MODEL_UNAVAILABLE")
+    [run] = runs(db_client, headers)
+    assert run["agent_runs_status"] == "FAILED"
+    assert event_types(db_app)[-1] == "AGENT_RUN_FAILED"
+
+
+def test_a_streamed_chat_in_another_session_fails_before_streaming(db_client):
+    headers = open_session(db_client)
+    path = f"/sessions/{UUID(int=1)}/chat/stream"
+
+    response = db_client.post(path, json={"content": "hello"}, headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "NOT_YOUR_SESSION"
+
+
+def start_unread_ask(db_client, db_app, session_factory) -> tuple[dict, chat_service.StreamedAsk]:
+    """A streamed ask whose request session is closed and whose events nobody reads,
+    as when the client leaves at once."""
+    headers = open_session(db_client)
+    interfaces = db_app.state.interfaces
+    operator = interfaces.get_operator(headers["Authorization"].removeprefix("Bearer "))
+    with session_factory() as db:
+        started = chat_service.start(
+            db, interfaces, fake_mask_secrets, operator, operator.session_id, "hello"
+        )
+        ask = chat_service.ask_in_background(db, interfaces, fake_mask_secrets, operator, started)
+    return headers, ask
+
+
+async def test_a_streamed_ask_ends_its_run_when_nobody_reads_it(db_client, db_app, session_factory):
+    headers, ask = start_unread_ask(db_client, db_app, session_factory)
+
+    await ask.task
+
+    [run] = runs(db_client, headers)
+    assert run["agent_runs_status"] == "COMPLETED"
+    assert chat(db_client, headers, "and again?").status_code == 201  # not locked
+
+
+async def test_a_cancelled_ask_ends_its_run_failed(db_client, db_app, session_factory):
+    async def slow(request, on_piece=None):
+        await asyncio.sleep(30)
+
+    db_app.state.interfaces = dataclasses.replace(db_app.state.interfaces, ask_agent=slow)
+    headers, ask = start_unread_ask(db_client, db_app, session_factory)
+    await asyncio.sleep(0.05)
+
+    ask.task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await ask.task
+
+    [run] = runs(db_client, headers)
+    assert run["agent_runs_status"] == "FAILED"
+    assert event_types(db_app)[-1] == "AGENT_RUN_FAILED"

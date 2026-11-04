@@ -53,6 +53,8 @@ COMMANDS = (
     Command("approval", "Open the approval gate", _goto("approval")),
     Command("status", "Live execution (after the plan runs)", _goto("execution"),
             aliases=("execution",)),
+    Command("stop", "Stop the running assessment (asks first)",
+            lambda app, arg: app.confirm_stop()),
     Command("findings", "List all findings", _goto("findings")),
     Command("finding", "Open one finding…", _open_finding,
             choices=_finding_choices, question="Which finding?",
@@ -81,5 +83,7 @@ COMMANDS = (
             arg="OPTIONAL", arg_name="provider/model"),
     Command("web", "Open the web dashboard in your browser (starts it if needed)",
             lambda app, arg: app.open_web_dashboard(), aliases=("dashboard",)),
+    Command("tests", "Evaluator checklist: every flow and case, mark Pass/Fail/Skip",
+            lambda app, arg: app.open_test_guide(), aliases=("test-guide",)),
     Command("quit", "Quit Reconix", lambda app, arg: app.exit(), aliases=("exit",)),
 )

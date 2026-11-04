@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from functools import partial
 
 import uvicorn
@@ -27,6 +28,7 @@ from reconix_api.api import (
     reports,
     scopes,
     sessions,
+    stream,
     system,
     timeline,
 )
@@ -37,12 +39,116 @@ from reconix_api.core.errors import add_error_handlers
 from reconix_api.core.finding_memory import FindingMemory, ai_finding_memory
 from reconix_api.core.interfaces import Interfaces
 from reconix_api.core.knowledge_add_ons import KnowledgeStore
+from reconix_api.core.live_events import LiveEvents
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.core.wiring import build_interfaces, build_mask_secrets
 
 API_PREFIX = "/api/v1"  # every route lives under it
+
+# Shown at the top of Swagger (/docs).
+API_DESCRIPTION = """\
+This is the local API of Reconix Core. It runs only on this computer (127.0.0.1), and the
+terminal app, the local web and the VS Code extension all talk to it.
+
+**How a test goes.** You write a scope, the agent plans the test and suggests each step, a
+person approves the steps that need it, the tools run, and the results become findings, an
+analysis and finally a report you can download.
+
+**Signing in.** Call `POST /api/v1/sessions` to get a session token. It is shown only once, so
+keep it. Send it on every other call as `Authorization: Bearer <token>`; in this page, use the
+**Authorize** button. Only `GET /health`, `POST /sessions` and `POST /sessions/web-sign-in`
+work without a token.
+
+**The AI suggests, the API decides.** The agent never runs a tool itself. Every action it
+suggests is checked first: its input, its scope, its command, its risk and whether it repeats
+itself. A `LOW` risk action runs right away. A `MEDIUM` or `HIGH` one waits until a person
+approves it. Anything riskier than the scope allows is `BLOCKED` with a 422. An approval
+expires after 30 minutes and can be used only once.
+
+**Errors.** Every error has the same shape:
+`{"code": "UPPER_CASE", "message": "...", "details": {...}}`. Secrets are masked in every
+answer the API gives.
+"""
+
+# One entry per router tag, in the order of the main flow; Swagger lists them in this order.
+API_TAGS = [
+    {
+        "name": "system",
+        "description": "Check that the API is running, and see who a session token belongs to.",
+    },
+    {
+        "name": "sessions",
+        "description": "Open, read and close sessions, and sign in to the local web with a code.",
+    },
+    {
+        "name": "messages",
+        "description": "Chat with the agent. Every message is saved in its session.",
+    },
+    {
+        "name": "code",
+        "description": "Send a workspace's source code to a session so it can be scanned.",
+    },
+    {
+        "name": "scope manifests",
+        "description": "Write down what may be tested, edit it, and submit it for approval.",
+    },
+    {
+        "name": "assessments",
+        "description": "The tests created when a scope is submitted, with their overview "
+        "and timeline.",
+    },
+    {
+        "name": "plans",
+        "description": "Ask the agent to plan the test and to suggest the next step.",
+    },
+    {
+        "name": "agent runs",
+        "description": "Follow one job of the agent, such as a plan or a suggested step.",
+    },
+    {
+        "name": "actions",
+        "description": "The tool steps. Each one is checked, approved when needed, and then run.",
+    },
+    {
+        "name": "approvals",
+        "description": "Everything that waits for a person to approve or reject it.",
+    },
+    {
+        "name": "code scans",
+        "description": "Scan the code sent to a session with SEMGREP and GITLEAKS.",
+    },
+    {
+        "name": "findings",
+        "description": "The problems the tools found. Review them and record your own checks.",
+    },
+    {
+        "name": "evidence",
+        "description": "The proof behind a finding, with any secret already masked.",
+    },
+    {
+        "name": "analysis",
+        "description": "Ask the agent what it thinks about the findings that are still open.",
+    },
+    {
+        "name": "reports",
+        "description": "Create report versions, ask for their review, and download them.",
+    },
+    {
+        "name": "llm providers",
+        "description": "Choose which AI model Reconix uses. Only one provider is active at a time.",
+    },
+    {
+        "name": "knowledge add-ons",
+        "description": "Add your own files to the knowledge search, and search it together "
+        "with CVE, CWE, OWASP, ATT&CK and the tool guides.",
+    },
+    {
+        "name": "stream",
+        "description": "Get every audit event live, as Server-Sent Events.",
+    },
+]
 
 
 def create_app(
@@ -63,8 +169,18 @@ def create_app(
             await startup()
         yield
 
-    app = FastAPI(title="Reconix API", version="0.0.0", lifespan=lifespan)
-    app.state.interfaces = interfaces
+    app = FastAPI(
+        title="Reconix API",
+        version="0.0.0",
+        description=API_DESCRIPTION,
+        openapi_tags=API_TAGS,
+        lifespan=lifespan,
+    )
+    # Every audit event also goes to GET /stream, once its line is written.
+    app.state.live_events = LiveEvents()
+    app.state.interfaces = replace(
+        interfaces, write_audit=app.state.live_events.publishing(interfaces.write_audit)
+    )
     app.state.session_tokens = session_tokens or SessionTokens()
     app.state.mask_secrets = mask_secrets or build_mask_secrets()
     app.state.knowledge_store = knowledge_store or KnowledgeStore()
@@ -101,6 +217,7 @@ def create_app(
         knowledge_add_ons,
         knowledge,
         timeline,
+        stream,
     ]
     for module in routers:
         app.include_router(module.router, prefix=API_PREFIX)

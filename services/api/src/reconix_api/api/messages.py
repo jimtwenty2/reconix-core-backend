@@ -22,6 +22,19 @@ def add_message(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
 ) -> MessageOut:
+    """Saves a message in your own open session.
+
+    Business Rules:
+    - Does not ask the agent anything; use POST /chat to get the agent's answer.
+
+    State Changes:
+    - Saves the message.
+
+    Security:
+    - Requires a valid session token.
+    - Works only on your own open session.
+    - Any secret in the text is masked before the message is saved.
+    """
     return messages.add_message(
         db, interfaces.write_audit, mask, operator, session_id, body.content
     )
@@ -29,4 +42,9 @@ def add_message(
 
 @router.get("")
 def list_messages(session_id: UUID, db: Db, _: CurrentOperator) -> list[MessageOut]:
+    """Lists the messages in the session, oldest first.
+
+    Security:
+    - Requires a valid session token.
+    """
     return messages.list_messages(db, session_id)

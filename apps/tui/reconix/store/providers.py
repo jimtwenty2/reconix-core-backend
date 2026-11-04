@@ -34,9 +34,33 @@ def _require_http(url: str) -> str:
         raise StoreValidationError("The base URL must start with http:// or https://.")
     if len(url) > MAX_URL:
         raise StoreValidationError("That base URL is too long.")
-    if urlsplit(url).username:   # no user:pass@host — the key goes in the key field, encrypted
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:           # a stray bracket reads as a broken IPv6 literal
+        raise StoreValidationError("That base URL isn't a valid URL.") from None
+    # No user:pass@host in any shape (also ":key@host", an empty user name): the key goes in
+    # the key field, encrypted, never into the address saved in clear text
+    if parts.username is not None or parts.password is not None or "@" in parts.netloc:
         raise StoreValidationError("Put the API key in the key field, not in the base URL.")
+    if _is_metadata_host(host):
+        raise StoreValidationError("That address is a cloud metadata service, not a model "
+                                   "server.")
     return url
+
+
+_METADATA_HOSTS = ("metadata.google.internal", "metadata")
+
+
+def _is_metadata_host(host: str) -> bool:
+    """A cloud instance-metadata address (169.254.169.254, fd00:ec2::254, link-local…)."""
+    if host in _METADATA_HOSTS:
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_link_local or address == ipaddress.ip_address("fd00:ec2::254")
 
 
 def _parse_models(entry: catalog.Provider, models: Optional[List[str]]) -> List[str]:
@@ -125,6 +149,14 @@ def set_provider(provider_id: str, api_key: Optional[str] = None,
             raise StoreValidationError("Reconix's model comes from .env and can't be changed.")
         final_base = catalog.reconix_base_url()
         final_models = [catalog.reconix_model()]
+    elif entry.is_mock:                                   # offline: no address, one model
+        if base_url and base_url.strip():
+            raise StoreValidationError("The mock model runs offline; it has no base URL.")
+        if models and [m.strip() for m in models] != list(entry.default_models):
+            raise StoreValidationError(
+                f"The mock model is {entry.default_models[0]}; it can't be changed.")
+        final_base = ""
+        final_models = list(entry.default_models)
     else:
         if entry.multi_model and not models:
             models = list(entry.default_models)   # frontier: known models, only a key is needed
@@ -222,6 +254,24 @@ def activate(provider_id: str, model: str) -> ActiveModel:
     return ActiveModel(provider_id, model, entry.label, now)
 
 
+def use_mock(api_key: Optional[str] = None) -> ActiveModel:
+    """Set up the offline mock model, test it and make it active, in one step.
+
+    The key is optional (the mock needs none); a typed one is stored encrypted like any key
+    and only its last 4 characters are ever shown, so masking can be tested with a fake key.
+    """
+    set_provider(catalog.MOCK_ID, api_key=api_key)
+    test_provider(catalog.MOCK_ID)
+    entry = catalog.get(catalog.MOCK_ID)
+    return activate(catalog.MOCK_ID, entry.default_models[0])
+
+
+def active_is_mock() -> bool:
+    """Whether the active model is the offline mock."""
+    active = db.get_active()
+    return bool(active) and active["provider_id"] == catalog.MOCK_ID
+
+
 def active_llm_settings() -> Optional[dict]:
     """LiteLLM params for the active provider/model, for the harness agent bridge.
 
@@ -236,7 +286,7 @@ def active_llm_settings() -> Optional[dict]:
         return None
     entry = catalog.get(active["provider_id"])
     row = db.get_provider_row(active["provider_id"])
-    if entry is None or row is None:
+    if entry is None or row is None or entry.is_mock:   # the mock only answers chat lines
         return None
     key = crypto.decrypt(row["api_key_enc"]) if row["api_key_enc"] else ""
     return {
@@ -280,7 +330,7 @@ def active_remote_label() -> Optional[str]:
     What the operator is told before reference text goes out with their questions.
     """
     active = db.get_active()
-    if active is None:
+    if active is None or active["provider_id"] == catalog.MOCK_ID:   # the mock stays here
         return None
     row = db.get_provider_row(active["provider_id"])
     base = (row["base_url"] if row else "") or ""   # empty: the provider's own (remote) API

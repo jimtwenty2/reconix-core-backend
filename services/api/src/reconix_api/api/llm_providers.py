@@ -26,7 +26,14 @@ CurrentSettings = Annotated[Settings, Depends(get_settings)]
 
 @router.get("")
 def list_providers(db: Db, _: CurrentOperator) -> list[LlmProviderOut]:
-    """Oldest first; the built-in RECONIX provider is always there."""
+    """Retrieves the LLM providers, oldest first.
+
+    Business Rules:
+    - The built-in RECONIX provider is always present.
+
+    Security:
+    - Requires a valid session token.
+    """
     return llm_providers.list_providers(db)
 
 
@@ -39,14 +46,31 @@ def create_provider(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> LlmProviderOut:
-    """Saved inactive. The API key is encrypted and never shown again, only its last 4
-    characters. OPENAI, ANTHROPIC and DEEPSEEK need a key; OPENAI_API_COMPATIBLE needs
-    base_url."""
+    """Adds an LLM provider. It is saved inactive.
+
+    Business Rules:
+    - OPENAI, ANTHROPIC, and DEEPSEEK require an API key; OPENAI_API_COMPATIBLE requires a base_url.
+
+    State Changes:
+    - Creates the provider. Its API key is encrypted and shown only as its last 4 characters.
+
+    Security:
+    - Requires a valid session token.
+    """
     return llm_providers.create_provider(db, interfaces.write_audit, mask, settings, operator, body)
 
 
 @router.get("/{llm_provider_id}")
 def read_provider(llm_provider_id: UUID, db: Db, _: CurrentOperator) -> LlmProviderOut:
+    """Returns one LLM provider.
+
+    Business Rules:
+    - Returns 404 LLM_PROVIDER_NOT_FOUND if no provider has this id.
+
+    Security:
+    - Requires a valid session token.
+    - The API key is never shown in full, only its last 4 characters.
+    """
     return llm_providers.read_provider(db, llm_provider_id)
 
 
@@ -60,7 +84,17 @@ def update_provider(
     mask: CurrentMask,
     settings: CurrentSettings,
 ) -> LlmProviderOut:
-    """Only the fields sent change. The built-in and the active provider cannot change."""
+    """Updates a provider. Only the fields you send change.
+
+    Business Rules:
+    - The built-in provider and the active provider cannot be changed.
+
+    State Changes:
+    - Updates the provider.
+
+    Security:
+    - Requires a valid session token.
+    """
     return llm_providers.update_provider(
         db, interfaces.write_audit, mask, settings, operator, llm_provider_id, body
     )
@@ -70,7 +104,18 @@ def update_provider(
 def delete_provider(
     llm_provider_id: UUID, db: Db, operator: CurrentOperator, interfaces: CurrentInterfaces
 ) -> None:
-    """Not the built-in or the active provider, nor one that agent runs used."""
+    """Deletes a provider.
+
+    Business Rules:
+    - You cannot delete the built-in provider, the active provider, or a provider that agent runs
+      have used.
+
+    State Changes:
+    - Deletes the provider.
+
+    Security:
+    - Requires a valid session token.
+    """
     llm_providers.delete_provider(db, interfaces.write_audit, operator, llm_provider_id)
 
 
@@ -82,8 +127,19 @@ def activate_provider(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> LlmProviderActivation:
-    """A provider on this computer is active at once. Any other one answers with a
-    `configuration` approval and becomes active when it is approved."""
+    """Sets an LLM provider as the active one.
+
+    Business Rules:
+    - A provider on this computer becomes active immediately.
+    - Any other provider returns a `configuration` approval and becomes active once a person
+      approves it.
+
+    State Changes:
+    - Sets the provider active, or creates a configuration approval request.
+
+    Security:
+    - Requires a valid session token.
+    """
     ttl_minutes = settings.approval_ttl_minutes
     provider, approval = llm_providers.activate(
         db, interfaces.write_audit, operator, llm_provider_id, ttl_minutes
@@ -100,8 +156,18 @@ async def test_provider(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> LlmProviderTestOut:
-    """Send the model one fixed prompt with no Reconix data, and say whether it answered
-    and how fast. Changes nothing."""
+    """Tests connectivity to the configured LLM provider.
+
+    Execution Behavior:
+    - Sends one fixed prompt that contains no Reconix data and reports whether the provider
+      answered and its response latency.
+
+    State Changes:
+    - None. The test changes nothing.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await llm_providers.test_provider(
         db, interfaces.write_audit, settings, operator, llm_provider_id
     )
@@ -109,6 +175,12 @@ async def test_provider(
 
 @router.get("/{llm_provider_id}/models")
 async def list_models(llm_provider_id: UUID, db: Db, _: CurrentOperator) -> LlmProviderModelsOut:
-    """The models a RECONIX or OLLAMA provider's Ollama has on this computer. Cloud
-    providers answer 422 MODEL_LIST_NOT_SUPPORTED."""
+    """Lists the models that a RECONIX or OLLAMA provider's Ollama has on this computer.
+
+    Business Rules:
+    - Cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.
+
+    Security:
+    - Requires a valid session token.
+    """
     return await llm_providers.list_models(db, llm_provider_id)

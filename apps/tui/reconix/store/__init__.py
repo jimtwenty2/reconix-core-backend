@@ -5,7 +5,10 @@ the Reconix backend later, keep these function names and signatures and change
 their bodies to call the API; the screens do not need to change.
 """
 
-from .activity import add_feedback, current_operator, list_events, list_feedback, log_event
+from .activity import (
+    add_feedback, current_events, current_feedback, current_operator, list_events,
+    list_feedback, log_event,
+)
 from .api_form import save_api_form
 from .approvals import (
     approvals_count, approve, can_edit, decision_for, decline_confirmation, edit_approval,
@@ -14,7 +17,8 @@ from .approvals import (
 )
 from .assessment import (
     MAX_REQUEST_LENGTH, AssessmentCard, add_request, assessment_label, assessment_status,
-    get_assessment, is_empty_assessment, list_assessments, list_requests, switch_assessment,
+    get_assessment, is_empty_assessment, list_assessments, list_requests, recorded_line,
+    switch_assessment,
 )
 from .errors import StoreValidationError
 from .findings import (
@@ -26,6 +30,9 @@ from .findings_view import (
     severity_counts, sort_label,
 )
 from .history import add_history, list_history
+from .llm_chat import (
+    Draft, begin_reply, build_draft, drop_pending_replies, preview_reply, record_draft,
+)
 from . import knowledge
 from .knowledge import add_source, list_sources, remove_source
 from .knowledge import clear as clear_knowledge
@@ -44,9 +51,9 @@ from .plan import gated_count, plan_overview
 from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
 from .plan_order import movable as movable_checks
 from .providers import (
-    activate, active_llm_settings, active_model, active_remote_label, core_api_approve,
-    core_api_needs_ok, get_provider,
-    list_providers, set_provider, test_provider, unset_provider,
+    activate, active_is_mock, active_llm_settings, active_model, active_remote_label,
+    core_api_approve, core_api_needs_ok, get_provider, list_providers, set_provider,
+    test_provider, unset_provider, use_mock,
 )
 from .progress import StepStatus, step_states, step_status
 from .report import (
@@ -56,9 +63,9 @@ from .report import (
 from .retest import compare_findings, previous_assessment, retest, severity_trend
 from .run import (
     advance, counters, display_phase, elapsed, gate_state, get_run, is_completed, is_finished,
-    is_plan_started, llm_answer, new_assessment, peek, phase_progress, pipeline_stage,
-    plan_tasks, reject_scope, run_plan, say_operator_line, say_to_assistant, start_run,
-    stop_run, submit_prompt, time_limit, waiting_gate,
+    is_plan_started, llm_answer, login_refusal, new_assessment, peek, phase_progress,
+    pipeline_stage, plan_tasks, reject_scope, run_plan, say_operator_line, say_to_assistant,
+    start_run, stop_run, submit_prompt, time_limit, waiting_gate,
 )
 from .scope import (
     approve_scope, blocked_count, check_request, edit_scope, get_scope, is_scope_approved,
@@ -69,7 +76,9 @@ from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
 from .step_intent import asks_about_decision, decision_reply, wants_decision, wants_view
 from .step_text import approval_text, plan_text, scope_text, template_text
-from .targets import TargetCheck, check_target, looks_like_target, validate_target
+from .targets import (
+    DASH_RANGE_UNSUPPORTED, TargetCheck, check_target, looks_like_target, validate_target,
+)
 from .templates import get_template, list_templates, select_template, selected_template
 from .thinking import block_seconds, group_stream, stream
 from .transcript import last_exchange, list_activity, list_chat
@@ -86,12 +95,13 @@ reset = load_demo_data   # tests: restore the demo rows between runs
 __all__ = [
     "StoreValidationError", "reset", "DEMO_REQUEST", "MAX_REQUEST_LENGTH",
     # assessment and requests
-    "get_assessment", "assessment_label", "list_requests", "add_request",
+    "get_assessment", "assessment_label", "list_requests", "add_request", "recorded_line",
     "list_assessments", "switch_assessment", "assessment_status", "AssessmentCard",
     "is_empty_assessment",
     # the run
     "submit_prompt", "start_run", "check_target", "say_to_assistant", "say_operator_line",
-    "TargetCheck", "looks_like_target", "validate_target",
+    "login_refusal",
+    "TargetCheck", "looks_like_target", "validate_target", "DASH_RANGE_UNSUPPORTED",
     "llm_answer", "new_assessment",
     "advance", "peek", "gate_state", "stop_run",
     "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",
@@ -130,11 +140,15 @@ __all__ = [
     "list_chat", "last_exchange", "list_activity",
     "stream", "group_stream", "block_seconds",
     "current_operator", "log_event", "list_events", "add_feedback", "list_feedback",
+    "current_events", "current_feedback",
     "add_history", "list_history",
     # flexible LLM: providers and the active model
     "list_providers", "get_provider", "set_provider", "unset_provider", "test_provider",
     "activate", "active_model", "active_llm_settings", "active_remote_label",
     "core_api_approve", "core_api_needs_ok",
+    "Draft", "build_draft", "record_draft", "begin_reply", "preview_reply",
+    "drop_pending_replies",
+    "active_is_mock", "use_mock",
     # the saved copy the web dashboard reads
     "autosave", "close_session", "web_dashboard_url",
     # the API template's OpenAPI spec

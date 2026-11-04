@@ -7,12 +7,19 @@ history, calls the model, checks the reply, shows it and writes both rows to the
 
 With `on_update` the reply streams: one chat line grows as the model writes, checked and
 redacted at every step, and `on_update()` redraws the screen (at most every STREAM_REDRAW s).
+
+The app calls the model off the UI thread: `build_draft()` does the blocking half and records
+nothing (with `on_text` it hands over the checked text so far while the model writes, for the
+screen only); `record_draft()` writes the reply into the assessment. The app records a draft
+only while the assessment it was asked in is still the current one, so a reply can never land
+in a run the operator switched to while the model was answering.
 """
 
 import time
+from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
-from ..llm import client, crypto, db, guardrail
+from ..llm import LLMError, catalog, client, crypto, db, guardrail, mock
 from ..models import ActiveModel, ChatEntry
 from ..models.base import utc_now
 from .assessment import get_assessment
@@ -26,26 +33,156 @@ STREAM_REDRAW = 0.1          # seconds between redraws while a reply streams
 THINKING = "thinking…"       # the growing line before the reply's first word
 
 
+_PENDING: List[ChatEntry] = []  # Start-screen "thinking…" lines waiting for their reply
+
+
+@dataclass
+class Draft:
+    """A reply that has been built but not recorded yet.
+
+    `error` set means no model answered: `text` is then the built-in reply to show, and
+    `active` is None. `notes` are muted lines shown before the reply (a Core API fallback);
+    `core` means the Core API answered (it keeps the history itself) and `activity` holds
+    its notes for the activity log.
+    """
+
+    text: str
+    sources: Tuple[str, ...] = ()
+    active: Optional[ActiveModel] = None
+    error: str = ""
+    notes: Tuple[str, ...] = ()
+    activity: Tuple[str, ...] = ()
+    core: bool = False
+
+
 def reply(text: str, active: ActiveModel,
           on_update: Optional[Callable[[], None]] = None) -> str:
     """Call the active model, display its reply and persist the exchange. Raises LLMError.
 
     With `on_update` the reply streams into its chat line (see the module notes)."""
+    if on_update is None or _is_mock(active):
+        checked, used_sources = _complete(text, active)
+        record_draft(Draft(checked, tuple(used_sources), active))
+        return checked
     key, base = credentials(active)
     messages, used_sources = messages_for(text)
-    if on_update is None:
-        checked = guardrail.check_response(
-            client.complete(active.provider_id, active.model, messages,
-                            api_key=key, api_base=base))
-        entry = add_chat("text", "reconix", checked)
+    entry = _streamed(active, messages, key, base, on_update)
+    record_draft(Draft(entry.text, tuple(used_sources), active), placeholder=entry)
+    return entry.text
+
+
+def build_draft(text: str, on_text: Optional[Callable[[str], None]] = None) -> Draft:
+    """Build the reply to `text` without recording anything (safe off the UI thread).
+
+    Nothing is written to any assessment here, so a switch while the model is answering
+    cannot put the reply in another run. With `on_text`, a streaming model's checked text so
+    far is handed over as it grows (for the screen only). A model failure (or no active
+    model) comes back as `Draft.error`, with the built-in reply ready in `Draft.text`.
+    """
+    from .. import core_api
+    from . import providers
+
+    active = providers.active_model()
+    if active is None:
+        return Draft(_builtin(text), error="no model is active")
+    notes: Tuple[str, ...] = ()
+    if core_api.enabled():
+        try:
+            answer, api_notes = core_api.chat_reply(text, get_assessment())
+        except LLMError as exc:
+            notes = (f"Core API unavailable ({exc}). Asking the model directly.",)
+        else:
+            return Draft(guardrail.check_response(answer), active=active,
+                         activity=tuple(api_notes), core=True)
+    try:
+        checked, used_sources = _complete(text, active, on_text)
+    except LLMError as exc:
+        return Draft(_builtin(text), error=str(exc), notes=notes)
+    return Draft(checked, tuple(used_sources), active, notes=notes)
+
+
+def record_draft(draft: Draft, placeholder: Optional[ChatEntry] = None) -> None:
+    """Add a built reply to the current assessment's chat (call it on the UI thread).
+
+    `placeholder` is the "thinking…" line shown while it was built: it becomes the reply, or
+    goes when notes or the built-in reply take its place."""
+    if placeholder is not None and placeholder in _PENDING:
+        _PENDING.remove(placeholder)
+    if draft.notes or draft.error:
+        _drop(placeholder)
+        placeholder = None
+    for note in draft.notes:
+        add_chat("text", "reconix", note, tone="muted")
+    if draft.error:
+        add_chat("text", "reconix",
+                 f"LLM unavailable ({draft.error}). Showing the built-in reply.", tone="muted")
+        add_chat("text", "reconix", draft.text, tone="muted")
+        return
+    if placeholder is not None and placeholder in get_assessment().chat:
+        placeholder.text, placeholder.tone = draft.text, "default"
+        entry = placeholder
     else:
-        entry = _streamed(active, messages, key, base, on_update)
-        checked = entry.text
-    persist(active, checked, entry.seq)
-    if used_sources:
+        entry = add_chat("text", "reconix", draft.text)
+    if draft.core:
+        for note in draft.activity:
+            add_activity("AI", note)
+        return
+    persist(draft.active, draft.text, entry.seq)
+    if draft.sources:
         # A muted note under the reply, so the operator sees which add-ons informed it.
-        add_chat("text", "reconix", "Knowledge: " + ", ".join(used_sources), tone="muted")
-    return checked
+        add_chat("text", "reconix", "Knowledge: " + ", ".join(draft.sources), tone="muted")
+
+
+def begin_reply() -> ChatEntry:
+    """The "thinking…" line a reply being built shows in (UI thread; see `record_draft`)."""
+    entry = add_chat("text", "reconix", THINKING, tone="muted")
+    _PENDING.append(entry)
+    return entry
+
+
+def preview_reply(entry: ChatEntry, text: str) -> None:
+    """Show a streaming reply's checked text so far in its line (UI thread). Not saved."""
+    if entry in _PENDING and entry in get_assessment().chat:
+        entry.text, entry.tone = text, "default"
+
+
+def drop_pending_replies() -> None:
+    """Leaving the assessment: take its unfinished reply lines out (their late replies are
+    dropped too, see the app's generation check), so no half reply is saved with the run."""
+    for entry in list(_PENDING):
+        _drop(entry)
+    _PENDING.clear()
+
+
+def _is_mock(active: ActiveModel) -> bool:
+    entry = catalog.get(active.provider_id)
+    return entry is not None and entry.is_mock
+
+
+def _complete(text: str, active: ActiveModel,
+              on_text: Optional[Callable[[str], None]] = None) -> Tuple[str, List[str]]:
+    """Call the model (or the offline mock) and check the reply. Raises LLMError; no records."""
+    if _is_mock(active):
+        # The offline mock: a prepared answer filled with this assessment's own facts.
+        return guardrail.check_response(mock.reply(redact(text), mock_facts())), []
+    key, base = credentials(active)
+    messages, used_sources = messages_for(text)
+    if on_text is None:
+        raw = client.complete(active.provider_id, active.model, messages,
+                              api_key=key, api_base=base)
+    else:
+        raw = _stream(active, messages, key, base, on_text)
+    return guardrail.check_response(raw), used_sources
+
+
+def _builtin(text: str) -> str:
+    """The scripted reply shown when no model answered (the same one `run.py` falls back to)."""
+    from .replies import reply_after_run, reply_to, reply_while_running
+    from .run import get_run, is_finished
+
+    if not get_run().started:
+        return reply_to(text)
+    return reply_after_run(text) if is_finished() else reply_while_running(text)
 
 
 def core_reply(text: str, on_update: Optional[Callable[[], None]] = None) -> str:
@@ -70,8 +207,10 @@ def core_reply(text: str, on_update: Optional[Callable[[], None]] = None) -> str
     return entry.text
 
 
-def _drop(entry: ChatEntry) -> None:
-    """Take a placeholder line back out of the chat."""
+def _drop(entry: Optional[ChatEntry]) -> None:
+    """Take a placeholder line back out of the chat it is in."""
+    if entry is None:
+        return
     chat = get_assessment().chat
     if entry in chat:
         chat.remove(entry)
@@ -92,28 +231,38 @@ def credentials(active: ActiveModel) -> Tuple[Optional[str], Optional[str]]:
     return key, (row["base_url"] if row else "") or None
 
 
+def _stream(active: ActiveModel, messages: List[dict], key: Optional[str],
+            base: Optional[str], on_text: Callable[[str], None]) -> str:
+    """Stream the reply; `on_text` gets the checked text so far (at most every STREAM_REDRAW
+    s). Returns the raw reply. Raises LLMError."""
+    shown = 0.0
+
+    def grow(so_far: str) -> None:
+        nonlocal shown
+        # The word still arriving waits for the next space, so a half-streamed secret
+        # never shows before the redaction can recognise it.
+        done = so_far[:max(so_far.rfind(" "), so_far.rfind("\n")) + 1]
+        if done.strip() and time.monotonic() - shown >= STREAM_REDRAW:
+            shown = time.monotonic()
+            on_text(guardrail.check_response(done))
+
+    return client.stream(active.provider_id, active.model, messages, grow,
+                         api_key=key, api_base=base)
+
+
 def _streamed(active: ActiveModel, messages: List[dict], key: Optional[str],
               base: Optional[str], on_update: Callable[[], None]) -> ChatEntry:
     """The reply as one chat line that grows while the model writes; a failure removes it."""
     entry = add_chat("text", "reconix", THINKING, tone="muted")
-    redrawn = 0.0
 
-    def grow(so_far: str) -> None:
-        nonlocal redrawn
-        # The word still arriving waits for the next space, so a half-streamed secret
-        # never shows before the redaction can recognise it.
-        done = so_far[:max(so_far.rfind(" "), so_far.rfind("\n")) + 1]
-        if done.strip():
-            entry.text, entry.tone = guardrail.check_response(done), "default"
-        if time.monotonic() - redrawn >= STREAM_REDRAW:
-            redrawn = time.monotonic()
-            on_update()
+    def show(text: str) -> None:
+        entry.text, entry.tone = text, "default"
+        on_update()
 
     try:
-        raw = client.stream(active.provider_id, active.model, messages, grow,
-                            api_key=key, api_base=base)
+        raw = _stream(active, messages, key, base, show)
     except Exception:
-        get_assessment().chat.remove(entry)
+        _drop(entry)
         raise
     entry.text, entry.tone = guardrail.check_response(raw), "default"
     return entry
@@ -190,6 +339,63 @@ def _context() -> str:
         for d in decisions:
             lines.append(f"    {d.request_id}: {d.decision}")
     return "\n".join(lines)
+
+
+def mock_facts() -> dict:
+    """The facts the offline mock model fills its answers with (see `llm/mock.py`)."""
+    from .findings import list_findings
+    from .plan import plan_overview
+    from .progress import step_status
+    from .scope import get_scope
+
+    a = get_assessment()
+    scope = get_scope()
+    return {
+        "target": (scope.target_url if scope else "") or a.target or "",
+        "scope": _scope_line(scope) if scope else "",
+        "step": _step_sentence(step_status()) if a.run.started else "",
+        "plan": "; ".join(_plan_row(row) for row in plan_overview()),
+        "findings": [
+            {"id": f.fid, "severity": f.effective_severity, "title": f.title,
+             "impact": f.impact, "remediation": f.remediation, "status": status_word(f.status)}
+            for f in list_findings()
+        ],
+    }
+
+
+def status_word(status: str) -> str:
+    """A triage status as the data model writes it: false-positive -> FALSE_POSITIVE."""
+    return (status or "open").upper().replace("-", "_")
+
+
+def _scope_line(scope) -> str:
+    from .scope_view import join_and
+
+    state = "approved and locked" if scope.status == "APPROVED" else "a draft that waits for you"
+    parts = [f"{scope.assessment_type}, {state}"]
+    if scope.kind == "network":
+        parts.append(f"ports {join_and(scope.allowed_ports) or 'none'}")
+    else:
+        parts.append(f"methods {join_and(scope.allowed_methods)}")
+    if scope.excluded_paths:
+        parts.append(f"never touches {join_and(scope.excluded_paths)}")
+    parts.append(f"tools {join_and(scope.tools)}")
+    parts.append(f"time limit {scope.time_limit_minutes} min")
+    return "; ".join(parts)
+
+
+def _step_sentence(status) -> str:
+    choices = status.choices.split(" Order:")[0].rstrip(". ")
+    return f"Now at {status.step}: {status.state}. Next: {choices}."
+
+
+def _plan_row(row) -> str:
+    text = f"{row.num}. {row.label}"
+    if row.gate == "approve":
+        text += f" ({row.risk}, needs your approval)"
+    if row.status != "pending":
+        text += f" [{row.status}]"
+    return text
 
 
 def step_lines(status) -> List[str]:

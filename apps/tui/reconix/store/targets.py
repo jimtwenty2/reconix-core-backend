@@ -16,32 +16,51 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Union
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 from ..models.parser import ParsedTarget
 from .assessment import clean_request
 from .errors import StoreValidationError
+from .redact import redact
 
 # --- what a target looks like inside a sentence -------------------------------------------
 URL = re.compile(r"\bhttps?://[^\s'\"<>]+", re.IGNORECASE)
 GIT_URL = re.compile(r"\b(?:ssh|git)://[^\s'\"<>]+", re.IGNORECASE)
-GIT_REF = re.compile(r"\b(?:git@[^\s'\"<>]+|(?:github\.com|gitlab\.com|bitbucket\.org)/"
-                     r"[^\s'\"<>]+)", re.IGNORECASE)
+GIT_REF = re.compile(
+    r"\b(?:git@[^\s'\"<>]+|(?:github\.com|gitlab\.com|bitbucket\.org)/"
+    r"[^\s'\"<>]+)",
+    re.IGNORECASE,
+)
 HOST = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", re.IGNORECASE)
 # Loose on purpose: 10.0.0.300 is found here and then refused by ipv4(), not ignored.
 IPV4_LIKE = re.compile(r"(?<![\w.])\d+(?:\.\d+){3}(?:/\d+)?(?!\w|\.\d)")
 LOCAL_PATH = re.compile(r"(?:^|\s)((?:~|\.{1,2})?/[^\s'\"<>]+|[A-Za-z]:\\[^\s'\"<>]+)")
 API_PATH = re.compile(r"/(?:api|v\d+|graphql|rest)\b", re.IGNORECASE)
 
-_HOSTNAME = re.compile(r"^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-                       r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$", re.IGNORECASE)
+_HOSTNAME = re.compile(
+    r"^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$",
+    re.IGNORECASE,
+)
 _TRAILING = ".,;:!?)]}'\""
 
-WIDEST_RANGE = 16   # /16 = 65,536 addresses; anything wider is refused
+WIDEST_RANGE = 16  # /16 = 65,536 addresses; anything wider is refused
 
 
 def _clean(token: str) -> str:
     return token.rstrip(_TRAILING)
+
+
+def _split(url: str) -> Optional[SplitResult]:
+    """`url` split into its parts, or None when it can't be read as a URL.
+
+    `urlsplit()` raises ValueError on a stray bracket ("http://x]x[" reads as a broken IPv6
+    literal); typed text must never crash the app, so such a value is simply not a URL.
+    """
+    try:
+        return urlsplit(url)
+    except ValueError:
+        return None
 
 
 # --- single values -------------------------------------------------------------------------
@@ -60,17 +79,20 @@ def ipv4(token: str) -> str:
             network = ipaddress.IPv4Network(token, strict=False)
         except ValueError:
             raise StoreValidationError(
-                f"{token} isn't a valid IPv4 range — e.g. 10.0.0.0/24") from None
+                f"{token} isn't a valid IPv4 range — e.g. 10.0.0.0/24"
+            ) from None
         if network.prefixlen < WIDEST_RANGE:
             raise StoreValidationError(
-                f"{token} is too wide to test — use a /{WIDEST_RANGE} or smaller range.")
+                f"{token} is too wide to test — use a /{WIDEST_RANGE} or smaller range."
+            )
         _usable(network.network_address, token)
         return str(network) if network.prefixlen < 32 else str(network.network_address)
     try:
         address = ipaddress.IPv4Address(token)
     except ValueError:
         raise StoreValidationError(
-            f"{token} isn't a valid IPv4 address — four numbers from 0 to 255.") from None
+            f"{token} isn't a valid IPv4 address — four numbers from 0 to 255."
+        ) from None
     _usable(address, token)
     return str(address)
 
@@ -91,32 +113,35 @@ def host_value(host: str) -> str:
 
 
 def looks_api(url: str) -> bool:
-    return bool(API_PATH.search(urlsplit(url).path or ""))
+    parts = _split(url)
+    return bool(parts and API_PATH.search(parts.path or ""))
 
 
 def url_target(url: str, kind: str) -> ParsedTarget:
     """A web or API target from an http(s) URL. Credentials in the URL are dropped."""
     url = _clean(url)
-    parts = urlsplit(url)
+    parts = _split(url)
+    if parts is None:
+        raise StoreValidationError(f"{redact(url)} isn't a valid URL.")
     if not parts.hostname:
-        raise StoreValidationError(f"{url} has no host name.")
+        raise StoreValidationError(f"{redact(url)} has no host name.")
     try:
         port = parts.port
     except ValueError:
-        raise StoreValidationError(f"{url} has an invalid port.") from None
+        raise StoreValidationError(f"{redact(url)} has an invalid port.") from None
     host = parts.hostname if ":" in parts.hostname else host_value(parts.hostname)
-    shown = f"[{host}]" if ":" in host else host          # IPv6 literals keep their brackets
-    base = f"{parts.scheme.lower()}://{shown}" + (f":{port}" if port else "")   # never user:pass@
+    shown = f"[{host}]" if ":" in host else host  # IPv6 literals keep their brackets
+    base = f"{parts.scheme.lower()}://{shown}" + (f":{port}" if port else "")  # never user:pass@
     label = "API service" if kind == "api" else "web application"
     return ParsedTarget(kind, host, base, label, kind, confident=True)
 
 
 def _repo_url(url: str, min_segments: int) -> Optional[str]:
     """A repository URL without credentials, query or fragment; None if it isn't one."""
-    parts = urlsplit(_clean(url))
-    segments = [s for s in parts.path.split("/") if s]
-    if not parts.hostname:
+    parts = _split(_clean(url))
+    if parts is None or not parts.hostname:
         return None
+    segments = [s for s in parts.path.split("/") if s]
     if len(segments) < min_segments and not parts.path.endswith(".git"):
         return None
     try:
@@ -133,20 +158,51 @@ def _git_ref(ref: str) -> str:
         _, _, path = ref.partition(":")
         if path.strip("/"):
             return ref
-    elif len([s for s in ref.split("/") if s]) >= 3:          # host/owner/repo
+    elif len([s for s in ref.split("/") if s]) >= 3:  # host/owner/repo
         return ref
     raise StoreValidationError(f"{ref} isn't a repository — e.g. github.com/acme/app")
 
 
 # --- one finder per template ----------------------------------------------------------------
+DASH_RANGE_UNSUPPORTED = (
+    "Dash ranges aren't supported by the scope yet — use CIDR, e.g. 10.0.0.0/27."
+)
+
+
+# A range written with a dash (also spaced, en/em dash), "..", or "to" between two addresses.
+_ANY_RANGE = re.compile(
+    r"(\d+(?:\.\d+){3})\s*(?:-|\u2013|\u2014|\.\.|\bto\b)\s*"
+    r"(\d+(?:\.\d+){3}|\d+)\b",
+    re.IGNORECASE,
+)
+
+
+def _refuse_dash_range(text: str) -> None:
+    """A dash range (10.0.0.1-10.0.0.20, or spaced, with an en dash, "..", "to") anywhere in
+    `text` raises: the scope takes one address or a CIDR range, and reading only the first
+    address would test less than was typed."""
+    dash = _ANY_RANGE.search(text)
+    if dash:
+        check = _dash_range(dash.group(1), dash.group(2))
+        raise StoreValidationError(check.error or DASH_RANGE_UNSUPPORTED)
+
+
 def network_target(text: str) -> Optional[ParsedTarget]:
+    _refuse_dash_range(text)
     found = IPV4_LIKE.search(text)
     if found:
         value = ipv4(_clean(found.group(0)))
         label = "network range" if "/" in value else "network host"
         return ParsedTarget("network", value, value, label, "network", True)
     url = URL.search(text)
-    host = urlsplit(_clean(url.group(0))).hostname if url else None
+    host = None
+    if url:
+        parts = _split(_clean(url.group(0)))
+        if parts is None:
+            raise StoreValidationError(
+                f"{redact(_clean(url.group(0)))} isn't a valid URL."
+            )
+        host = parts.hostname
     if not host:
         bare = HOST.search(text)
         host = bare.group(0) if bare else None
@@ -160,8 +216,9 @@ def web_target(text: str, kind: str = "web_url") -> Optional[ParsedTarget]:
     url = URL.search(text)
     if url:
         return url_target(url.group(0), kind)
+    _refuse_dash_range(text)
     found = IPV4_LIKE.search(text)
-    if found and "/" not in found.group(0):                # a range is not a site
+    if found and "/" not in found.group(0):  # a range is not a site
         return url_target(f"https://{ipv4(_clean(found.group(0)))}", kind)
     bare = HOST.search(text)
     if bare:
@@ -177,7 +234,7 @@ def source_target(text: str) -> Optional[ParsedTarget]:
     ref = GIT_REF.search(text)
     if ref:
         return _source(_git_ref(ref.group(0)))
-    for pattern, min_segments in ((GIT_URL, 1), (URL, 2)):   # https needs owner/repo or .git
+    for pattern, min_segments in ((GIT_URL, 1), (URL, 2)):  # https needs owner/repo or .git
         found = pattern.search(text)
         repo = _repo_url(found.group(0), min_segments) if found else None
         if repo:
@@ -193,7 +250,9 @@ def _source(ref: str) -> ParsedTarget:
 
 
 FINDERS: Dict[str, Callable[[str], Optional[ParsedTarget]]] = {
-    "network": network_target, "web_url": web_target, "api": api_target,
+    "network": network_target,
+    "web_url": web_target,
+    "api": api_target,
     "source": source_target,
 }
 
@@ -201,7 +260,7 @@ FINDERS: Dict[str, Callable[[str], Optional[ParsedTarget]]] = {
 # --- the store function -----------------------------------------------------------------------
 def needs(template_id: str) -> str:
     """What a template's target must be, as one sentence with an example."""
-    from .templates import MODULES      # (imported here: this module stays a leaf)
+    from .templates import MODULES  # (imported here: this module stays a leaf)
 
     spec = MODULES[template_id].SPEC
     return f"{spec.name} needs {spec.target_hint} — e.g. {spec.example}"
@@ -209,9 +268,9 @@ def needs(template_id: str) -> str:
 
 def check_target(template_id: str, text: str) -> ParsedTarget:
     """The target in `text`, validated for `template_id`; raises with what to type instead."""
-    from .templates import get_template      # (imported here: this module stays a leaf)
+    from .templates import get_template  # (imported here: this module stays a leaf)
 
-    get_template(template_id)                 # unknown or not in the demo: refused
+    get_template(template_id)  # unknown or not in the demo: refused
     finder = FINDERS[template_id]
     if not text.strip():
         raise StoreValidationError(needs(template_id))
@@ -223,7 +282,7 @@ def check_target(template_id: str, text: str) -> ParsedTarget:
 
 # --- one typed value, for the Start prompt's feedback ----------------------------------------
 TARGET_KINDS = ("URL", "IPV4", "IPV4_RANGE", "GIT_REPO", "LOCAL_PATH", "INVALID")
-MAX_RANGE_ADDRESSES = 2 ** (32 - WIDEST_RANGE)     # 65,536 addresses: a /16
+MAX_RANGE_ADDRESSES = 2 ** (32 - WIDEST_RANGE)  # 65,536 addresses: a /16
 SUPPORTED_FORMATS = (
     "Supported: a URL (https://app.example.com), an IPv4 address (192.0.2.10), "
     "a CIDR range (10.0.0.0/24), a git repo (git@github.com:acme/app.git) "
@@ -261,8 +320,12 @@ def _shown(text: str) -> str:
 
 
 def _path_like(value: str) -> bool:
-    return (value[0] in "/~\\" or bool(_DRIVE.match(value)) or value in (".", "..")
-            or value.startswith(("./", "../", ".\\", "..\\")))
+    return (
+        value[0] in "/~\\"
+        or bool(_DRIVE.match(value))
+        or value in (".", "..")
+        or value.startswith(("./", "../", ".\\", "..\\"))
+    )
 
 
 def looks_like_target(text: str) -> bool:
@@ -307,16 +370,20 @@ def _check_git(value: str) -> Optional[TargetCheck]:
     if lower.startswith(("ssh://", "git://")):
         repo = _repo_url(value, 1)
     elif lower.startswith(("http://", "https://")):
-        parts = urlsplit(value)
+        parts = _split(value)
+        if parts is None:
+            return None  # _check_url refuses it
         on_git_host = (parts.hostname or "").lower() in _GIT_HOSTS
         if not on_git_host and not parts.path.rstrip("/").endswith(".git"):
-            return None                                    # an ordinary web URL
+            return None  # an ordinary web URL
         repo = _repo_url(value, 2)
     else:
         return None
     if repo is None:
-        return _invalid(f"{_shown(value)} isn't a repository — e.g. "
-                        "https://github.com/acme/app or git@github.com:acme/app.git")
+        return _invalid(
+            f"{_shown(value)} isn't a repository — e.g. "
+            "https://github.com/acme/app or git@github.com:acme/app.git"
+        )
     return TargetCheck("GIT_REPO", repo)
 
 
@@ -327,15 +394,19 @@ def _check_url(value: str) -> Optional[TargetCheck]:
         return None
     name = scheme.group(1).lower()
     if "://" not in value and name not in _NO_SLASH_SCHEMES:
-        return None                                        # e.g. "host:8080", no scheme
+        return None  # e.g. "host:8080", no scheme
     if name not in ("http", "https"):
-        return _invalid(f"{name}: links aren't supported — use http:// or https://, "
-                        "e.g. https://app.example.com")
+        return _invalid(
+            f"{name}: links aren't supported — use http:// or https://, "
+            "e.g. https://app.example.com"
+        )
     try:
         base = url_target(value, "web_url").target_url
     except StoreValidationError as exc:
         return _invalid(f"{exc} Use a full URL, e.g. https://app.example.com")
-    parts = urlsplit(_clean(value))
+    parts = _split(_clean(value))
+    if parts is None:  # (url_target already refused it)
+        return _invalid(f"{_shown(value)} isn't a valid URL.")
     rest = parts.path + (f"?{parts.query}" if parts.query else "")
     return TargetCheck("URL", base + rest)
 
@@ -364,12 +435,15 @@ def _dash_range(start_text: str, end_text: str) -> TargetCheck:
     except StoreValidationError as exc:
         return _invalid(str(exc))
     if start > end:
-        return _invalid(f"{start}-{end} runs backwards — put the lower address first, "
-                        "e.g. 10.0.0.1-10.0.0.20")
+        return _invalid(
+            f"{start}-{end} runs backwards — put the lower address first, e.g. 10.0.0.1-10.0.0.20"
+        )
     count = int(end) - int(start) + 1
     if count > MAX_RANGE_ADDRESSES:
-        return _invalid(f"{start}-{end} has {count:,} addresses — the limit is "
-                        f"{MAX_RANGE_ADDRESSES:,} (a /{WIDEST_RANGE}).")
+        return _invalid(
+            f"{start}-{end} has {count:,} addresses — the limit is "
+            f"{MAX_RANGE_ADDRESSES:,} (a /{WIDEST_RANGE})."
+        )
     return TargetCheck("IPV4_RANGE", f"{start}-{end}")
 
 
@@ -379,16 +453,35 @@ def _check_path(value: str) -> Optional[TargetCheck]:
         return None
     path = os.path.abspath(os.path.expanduser(value))
     if not os.path.exists(path):
-        return _invalid(f"{_shown(value)} doesn't exist — type a folder that does, "
-                        "e.g. ~/code/app")
+        return _invalid(f"{_shown(value)} doesn't exist — type a folder that does, e.g. ~/code/app")
     if not os.path.isdir(path):
         return _invalid(f"{_shown(value)} is a file — type its folder instead, e.g. ~/code/app")
     return TargetCheck("LOCAL_PATH", path)
 
 
 __all__ = [
-    "URL", "GIT_URL", "GIT_REF", "HOST", "IPV4_LIKE", "LOCAL_PATH", "ipv4", "host_value",
-    "looks_api", "url_target", "network_target", "web_target", "api_target", "source_target",
-    "FINDERS", "needs", "check_target", "TARGET_KINDS", "MAX_RANGE_ADDRESSES",
-    "SUPPORTED_FORMATS", "TargetCheck", "looks_like_target", "validate_target",
+    "URL",
+    "GIT_URL",
+    "GIT_REF",
+    "HOST",
+    "IPV4_LIKE",
+    "LOCAL_PATH",
+    "ipv4",
+    "host_value",
+    "looks_api",
+    "url_target",
+    "network_target",
+    "web_target",
+    "api_target",
+    "source_target",
+    "FINDERS",
+    "needs",
+    "check_target",
+    "TARGET_KINDS",
+    "MAX_RANGE_ADDRESSES",
+    "SUPPORTED_FORMATS",
+    "TargetCheck",
+    "looks_like_target",
+    "validate_target",
+    "DASH_RANGE_UNSUPPORTED",
 ]

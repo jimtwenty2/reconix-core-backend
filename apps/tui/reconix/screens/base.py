@@ -11,13 +11,22 @@ from textual.widgets import Footer
 from .. import store
 from ..models import Choice
 from ..widgets import (
-    ChatBar, ChoiceMenu, FlowProgress, PlanOrder, PlanPanel, Question, ScopePanel, SessionBar,
-    StepChat, TickList, UserMessage,
+    ChatBar,
+    ChoiceMenu,
+    FlowProgress,
+    PlanOrder,
+    PlanPanel,
+    Question,
+    ScopePanel,
+    SessionBar,
+    StepChat,
+    TickList,
+    UserMessage,
 )
 from ..widgets.step_chat import THINKING
 
 CHAT_DECISION = "chat-decision"
-CHAT_MENU_HINT = "Enter to select · ↑/↓ to navigate · Esc back to the step"
+CHAT_MENU_HINT = "Enter to select · ↑/↓ to navigate · type to chat · Esc back to the step"
 
 
 def scope_card() -> Optional[Widget]:
@@ -65,8 +74,8 @@ class ReconixScreen(Screen):
     def __init__(self) -> None:
         super().__init__()
         self._view_state: object = None
-        self._stale = False          # the layout changed while a dialog covered the screen
-        self._hidden: list = []      # what the step chat hid (shown again when it closes)
+        self._stale = False  # the layout changed while a dialog covered the screen
+        self._hidden: list = []  # what the step chat hid (shown again when it closes)
 
     def compose(self) -> ComposeResult:
         self._view_state = self.view_state()
@@ -97,7 +106,7 @@ class ReconixScreen(Screen):
             if self.app.screen is self and not self.query(StepChat):
                 self.app.reload_screen()
             else:
-                self._stale = True   # rebuilt when the dialog on top (or the chat) closes
+                self._stale = True  # rebuilt when the dialog on top (or the chat) closes
             return
         self.query_one(SessionBar).refresh_line()
         self.refresh_progress()
@@ -131,10 +140,33 @@ class ReconixScreen(Screen):
                 menu.choose_highlighted()
                 return
 
-    def focus_menu(self, menu_id: str) -> None:
+    def focus_menu(self, menu_id: str, *, top: bool = False) -> None:
+        """Focus the menu `menu_id`. `top`: keep the screen scrolled to its top instead of
+        down to the menu, so a gate opens on what is being decided (the manifest, the exact
+        request), not only on its choices; ↑/↓ in the menu bring the choices into view."""
         menus = self.query(f"#{menu_id}")
-        if menus:
-            menus.first().focus()
+        if not menus:
+            return
+        menus.first().focus(scroll_visible=not top)
+        if top:
+            self.call_after_refresh(self._scroll_body_home)
+
+    def _scroll_body_home(self) -> None:
+        for body in self.query("#body"):
+            body.scroll_home(animate=False)
+        self.call_after_refresh(self._hint_hidden_choices)
+
+    def _hint_hidden_choices(self) -> None:
+        """On a short terminal the gate's choices start below the fold: say how to reach
+        them, so nobody presses Enter on a choice they can't see."""
+        menu = self.focused
+        if not isinstance(menu, ChoiceMenu) or self.app.screen is not self:
+            return
+        bodies = self.query("#body")
+        if bodies and menu.region.y >= bodies.first().region.bottom - 1:
+            self.notify(
+                "The choices are below — press ↓ to see them.", title="Your decision", timeout=6
+            )
 
     # --- answers from a Question ("Type something." / "Chat about this") --------------------
     def chat_topic(self) -> str:
@@ -155,7 +187,7 @@ class ReconixScreen(Screen):
         return ""
 
     def chat_in_step(self) -> None:
-        """"Chat about this": talk about the step right here; Esc brings its menu back.
+        """ "Chat about this": talk about the step right here; Esc brings its menu back.
 
         It opens with the step's content (the scope card on the scope step) and its menu."""
         store.log_event(f"{self.flow_name}.chat")
@@ -193,8 +225,15 @@ class ReconixScreen(Screen):
             self.decide(event.choice_id)
 
     async def on_choice_menu_typed(self, event: ChoiceMenu.Typed) -> None:
-        """"Type something.": keep it as feedback, then answer it in the step chat."""
+        """ "Type something.": keep it as feedback, then answer it in the step chat. A
+        `/name` line is a command instead: it runs, and is neither feedback nor asked."""
         event.stop()
+        if self._refused_at_login():
+            return
+        if self._is_command(event.text):
+            chats = self.query(StepChat)
+            self._chat_command(chats.first(StepChat) if chats else None, event.text)
+            return
         try:
             store.add_feedback(self.flow_name, event.text)
         except store.StoreValidationError as exc:
@@ -211,20 +250,68 @@ class ReconixScreen(Screen):
             chat.focus_input()
             return chat
         body = self.query_one("#body")
-        self._hidden = [w for w in body.children
-                        if w.display and not isinstance(w, UserMessage)
-                        and not w.has_class("ai-label")]
+        self._hidden = [
+            w
+            for w in body.children
+            if w.display and not isinstance(w, UserMessage) and not w.has_class("ai-label")
+        ]
         for widget in self._hidden:
             widget.display = False
         chat = StepChat(first)
-        await body.mount_all([chat, ChatBar()])   # the bar is pinned at the bottom (tcss)
+        await body.mount_all([chat, ChatBar()])  # the bar is pinned at the bottom (tcss)
         chat.focus_input()
         chat.scroll_to_end()
         return chat
 
     def on_step_chat_asked(self, event: StepChat.Asked) -> None:
         event.stop()
+        if self._refused_at_login():
+            return
+        if self._is_command(event.text):
+            self._chat_command(event.chat, event.text)
+            return
         self._ask_in_chat(event.chat, event.text)
+
+    def _refused_at_login(self) -> bool:
+        """At (or stopped at) the target login a typed line may be the password: refuse it
+        before anything else, so it never runs as a command, is never kept and never echoed."""
+        refusal = store.login_refusal()
+        if refusal:
+            self.notify_error(refusal)
+        return bool(refusal)
+
+    def _is_command(self, text: str) -> bool:
+        """`/name …` runs a command; a path (`/api/v1 …`) stays a chat line."""
+        return text.lstrip().startswith("/") and not self.app.is_path_line(text)
+
+    def _chat_command(self, chat: Optional[StepChat], text: str) -> None:
+        """A `/name` line typed in the chat or on "Type something.": it runs as from the
+        command bar (`run_command_line`), never reaches the model and is not feedback. A
+        command that moves to another screen takes the chat with it; otherwise the chat
+        stays, with a line saying it ran (or why it can't: an unknown command). The echo is
+        the masked line, as the history keeps it."""
+        check = self.app.check_command(text)
+        if chat is None:
+            if check.ok:
+                self.app.run_checked(text, check)
+            else:
+                self.notify_error(check.error)
+            return
+        try:
+            echo = store.recorded_line(text)
+        except store.StoreValidationError as exc:
+            self.notify_error(str(exc))
+            return
+        self._drop_decision()
+        chat.add_you(echo)
+        if not check.ok:
+            chat.add_reply(check.error, tone="warn")
+            chat.focus_input()
+            return
+        self.app.run_checked(text, check)
+        if self in self.app.screen_stack and chat.is_attached:  # still this screen
+            chat.add_reply(f"Ran /{check.command.name}.", tone="muted")
+            chat.focus_input()
 
     def on_step_chat_closed(self, event: StepChat.Closed) -> None:
         """Esc: the chat goes, the step's menu comes back (rebuilt if the step moved on)."""
@@ -261,14 +348,35 @@ class ReconixScreen(Screen):
         if decision is None:
             return
         # A class, not an id: the menu shown before may still be leaving the DOM.
-        question = Question(decision.chip, decision.question, decision.choices,
-                            default=decision.default, hint=CHAT_MENU_HINT)
+        question = Question(
+            decision.chip,
+            decision.question,
+            decision.choices,
+            default=decision.default,
+            hint=CHAT_MENU_HINT,
+            typing=False,  # typing anywhere goes to the chat: no "Type something." row
+            type_out=True,  # a typed key brings the input back (on_choice_menu_typed_out)
+        )
         question.add_class(CHAT_DECISION)
         chat.add(question)
         for bar in self.query(ChatBar):
             bar.display = False
         # Queued on the question itself, so it runs once the menu is mounted.
         question.call_after_refresh(lambda: question.menu.focus())
+
+    def on_choice_menu_typed_out(self, event: ChoiceMenu.TypedOut) -> None:
+        """A key typed on the menu inside the chat: like "Chat about this", the menu goes and
+        the input comes back holding that key, so the line is asked as a chat line and a
+        typed digit or Enter never picks a choice."""
+        event.stop()
+        self._drop_decision()
+        chats = self.query(StepChat)
+        if not chats:
+            return
+        field = chats.first(StepChat).input
+        field.value += event.text  # later keys may still arrive here before the focus moves
+        field.cursor_position = len(field.value)
+        self.set_focus(field)
 
     def _drop_decision(self) -> None:
         """Take the menu shown in the chat away and bring the input back."""
@@ -303,63 +411,77 @@ class ReconixScreen(Screen):
         store refuses the line, so a password never goes out.
         """
         try:
+            echo = store.recorded_line(text)  # masked, as the chat and history keep it
             line = store.say_operator_line(f"About {self.chat_topic()}: {text}")
         except store.StoreValidationError as exc:
             self.notify_error(str(exc))
             return
-        chat.add_you(text)
+        chat.add_you(echo)
         for old in [*self.query(TickList), *self.query(PlanOrder)]:
             old.remove()
         self._drop_decision()
         scope_change = store.wants_scope_change(text)
         view = "" if scope_change else store.wants_view(text)
         card = CARDS[view]() if view else None
-        if card is not None:                        # its card, never the model's list
+        if card is not None:  # its card, never the model's list
             chat.add_reply(f"The {view} as it stands now:")
             self._show_decision(chat, card)
             return
-        reorder = (not scope_change and store.wants_plan_reorder(text)
-                   and self.allows_reorder())
+        reorder = not scope_change and store.wants_plan_reorder(text) and self.allows_reorder()
         if not scope_change and not reorder and store.wants_decision(text):
-            store.decision_reply()                  # only you decide: no model is asked
+            store.decision_reply()  # only you decide: no model is asked
             entry = store.last_exchange()[1][-1]
             chat.add_reply(entry.text, entry.tone)
             self._show_decision(chat)
             return
         about_decision = not (scope_change or reorder) and store.asks_about_decision(text)
-        if store.active_model() is None:
+        # The offline mock has no answer of its own to a scope change or a reorder (it would
+        # only say "I can't do that…" right before Reconix's own line): Reconix answers alone.
+        mock_skips = (scope_change or reorder) and store.active_is_mock()
+        if store.active_model() is None or mock_skips:
             if scope_change:
-                self._scope_reply(chat, text)       # no model: Reconix's reply, then the ticks
+                self._scope_reply(chat, text)  # no model: Reconix's reply, then the ticks
             elif reorder:
-                self._reorder_reply(chat)           # no model: Reconix's reply, then the order
+                self._reorder_reply(chat)  # no model: Reconix's reply, then the order
             else:
-                store.llm_answer(line)              # the built-in reply: no network, at once
+                store.llm_answer(line)  # the built-in reply: no network, at once
                 entry = store.last_exchange()[1][-1]
                 chat.add_reply(entry.text, entry.tone)
                 if about_decision:
                     self._show_decision(chat)
             return
         reply = chat.add_reply(THINKING, tone="muted")
+        gen = self.app.llm_generation()  # the assessment this question was asked in
 
         def show() -> None:
             replies = store.last_exchange()[1]
             if replies:
                 chat.show_reply(reply, replies[-1].text, replies[-1].tone)
 
-        def done() -> None:
+        def preview(so_far: str) -> None:
+            if gen == self.app.llm_generation() and chat.is_mounted:
+                chat.show_reply(reply, so_far, "default")  # the screen only: not recorded
+
+        def done(draft: store.Draft) -> None:
+            if gen != self.app.llm_generation():
+                return  # another assessment is on screen: record nothing into it
+            store.record_draft(draft)
             show()
             if scope_change and chat.is_mounted:
                 # The model's ports are offered as rows, never ticked.
                 model_reply = "\n".join(e.text for e in store.last_exchange()[1])
-                self._scope_reply(chat, text, model_reply)   # whatever it said, you change it
+                self._scope_reply(chat, text, model_reply)  # whatever it said, you change it
             elif reorder and chat.is_mounted:
-                self._reorder_reply(chat)           # it discussed the move; you order it
+                self._reorder_reply(chat)  # it discussed the move; you order it
             elif about_decision and chat.is_mounted:
-                self._show_decision(chat)           # the model explains; you decide here
+                self._show_decision(chat)  # the model explains; you decide here
 
         def work() -> None:
-            store.llm_answer(line, on_update=lambda: self.app.call_from_thread(show))
-            self.app.call_from_thread(done)
+            # Built off the UI thread and recorded in `done()`, so a switch while the model
+            # is answering can't put this reply in another run; it streams into the screen.
+            draft = store.build_draft(
+                line, on_text=lambda so_far: self.app.call_from_thread(preview, so_far))
+            self.app.call_from_thread(done, draft)
 
         self.app.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
@@ -387,7 +509,7 @@ class ReconixScreen(Screen):
         entry = store.last_exchange()[1][-1]
         chat.add_reply(entry.text, entry.tone)
         self.refresh_view()
-        self._show_decision(chat, scope_card())     # the new scope, as a card, and its menu
+        self._show_decision(chat, scope_card())  # the new scope, as a card, and its menu
 
     def on_tick_list_cancelled(self, event: TickList.Cancelled) -> None:
         event.stop()
@@ -422,7 +544,7 @@ class ReconixScreen(Screen):
         chat.add_reply(entry.text, entry.tone)
         self.refresh_view()
         self.refresh_live()
-        self._show_decision(chat, plan_card())      # the plan in its new order, and the menu
+        self._show_decision(chat, plan_card())  # the plan in its new order, and the menu
 
     def on_plan_order_cancelled(self, event: PlanOrder.Cancelled) -> None:
         event.stop()

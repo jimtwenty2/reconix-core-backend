@@ -25,7 +25,6 @@ from reconix_api.core.interfaces import (
     Operator,
     RecentRun,
     RiskLevel,
-    ToolName,
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets
@@ -87,7 +86,7 @@ def ensure_unchanged(approved_hash: str, action: Action) -> None:
 def to_action(row: ActionRow) -> Action:
     """The shared Action for a saved row, exactly as it will run."""
     return Action(
-        tool=ToolName(row.tool),
+        tool=row.tool,
         target=row.target,
         arguments=row.args,
         is_validation=row.purpose == "validation",
@@ -129,7 +128,7 @@ async def send_action(
     )
     result = interfaces.check(action, _check_context(db, interfaces, operator, assessment_id))
     row = ActionRow(
-        tool=action.tool.value,
+        tool=action.tool,
         args=action.arguments,
         target=action.target,
         purpose=body.purpose,
@@ -245,8 +244,12 @@ async def approve_action(
             {"action_status": row.action_status},
         )
     action = to_action(row)
-    ensure_unchanged(approval.subject_hash, action)
     write_audit = interfaces.write_audit
+    try:
+        ensure_unchanged(approval.subject_hash, action)
+    except ApiError as error:
+        # Not what the person was shown: it never runs, and this approval is spent.
+        _refuse_at_approval(db, write_audit, operator, row, approval, ActionStatus.BLOCKED, error)
     try:
         ensure_can_act(db, row.assessment_id)
     except ApiError as error:
@@ -383,7 +386,7 @@ def _check_context(
         now=now,
         recent_runs=[
             RecentRun(
-                tool=ToolName(action.tool),
+                tool=action.tool,
                 target=action.target,
                 arguments=action.args,
                 started_at=run.started_at,

@@ -5,11 +5,13 @@ from reconix_ai.harness.disclosure import DisclosureError, DisclosureVault, mask
 from reconix_ai.harness.limits import LimitError, apply_limit_change, plan_limit_change
 from reconix_ai.harness.masking import mask_secrets, mask_value
 from reconix_ai.harness.pipeline import check
+from reconix_ai.harness.stream_masking import StreamMasker
 
 __all__ = [
     "DisclosureError",
     "DisclosureVault",
     "LimitError",
+    "StreamMasker",
     "apply_limit_change",
     "check",
     "make_audit_writer",

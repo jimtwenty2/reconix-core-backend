@@ -10,7 +10,13 @@ from sqlalchemy.orm import sessionmaker
 from reconix_api.core.agent import ProviderConfig, provider_config
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import AgentRequest, AgentResponse, Interfaces, Operator
+from reconix_api.core.interfaces import (
+    AgentRequest,
+    AgentResponse,
+    Interfaces,
+    OnPiece,
+    Operator,
+)
 from reconix_api.models import AgentRun, LlmProvider
 from reconix_api.models.enums import AgentRunStatus, ProviderType
 from reconix_api.repositories import agent_runs as agent_run_repo
@@ -40,11 +46,16 @@ def new_agent_run(
     return agent_run
 
 
-async def ask_agent(db: Db, interfaces: Interfaces, request: AgentRequest) -> AgentResponse:
+async def ask_agent(
+    db: Db, interfaces: Interfaces, request: AgentRequest, on_piece: OnPiece | None = None
+) -> AgentResponse:
     """Ask the agent with no transaction left open: a model call can take minutes, and
-    the locks and the connection this request holds must not wait on it."""
+    the locks and the connection this request holds must not wait on it. on_piece gets
+    a CHAT answer in masked pieces as it is written."""
     db.commit()
-    return await interfaces.ask_agent(request)
+    if on_piece is None:
+        return await interfaces.ask_agent(request)
+    return await interfaces.ask_agent(request, on_piece=on_piece)
 
 
 def make_provider_for_run(

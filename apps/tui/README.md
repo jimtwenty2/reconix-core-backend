@@ -14,29 +14,38 @@ run and are decided here, in the TUI.
 
 ## Run it
 
-Needs **Python 3.9+** and, for the web dashboard, **Node.js 20+** (with npm) and Git.
+Needs **Python 3.9+**; the local web (`/web`) also needs **Node.js 20+** with npm. The TUI
+lives in `apps/tui` of the Reconix-Core repo.
+
+**Evaluating the static version?** Start at
+[docs/evaluator/README.md](docs/evaluator/README.md): setup per OS (with a setup script), the
+flows one at a time, every test case, and the `/tests` checklist inside the app.
 
 **Linux / macOS**
 
 ```bash
-git clone https://github.com/SokpisethNhoeun/Reconnix_Terminal.git
-cd Reconnix_Terminal
+git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
+cd reconix-core-backend/apps/tui
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-python -m reconix          # or: python run.py
+reconix                    # or: python -m reconix
 ```
 
 **Windows 10 / 11** (PowerShell; use Windows Terminal for the TUI)
 
 ```powershell
-git clone https://github.com/SokpisethNhoeun/Reconnix_Terminal.git
-cd Reconnix_Terminal
+git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
+cd reconix-core-backend\apps\tui
 py -m venv .venv               # or: python -m venv .venv
 .venv\Scripts\Activate.ps1     # if scripts are blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 python -m pip install -e .
-python -m reconix
+reconix
 ```
+
+At the first start Reconix asks **"Set an AI provider?"**: choose **Use the mock model
+(offline)** to chat without a model or a network (`reconix-mock-1`, prepared answers), or
+Skip.
 
 Tests (Textual Pilot, no terminal needed):
 
@@ -118,7 +127,8 @@ The dashboard has no terminal of its own: run assessments and decide their gates
    several (then the screen asks, with the AI's pick recommended). Reconix drafts a
    **scope manifest**, shown in plain words (what it will test, what it may do, what it
    will never touch, its tools): approve it, edit it (methods, excluded paths, ports,
-   tools, time limit), or reject it (nothing is tested; a fresh assessment starts).
+   tools, time limit), or reject it (nothing is tested; you stay in the stopped assessment,
+   which asks "Start again?").
    On the API template, the **API template: base URL and spec** form opens on its own once
    the scope is drafted (Cancel to skip; **Attach / Replace / Remove** stay in the Scope menu
    until you approve). **API base URL** is prefilled from the draft; a different one is
@@ -151,7 +161,8 @@ The dashboard has no terminal of its own: run assessments and decide their gates
    login covers them all (a test account covers the cookie tools). If the target then
    asks for a one-time code, a second form asks for just the code. It is never stored.
 5. **Approval** — MEDIUM: approve or reject. HIGH: approve, then double-check the exact
-   request ("No, go back" is selected). Rejecting stops the assessment. **Edit params**
+   request ("No, go back" is selected). Rejecting skips that action and the plan goes on
+   with its next step. **Edit params**
    changes where the action runs (a path, host:port or repository file) before you
    decide: the policy engine checks the new value, the exact request and its hash are
    rebuilt, and the risk stays the same.
@@ -175,9 +186,9 @@ command suggestions, and `?` shows the keys for the screen you are on.
 | `Enter` | confirm the highlighted choice, send the request, or run the command; on Execution, open what the run waits for |
 | `Esc` | close a menu or dialog, clear the prompt, or go back (on Approval: decide later) |
 | `Tab` | complete the highlighted command; on Plan, switch between menu and steps |
-| `←` / `→` | previous / next screen in the flow |
-| `1`…`9` | pick a numbered choice in the focused menu |
-| `1`…`8` | jump to any screen when no menu has focus (`2` = Template) |
+| `←` / `→` | previous / next screen in the flow, unless you are typing or editing: in text, a typed draft or a dialog they stay, and with a step chat open they stay (Esc closes it first). `→` waits at a gate that still waits for your choice (`←` still goes back); the first and last step say so. They never decide a gate |
+| `1`…`9` | pick a numbered choice in the focused menu (a red choice such as Reject has no number: `↑`/`↓` and `Enter`) |
+| `Alt+1`…`Alt+8` | jump to any screen (`Alt+2` = Template) |
 | `d` | approval details (scope limits, exact request, audit trail) |
 | `PgUp` / `PgDn` | scroll a long dialog |
 | `Ctrl+R` | search prompt history (on the Start prompt) |
@@ -216,6 +227,7 @@ Type `/`, keep typing to filter, `↑`/`↓` to pick, `Tab` to complete, `Enter`
 | `/assess <target>` | run a real assessment with the AI agent (needs a `/model`; alias `/agent`) |
 | `/add-on [path]` | add reference files for the AI; no argument opens a menu (alias `/addon`) |
 | `/web` | open the web dashboard (it starts it first if needed; alias `/dashboard`) |
+| `/tests` | the evaluator checklist: every flow and case, mark Pass/Fail/Skip, export (alias `/test-guide`) |
 | `/quit` | quit (alias `/exit`) |
 
 `/scope` is now `/template`.

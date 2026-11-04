@@ -11,17 +11,18 @@ from .support import SIZE, run_ui_to, settle
 def test_everywhere_rows_match_the_app_bindings(app):
     bindings = ReconixApp.BINDINGS
     jumps = [b.key for b in bindings if b.action.startswith("jump(")]
-    assert jumps == [str(n) for n in range(1, len(jumps) + 1)]
+    # On Alt, never a bare digit: a menu's digits pick a choice (QA-008)
+    assert jumps == [f"alt+{n}" for n in range(1, len(jumps) + 1)]
     labels = [keys for keys, _ in GLOBAL_ROWS]
-    assert f"1 … {len(jumps)}" in labels
+    assert f"Alt+1 … {len(jumps)}" in labels
 
     shown = {app.get_key_display(b).upper() for b in bindings}
     for b in bindings:                                    # every app key is in the map …
-        if not b.key.isdigit():
+        if not b.key.startswith("alt+"):
             assert app.get_key_display(b).upper() in " ".join(labels).upper(), b.key
     for keys in labels:                                   # … and every key in it is real
         for key in keys.replace("…", " ").split():
-            assert key.upper() in shown, keys
+            assert key.upper() in shown or key.isdigit(), keys
 
 
 async def test_keys_pressed_under_help_never_reach_the_gate(app):

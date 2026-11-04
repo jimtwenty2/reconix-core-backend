@@ -56,7 +56,7 @@ class ScopeEditForm(FormScreen):
                     style=theme.MUTED)
 
     def footer(self) -> str:
-        return "Saved changes go back to the manifest for approval · Esc to cancel"
+        return "Saved changes go back to the manifest for approval · Ctrl+U clears"
 
     def submit(self, values: Dict[str, str]) -> Optional[str]:
         changes = dict(
