@@ -17,9 +17,11 @@ Row = Tuple[str, str]
 # Keys of the flow screens. Inside a dialog (a menu or a form) its own keys apply instead,
 # so "/" and "?" typed into a field stay text; the rows say where a key does not reach.
 GLOBAL_ROWS: List[Row] = [
-    ("←  /  →", "previous / next screen (not while typing or with a chat open)"),
+    ("←  /  →", "previous / next step, unless you are typing; → waits at a step that still "
+                "needs your choice; Esc closes a chat first"),
     ("Alt+1 … 8", "jump to a screen"),
-    ("/", "command suggestions (not inside a dialog)"),
+    ("/", "command suggestions (not inside a dialog); in a chat, start a line with / to "
+          "run a command"),
     ("?", "toggle this help (not inside a dialog; on the prompt when it is empty)"),
     ("^C", "stop the running assessment (asks first; copies selected text in a field)"),
     ("^O", "expand / collapse the steps Reconix finished (click one to open it)"),

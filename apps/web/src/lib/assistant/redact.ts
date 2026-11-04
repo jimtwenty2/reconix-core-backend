@@ -28,15 +28,93 @@ const PATTERNS: [RegExp, string][] = [
   // "-" of a run like "eyJ-eyJ-…": every start would scan to the run's end, quadratic)
   [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, `${MASK} (JWT)`],
   [/\b(AKIA|ASIA)[0-9A-Z]{16}\b/g, `$1${MASK}`],
+  // Provider and service keys, by their fixed prefix (kept readable, as AKIA above): OpenAI /
+  // Anthropic sk-… (sk-proj-, sk-ant-), GitHub tokens, Google API keys, Slack tokens. Each starts
+  // where no key character precedes it ("task-…" is no key) and needs a long body, so short ids
+  // ("sk-1") stay
+  [/(?<![A-Za-z0-9_-])(sk-(?:proj-|ant-)?)[A-Za-z0-9_-]{20,}/g, `$1${MASK}`],
+  [/(?<![A-Za-z0-9_])(gh[pousr]_)[A-Za-z0-9]{36,}/g, `$1${MASK}`],
+  [/(?<![A-Za-z0-9_])(github_pat_)[A-Za-z0-9_]{22,}/g, `$1${MASK}`],
+  [/(?<![A-Za-z0-9_-])(AIza)[0-9A-Za-z_-]{35,}/g, `$1${MASK}`],
+  [/(?<![A-Za-z0-9-])(xox[abprs]-)[A-Za-z0-9-]{10,}/g, `$1${MASK}`],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, `${MASK} (private key)`],
 ];
 
-// Invisible format characters (soft hyphen, zero-width, bidi overrides, BOM) that would split
-// "token=" or "password" so the patterns miss them. The TUI's redact.clean() drops the same.
-const INVISIBLE = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/g;
+/* Control characters and terminal escape sequences, as the TUI's redact.py handles them.
+   Dropping them glued the words around them ("10.0.0.1<ESC>[31mtoken=x" became "10.0.0.1token=x",
+   and "token=" was no longer masked); a space instead can split a secret's name ("pass<NUL>word=x"
+   became "pass word=x"). So every sequence and control character becomes one space
+   (`stripControls`), and a line where some reading of it holds something the masking hides
+   (`escapedSecret`) is hidden whole (`HIDDEN_LINE`). */
 
-/** `text` with credentials, tokens and keys masked. */
+export const HIDDEN_LINE = "[line hidden: control codes around a secret]";
+
+// Every control (Cc: C0 but tab and line feed, DEL, C1 — U+009B is an 8-bit CSI and U+009D an 8-bit
+// OSC) and format character (Cf: zero-width, bidi marks and isolates, soft hyphen, BOM, tags…),
+// plus invisible characters of other classes (combining grapheme joiner, Mongolian variation
+// selectors, variation selectors, Hangul fillers), the two non-characters and a lone carriage return
+// (CR LF stays a line break): any of them would split "token=" or "password" so the patterns miss
+// it. The TUI's redact.py builds the same set from unicodedata.
+const CONTROL_SOURCE =
+  "(?![\\t\\n\\r])[\\p{Cc}\\p{Cf}\\u034f\\u115f\\u1160\\u180b-\\u180f\\u3164\\ufe00-\\ufe0f\\uffa0\\ufffe\\uffff\\u{E0000}-\\u{E007F}\\u{E0100}-\\u{E01EF}]|\\r(?!\\n)";
+const CONTROL = new RegExp(CONTROL_SOURCE, "gu");
+const HAS_CONTROL = new RegExp(CONTROL_SOURCE, "u"); // no "g": `test` keeps no state
+// One whole sequence: CSI (ESC [ or U+009B, its parameter and intermediate bytes, then a final byte
+// or the line's end), OSC / DCS / SOS / PM / APC (ESC ] P X ^ _ or U+009D / 0090 / 0098 / 009E /
+// 009F \u2026 BEL, ESC \, U+009C or the line's end) and the short ESC forms (ESC, any intermediate
+// bytes, one final byte: ESC ( B, ESC M\u2026)
+const SEQUENCE =
+  /(?:\x1b\[|\x9b)[0-?]*[ -\/]*[@-~]?|(?:\x1b[\]PX^_]|[\x90\x98\x9d\x9e\x9f])[^\x07\x1b\x9c\n]*(?:\x07|\x1b\\|\x9c)?|\x1b[ -\/]*[0-~]?/g;
+// A CSI read as if only its introducer and parameters were there: "<ESC>[31token=x" is a CSI whose
+// final byte is the "t" of "token", which a terminal eats; masking must still see it
+const CSI_HEAD = /(?:\x1b\[|\x9b)[0-?]*/g;
+// A lone surrogate can't be encoded: "?" as the TUI's encode("utf-8", "replace") gives
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+const encodable = (text: string): string => text.replace(LONE_SURROGATE, "?");
+
+const mask = (text: string): string =>
+  PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
+
+/** `text` with every terminal escape sequence and every other control or invisible character
+    turned into one space; tab and line breaks stay. */
+export function stripControls(text: string): string {
+  return text.replace(SEQUENCE, " ").replace(CONTROL, " ");
+}
+
+/** `text` holds a terminal escape sequence or control/invisible character AND some reading of it
+    holds something the masking hides: glued (each removed), spaced (`stripControls`), only the
+    control bytes dropped or each a space (the sequence's text stays: "<ESC>token=" is an ESC form
+    that eats the "t"), or only a CSI's introducer and parameters dropped. */
+export function escapedSecret(text: string): boolean {
+  const plain = encodable(text);
+  if (!HAS_CONTROL.test(plain)) return false;
+  const readings = [
+    plain.replace(SEQUENCE, "").replace(CONTROL, ""),
+    stripControls(plain),
+    plain.replace(CONTROL, ""),
+    plain.replace(CONTROL, " "),
+    plain.replace(CSI_HEAD, "").replace(CONTROL, ""),
+  ];
+  return readings.some((reading) => mask(reading) !== reading);
+}
+
+/** `text` ready for the patterns: every line hiding a secret behind control characters replaced
+    whole, then every sequence and control character a space (the TUI's clean(_hide_lines(\u2026))). */
+export function prepare(text: string): string {
+  const plain = encodable(text);
+  const shown = HAS_CONTROL.test(plain)
+    ? plain.split("\n").map((line) => (escapedSecret(line) ? HIDDEN_LINE : line)).join("\n")
+    : plain;
+  return stripControls(shown);
+}
+
+/** The patterns alone, on text `prepare` already made ready (lib/report/mask.ts joins prepared
+    elements with a NUL separator first, which `prepare` would turn into a space). */
+export const maskPrepared = mask;
+
+/** `text` with credentials, tokens and keys masked; a line hiding a secret behind control
+    characters (`escapedSecret`) becomes `HIDDEN_LINE`. */
 export function redact(text: string): string {
-  const plain = text.replace(INVISIBLE, "");
-  return PATTERNS.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), plain);
+  return mask(prepare(text));
 }
