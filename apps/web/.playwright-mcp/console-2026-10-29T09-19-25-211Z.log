@@ -1,9 +1,0 @@
-[   34233ms] [LOG] Running frontend commit bf075ae4a603562ca78841f6680a586581d0c632 @ https://www.figma.com/login?utm_content=mcp_connection&utm_source=Figma+MCP+in+Claude+Code:503
-[   34444ms] [WARNING] Statsig is not ready to log exposures, will retry in 1 seconds @ https://www.figma.com/webpack-artifacts/assets/vendor-core-e9499b6fe292a608.min.js.br:49
-[   34947ms] [WARNING] Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('https://marketing.figma.com') does not match the recipient window's origin ('https://www.figma.com'). @ https://www.figma.com/webpack-artifacts/assets/226-de48bd7611c06daa.min.js.br:2
-[   34947ms] [WARNING] Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('https://marketing.figma.com') does not match the recipient window's origin ('https://www.figma.com'). @ https://www.figma.com/webpack-artifacts/assets/226-de48bd7611c06daa.min.js.br:2
-[   34947ms] [WARNING] Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('https://marketing.figma.com') does not match the recipient window's origin ('https://www.figma.com'). @ https://www.figma.com/webpack-artifacts/assets/226-de48bd7611c06daa.min.js.br:2
-[   35700ms] [WARNING] pixel already configured. @ https://pixel.byspotify.com/ping.min.js:0
-[   36161ms] [WARNING] Unrecognized feature: 'join-ad-interest-group'. @ https://acdn.adnxs.com/dmp/up/pixie.js:0
-[   46110ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://www.figma.com/webpack-artifacts/assets/226-de48bd7611c06daa.min.js.br:2
-[   46110ms] [ERROR] Cross-Origin-Opener-Policy policy would block the window.closed call. @ https://www.figma.com/webpack-artifacts/assets/226-de48bd7611c06daa.min.js.br:2

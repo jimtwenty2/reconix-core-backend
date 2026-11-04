@@ -17,6 +17,9 @@ node_modules/
 out/
 .idea
 
+# Playwright MCP scratch output (screenshots, console logs, page snapshots)
+.playwright-mcp/
+
 # Runtime data (audit log)
 data/
 # ...except two AI Service folders that are meant to be committed. Everything else
