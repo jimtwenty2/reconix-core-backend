@@ -74,11 +74,13 @@ async def list_add_ons(store: KnowledgeStore) -> list[KnowledgeAddOnOut]:
 async def remove(
     store: KnowledgeStore, write_audit: WriteAudit, operator: Operator, knowledge_add_on_id: UUID
 ) -> None:
-    """An unknown id answers 404, but its pieces are removed anyway: a save that failed
-    half way can leave some behind that are searchable but not listed."""
+    """An unknown id answers 404 (one audit line), but its pieces are removed anyway: a
+    save that failed half way can leave some behind that are searchable but not listed."""
     add_on = await _find(store, knowledge_add_on_id)
     await knowledge_add_ons.remove(store, str(knowledge_add_on_id))
     if add_on is None:
+        details = {"knowledge_add_on_id": str(knowledge_add_on_id)}
+        audit(write_audit, "KNOWLEDGE_ADD_ON_NOT_FOUND", operator, details=details)
         raise ApiError(404, "KNOWLEDGE_ADD_ON_NOT_FOUND", "No knowledge add-on with this id.")
     _audit(write_audit, "KNOWLEDGE_ADD_ON_REMOVED", operator, add_on)
 

@@ -26,6 +26,17 @@ def add_message(
     content: str,
 ) -> MessageOut:
     """The person's own message, in their own open session. Only the masked text is kept."""
+    message, hidden = save_message(db, mask, operator, session_id, content)
+    db.commit()
+    audit_message(write_audit, operator, message, hidden)
+    return MessageOut.model_validate(message, from_attributes=True)
+
+
+def save_message(
+    db: Db, mask: MaskSecrets, operator: Operator, session_id: UUID, content: str
+) -> tuple[Message, int]:
+    """Adds the masked message without committing; the session row stays locked until the
+    caller commits. Returns the message and how many secrets were masked."""
     if session_id != operator.session_id:
         raise ApiError(403, "NOT_YOUR_SESSION", "You can only write in your own session.")
     session = session_repo.get_for_update(db, session_id)
@@ -44,14 +55,18 @@ def add_message(
             session_id=session_id,
         ),
     )
-    db.commit()
+    return message, hidden
+
+
+def audit_message(
+    write_audit: WriteAudit, operator: Operator, message: Message, hidden: int
+) -> None:
     details = {
         "message_id": str(message.message_id),
         "sequence_no": message.sequence_no,
         "masked_count": hidden,
     }
     audit(write_audit, "MESSAGE_ADDED", operator, details=details)
-    return MessageOut.model_validate(message, from_attributes=True)
 
 
 def list_messages(db: Db, session_id: UUID) -> list[MessageOut]:

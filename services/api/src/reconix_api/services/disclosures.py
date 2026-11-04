@@ -137,7 +137,9 @@ def reveal_value(
             "evidence_id": str(evidence_id),
             "reason": error.code,
         }
-        audit(write_audit, "DISCLOSURE_REFUSED", operator, details=details)
+        evidence = finding_repo.get_evidence(db, evidence_id)
+        assessment_id = _assessment_id(db, evidence) if evidence is not None else None
+        audit(write_audit, "DISCLOSURE_REFUSED", operator, assessment_id, details)
         raise
     # The audit line says what was shown, never the value itself.
     assessment_id = _approval_assessment(db, approval)
