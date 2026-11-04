@@ -17,6 +17,7 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 | File | Holds |
 |---|---|
 | `docker-compose.yml` | The local stack: `api` (built from `services/api/Dockerfile`, on `127.0.0.1:8000`; it migrates the database when it starts), `postgres` (16), `qdrant`, `embeddings` (BGE-M3 on CPU, Hugging Face text-embeddings-inference), `reconix-kali-container`. The Kali image already holds the nuclei templates. `reconix-kali-container` mounts `../data/code` (the API's `RECONIX_CODE_DIR`) read-only at `/workspace/code`; create it with `mkdir -p data/code` before the first `up`, or Docker makes it owned by root and the API cannot write there |
+| `kali-standalone.yml` | Kali on its own, for when the API runs on the host (Compose's Kali has no port on this computer): an override on top of the Kali repo's `../reconix-kali-backend/docker-compose.yml` (left unedited). It sets `KALI_MCP_AUTH_TOKEN` from `RECONIX_MCP_AUTH_TOKEN`, `KALI_AUTO_BOOTSTRAP=1` (sonar_scan's SonarQube server, about 1 minute on first start) and mounts `RECONIX_CODE_DIR` (absolute) read-only at `/workspace/code`. The MCP port is pinned to `127.0.0.1:8096` (`ports: !override`, so a missing `HOST_PORT` never opens it on every interface); core uses `RECONIX_KALI_MCP_URL=http://127.0.0.1:8096/mcp` |
 | `lab/` | Test targets: OWASP Juice Shop and a small repo with known bugs and a fake secret (empty, to build) |
 | `seed.sql` | Sample data matching ERD V3; `apps/sample-data/api/` is built from it |
 | `install.sh` | Installs Reconix-Core (backend, terminal app, local web) and pulls the Kali image (placeholder) |
@@ -28,6 +29,7 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 | `models` | `api` ↔ `postgres`, `qdrant`, `embeddings` (the model download, AI providers) | Yes |
 | `tools` | `api` ↔ `reconix-kali-container` | Yes |
 | `reconix-lab` | `reconix-kali-container` ↔ lab targets | **No** (`internal: true`) |
+| default network of project `reconix-kali` | the standalone Kali container (`kali-standalone.yml`) | Yes |
 
 ## Rules
 
@@ -43,6 +45,13 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 - **Kali has internet** through `tools` (decided 4 Nov 2026; the lead's approval is pending), so
   its tools can update their own data. The network no longer stops a tool from reaching a target
   outside the lab: the harness scope check and approvals are the only limit.
+- **Kali standalone (`kali-standalone.yml`)** runs the Kali repo's image on a normal network with
+  internet, reads code mounted read-only, and binds `127.0.0.1:8096` only. This image checks
+  only `KALI_MCP_AUTH_TOKEN`, not core's job tokens, keeps the Kali repo's `NET_ADMIN`/`NET_RAW`
+  and has no `cap_drop` or `no-new-privileges`: anyone holding `RECONIX_MCP_AUTH_TOKEN` can call
+  any Kali tool directly, so keep that token out of reach. Never `docker exec` into it; talk to
+  it over MCP. When it runs, do not also start `reconix-kali-container` or `api` from
+  `docker-compose.yml`.
 - **Tools run only against the lab.** Nothing in this folder may point a tool at a target outside
   `reconix-lab`.
 - **Pinned images.** Use exact tags (for example `qdrant/qdrant:v1.13.2`), never `latest`. The Kali
@@ -86,6 +95,11 @@ docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 docker compose -f deploy/docker-compose.yml --env-file .env ps
 docker compose -f deploy/docker-compose.yml --env-file .env logs -f api
 docker compose -f deploy/docker-compose.yml --env-file .env down  # -v wipes the data volumes
+
+# source code scan: core's services, then Kali standalone (pull, then the same flags with up -d --no-build)
+docker compose -f deploy/docker-compose.yml --env-file .env up -d postgres qdrant ollama
+docker compose -p reconix-kali --env-file .env -f ../reconix-kali-backend/docker-compose.yml -f deploy/kali-standalone.yml pull
+docker compose -p reconix-kali --env-file .env -f ../reconix-kali-backend/docker-compose.yml -f deploy/kali-standalone.yml up -d --no-build
 
 # check a change before the PR
 docker compose -f deploy/docker-compose.yml --env-file .env config --quiet

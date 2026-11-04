@@ -9,6 +9,7 @@ dependencies = [
     "defusedxml>=0.7",
     "fastapi>=0.115",
     "httpx>=0.28",
+    "mcp>=2.3,<3",  # the core MCP server at /mcp (code scan tools for the VS Code extension)
     "psycopg[binary]>=3.2",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",

@@ -3,7 +3,8 @@
 Unlike the JSON tools that fit one flat mapping, osv-scanner keeps the package and the
 severity outside the vulnerability: the package is the vulnerability's parent, and the
 severity is a CVSS score on the group that lists the vulnerability's id. So it has its own
-reader. A severity osv-scanner does not give is UNKNOWN: never guessed.
+reader. A severity osv-scanner does not give is UNKNOWN: never guessed. The target is
+the manifest osv-scanner read (its absolute source.path), else the package name.
 """
 
 import json
@@ -49,15 +50,17 @@ def _package_findings(package: dict, path: str) -> list[NewFinding]:
     findings = []
     for vuln in _list(package.get("vulnerabilities")):
         vuln_id = str(vuln.get("id") or "")
+        # The manifest is part of the key: one package in two manifests is two findings.
+        key = [vuln_id, name, version] + ([path] if path else [])
         aliases = [str(alias) for alias in vuln.get("aliases", []) if isinstance(alias, str)]
         title = _summary(vuln) or vuln_id
         findings.append(
             NewFinding(
                 title=f"{title} in {name}" if name else title,
-                target=name or vuln_id,
+                target=path or name or vuln_id,
                 description=_description(vuln, where),
                 severity=severities.get(vuln_id, SeverityStatus.UNKNOWN),
-                dedupe_key=dedupe_key("osv_vulnerability", vuln_id, name, version),
+                dedupe_key=dedupe_key("osv_vulnerability", *key),
                 evidence=[
                     NewEvidence(
                         kind="osv_vulnerability",

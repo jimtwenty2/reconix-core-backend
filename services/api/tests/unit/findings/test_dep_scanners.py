@@ -5,6 +5,7 @@ from the tools run once with their vulnerability databases."""
 from collections import Counter
 from pathlib import Path
 
+from reconix_api.findings.shape import NewFinding
 from reconix_api.models.enums import SeverityStatus
 from reconix_api.services.findings import parse_run
 
@@ -12,6 +13,7 @@ FIX = Path(__file__).parents[2] / "fixtures"
 TRIVY = (FIX / "trivy" / "lab_requirements.json").read_text()
 GRYPE = (FIX / "grype" / "lab_requirements.json").read_text()
 OSV = (FIX / "osv" / "lab_requirements.json").read_text()
+MANIFEST = "/workspace/code/leak-repo/requirements.txt"
 
 SEVERITIES = {
     SeverityStatus.CRITICAL,
@@ -21,11 +23,17 @@ SEVERITIES = {
 }
 
 
+def package(finding: NewFinding) -> str:
+    """The package name from the evidence location: "flask:0.12" or "flask@0.12 (path)"."""
+    return finding.evidence[0].location.split("@")[0].split(":")[0]
+
+
 def test_trivy_reads_every_vulnerability():
     findings, requests = parse_run("trivy", TRIVY)
     assert len(findings) == 17 and requests == 0
     flask = next(f for f in findings if "CVE-2018-1000656" in f.cve_ids)
-    assert flask.target == "flask"
+    assert flask.target == MANIFEST
+    assert package(flask) == "flask"
     assert flask.severity == SeverityStatus.HIGH
     assert flask.cwe_ids == ["CWE-20"]
     assert all(f.severity in SEVERITIES for f in findings)
@@ -35,7 +43,8 @@ def test_trivy_reads_every_vulnerability():
 def test_grype_reads_matches_with_cwe_and_severity():
     findings, requests = parse_run("grype", GRYPE)
     assert findings and requests == 0
-    pyyaml = next(f for f in findings if f.target == "pyyaml")
+    assert {f.target for f in findings} == {MANIFEST}
+    pyyaml = next(f for f in findings if package(f) == "pyyaml")
     assert pyyaml.severity == SeverityStatus.CRITICAL  # GHSA-8q59-q68h-6hv4
     assert "CWE-20" in pyyaml.cwe_ids
     assert "CVE-2020-14343" in pyyaml.cve_ids  # pulled from the cwes entries
@@ -47,19 +56,20 @@ def test_osv_reads_severity_from_the_group_and_cve_from_aliases():
     findings, requests = parse_run("osv_scanner", OSV)
     assert findings and requests == 0
     flask = next(f for f in findings if "PYSEC-2018-66" in f.evidence[0].content)
-    assert flask.target == "flask"
+    assert flask.target == MANIFEST
+    assert package(flask) == "flask"
     assert flask.severity == SeverityStatus.HIGH  # group max_severity 8.7
     assert "CVE-2018-1000656" in flask.cve_ids  # from aliases
     assert (
         flask.dedupe_key
-        == next(f for f in parse_run("osv_scanner", OSV)[0] if f.target == "flask").dedupe_key
+        == next(f for f in parse_run("osv_scanner", OSV)[0] if package(f) == "flask").dedupe_key
     )
 
 
 def test_the_three_tools_find_the_same_vulnerable_packages():
     packages = {}
     for tool, output in (("trivy", TRIVY), ("grype", GRYPE), ("osv_scanner", OSV)):
-        packages[tool] = {f.target for f in parse_run(tool, output)[0]}
+        packages[tool] = {package(f) for f in parse_run(tool, output)[0]}
     # flask, pyyaml, jinja2 and requests are all old and vulnerable; every tool sees them.
     for tool, found in packages.items():
         assert {"flask", "pyyaml"} <= found, (tool, found)

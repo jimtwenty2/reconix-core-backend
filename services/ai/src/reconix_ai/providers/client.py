@@ -4,6 +4,7 @@ Every message is masked before it leaves, and the answer is masked before it
 comes back, so no secret reaches a model, a log or the database from here.
 """
 
+import json
 import os
 import sys
 from collections.abc import Awaitable, Callable
@@ -43,7 +44,7 @@ for name in PROVIDER_ENV:
 import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
-from reconix_ai.harness import StreamMasker, mask_secrets  # noqa: E402
+from reconix_ai.harness import StreamMasker, mask_secrets, mask_value  # noqa: E402
 from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
@@ -136,7 +137,8 @@ async def complete(
     if response is None or not response.choices:
         raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
     choice = response.choices[0]
-    text, answer_count = mask_secrets(choice.message.content or "")
+    raw = choice.message.content or ""
+    text, answer_count = mask_json(raw) if json_answer else mask_secrets(raw)
     if not text.strip():
         if choice.finish_reason == "length":
             # A reasoning model can spend the whole length on thinking.
@@ -154,6 +156,18 @@ async def complete(
         completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
         masked_count=masked_count + answer_count,
     )
+
+
+def mask_json(text: str) -> tuple[str, int]:
+    """A JSON answer masked value by value (and whole under a secret key name), then
+    written out again. Masking the whole text can eat a closing quote (password = ?"
+    inside a value) and break the JSON. An answer that is not JSON is masked as text."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return mask_secrets(text)
+    data, count = mask_value(data)
+    return json.dumps(data, ensure_ascii=False), count
 
 
 async def streamed(request: dict, on_piece: OnPiece) -> litellm.ModelResponse | None:

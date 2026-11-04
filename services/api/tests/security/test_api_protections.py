@@ -6,6 +6,7 @@ There are no roles: a valid session token may do everything, so the token is the
 import re
 
 import pytest
+from fastapi.testclient import TestClient
 
 from reconix_api.main import API_PREFIX, create_app
 from tests.fakes import build_fake_interfaces
@@ -118,3 +119,18 @@ def test_web_sign_in_refuses_a_code_it_did_not_give_out(client, code):
     assert response.status_code == 401
     assert response.json()["code"] == "INVALID_SIGN_IN_CODE"
     assert "token" not in response.json()
+
+
+@pytest.mark.parametrize("method", ["GET", "POST", "DELETE"])
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
+def test_the_mcp_server_needs_a_token(app, method, headers):
+    # /mcp is not in the OpenAPI list above, so it is checked here.
+    client = TestClient(app, base_url="http://127.0.0.1")
+    response = client.request(method, "/mcp", headers=headers, json={})
+    assert response.status_code == 401
+    assert response.json()["code"] == "UNAUTHORIZED"
+
+
+def test_the_mcp_server_checks_the_host(app, operator_headers):
+    client = TestClient(app, base_url="http://evil.example")
+    assert client.post("/mcp", headers=operator_headers, json={}).status_code == 400

@@ -46,7 +46,7 @@ def test_gitleaks_never_keeps_the_secret():
     [leak] = findings_of("gitleaks", "vulnerable_app.json")
     assert leak.title == "AWS Access Key"
     assert leak.target == "config/settings.py"
-    assert leak.severity == SeverityStatus.UNKNOWN
+    assert leak.severity == SeverityStatus.HIGH  # gitleaks gives none; a leak is HIGH
     assert leak.evidence[0].location == "config/settings.py:4"
     for text in (leak.title, leak.description, leak.evidence[0].content):
         assert "AKIAFAKEFAKEFAKE0000" not in text
