@@ -100,14 +100,30 @@ def test_a_full_run_matches_the_design_counts():
     assert store.pipeline_stage() == ""
 
 
-def test_rejecting_an_approval_stops_the_run():
+def test_rejecting_an_approval_skips_it_and_the_plan_goes_on():
     run_to("approval:approval-001")
     store.reject("approval-001")
-    assert store.advance() is None
-    assert store.display_phase() == "stopped"
-    assert store.is_finished() and not store.is_completed()
-    assert "run.stopped" in event_kinds()
-    assert store.advance() is None          # nothing more ever plays
+    assert play_until_gate() == "approval:approval-002"     # the next action still asks
+    assert "run.stopped" not in event_kinds()
+    chat = [entry.text for entry in store.get_assessment().chat]
+    assert any("Rejected: Baseline request (read-only). Not executed" in t for t in chat)
+    assert not any("MEDIUM action approved" in t for t in chat)   # its own steps dropped
+    activity = [entry.message for entry in store.list_activity()]
+    assert "Executing baseline request" not in activity
+    assert store.get_finding("001").validation == "UNCONFIRMED"   # nothing confirmed it
+
+
+def test_rejecting_every_approval_still_completes_the_run():
+    run_to("approval:approval-001")
+    store.reject("approval-001")
+    assert play_until_gate() == "approval:approval-002"
+    store.reject("approval-002")
+    assert play_until_gate() is None
+    assert store.is_completed() and not store.get_run().stopped
+    assert store.step_states()["approval"] == "done"
+    kinds = event_kinds()
+    assert kinds.count("approval.rejected") == 2           # one audit line per decision
+    assert "run.completed" in kinds
 
 
 def test_new_assessment_keeps_the_audit_trail():

@@ -62,7 +62,7 @@ def blocked(result: PipelineResult) -> tuple[CheckName | None, str | None]:
 
 def test_safe_action_is_allowed_with_its_risk() -> None:
     result = check(Action(), Context())
-    assert result == PipelineResult(decision=Decision.ALLOW, risk=RiskLevel.MEDIUM)
+    assert result == PipelineResult(decision=Decision.ALLOW, risk=RiskLevel.LOW)
 
 
 def test_low_risk_action_is_allowed_as_low() -> None:
@@ -94,7 +94,7 @@ def test_action_without_chat_text_is_allowed() -> None:
             (CheckName.COMMAND, "SHELL_CHARACTERS"),
         ),
         (
-            Action(arguments=["--script", "vuln"]),
+            Action(arguments=["--script=vuln"]),
             Context(scope=Scope(max_risk="MEDIUM")),
             (CheckName.RISK, "RISK_ABOVE_SCOPE_MAX"),
         ),
@@ -137,8 +137,8 @@ def test_command_runs_before_risk() -> None:
 
 
 def test_risk_runs_before_loop() -> None:
-    action = Action(arguments=["--script", "vuln"])
-    runs = [Run(NOW - timedelta(minutes=m), arguments=["--script", "vuln"]) for m in (1, 2, 3)]
+    action = Action(arguments=["--script=vuln"])
+    runs = [Run(NOW - timedelta(minutes=m), arguments=["--script=vuln"]) for m in (1, 2, 3)]
     context = Context(scope=Scope(max_risk="MEDIUM"), recent_runs=runs)
     assert check(action, context).blocked_by == CheckName.RISK
 
@@ -166,7 +166,7 @@ def test_risk_block_keeps_the_real_risk() -> None:
 def test_loop_block_keeps_the_real_risk() -> None:
     runs = [Run(NOW - timedelta(minutes=m)) for m in (1, 2, 3)]
     result = check(Action(), Context(recent_runs=runs))
-    assert (result.blocked_by, result.risk) == (CheckName.LOOP, RiskLevel.MEDIUM)
+    assert (result.blocked_by, result.risk) == (CheckName.LOOP, RiskLevel.LOW)
 
 
 def test_loop_limits_can_be_passed_in() -> None:

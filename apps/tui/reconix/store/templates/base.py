@@ -196,8 +196,12 @@ def build_rest(profile: RunProfile) -> List[RunStep]:
     steps.append(RunStep("phase", name="validating", pause=0.0))
     steps.append(say(profile.candidate_note))
     steps.append(log("AI", profile.candidate_log))
+    confirmable = bool(first) and profile.findings[0].validation == "CONFIRMED"
     if first:
-        steps.append(_reveal(first))
+        # A finding the validation will confirm is revealed as a candidate: the note that
+        # proposed it, no evidence yet (run._apply). Its own text comes with "confirm".
+        steps.append(RunStep("reveal", name=first, pause=0.2,
+                             text=profile.candidate_note if confirmable else ""))
     steps += _progress("validation", 20)
     steps.append(log("POLICY", "Risk: MEDIUM · approval required", tone="warn"))
     steps.append(gate(f"approval:{profile.medium.request_id}"))
@@ -208,6 +212,13 @@ def build_rest(profile: RunProfile) -> List[RunStep]:
     steps.append(gate(f"approval:{profile.high.request_id}"))
     steps.append(banner("HIGH action approved after a double check.", tone="ok"))
     steps.append(log("TOOL", "Running limited validation · 1 request"))
+    if confirmable:
+        # The validation ran: the finding's real description and evidence, and CONFIRMED
+        # (value 1; a rejected baseline turns it into 0: evidence only, see run._skip_rejected)
+        finding = profile.findings[0]
+        steps.append(RunStep("confirm", name=first, pause=0.0, value=1,
+                             text=finding.description,
+                             rows=tuple(("evidence", line) for line in finding.evidence)))
     steps += _progress("validation", 100, 1)
     steps.append(say("Validation completed. Evidence recorded with sensitive values masked.",
                      tone="ok"))
@@ -226,7 +237,7 @@ def build_rest(profile: RunProfile) -> List[RunStep]:
     # Done
     steps.append(log("SYS", "Assessment status: Completed", tone="ok", pause=0.6))
     steps.append(say("Assessment completed. $findings.", tone="ok", pause=0.3))
-    steps.append(say("Open the report (8 or /report) to export it.", tone="muted",
+    steps.append(say("Open the report (Alt+8 or /report) to export it.", tone="muted",
                      pause=0.3))
     steps.append(RunStep("complete", pause=0.0))
     return steps

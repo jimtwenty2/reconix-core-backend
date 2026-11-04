@@ -22,7 +22,7 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Shared values (UPPERCASE everywhere, as in ERD V3)
@@ -54,7 +54,9 @@ class CheckName(StrEnum):
 
 
 class ToolName(StrEnum):
-    """The only 5 tools. The MCP client maps these to the Kali tool names."""
+    """Tools Core names in its own code (the code scan, the parsers). Not the full list:
+    any tool in the Kali catalog (tool_specs.json) may be allowed and run, written as an
+    UPPERCASE name such as "MASSCAN"."""
 
     NMAP = "NMAP"
     NUCLEI = "NUCLEI"
@@ -75,6 +77,7 @@ class AgentTask(StrEnum):
     ANALYZE = "ANALYZE"
     REPORT = "REPORT"
     CHAT = "CHAT"
+    VALIDATE = "VALIDATE"  # judge whether a PoC tool run confirms one finding
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +92,11 @@ class Operator(BaseModel):
     actor: str
 
 
+def upper_tools(tools: list[str]) -> list[str]:
+    """Tool names in one form: UPPERCASE, like every enum value ("nmap" -> "NMAP")."""
+    return [str(tool).strip().upper() for tool in tools]
+
+
 class ApprovedScope(BaseModel):
     """The approved scope of one assessment. Checks read this; they never read the database."""
 
@@ -98,11 +106,16 @@ class ApprovedScope(BaseModel):
     url_prefixes: list[str] = Field(default_factory=list)  # e.g. "http://juice-shop:3000/"
     repo_paths: list[str] = Field(default_factory=list)  # folders the source tools may read
     excluded_targets: list[str] = Field(default_factory=list)  # always blocked
-    allowed_tools: list[ToolName] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)  # Kali catalog names, UPPERCASE
     max_risk: RiskLevel = RiskLevel.LOW
     window_start: datetime | None = None
     window_end: datetime | None = None
-    allowed_ports: list[int] = Field(default_factory=list)  # nmap's ports; empty: no limit
+    allowed_ports: list[int] = Field(default_factory=list)  # ports tools may reach; empty: no limit
+
+    @field_validator("allowed_tools")
+    @classmethod
+    def tools_upper(cls, tools: list[str]) -> list[str]:
+        return upper_tools(tools)
 
 
 class ChatScope(BaseModel):
@@ -117,11 +130,16 @@ class ChatScope(BaseModel):
     url_prefixes: list[str] = Field(default_factory=list)
     repo_paths: list[str] = Field(default_factory=list)
     excluded_targets: list[str] = Field(default_factory=list)
-    allowed_tools: list[ToolName] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)  # Kali catalog names, UPPERCASE
     max_risk: RiskLevel = RiskLevel.LOW
     window_start: datetime | None = None
     window_end: datetime | None = None
     allowed_ports: list[int] = Field(default_factory=list)
+
+    @field_validator("allowed_tools")
+    @classmethod
+    def tools_upper(cls, tools: list[str]) -> list[str]:
+        return upper_tools(tools)
 
 
 class Action(BaseModel):
@@ -130,7 +148,7 @@ class Action(BaseModel):
     Arguments are always a list, never one shell string.
     """
 
-    tool: ToolName
+    tool: str
     target: str
     arguments: list[str] = Field(default_factory=list)
     is_validation: bool = False  # a PoC check of an existing finding
@@ -140,7 +158,7 @@ class Action(BaseModel):
 class RecentRun(BaseModel):
     """A past action, given to the loop check."""
 
-    tool: ToolName
+    tool: str
     target: str
     arguments: list[str]
     started_at: datetime
@@ -209,7 +227,7 @@ class FindingInput(BaseModel):
 class ToolRunInput(BaseModel):
     """One tool run and how it was approved, for the report's methodology."""
 
-    tool: ToolName
+    tool: str
     target: str
     args: list[str]
     risk_level: RiskLevel
@@ -320,6 +338,9 @@ class AgentResponse(BaseModel):
     references: list[str] = Field(default_factory=list)  # knowledge ids, e.g. CWE-89
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = Field(default_factory=list)  # ANALYZE
+    # VALIDATE: the AI's verdict on a finding, read from the real (masked) PoC tool output.
+    validation_status: Literal["CONFIRMED", "UNCONFIRMED", "INCONCLUSIVE"] | None = None
+    validation_reason: str = ""  # VALIDATE: one masked line on why
     executive_summary: str | None = None  # REPORT: reports.executive_summary
     methodology: str | None = None  # REPORT: reports.methodology
     agent_run_id: UUID
@@ -335,7 +356,7 @@ class ToolJob(BaseModel):
     """One call to the Kali MCP server."""
 
     tool_run_id: UUID
-    tool: ToolName
+    tool: str
     target: str
     arguments: list[str]
     job_token: str  # signed by the backend, single use, short-lived

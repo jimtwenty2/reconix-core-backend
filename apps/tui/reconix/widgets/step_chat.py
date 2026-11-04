@@ -9,6 +9,7 @@ as Rich Text, so typed brackets are shown, never parsed as markup.
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.actions import SkipAction
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.message import Message
@@ -18,6 +19,26 @@ from textual.widgets import Input, Static
 from .. import theme
 
 THINKING = "thinking…"
+
+
+class _ChatInput(Input):
+    """The chat's input: ←/→ move the cursor in typed text; on an empty input they pass on to
+    the app, which keeps the chat open and says "Esc closes the chat first."."""
+
+    BINDINGS = [
+        Binding("left", "arrow(-1)", "cursor left", show=False),
+        Binding("right", "arrow(1)", "cursor right", show=False),
+    ]
+
+    def action_arrow(self, direction: int) -> None:
+        """Move the cursor one place (-1 left, 1 right); with nothing typed, skip this
+        binding so the app's ←/→ handler says how to leave the chat."""
+        if not self.value:
+            raise SkipAction()
+        if direction < 0:
+            self.action_cursor_left()
+        else:
+            self.action_cursor_right()
 
 
 def you_line(text: str) -> Text:
@@ -99,9 +120,12 @@ class ChatBar(Vertical):
         super().__init__(id=id, classes="chat-bar")
 
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="› type a question…", id="step-chat-input")
-        yield Static(Text("Enter ask · Esc back to the step", style=theme.DIM),
-                     classes="menu-hint")
+        # No select-all on focus: a key typed on the chat's menu arrives here first, and the
+        # next key must add to it, not replace it.
+        yield _ChatInput(
+            placeholder="› type a question…", id="step-chat-input", select_on_focus=False
+        )
+        yield Static(Text("Enter ask · Esc back to the step", style=theme.DIM), classes="menu-hint")
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         event.stop()

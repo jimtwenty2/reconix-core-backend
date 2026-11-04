@@ -363,7 +363,7 @@ def _ensure_editable(manifest: ScopeManifest) -> None:
 
 def _apply_draft(manifest: ScopeManifest, draft: ScopeDraft) -> None:
     manifest.max_risk = draft.max_risk
-    manifest.allowed_tools = [tool.value for tool in draft.allowed_tools]
+    manifest.allowed_tools = list(draft.allowed_tools)
     manifest.allowed_ports = sorted(set(draft.allowed_ports))
     manifest.allowed_actions = draft.allowed_actions
     manifest.allowed_methods = draft.allowed_methods

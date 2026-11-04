@@ -11,12 +11,18 @@ from ..models import GATE_SCOPE, PolicyVerdict, ScopeManifest
 from ..models.base import utc_now
 from . import lists
 from .activity import log_event
+from .assessment import shown_line
 from .errors import StoreValidationError
 from .policy import (
     network_entry, request_reason,
 )
 from .tools import known_tool
 from .transcript import add_activity, add_chat
+
+
+def _shown(items: List[str]) -> str:
+    """Typed values repeated in an error, masked (a pasted URL may hold a password)."""
+    return ", ".join(shown_line(item) for item in items)
 
 
 def get_scope() -> Optional[ScopeManifest]:
@@ -95,7 +101,7 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
             raise StoreValidationError("Keep at least one allowed method.")
         bad = [m for m in methods if m.casefold() not in allowed]
         if bad:
-            raise StoreValidationError(f"Not an allowed method: {', '.join(bad)} (use "
+            raise StoreValidationError(f"Not an allowed method: {_shown(bad)} (use "
                                        f"{', '.join(allowed.values())}).")
         changes["allowed_methods"] = [allowed[m.casefold()] for m in methods]
 
@@ -104,12 +110,12 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
         if scope.kind in ("web_url", "api"):
             bad = [p for p in paths if not p.startswith("/")]
             if bad:
-                raise StoreValidationError(f"Excluded paths start with '/': {', '.join(bad)}.")
+                raise StoreValidationError(f"Excluded paths start with '/': {_shown(bad)}.")
         if scope.kind == "network":
             bad = [p for p in paths if network_entry(p) is None]
             if bad:
                 raise StoreValidationError(
-                    f"Exclude a host, range or host:port (e.g. 10.0.0.5:22): {', '.join(bad)}.")
+                    f"Exclude a host, range or host:port (e.g. 10.0.0.5:22): {_shown(bad)}.")
         changes["excluded_paths"] = paths
 
     if allowed_ports is not None:
@@ -119,7 +125,7 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
             if not item:
                 continue
             if not (item.isascii() and item.isdigit()) or not 1 <= int(item) <= 65535:
-                raise StoreValidationError(f"Not a valid port (1–65535): {item}.")
+                raise StoreValidationError(f"Not a valid port (1–65535): {shown_line(item)}.")
             if int(item) not in ports:
                 ports.append(int(item))
         if not ports:
@@ -142,7 +148,7 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
             raise StoreValidationError("Keep at least one tool.")
         unknown = [t for t in cleaned if not known_tool(t)]
         if unknown:
-            raise StoreValidationError(f"Unknown tool: {', '.join(unknown)}.")
+            raise StoreValidationError(f"Unknown tool: {_shown(unknown)}.")
         changes["tools"] = _clean_list(known_tool(t) for t in cleaned)
 
     for field, value in changes.items():      # every field passed: now change the scope

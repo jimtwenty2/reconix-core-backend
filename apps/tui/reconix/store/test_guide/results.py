@@ -15,7 +15,7 @@ from typing import Dict, Iterable, Tuple
 
 from ..errors import StoreValidationError
 from ..persist import _private_dir
-from ..redact import clean, redact
+from ..redact import redact
 from .model import MARKS, Flow, Result
 
 MAX_NOTE = 500
@@ -85,7 +85,7 @@ def set_mark(case_id: str, mark: str) -> Result:
 
 def set_note(case_id: str, note: str) -> Result:
     """Attach a note (masked, one line, at most 500 characters; empty clears it)."""
-    text = " ".join(redact(clean(note or "")).split())
+    text = " ".join(redact(note or "").split())    # redact cleans, after the hidden-secret check
     if len(text) > MAX_NOTE:
         raise StoreValidationError(f"Keep the note under {MAX_NOTE} characters.")
     results = load()

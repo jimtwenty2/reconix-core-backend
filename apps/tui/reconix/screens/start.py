@@ -34,10 +34,10 @@ LOGO = r"""██████╗ ███████╗ ██████╗ 
 QUICKSTART = (
     ("1", "Pick a template, type its target", "/template"),
     ("2", "Or just type a target", '"https://staging.example.com"'),
-    ("3", "Approve scope · run plan · approve risks", "↵ at each gate"),
+    ("3", "Approve scope, plan and risks", "↵ at each gate"),
 )
 
-PLACEHOLDER = "Type a target (URL, IPv4, repo or path), a question, or / for commands"
+PLACEHOLDER = "Type a target (URL, IPv4, repo, path), a question, or / commands"
 READING = "reconix is reading the target…"
 EMPTY_HINT = "Type a target, a question, or / for commands."
 # The store refuses dash ranges with the same words (store/targets.py).
@@ -75,7 +75,10 @@ def target_error(text: str) -> str:
 
     Feedback for the person typing only: the store and the backend's scope check decide.
     """
-    check = store.validate_target(text)
+    try:
+        check = store.validate_target(text)
+    except ValueError:                       # a backstop: unreadable text is not a target
+        return "That isn't a valid target — e.g. https://app.example.com"
     if not check.valid:
         return check.error
     if check.kind == "IPV4_RANGE" and "-" in check.value:

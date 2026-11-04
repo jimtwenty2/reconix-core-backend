@@ -10,7 +10,7 @@ import re
 import unicodedata
 from typing import Any
 
-from reconix_ai.contracts import TOOL_NAMES
+from reconix_ai.harness.catalog import is_known_tool
 
 MAX_GOAL_CHARS = 500
 MAX_QUERIES = 3
@@ -145,7 +145,7 @@ def read_reason(reason: Any) -> str:
 
 
 def read_action(tool: Any, target: Any, arguments: Any) -> dict[str, Any] | None:
-    if not isinstance(tool, str) or tool.strip().upper() not in TOOL_NAMES:
+    if not isinstance(tool, str) or not is_known_tool(tool.strip()):
         return None
     if not isinstance(target, str) or not target.strip():
         return None

@@ -43,6 +43,8 @@ AGENT_RESPONSE_FIELDS = {
     "references",
     "analysis_summary",
     "analysis",
+    "validation_status",
+    "validation_reason",
     "executive_summary",
     "methodology",
     "agent_run_id",

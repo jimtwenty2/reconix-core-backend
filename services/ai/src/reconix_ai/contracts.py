@@ -20,9 +20,6 @@ to the API owner; until it is merged, the agent does only PLAN and SUGGEST.
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-# The shared ToolName values. A step with any other tool is dropped, so the API
-# can always build its own Action from a ProposedAction.
-TOOL_NAMES = frozenset({"NMAP", "NUCLEI", "ZAP", "SEMGREP", "GITLEAKS"})
 # findings.severity_status, worst first.
 SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN")
 
@@ -37,7 +34,7 @@ def severity_rank(finding: dict[str, Any]) -> int:
 class ProposedAction:
     """One tool run the agent suggests. The API checks it again before it runs."""
 
-    tool: str  # NMAP, NUCLEI, ZAP, SEMGREP or GITLEAKS
+    tool: str  # a Kali catalog tool, UPPERCASE, e.g. NMAP, MASSCAN, SQLMAP
     target: str
     arguments: list[str] = field(default_factory=list)  # always a list, never one string
     is_validation: bool = False
@@ -94,7 +91,7 @@ class FindingInput:
 class ToolRunInput:
     """One tool run, with how it was approved, for the report's methodology."""
 
-    tool: str  # NMAP, NUCLEI, ZAP, SEMGREP or GITLEAKS
+    tool: str  # a Kali catalog tool, UPPERCASE, e.g. NMAP, MASSCAN, SQLMAP
     target: str
     args: list[str]
     risk_level: str  # LOW, MEDIUM or HIGH
@@ -187,6 +184,9 @@ class AgentAnswer:
     references: list[str] = field(default_factory=list)  # knowledge ids used, e.g. CWE-89
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = field(default_factory=list)  # ANALYZE
+    # VALIDATE: the verdict on one finding, read from the real (masked) PoC tool output.
+    validation_status: str | None = None  # CONFIRMED, UNCONFIRMED or INCONCLUSIVE
+    validation_reason: str = ""  # one masked line on why
     executive_summary: str | None = None  # REPORT: reports.executive_summary
     methodology: str | None = None  # REPORT: reports.methodology
     agent_run_id: str = ""  # agent_runs.agent_run_id; the LangGraph thread

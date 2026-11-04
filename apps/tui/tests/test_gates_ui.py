@@ -10,7 +10,8 @@ from reconix.screens.forms import LoginForm
 from reconix.widgets import RunLog
 
 from .support import (
-    SIZE, TEST_PASSWORD, auth_values, event_kinds, pass_gate, run_ui_to, settle,
+    SIZE, TEST_PASSWORD, auth_values, choose_by_keys, event_kinds, pass_gate, run_ui_to, settle,
+    wait_until,
 )
 
 
@@ -136,14 +137,23 @@ async def test_high_double_checked_with_yes_completes_the_run(app):
         assert "assessment complete" in str(app.screen.query_one("#exec-hint", Static).render())
 
 
-async def test_reject_stops_the_run(app):
+async def test_a_digit_never_rejects_an_approval(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "approval:approval-001")
-        await pilot.press("2")                                   # Reject
+        await pilot.press("2")                                   # Reject has no number
         await settle(pilot)
-        assert isinstance(app.screen, ExecutionScreen)
-        assert store.is_finished() and not store.is_completed()
-        assert "stopped" in str(app.screen.query_one("#exec-hint", Static).render())
+        assert isinstance(app.screen, ApprovalScreen)
+        assert store.decision_for("approval-001") is None
+
+
+async def test_reject_skips_the_action_and_the_plan_goes_on(app):
+    async with app.run_test(size=SIZE) as pilot:
+        await run_ui_to(app, pilot, "approval:approval-001")
+        await choose_by_keys(pilot, "reject")
+        await wait_until(pilot, lambda: store.waiting_gate() == "approval:approval-002",
+                         what="the next approval")
+        assert store.decision_for("approval-001").decision == "REJECTED"
+        assert not store.get_run().stopped
 
 
 async def test_esc_on_an_approval_decides_later(app):

@@ -67,13 +67,13 @@ async def test_the_first_time_it_installs_the_packages_first(app, web_launches, 
         assert "installing its packages" in _notes(app)
 
 
-async def test_without_node_it_says_how_to_start_it(app, web_launches, monkeypatch):
+async def test_without_node_it_says_what_to_install(app, web_launches, monkeypatch):
     monkeypatch.setattr(web_server, "problem", lambda: "The web dashboard needs Node.js.")
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line("/web")
         await settle(pilot)
         assert web_launches == []
-        assert "Node.js" in _notes(app) and "cd web && npm run dev" in _notes(app)
+        assert "Node.js" in _notes(app) and "npm run dev" not in _notes(app)
 
 
 async def test_a_dashboard_it_started_stops_when_the_tui_quits(app, web_launches):

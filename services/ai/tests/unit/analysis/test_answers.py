@@ -1,7 +1,7 @@
 import pytest
 
 from reconix_ai.agent.answers import BadAnswer
-from reconix_ai.analysis.answers import NO_ANALYSIS, NO_EVIDENCE, read_analysis
+from reconix_ai.analysis.answers import NO_ANALYSIS, NO_EVIDENCE, read_analysis, read_validation
 from tests.unit.analysis.cases import CASES, Case
 
 FTP, SSH = CASES[0], CASES[1]
@@ -32,6 +32,25 @@ def good_answer(case: Case) -> dict:
 def read(*answers: dict, known_ids: frozenset = frozenset(), findings=None, outputs=OUTPUTS):
     data = {"summary": "Two services matter.", "findings": list(answers)}
     return read_analysis(data, findings or FINDINGS, outputs, set(known_ids))
+
+
+@pytest.mark.parametrize("value", ["CONFIRMED", "unconfirmed", " Inconclusive "])
+def test_read_validation_keeps_the_three_verdicts(value) -> None:
+    status, reason = read_validation({"verdict": value, "reason": "The port answers."})
+    assert status == value.strip().upper()
+    assert reason == "The port answers."
+
+
+@pytest.mark.parametrize("value", ["MAYBE", "", None, 1, "confirmed?"])
+def test_read_validation_rejects_any_other_verdict(value) -> None:
+    with pytest.raises(BadAnswer):
+        read_validation({"verdict": value, "reason": "x"})
+
+
+def test_read_validation_reason_is_optional_text() -> None:
+    status, reason = read_validation({"verdict": "INCONCLUSIVE"})
+    assert status == "INCONCLUSIVE"
+    assert reason == ""
 
 
 def broken_answer(case: Case) -> dict:

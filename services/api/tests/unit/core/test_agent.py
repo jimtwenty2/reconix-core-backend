@@ -126,7 +126,7 @@ async def test_plan_suggests_one_step_and_waits():
     assert response.proposed_action == Action(
         tool=ToolName.NMAP, target="172.20.0.5", arguments=NMAP_STEP["arguments"]
     )
-    assert response.risk == RiskLevel.MEDIUM
+    assert response.risk == RiskLevel.LOW  # -sV and --top-ports are LOW on a LOW tool
     assert response.checkpoint_id
 
 

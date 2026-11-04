@@ -16,7 +16,7 @@ import { renderReportDocx } from "@/lib/report/docx/report";
 import { maskAssessment } from "@/lib/report/mask";
 
 import { sampleAssessments } from "./fixtures";
-import vectors from "./redact-vectors.json";
+import { redactVectors as vectors } from "./vectors";
 import { unzip } from "./unzip";
 import { assertWellFormed } from "./xml";
 
@@ -69,7 +69,7 @@ describe("a marker in every field", () => {
 });
 
 describe("every redact-vectors.json case", () => {
-  const cases = (vectors as [string, string][]).filter(([raw, masked]) => raw !== masked);
+  const cases = vectors.filter(([raw, masked]) => raw !== masked);
 
   it.each(cases)("is masked in every field a report prints: %s", (raw) => {
     const a = structuredClone(base);

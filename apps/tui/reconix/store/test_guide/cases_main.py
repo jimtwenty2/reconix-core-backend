@@ -17,7 +17,7 @@ API_FORM = (
 APPROVE_HIGH = (
     'HIGH → Approve & run → "◆ HIGH-RISK · second confirmation" → move down to Yes, run … → Enter.'
 )
-REPORT_EXPORT = 'Report screen (8) → press {key} → "✓ REPORT SAVED" shows the file path.'
+REPORT_EXPORT = 'Report screen (Alt+8) → press {key} → "✓ REPORT SAVED" shows the file path.'
 
 WEB = Flow(
     id="MF-WEB",
@@ -55,8 +55,8 @@ WEB = Flow(
                 APPROVE_HIGH,
                 'Execution: the log shows "Blocked: GET /admin · Path outside approved scope. '
                 'Not executed."',
-                "Findings (6): 3 findings. Open 001 (Enter): evidence shows usr_••••42 and "
-                "token: •••••••••• (masked).",
+                "Findings (Alt+6): 3 findings. Open 001 (Enter): evidence shows usr_••••42 and "
+                "token: •••• (masked).",
                 REPORT_EXPORT.format(key="p (PDF)"),
             ),
             "Every step on the step line ends at ✓; no password, token or cookie shows anywhere.",
@@ -119,16 +119,20 @@ WEB = Flow(
         ),
         Case(
             "MF-WEB-05",
-            "Reject at HIGH, then start again",
+            "Reject at HIGH, the plan goes on",
             (
                 "Approve scope → Run plan → login → MEDIUM Approve & run.",
-                'HIGH → Reject → "Rejected: limited_validation. Not executed." then "Assessment '
-                'stopped. Nothing else will run. Type /new to start a new assessment."',
-                "The step line shows ✕. /findings lists only finding 001 (found before the stop).",
-                '/report → p → "The report is available once the assessment is complete."',
-                "/new → a clean Start screen; /assessments still lists the stopped one.",
+                'HIGH → Reject (↑/↓ then Enter; it has no number) → "Rejected: '
+                'limited_validation. Not executed — the plan goes on with its next step." (on '
+                "Execution's live output; scroll it up on a short terminal)",
+                'The run goes on to the end: "Assessment completed. 3 findings: 0 confirmed, 3 '
+                'marked for review." and "Open the report (Alt+8 or /report) to export it."',
+                "/findings → 001 stays Unconfirmed: the validation that would confirm it was "
+                "rejected.",
+                REPORT_EXPORT.format(key="p (PDF)"),
             ),
-            "Nothing runs after Reject; the stopped assessment is kept and can be reopened.",
+            "limited_validation never runs; the same assessment completes and its report can be "
+            "exported.",
             ask="Check https://shop.example.com for web security issues",
         ),
     ),
@@ -199,12 +203,17 @@ API = Flow(
             "Reject the scope",
             (
                 API_FORM,
-                'Scope → Reject → "Scope rejected. Nothing was tested." then "Assessment '
-                'stopped. Nothing else will run. Type /new to start a new assessment."',
-                '"Start again?" → Start a new assessment.',
+                'Scope → Reject (↑/↓ then Enter; it has no number) → "Scope rejected. Nothing '
+                'was tested." then "Assessment stopped. Nothing else will run. Type /new to '
+                'start a new assessment."',
+                "You stay in the same assessment: the Template step shows ✕ and the screen asks "
+                '"Start again?" (Start a new assessment / Back to the start).',
                 "/audit → the rejection is in the audit trail.",
+                '"Start again?" → Start a new assessment → /assessments still lists the rejected '
+                "one as Stopped.",
             ),
-            "Nothing ran: no plan step started and there are no findings.",
+            "Nothing ran: no plan step started and there are no findings. Reject never opens a "
+            "new assessment by itself.",
             ask="Check https://api.example.com/v1 endpoints",
         ),
         Case(
@@ -218,10 +227,11 @@ API = Flow(
                 "Edit manifest → Excluded paths: v1/x → \"Excluded paths start with '/': v1/x.\"",
                 "Approve scope → Run plan → cookie → approve MEDIUM and HIGH.",
                 "/audit → the blocked GET /internal/metrics is listed with its reason.",
-                "Report → the approved scope section lists DELETE and /v1/admin.",
+                "Report → p (PDF): the exported report's scope section lists DELETE and "
+                "/v1/admin.",
             ),
-            "The report shows exactly the scope you approved; the blocked request is in the "
-            "audit trail.",
+            "The exported report shows exactly the scope you approved; the blocked request is "
+            "in the audit trail.",
             ask="Test https://api.example.com/v1 for API security issues",
         ),
         Case(
@@ -230,11 +240,15 @@ API = Flow(
             (
                 API_FORM,
                 "Approve scope → Run plan → cookie.",
-                'MEDIUM → Reject → "Rejected: Baseline request (read-only). Not executed." and '
-                "the assessment stops.",
-                "/approval → the HIGH step is never asked. /summary shows the stop.",
+                'MEDIUM → Reject (↑/↓ then Enter) → "Rejected: Baseline request (read-only). '
+                'Not executed — the plan goes on with its next step."',
+                "The HIGH step still asks for its own approval: Approve & run → second "
+                "confirmation → Yes.",
+                'The run completes: "Assessment completed. …" /audit lists approval.rejected '
+                "for the MEDIUM step.",
             ),
-            "Nothing runs after the MEDIUM reject; HIGH is never reached.",
+            "The rejected MEDIUM request never runs; the plan goes on and HIGH runs only after "
+            "its own approval.",
             ask="Test the REST API at https://api.example.com/v1 for authorization issues",
         ),
     ),
@@ -338,7 +352,8 @@ NETWORK = Flow(
                 "10.0.0.7:8443 → accepted.",
                 "Approve & run → second confirmation → No, go back (nothing runs) → Approve & run "
                 "→ Yes.",
-                "Findings → f → HIGH only → open 001 → " + REPORT_EXPORT.format(key="w (DOCX)"),
+                "Findings → f → Critical & High → open 001 → "
+                + REPORT_EXPORT.format(key="w (DOCX)"),
             ),
             "Only an in-scope host:port can be set; HIGH runs only after the second Yes.",
             ask="Check 10.0.0.0/24 for exposed management consoles",
@@ -457,13 +472,18 @@ FLOWS = (WEB, API, NETWORK, SOURCE)
 GATES = (
     ("Scope review", "\"Approve this scope manifest?\" → Approve scope / Edit manifest / Reject "
                      "(API also: Attach OpenAPI spec). Edit manifest is all or nothing; after "
-                     "Approve the scope is locked."),
-    ("Plan", "\"Run this plan?\" → Run plan / Edit steps / Cancel. Rows 1–5 run on their own; "
-             "3a (MEDIUM) and 3b (HIGH) wait for you."),
+                     "Approve the scope is locked. Reject (red) has no number: a digit never "
+                     "picks it, use ↑/↓ and Enter."),
+    ("Plan", "\"Run this plan?\" → Run plan / Edit steps / Cancel (red, no number). The other "
+             "rows run on their own; the target login (when the tools need one), 3a (MEDIUM) "
+             "and 3b (HIGH) wait for you."),
     ("Target login", "Only when the scope's tools need one (Web URL: account + one-time code; "
                      "API: session cookie). What you type is never shown or saved."),
     ("MEDIUM approval", "\"Run <action> on <target>?\" → Approve & run / Reject / View details / "
-                        "Edit params."),
+                        "Edit params. Reject (red) has no number: use ↑/↓ and Enter. A "
+                        "rejected action is skipped and the plan goes on. On a short terminal "
+                        "the screen opens on the request; a note says to press ↓ for the "
+                        "choices."),
     ("HIGH approval", "The same menu, then \"◆ HIGH-RISK · second confirmation\"; its default "
                       "is No, go back."),
     ("Execution", "One request outside the scope is proposed and blocked: \"Blocked: … Not "
