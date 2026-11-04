@@ -14,7 +14,15 @@ from reconix_api.models import Approval
 from reconix_api.models.enums import ApprovalStatus
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.schemas.approvals import ApprovalDecision, ApprovalOut
-from reconix_api.services import actions, llm_providers, plans, reports, scopes
+from reconix_api.services import (
+    actions,
+    disclosures,
+    limit_settings,
+    llm_providers,
+    plans,
+    reports,
+    scopes,
+)
 from reconix_api.services.approvals import approval_state, ensure_can_decide, expires_at
 from reconix_api.services.audit import audit
 
@@ -39,7 +47,7 @@ async def approve(
         )
     except ApiError as error:
         # The approval stays PENDING (a typo is not a rejection), but the refusal is recorded.
-        audit(write_audit, "APPROVAL_REFUSED", operator, details=_details(approval, error.code))
+        _audit_refused(db, write_audit, operator, approval, error.code)
         raise
     if approval.kind == "scope":
         scopes.approve_scope(db, interfaces.write_audit, operator, approval)
@@ -56,6 +64,10 @@ async def approve(
         reports.approve_review(db, interfaces.write_audit, operator, approval)
     elif llm_providers.is_activation(approval):
         llm_providers.approve_activation(db, interfaces.write_audit, operator, approval)
+    elif limit_settings.is_limit_change(approval):
+        limit_settings.approve_limit_change(db, interfaces.write_audit, operator, approval)
+    elif disclosures.is_disclosure(approval):
+        disclosures.approve_disclosure(db, interfaces.write_audit, operator, approval)
     else:
         _not_supported(approval)
     return approval_out(approval, ttl_minutes)
@@ -79,6 +91,14 @@ async def reject(
         reports.reject_review(db, interfaces.write_audit, operator, approval, decision.reason)
     elif llm_providers.is_activation(approval):
         llm_providers.reject_activation(
+            db, interfaces.write_audit, operator, approval, decision.reason
+        )
+    elif limit_settings.is_limit_change(approval):
+        limit_settings.reject_limit_change(
+            db, interfaces.write_audit, operator, approval, decision.reason
+        )
+    elif disclosures.is_disclosure(approval):
+        disclosures.reject_disclosure(
             db, interfaces.write_audit, operator, approval, decision.reason
         )
     else:
@@ -115,6 +135,7 @@ def approval_out(approval: Approval, ttl_minutes: int) -> ApprovalOut:
         action_id=approval.action_id,
         manifest_id=approval.manifest_id,
         report_id=approval.report_id,
+        evidence_id=approval.evidence_id,
         config_change=approval.config_change,
     )
 
@@ -136,19 +157,30 @@ def _get_pending(
     one audit line."""
     approval = _get(db, approval_id, lock=True)
     if approval.approval_status != ApprovalStatus.PENDING:
+        _audit_refused(db, write_audit, operator, approval, "APPROVAL_ALREADY_DECIDED")
         raise ApiError(409, "APPROVAL_ALREADY_DECIDED", "This approval was already decided.")
     if datetime.now(UTC) >= expires_at(approval.requested_at, ttl_minutes):
         approval.approval_status = ApprovalStatus.EXPIRED
         db.commit()
-        audit(write_audit, "APPROVAL_EXPIRED", operator, details=_details(approval, "EXPIRED"))
+        assessment_id = approval_repo.assessment_of(db, approval)
+        details = _details(approval, "EXPIRED")
+        audit(write_audit, "APPROVAL_EXPIRED", operator, assessment_id, details)
         raise ApiError(409, "APPROVAL_EXPIRED", "This approval expired. Submit it again.")
     return approval
+
+
+def _audit_refused(
+    db: Db, write_audit: WriteAudit, operator: Operator, approval: Approval, reason: str
+) -> None:
+    """One APPROVAL_REFUSED line: the approval stays as it was."""
+    assessment_id = approval_repo.assessment_of(db, approval)
+    audit(write_audit, "APPROVAL_REFUSED", operator, assessment_id, _details(approval, reason))
 
 
 def _details(approval: Approval, reason: str) -> dict[str, str]:
     """Which approval, what it was for, and why: never the snapshot itself."""
     details = {"approval_id": str(approval.approval_id), "kind": approval.kind, "reason": reason}
-    for name in ("action_id", "manifest_id", "report_id"):
+    for name in ("action_id", "manifest_id", "report_id", "evidence_id"):
         value = getattr(approval, name)
         if value is not None:
             details[name] = str(value)

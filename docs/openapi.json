@@ -493,6 +493,18 @@
             ],
             "title": "Decided By"
           },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
@@ -579,6 +591,7 @@
           "action_id",
           "manifest_id",
           "report_id",
+          "evidence_id",
           "config_change"
         ],
         "title": "ApprovalOut",
@@ -1003,6 +1016,66 @@
         "title": "CheckName",
         "type": "string"
       },
+      "CodeCloneIn": {
+        "properties": {
+          "token": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 1000,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "url": {
+            "maxLength": 300,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "CodeCloneIn",
+        "type": "object"
+      },
+      "CodeClonedOut": {
+        "properties": {
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "LOCAL_CLONE",
+              "GITHUB"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "files",
+          "size_bytes",
+          "target",
+          "source"
+        ],
+        "title": "CodeClonedOut",
+        "type": "object"
+      },
       "CodeFileIn": {
         "description": "One file the workspace has now.",
         "properties": {
@@ -1095,6 +1168,17 @@
             "title": "Evidence",
             "type": "array"
           },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
           "file_sha256": {
             "anyOf": [
               {
@@ -1113,6 +1197,17 @@
           },
           "finding_status": {
             "$ref": "#/components/schemas/FindingStatus"
+          },
+          "fix_recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Recommendation"
           },
           "impact": {
             "anyOf": [
@@ -1248,6 +1343,10 @@
           },
           "validation_status": {
             "$ref": "#/components/schemas/ValidationStatus"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/Verdict",
+            "default": "UNVERIFIED"
           }
         },
         "required": [
@@ -1279,12 +1378,50 @@
         "title": "CodeFindingOut",
         "type": "object"
       },
+      "CodeFolderIn": {
+        "properties": {
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "CodeFolderIn",
+        "type": "object"
+      },
       "CodeScanIn": {
         "properties": {
           "analyze": {
             "default": true,
             "title": "Analyze",
             "type": "boolean"
+          },
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Paths",
+            "type": "array"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolName"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
           }
         },
         "title": "CodeScanIn",
@@ -1300,18 +1437,6 @@
           },
           "agent_runs_status": {
             "$ref": "#/components/schemas/AgentRunStatus"
-          },
-          "analysis_run_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Analysis Run Id"
           },
           "assessment_id": {
             "format": "uuid",
@@ -1393,8 +1518,7 @@
           "assessment_id",
           "counts",
           "notes",
-          "error",
-          "analysis_run_id"
+          "error"
         ],
         "title": "CodeScanOut",
         "type": "object"
@@ -1478,6 +1602,55 @@
           "combined_with"
         ],
         "title": "CombinedReportIn",
+        "type": "object"
+      },
+      "DisclosedValueOut": {
+        "properties": {
+          "approval_id": {
+            "format": "uuid",
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "approval_id",
+          "index",
+          "kind",
+          "value"
+        ],
+        "title": "DisclosedValueOut",
+        "type": "object"
+      },
+      "DisclosureRequest": {
+        "properties": {
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "DisclosureRequest",
         "type": "object"
       },
       "EvidenceOut": {
@@ -1967,6 +2140,25 @@
         "title": "Health",
         "type": "object"
       },
+      "HiddenValueOut": {
+        "description": "A masked value that can be shown with a `disclosure` approval; never the value.",
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "kind"
+        ],
+        "title": "HiddenValueOut",
+        "type": "object"
+      },
       "KnowledgeAddOnOut": {
         "properties": {
           "chunk_count": {
@@ -2104,6 +2296,76 @@
           "score"
         ],
         "title": "KnowledgeHitOut",
+        "type": "object"
+      },
+      "LimitBounds": {
+        "properties": {
+          "highest": {
+            "title": "Highest",
+            "type": "integer"
+          },
+          "lowest": {
+            "title": "Lowest",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lowest",
+          "highest"
+        ],
+        "title": "LimitBounds",
+        "type": "object"
+      },
+      "LimitChangeIn": {
+        "description": "Only the limits to change, e.g. {\"max_runs_per_assessment\": 300}.",
+        "properties": {
+          "changes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "maxProperties": 4,
+            "minProperties": 1,
+            "title": "Changes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "title": "LimitChangeIn",
+        "type": "object"
+      },
+      "LimitSettingsOut": {
+        "properties": {
+          "bounds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LimitBounds"
+            },
+            "title": "Bounds",
+            "type": "object"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/LoopLimitSettings"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/LoopLimitSettings"
+          },
+          "pending_approval_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Pending Approval Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "limits",
+          "defaults",
+          "bounds",
+          "pending_approval_ids"
+        ],
+        "title": "LimitSettingsOut",
         "type": "object"
       },
       "LlmProviderActivation": {
@@ -2383,6 +2645,35 @@
           }
         },
         "title": "LlmProviderUpdate",
+        "type": "object"
+      },
+      "LoopLimitSettings": {
+        "description": "The loop check's limits, once a `configuration` approval changed them.",
+        "properties": {
+          "max_actions_per_minute": {
+            "title": "Max Actions Per Minute",
+            "type": "integer"
+          },
+          "max_runs_per_assessment": {
+            "title": "Max Runs Per Assessment",
+            "type": "integer"
+          },
+          "max_same_command": {
+            "title": "Max Same Command",
+            "type": "integer"
+          },
+          "same_command_window_minutes": {
+            "title": "Same Command Window Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_same_command",
+          "same_command_window_minutes",
+          "max_actions_per_minute",
+          "max_runs_per_assessment"
+        ],
+        "title": "LoopLimitSettings",
         "type": "object"
       },
       "ManifestStatus": {
@@ -3289,6 +3580,18 @@
             ],
             "title": "Interface",
             "type": "string"
+          },
+          "operator": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator"
           }
         },
         "required": [
@@ -3506,6 +3809,23 @@
         ],
         "title": "TimelineOut",
         "type": "object"
+      },
+      "ToolName": {
+        "description": "Tools Core names in its own code (the code scan, the parsers). Not the full list:\nany tool in the Kali catalog (tool_specs.json) may be allowed and run, written as an\nUPPERCASE name such as \"MASSCAN\".",
+        "enum": [
+          "NMAP",
+          "NUCLEI",
+          "ZAP",
+          "SEMGREP",
+          "GITLEAKS",
+          "TRIVY",
+          "GRYPE",
+          "OSV_SCANNER",
+          "SYFT",
+          "SONAR_SCAN"
+        ],
+        "title": "ToolName",
+        "type": "string"
       },
       "ToolRunOut": {
         "properties": {
@@ -3775,6 +4095,17 @@
           "INCONCLUSIVE"
         ],
         "title": "ValidationStatus",
+        "type": "string"
+      },
+      "Verdict": {
+        "description": "What a code finding most likely is. Only a validation makes it CONFIRMED; the AI\nreview gives the other three, and a person's FALSE_POSITIVE gives LIKELY_FALSE_POSITIVE.",
+        "enum": [
+          "CONFIRMED",
+          "LIKELY_TRUE_POSITIVE",
+          "LIKELY_FALSE_POSITIVE",
+          "UNVERIFIED"
+        ],
+        "title": "Verdict",
         "type": "string"
       },
       "VscodeChatOut": {
@@ -4717,7 +5048,7 @@
     },
     "/api/v1/assessments/{assessment_id}/code-scans": {
       "post": {
-        "description": "Scans the code sent to the assessment's session with SEMGREP, then GITLEAKS.\n\nBusiness Rules:\n- With analyze, the agent also analyzes the results afterward.\n- The scope needs a \"path\" target for that code.\n- Returns 422 NO_CODE if no code was sent, 422 CODE_EXCLUDED if the scope excludes the\n  whole code folder, or 409 SCAN_RUNNING if a scan is already running.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- Creates a code scan.\n- Deletes excluded \"path\" targets inside the code folder (for example \".../node_modules\")\n  from the stored code before the scan, so the tools never read them.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Scans the code sent to the assessment's session with the source code tools.\n\nBusiness Rules:\n- The scope needs a \"path\" target for that code.\n- paths limits the scan to files or folders of the code; tools picks some of SEMGREP,\n  GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: those the scope\n  allows). A tool the scope does not allow ends as a \"<TOOL> BLOCKED\" note.\n- A rescan reads only what changed since the last completed scan and keeps the earlier\n  findings on unchanged files.\n- With analyze (the default), the AI reviews each new finding with the active AI\n  provider; a finding reviewed before on the same file with the same model keeps its\n  review. A failed review is a \"ANALYZE <CODE>\" note, never a failed scan. A file no\n  GITLEAKS run read as it is now (GITLEAKS not picked, or it failed) sends the AI no\n  code.\n- Returns 503 NO_ACTIVE_PROVIDER if no AI provider is active (even without analyze:\n  a scan is an agent run), 422 NO_CODE if no code was sent, 422 PATH_NOT_FOUND if a\n  path holds no file, 422 NO_CODE_TOOLS if the scope allows none of the tools, 422\n  CODE_EXCLUDED if the scope excludes the whole code folder, or 409 SCAN_RUNNING if a\n  scan is already running.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- Creates a code scan.\n- Deletes excluded \"path\" targets inside the code folder (for example \".../node_modules\")\n  from the stored code before the scan, so the tools never read them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "start_code_scan_api_v1_assessments__assessment_id__code_scans_post",
         "parameters": [
           {
@@ -5272,7 +5603,7 @@
     },
     "/api/v1/code-scans/{agent_run_id}/findings": {
       "get": {
-        "description": "Lists the findings this scan found, in the order they were found.\n\nBusiness Rules:\n- Each finding has its relative path, line, rule, and a masked code snippet.\n\nSecurity:\n- Requires a valid session token.\n- Code snippets are masked.",
+        "description": "Lists the findings this scan found, in the order they were found, then the ones it\nkept from earlier scans for unchanged files.\n\nBusiness Rules:\n- Each finding has its relative path, line, rule, and a masked code snippet.\n- Each finding has a verdict, with the AI review's explanation and fix\n  recommendation. CONFIRMED only after a validation confirmed it; a finding a\n  person marked FALSE_POSITIVE is LIKELY_FALSE_POSITIVE; UNVERIFIED when it was not\n  reviewed, the review was unsure, or the review failed.\n- With include_false_positives=false, LIKELY_FALSE_POSITIVE findings are left out:\n  every one a person marked FALSE_POSITIVE, and the ones only the AI calls false\n  unless they are HIGH, CRITICAL or a GITLEAKS leak.\n- Only findings at or under the scan's paths are listed.\n\nSecurity:\n- Requires a valid session token.\n- Code snippets are masked.",
         "operationId": "list_code_scan_findings_api_v1_code_scans__agent_run_id__findings_get",
         "parameters": [
           {
@@ -5283,6 +5614,16 @@
               "format": "uuid",
               "title": "Agent Run Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_false_positives",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include False Positives",
+              "type": "boolean"
             }
           }
         ],
@@ -5318,6 +5659,64 @@
           }
         ],
         "summary": "List Code Scan Findings",
+        "tags": [
+          "code scans"
+        ]
+      }
+    },
+    "/api/v1/code-scans/{agent_run_id}/logs/{tool}": {
+      "get": {
+        "description": "Returns the masked output of one tool's run in this scan, as text; for example\nthe SONAR_SCAN log, which has the SonarQube dashboard link.\n\nBusiness Rules:\n- The tool name may be written in any case, e.g. sonar_scan or SONAR_SCAN.\n- Returns 404 CODE_SCAN_NOT_FOUND, or 404 TOOL_LOG_NOT_FOUND if the tool left no output\n  in this scan.\n\nSecurity:\n- Requires a valid session token.\n- Secrets in the output are masked.",
+        "operationId": "read_code_scan_log_api_v1_code_scans__agent_run_id__logs__tool__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool",
+            "required": true,
+            "schema": {
+              "title": "Tool",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Code Scan Log",
         "tags": [
           "code scans"
         ]
@@ -5367,6 +5766,177 @@
           }
         ],
         "summary": "Read Evidence",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}/disclosures": {
+      "post": {
+        "description": "Asks to see one masked value. This returns a `disclosure` approval; once a person approves\nit, reveal the value once with the reveal endpoint. Returns 404 HIDDEN_VALUE_NOT_FOUND if the\nevidence has no value with this index.",
+        "operationId": "request_disclosure_api_v1_evidence__evidence_id__disclosures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisclosureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Request Disclosure",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}/disclosures/{approval_id}/reveal": {
+      "post": {
+        "description": "Shows the real value once, after its `disclosure` approval was approved. The approval is\nused up, so a second call returns 409 APPROVAL_ALREADY_USED. Returns 409 APPROVAL_NOT_GRANTED\nif it is not approved yet, or 409 APPROVAL_EXPIRED after its time limit.",
+        "operationId": "reveal_value_api_v1_evidence__evidence_id__disclosures__approval_id__reveal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisclosedValueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Reveal Value",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}/hidden-values": {
+      "get": {
+        "description": "Lists the masked values in this evidence that a person may ask to see, by index and kind.\nThe values themselves are never listed.",
+        "operationId": "list_hidden_values_api_v1_evidence__evidence_id__hidden_values_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HiddenValueOut"
+                  },
+                  "title": "Response List Hidden Values Api V1 Evidence  Evidence Id  Hidden Values Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Hidden Values",
         "tags": [
           "evidence"
         ]
@@ -6015,6 +6585,78 @@
         "summary": "Search Knowledge",
         "tags": [
           "knowledge add-ons"
+        ]
+      }
+    },
+    "/api/v1/limit-settings": {
+      "get": {
+        "description": "Returns the loop check's limits in use now, the default limits, the range each limit may\ntake, and the ids of any changes still waiting for a person.",
+        "operationId": "read_limit_settings_api_v1_limit_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Limit Settings",
+        "tags": [
+          "limit settings"
+        ]
+      },
+      "post": {
+        "description": "Asks to change one or more loop limits. Nothing changes yet: this returns a `configuration`\napproval, and the new limits are used only after a person approves it. Returns 422 with\nUNKNOWN_LIMIT, NOT_A_NUMBER, OUT_OF_RANGE or NO_CHANGE if the change is not allowed.",
+        "operationId": "request_limit_change_api_v1_limit_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LimitChangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Request Limit Change",
+        "tags": [
+          "limit settings"
         ]
       }
     },
@@ -6819,7 +7461,7 @@
         ]
       },
       "post": {
-        "description": "Opens a new session and returns its token.\n\nState Changes:\n- Creates a session and issues its token.\n\nSecurity:\n- Open. Needs no token; the Host check and CORS restrict it to this computer.",
+        "description": "Opens a new session and returns its token.\n\nBusiness Rules:\n- Send `operator` as user@host of the computer the client runs on (for example\n  \"vanneth@kshrd-laptop\"). It is the name in /operator, approvals and the audit log.\n  Without it, the API uses its own OS user and host name.\n\nState Changes:\n- Creates a session and issues its token.\n\nSecurity:\n- Open. Needs no token; the Host check and CORS restrict it to this computer.",
         "operationId": "open_session_api_v1_sessions_post",
         "requestBody": {
           "content": {
@@ -6861,7 +7503,7 @@
     },
     "/api/v1/sessions/web-sign-in": {
       "post": {
-        "description": "Exchanges a sign-in code for a new web session and returns its token.\n\nBusiness Rules:\n- Returns 401 INVALID_SIGN_IN_CODE if the code is unknown, already used, or expired.\n\nState Changes:\n- Creates a web session and issues its token.\n\nSecurity:\n- Open. Needs no token; the one-time code is the check.",
+        "description": "Exchanges a sign-in code for a new web session and returns its token.\n\nBusiness Rules:\n- Returns 401 INVALID_SIGN_IN_CODE if the code is unknown, already used, or expired.\n- The web session gets the same operator name as the session that asked for the code.\n\nState Changes:\n- Creates a web session and issues its token.\n\nSecurity:\n- Open. Needs no token; the one-time code is the check.",
         "operationId": "web_sign_in_api_v1_sessions_web_sign_in_post",
         "requestBody": {
           "content": {
@@ -7248,6 +7890,183 @@
           }
         ],
         "summary": "Upload Code",
+        "tags": [
+          "code"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/code-scans": {
+      "post": {
+        "description": "Scans the code sent to your own session, with no scope to write or approve.\n\nBusiness Rules:\n- The scope is only the session's code folder, so the server approves it itself; the\n  session's assessment is reused while its scope is exactly that folder.\n- paths limits the scan to files or folders of the code; tools picks some of SEMGREP,\n  GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: all of them).\n- A rescan reads only what changed since the last completed scan and keeps the earlier\n  findings on unchanged files.\n- Returns 403 NOT_YOUR_SESSION, 409 SESSION_CLOSED, 409 CODE_SCOPE_MISMATCH if the\n  session's assessment has another scope, 409 ASSESSMENT_NOT_ACTIVE if it has ended,\n  or any error of POST /assessments/{id}/code-scans.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- The first time: creates the scope and its assessment and approves it (one\n  SCOPE_APPROVED audit line with reason CODE_SESSION_FOLDER). That scope takes only\n  the code scan's own tool calls: any other action on it is BLOCKED CODE_SCAN_ONLY.\n- Creates a code scan.\n\nSecurity:\n- Requires a valid session token.",
+        "operationId": "start_session_code_scan_api_v1_sessions__session_id__code_scans_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeScanIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeScanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Start Session Code Scan",
+        "tags": [
+          "code scans"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/code/clone": {
+      "post": {
+        "description": "Replaces the session's code with a GitHub repo's files.\n\nBusiness Rules:\n- `url` must be `https://github.com/<owner>/<repo>`, optionally ending in `.git` or `/`;\n  anything else returns 422 INVALID_REPO_URL.\n- A clone of the repo found under RECONIX_LOCAL_REPO_ROOTS (4 folder levels deep, matched\n  by the `origin` remote in its `.git/config`) is copied as it is, uncommitted and\n  git-ignored files too, and never pulled. `source` is then `LOCAL_CLONE`.\n- Otherwise git makes a shallow clone of the default branch over https only, with no\n  tags, no LFS files and no symlinks. `source` is then `GITHUB`.\n- With `token`, git sends it only to github.com, in an Authorization header; without it,\n  this computer's own git credentials apply.\n- `.git`, links, non-regular files and the folders `node_modules`, `.venv`, `venv`,\n  `__pycache__`, `dist`, `build`, `target`, `.idea` and `.vscode` are left out. The upload\n  limits apply: a repo past them returns 422 INVALID_CODE_FOLDER.\n- git failing returns 502 CLONE_FAILED, taking over 300 seconds 504 CLONE_TIMED_OUT, and\n  no git on this computer 503 GIT_NOT_FOUND.\n- Returns 409 SCAN_RUNNING while a code scan runs, and 409 SESSION_CLOSED if the session is\n  closed.\n\nState Changes:\n- Deletes the session's stored code, then stores the repo's files.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own open session; returns 403 NOT_YOUR_SESSION otherwise.\n- The GitHub token is never stored, logged, audited or put on git's command line.",
+        "operationId": "clone_repo_api_v1_sessions__session_id__code_clone_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeCloneIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeClonedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Clone Repo",
+        "tags": [
+          "code"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/code/folder": {
+      "post": {
+        "description": "Replaces the session's code with a copy of a folder on this computer.\n\nBusiness Rules:\n- `path` must be an absolute path to a folder; links in it are followed first. A missing\n  folder returns 422 FOLDER_NOT_FOUND.\n- A folder inside or holding `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, `~/.kube`,\n  `~/.docker`, `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/boot` or `/var`, or inside\n  Reconix's own code, reports or audit folders, returns 403 FOLDER_NOT_ALLOWED.\n- The same files are left out, and the same limits apply, as for `POST /code/clone`.\n- Returns 409 SCAN_RUNNING while a code scan runs, and 409 SESSION_CLOSED if the session is\n  closed.\n\nState Changes:\n- Deletes the session's stored code, then stores the folder's files. The folder itself is\n  never changed.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own open session; returns 403 NOT_YOUR_SESSION otherwise.",
+        "operationId": "copy_folder_api_v1_sessions__session_id__code_folder_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeFolderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeUploadOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Copy Folder",
         "tags": [
           "code"
         ]
@@ -7717,7 +8536,7 @@
       "name": "approvals"
     },
     {
-      "description": "Scan the code sent to a session with SEMGREP and GITLEAKS.",
+      "description": "Scan the code sent to a session with the source code tools: SEMGREP, GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN.",
       "name": "code scans"
     },
     {

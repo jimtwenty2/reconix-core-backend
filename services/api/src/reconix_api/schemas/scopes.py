@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 from reconix_ai.harness.catalog import is_known_tool
 from reconix_api.core.code_files import check_code_path
@@ -76,8 +76,9 @@ class ScopeDraft(BaseModel):
     allowed_methods: list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] = (
         Field(default_factory=list)
     )
-    starts_at: datetime | None = None
-    ends_at: datetime | None = None
+    # A window time must carry its timezone (Z or +07:00), so the two can be compared.
+    starts_at: AwareDatetime | None = None
+    ends_at: AwareDatetime | None = None
     limitations: str | None = Field(default=None, max_length=4000)
     targets: list[ScopeTargetIn] = Field(min_length=1, max_length=200)
 
@@ -103,8 +104,9 @@ class ScopeUpdate(BaseModel):
     allowed_methods: (
         list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] | None
     ) = None
-    starts_at: datetime | None = None
-    ends_at: datetime | None = None
+    # A window time must carry its timezone (Z or +07:00), so the two can be compared.
+    starts_at: AwareDatetime | None = None
+    ends_at: AwareDatetime | None = None
     limitations: str | None = Field(default=None, max_length=4000)
     targets: list[ScopeTargetIn] | None = Field(default=None, max_length=200)
 

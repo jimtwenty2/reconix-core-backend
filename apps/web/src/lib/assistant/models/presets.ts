@@ -34,6 +34,14 @@ export const presetOf = (id: string): Preset => PRESETS.find((p) => p.id === id)
 /** What the server says when the mock preset is sent with another address. */
 export const MOCK_FIXED = "The mock model's address is fixed; use Custom for another address.";
 
+/** What the server says when a saved provider is moved onto or off the mock preset (the mock
+    answers offline under its own name: another preset at its address would pass for a real
+    model). */
+export const MOCK_LOCKED = "The mock model's preset is fixed; add a new provider for another model.";
+
+/** What the server says when another preset is sent with the mock's reserved address. */
+export const MOCK_RESERVED = "That address is reserved for the mock model; use the Reconix mock (offline) preset.";
+
 /** What the server says when a cloud preset is sent with another address. */
 export const CLOUD_FIXED = "A cloud provider's address is fixed; use Custom for another address.";
 
@@ -46,11 +54,18 @@ const originOf = (url: string): string | null => {
   }
 };
 
-/** Whether a provider at `baseUrl` may carry `preset`'s name: a cloud preset only at its own
-    base URL's origin (scheme, host and port), any other preset at any address. */
-export function fitsPreset(preset: Preset, baseUrl: string): boolean {
-  if (preset.id === "mock") return baseUrl.trim().replace(/\/+$/, "") === preset.baseUrl; // its address only
-  if (preset.kind !== "cloud") return true;
+const isMockUrl = (baseUrl: string) => baseUrl.trim().replace(/\/+$/, "") === presetOf("mock").baseUrl;
+
+/** Why a provider at `baseUrl` may not carry `preset`'s name (null: it may): the mock only at
+    its own address and nothing else there, a cloud preset only at its own base URL's origin
+    (scheme, host and port), any other preset at any address. */
+export function presetProblem(preset: Preset, baseUrl: string): string | null {
+  if (preset.id === "mock") return isMockUrl(baseUrl) ? null : MOCK_FIXED;
+  if (isMockUrl(baseUrl)) return MOCK_RESERVED;
+  if (preset.kind !== "cloud") return null;
   const origin = originOf(baseUrl);
-  return origin !== null && origin === originOf(preset.baseUrl);
+  return origin !== null && origin === originOf(preset.baseUrl) ? null : CLOUD_FIXED;
 }
+
+/** Whether a provider at `baseUrl` may carry `preset`'s name (`presetProblem`). */
+export const fitsPreset = (preset: Preset, baseUrl: string): boolean => presetProblem(preset, baseUrl) === null;

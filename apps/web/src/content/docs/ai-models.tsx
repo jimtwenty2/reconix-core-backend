@@ -174,6 +174,7 @@ export const aiModels: GroupContent = {
   },
   configuration: {
     lede: "One .env seeds the default provider; everything you add with /provider lives encrypted in ~/.reconix/llm.db.",
+    notice: "Configuration details are under review and may change as development continues.",
     body: (
       <>
         <DocSection title="The .env seed">

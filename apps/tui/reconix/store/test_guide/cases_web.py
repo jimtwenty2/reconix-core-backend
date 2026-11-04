@@ -24,7 +24,8 @@ DASHBOARD = Flow(
         Case(
             "WEB-02",
             "The same run in the web",
-            ("Open Overview, Assessments, Findings, Run log and Reports.",),
+            ("Pick the run in the run switcher at the top (Assessment: …).",
+             "Open Overview, Assessments, Findings, Run log and Reports."),
             "Each shows the run you just made in the TUI: the same target, findings and "
             "decisions; evidence stays masked (••••).",
         ),
@@ -38,8 +39,8 @@ DASHBOARD = Flow(
             "WEB-04",
             "The web is read-only",
             ("Look for a way to approve or change the scope in the web.",),
-            'There is none: a waiting step carries the badge "Waiting for approval", and its '
-            'hint reads "Decide in the TUI." — two separate pieces, not one line.',
+            'There is none: a waiting step shows "Waiting for approval"; its badge (hover it) '
+            'and the legend say "Decide in the TUI". The web never approves.',
         ),
         Case(
             "WEB-05",

@@ -11,17 +11,26 @@ save, a redraw or a Word report, and no two words are glued together.
 such a line whole (`HIDDEN_LINE`), since no single reading of it is sure to mask the secret.
 `redact_all()` masks a list of strings as one text (`redact_lines`), so a private key stored
 as one evidence entry per line is masked whole, as the web's lib/report/mask.ts does.
+Besides the shapes, every secret Reconix itself holds (the target login, the saved model API
+keys: `known_secrets`) is masked by its value wherever it shows up.
 """
 
 import re
 import unicodedata
 from typing import Any, List
 
+from . import known_secrets
+
 MASK = "••••"
 
 # Authorization schemes kept readable in front of the masked credential. A fixed list: a general
 # "word, then a space" would read a bare key as its scheme and leave the key visible.
 _SCHEMES = r"bearer|basic|digest|token|negotiate|ntlm|dpop|apikey|aws4-hmac-sha256"
+
+# Plain words after "the token is …" that are no secret (the web's redact.ts: the same list)
+_NOT_A_VALUE = (r"a|an|the|not|no|now|set|unset|empty|missing|invalid|expired|required|wrong|"
+                r"correct|valid|stored|saved|masked|hidden|needed|ok|in|on|from|being|still|"
+                r"also|only|never|always|used|sent|shown|kept|encrypted|this|that|it")
 
 _PATTERNS = (
     # https://user:password@host → https://••••@host. The scheme starts where no scheme
@@ -34,11 +43,23 @@ _PATTERNS = (
                 r"(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"), rf"\g<1>\g<2>\g<3>{MASK}"),
     # Cookie: a=1; sid=2 → every cookie on the header line, not just the first
     (re.compile(r"(?i)\b((?:set-)?cookie)(\s*:\s*)[^\r\n]+"), rf"\g<1>\g<2>{MASK}"),
-    # cookie=…, password=…, api_key: "…" → keep the name, mask the value
+    # cookie=…, password=…, api_key: "…", DB_PASSWORD=…, OPENAI_API_KEY: … → keep the name, mask
+    # the value. The keyword may end a longer name (an env-style "DB_", "AWS_SECRET_" or "x-" in
+    # front stays as it is): it starts where no letter or digit precedes it ("bypass=1" and
+    # "compass: north" are no secret) and ":" or "=" must follow it ("passport=" is none either).
+    # A lookbehind, not a scanned name prefix: a prefix tried after every "_" of a long "a_a_a…"
+    # run would scan the rest of the run each time, quadratic in its length.
     (re.compile(
-        r"(?i)\b((?:set-)?cookie|password|passwd|pwd|secret|"
+        r"(?i)(?<![a-z0-9])((?:set-)?cookie|pass|password|passwd|pwd|secret|"
         r"client[_-]?secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|"
-        r"access[_-]?key|session[_-]?id|sessionid)\b(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"),
+        r"access[_-]?key|private[_-]?key|session[_-]?id|sessionid)"
+        r"(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"),
+     rf"\g<1>\g<2>{MASK}"),
+    # "my password is hunter2", "the api key is …", "token is …": the next word is the secret,
+    # unless it is one of a few plain words ("the token is invalid", "the secret is not set")
+    (re.compile(
+        r"(?i)(?<![a-z0-9])(pass(?:word|phrase)|passwd|api[ _-]?key|token|secret)(\s+is:?\s+)"
+        r"(?!(?:" + _NOT_A_VALUE + r")(?![^\s.,;:!?]))(\"[^\"]*\"|'[^']*'|\S+)"),
      rf"\g<1>\g<2>{MASK}"),
     (re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}"), f"Bearer {MASK}"),
     # A JWT starts where no base64url character precedes it (not \b, which also matches after
@@ -91,7 +112,12 @@ def _control_class() -> str:
     return "".join(ranges)
 
 
-_CONTROL = re.compile(f"[{_control_class()}]|\\r(?!\\n)")
+_CONTROL_CLASS = _control_class()
+_CONTROL = re.compile(f"[{_CONTROL_CLASS}]|\\r(?!\\n)")
+# The same with the tab: `clean()` keeps a tab, but one inside a secret's name splits it the
+# way the other controls do ("pass<TAB>word=…" read "pass word=…"), so the hidden-secret check
+# (`escaped_secret`) treats it as one of them.
+_CONTROL_TAB = re.compile(f"[{_CONTROL_CLASS}\\t]|\\r(?!\\n)")
 
 
 # --- control characters and terminal escape sequences ------------------------------------------
@@ -131,31 +157,33 @@ def strip_controls(text: str) -> str:
 
 
 def _readings(text: str) -> List[str]:
-    """The ways a line with control characters may be read: glued (each sequence and control
-    removed), spaced (`strip_controls`), only the control bytes dropped (the sequence's text
-    stays), each control byte a space (the sequence's text stays: "<ESC>token=" is an ESC form
-    that eats the "t") and only a CSI's introducer and parameters dropped."""
+    """The ways a line with control characters (a tab counts here) may be read: glued (each
+    sequence and control removed), spaced (`strip_controls`, the tab a space too), only the
+    control bytes dropped (the sequence's text stays), each control byte a space (the
+    sequence's text stays: "<ESC>token=" is an ESC form that eats the "t") and only a CSI's
+    introducer and parameters dropped."""
     return [
-        _CONTROL.sub("", _SEQUENCE.sub("", text)),
-        strip_controls(text),
-        _CONTROL.sub("", text),
-        _CONTROL.sub(" ", text),
-        _CONTROL.sub("", _CSI_HEAD.sub("", text)),
+        _CONTROL_TAB.sub("", _SEQUENCE.sub("", text)),
+        _CONTROL_TAB.sub(" ", _SEQUENCE.sub(" ", text)),
+        _CONTROL_TAB.sub("", text),
+        _CONTROL_TAB.sub(" ", text),
+        _CONTROL_TAB.sub("", _CSI_HEAD.sub("", text)),
     ]
 
 
 def escaped_secret(text: str) -> bool:
-    """`text` holds a terminal escape sequence or control/invisible character AND some reading
-    of it (`_readings`) holds something the masking hides."""
+    """`text` holds a terminal escape sequence or a control/invisible character (a tab counts)
+    AND some reading of it (`_readings`) holds something the masking hides."""
     text = _encodable(text)
-    if not _CONTROL.search(text):
+    if not _CONTROL_TAB.search(text):
         return False
-    return any(_mask(reading) != reading for reading in _readings(text))
+    readings = dict.fromkeys(_readings(text))   # each distinct reading once (a tab alone: two)
+    return any(_mask(reading) != reading for reading in readings)
 
 
 def _hide_lines(text: str) -> str:
     """Every line of `text` that hides a secret behind control characters, replaced whole."""
-    if not _CONTROL.search(text):
+    if not _CONTROL_TAB.search(text):
         return text
     return "\n".join(HIDDEN_LINE if escaped_secret(line) else line
                      for line in text.split("\n"))
@@ -167,7 +195,17 @@ def clean(text: str) -> str:
     return strip_controls(_encodable(text))
 
 
+def _mask_known(text: str) -> str:
+    """`text` with every secret Reconix holds (`known_secrets.values`, longest first) masked
+    wherever it occurs as is."""
+    for value in known_secrets.values():
+        if value in text:
+            text = text.replace(value, MASK)
+    return text
+
+
 def _mask(text: str) -> str:
+    text = _mask_known(text)
     for pattern, replacement in _PATTERNS:
         text = pattern.sub(replacement, text)
     return text

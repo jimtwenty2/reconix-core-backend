@@ -66,7 +66,7 @@ def test_a_pending_high_approval_is_named():
         decide(gate)
     store.autosave()
     data = load(saved_files()[0])
-    assert data["waiting_for"] == "HIGH approval for limited_validation"
+    assert data["waiting_for"] == "HIGH approval for Cross-account read check"
 
 
 def test_no_secret_reaches_the_saved_file():

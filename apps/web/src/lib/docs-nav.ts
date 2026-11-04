@@ -76,9 +76,9 @@ const GROUPS: GroupSpec[] = [
     icon: Rocket,
     pages: [
       { title: "Introduction", slug: "introduction", description: "What Reconix does, what is simulated and what is real." },
-      { title: "Requirements", slug: "requirements", description: "Python, a terminal, and the optional pieces for PDF, the dashboard and a model." },
-      { title: "Installation", slug: "installation", description: "Clone, create a virtual environment, install." },
-      { title: "Launching", slug: "launching", description: "python -m reconix, the reconix command and run.py." },
+      { title: "Requirements", slug: "requirements", description: "A terminal, Docker, a model, and what you need only to build from source." },
+      { title: "Installation", slug: "installation", description: "The installer, a model, the Kali MCP server, and installing from source." },
+      { title: "Launching", slug: "launching", description: "The reconix command, where it writes, and the environment variables it reads." },
       { title: "First steps", slug: "first-steps", description: "A first assessment on the demo target, gate by gate." },
     ],
   },

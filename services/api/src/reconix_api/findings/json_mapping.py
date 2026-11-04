@@ -2,17 +2,22 @@
 
 A mapping says where each finding field is in one result. Adding a JSON tool is adding
 a mapping here, plus a sample output and a test. A severity the tool does not give, or
-one the mapping does not know, is UNKNOWN: never guessed.
+one the mapping does not know, is UNKNOWN: never guessed. Only a mapping's stated
+default_severity replaces it (every gitleaks leak is a live credential: HIGH).
+
+trivy and grype keep the manifest file (requirements.txt, package-lock.json) outside the
+vulnerability, so they have their own reader that makes it the finding's target.
 """
 
 import json
+import posixpath
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from reconix_api.findings.shape import NewEvidence, NewFinding, OutputUnreadable, dedupe_key
 from reconix_api.models.enums import SeverityStatus
-from reconix_api.parsers.json_report import JsonParseError, get, parse
+from reconix_api.parsers.json_report import JsonParseError, get, parse, pick
 
 CWE = re.compile(r"CWE-\d+", re.IGNORECASE)
 CVE = re.compile(r"CVE-\d{4}-\d+", re.IGNORECASE)
@@ -30,6 +35,7 @@ class JsonMapping:
     detail: str | None = None  # added to the title, e.g. which header is missing
     severity: str | None = None
     severity_map: dict[str, SeverityStatus] = field(default_factory=dict)  # lowercase keys
+    default_severity: SeverityStatus = SeverityStatus.UNKNOWN  # when severity is None
     description: str | None = None
     remediation: str | None = None
     cwe: str | None = None
@@ -46,20 +52,75 @@ def read(mapping: JsonMapping, output: str) -> tuple[list[NewFinding], int]:
     return [_finding(mapping, result) for result in results], 0
 
 
-def _finding(mapping: JsonMapping, result: dict[str, Any]) -> NewFinding:
+def read_trivy(output: str) -> tuple[list[NewFinding], int]:
+    """trivy fs: each finding's target is its manifest, ArtifactName (the scanned folder)
+    joined with the parent result's Target ("requirements.txt"). Any other artifact
+    (an image, a repository URL) keeps the package name as the target."""
+    document = _document(output)
+    scanned = document.get("ArtifactName") if document.get("ArtifactType") == "filesystem" else ""
+    findings = []
+    for result in pick(document, "Results[]"):
+        manifest = _manifest(scanned, result.get("Target")) if isinstance(result, dict) else ""
+        for vulnerability in pick(result, "Vulnerabilities[]"):
+            if isinstance(vulnerability, dict):
+                findings.append(_finding(MAPPINGS["trivy"], vulnerability, manifest))
+    return findings, 0
+
+
+def read_grype(output: str) -> tuple[list[NewFinding], int]:
+    """grype on a directory: each finding's target is the folder joined with the package's
+    first location ("/requirements.txt", relative to that folder). An image keeps the
+    package name as the target."""
+    document = _document(output)
+    source = document.get("source") if isinstance(document.get("source"), dict) else {}
+    scanned = source.get("target") if source.get("type") == "directory" else ""
+    findings = []
+    for match in pick(document, "matches[]"):
+        if isinstance(match, dict):
+            locations = pick(match, "artifact.locations[]")
+            first = locations[0] if locations and isinstance(locations[0], dict) else {}
+            findings.append(
+                _finding(MAPPINGS["grype"], match, _manifest(scanned, first.get("path")))
+            )
+    return findings, 0
+
+
+def _document(output: str) -> dict[str, Any]:
+    if not output or not output.strip():
+        raise OutputUnreadable("EMPTY_OUTPUT")
+    try:
+        document = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise OutputUnreadable(f"NOT_JSON: {error}") from error
+    if not isinstance(document, dict):
+        raise OutputUnreadable("NOT_AN_OBJECT")
+    return document
+
+
+def _manifest(scanned: Any, path: Any) -> str:
+    """'/workspace/code/s1' + 'api/requirements.txt' (or '/api/...') -> one clean path."""
+    if not (isinstance(scanned, str) and scanned and isinstance(path, str) and path.strip()):
+        return ""
+    return posixpath.normpath(f"{scanned}/{path.strip()}")
+
+
+def _finding(mapping: JsonMapping, result: dict[str, Any], target: str = "") -> NewFinding:
+    """target: the manifest the package is in. It is part of the dedupe key, so one
+    package in two manifests is two findings."""
+    key = [_text(get(result, path)) for path in mapping.key] + ([target] if target else [])
     location = ":".join(_text(get(result, path)) for path in mapping.location)
     title = _text(get(result, mapping.title)) or mapping.kind
     detail = _optional(result, mapping.detail)
     if detail:
         title = f"{title} ({detail})"
-    target = _text(get(result, mapping.target)) or location
+    target = target or _text(get(result, mapping.target)) or location
     proof = {name: value for name, value in result.items() if name not in mapping.hidden}
     return NewFinding(
         title=title,
         target=target,
         description=_optional(result, mapping.description) or f"{title} at {location}.",
         severity=_severity(mapping, result),
-        dedupe_key=dedupe_key(mapping.kind, *(_text(get(result, path)) for path in mapping.key)),
+        dedupe_key=dedupe_key(mapping.kind, *key),
         evidence=[
             NewEvidence(
                 kind=mapping.kind,
@@ -75,7 +136,7 @@ def _finding(mapping: JsonMapping, result: dict[str, Any]) -> NewFinding:
 
 def _severity(mapping: JsonMapping, result: dict[str, Any]) -> SeverityStatus:
     if mapping.severity is None:
-        return SeverityStatus.UNKNOWN
+        return mapping.default_severity
     value = _text(get(result, mapping.severity)).lower()
     return mapping.severity_map.get(value, SeverityStatus.UNKNOWN)
 
@@ -130,8 +191,10 @@ MAPPINGS: dict[str, JsonMapping] = {
         location=("path", "start.line"),
         key=("check_id", "path", "start.line"),
         severity="extra.severity",
-        # semgrep INFO rules still point at code worth a look, so LOW, not NONE.
+        # semgrep INFO rules still point at code worth a look, so LOW, not NONE. Newer
+        # semgrep (and Pro rules) write CRITICAL/HIGH/MEDIUM/LOW instead.
         severity_map={
+            **SEVERITY_WORDS,
             "error": SeverityStatus.HIGH,
             "warning": SeverityStatus.MEDIUM,
             "info": SeverityStatus.LOW,
@@ -148,6 +211,7 @@ MAPPINGS: dict[str, JsonMapping] = {
         target="File",
         location=("File", "StartLine"),
         key=("RuleID", "File", "StartLine"),
+        default_severity=SeverityStatus.HIGH,  # gitleaks gives none; a leak is a credential
         # The leak itself, the line around it and the commit author never become evidence.
         hidden=("Secret", "Match", "Line", "Commit", "Author", "Email", "Message"),
     ),

@@ -110,3 +110,14 @@ def decision_reply() -> str:
         text = f"{state}. Nothing waits for your decision here: {status.choices}."
     add_chat("text", "reconix", text)
     return text
+
+
+def view_reply(view: str) -> str:
+    """Reconix's line before the scope or plan card ("The scope as it stands now:"),
+    recorded like any other reply, so the chat's last exchange and the model's history
+    have it."""
+    if view not in ("scope", "plan"):
+        raise ValueError(f"No card for {view!r}.")
+    text = f"The {view} as it stands now:"
+    add_chat("text", "reconix", text)
+    return text

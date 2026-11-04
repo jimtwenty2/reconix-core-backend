@@ -94,7 +94,9 @@ def test_server_functions_answer_from_the_sessions_latest_scan(client, db_app):
 
 def test_fix_names_findings_of_the_sessions_latest_scan(client, db_app):
     headers, session_id, found = scanned(client, db_app)
-    high = [f["finding_id"] for f in found if f["severity_status"] == "HIGH"]
+    by_path = sorted(found, key=lambda f: f["path"])  # most serious first, then by file
+    high = [f["finding_id"] for f in by_path if f["severity_status"] == "HIGH"]
+    assert len(high) == 2  # semgrep's eval and the gitleaks leak
 
     body = vscode_chat(client, headers, session_id, "fix all high findings").json()
 

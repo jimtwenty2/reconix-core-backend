@@ -3,7 +3,6 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from functools import partial
 
 import uvicorn
 from fastapi import FastAPI
@@ -22,6 +21,7 @@ from reconix_api.api import (
     findings,
     knowledge,
     knowledge_add_ons,
+    limit_settings,
     llm_providers,
     messages,
     plans,
@@ -34,6 +34,7 @@ from reconix_api.api import (
     timeline,
     vscode_chat,
 )
+from reconix_api.api.code_mcp import add_code_mcp
 from reconix_api.core.agent import prepare_checkpoints
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import get_session_factory
@@ -47,6 +48,7 @@ from reconix_api.core.rate_limit import RateLimitMiddleware
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.core.wiring import build_interfaces, build_mask_secrets
+from reconix_api.services import code_scans as code_scan_service
 
 API_PREFIX = "/api/v1"  # every route lives under it
 
@@ -126,7 +128,8 @@ API_TAGS = [
     },
     {
         "name": "code scans",
-        "description": "Scan the code sent to a session with SEMGREP and GITLEAKS.",
+        "description": "Scan the code sent to a session with the source code tools: SEMGREP, "
+        "GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN.",
     },
     {
         "name": "findings",
@@ -176,7 +179,8 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if startup is not None:
             await startup()
-        yield
+        async with code_mcp_server.session_manager.run():
+            yield
 
     app = FastAPI(
         title="Reconix API",
@@ -212,6 +216,7 @@ def create_app(
     )
     app.add_middleware(HostCheckMiddleware, allowed_hosts=settings.allowed_hosts)
     add_error_handlers(app)
+    code_mcp_server = add_code_mcp(app)  # /mcp: the code scan tools, same session token
 
     routers = [
         system,
@@ -232,6 +237,7 @@ def create_app(
         findings,
         evidence,
         llm_providers,
+        limit_settings,
         knowledge_add_ons,
         knowledge,
         timeline,
@@ -245,19 +251,28 @@ def create_app(
 
 _session_tokens = SessionTokens()
 _settings = get_settings()
+
+
+async def _startup() -> None:
+    """The agent's checkpoint tables are made here, never inside a request. A code scan
+    cut off by the last stop ends FAILED."""
+    await prepare_checkpoints(_settings.database_url)
+    with get_session_factory()() as db:
+        code_scan_service.recover_interrupted(db, _settings.code_dir)
+
+
 app = create_app(
     build_interfaces(
         _session_tokens,
         get_session_factory(),
         _settings.audit_log_path,
         _settings.kali_mcp_url,
-        _settings.mcp_access_key.get_secret_value(),
+        _settings.mcp_auth_token.get_secret_value(),
         _settings.database_url,
         _settings,
     ),
     session_tokens=_session_tokens,
-    # The agent's checkpoint tables are made here, never inside a request.
-    startup=partial(prepare_checkpoints, _settings.database_url),
+    startup=_startup,
 )
 
 

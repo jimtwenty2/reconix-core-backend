@@ -15,7 +15,7 @@
 | MF-WEB-02 | 1.1 Web URL (a website) | Bare hostname: you pick the template | `Assess staging.example.com` | The approved scope has /checkout and 20 min; the first "No, go back" ran nothing. |
 | MF-WEB-03 | 1.1 Web URL (a website) | Wrong scope values are refused | `Scan the website https://shop.example.com` | A wrong value changes nothing (all or nothing); the final scope shows 45 min. |
 | MF-WEB-04 | 1.1 Web URL (a website) | Edit the approval's parameters | `Test https://shop.example.com for access control problems` | Blocked values never run; the accepted edit is what ran; the triage is in the report. |
-| MF-WEB-05 | 1.1 Web URL (a website) | Reject at HIGH, the plan goes on | `Check https://shop.example.com for web security issues` | limited_validation never runs; the same assessment completes and its report can be exported. |
+| MF-WEB-05 | 1.1 Web URL (a website) | Reject at HIGH, the plan goes on | `Check https://shop.example.com for web security issues` | Cross-account read check never runs; the same assessment completes and its report can be exported. |
 | MF-API-01 | 1.2 API (REST / GraphQL) | The whole flow, approve everything | `Test the REST API at https://api.example.com/v1 for authorization issues` | Every step at ✓; the cookie value never shows in the log, the findings or the report. |
 | MF-API-02 | 1.2 API (REST / GraphQL) | Attach an OpenAPI spec | `Assess the api at api.example.com` | The spec (4 endpoints, GET and POST) is read but never widens the scope. |
 | MF-API-03 | 1.2 API (REST / GraphQL) | Reject the scope | `Check https://api.example.com/v1 endpoints` | Nothing ran: no plan step started and there are no findings. Reject never opens a new assessment by itself. |
@@ -25,7 +25,7 @@
 | MF-NET-02 | 1.3 Network (IP address or range) | Ports in the question fill the scope | `scan 192.0.2.0/28 ports 22, 443 and 8443 with nmap` | The scope, findings and report hold exactly ports 22, 443 and 8443. |
 | MF-NET-03 | 1.3 Network (IP address or range) | Wrong addresses are refused | `scan 10.0.0.300` | Each bad address shows its message and nothing starts; the CIDR range starts. |
 | MF-NET-04 | 1.3 Network (IP address or range) | Scope edit and ports suggested in chat | `Scan 10.0.0.0/24 for open ports` | Only your tick changed the scope; the wrong values changed nothing. |
-| MF-NET-05 | 1.3 Network (IP address or range) | The HIGH double check and blocked parameters | `Check 10.0.0.0/24 for exposed management consoles` | Only an in-scope host:port can be set; HIGH runs only after the second Yes. |
+| MF-NET-05 | 1.3 Network (IP address or range) | The HIGH double check and blocked parameters | `Check 10.0.0.0/24 for exposed management consoles` | Only an in-scope host:port can be set; HIGH runs only after the second Yes; a check moved to another host never confirms the finding. |
 | MF-SRC-01 | 1.4 Source Code (git repo or folder) | The whole flow, approve everything | `Review the repo https://git.example.com/acme/app.git for secrets and insecure code` | Every step at ✓; the hardcoded password never shows in plain text. |
 | MF-SRC-02 | 1.4 Source Code (git repo or folder) | Other ways to name a repository | `review git@git.example.com:acme/app.git` | All repository forms are understood; the incomplete one is explained. |
 | MF-SRC-03 | 1.4 Source Code (git repo or folder) | Paths that leave the repository are blocked | `Check https://git.example.com/acme/app.git for hardcoded secrets` | Only files inside the repository and outside the excluded paths can be read. |
@@ -46,13 +46,13 @@
 | RULE-01 | 2b Chat: step rules (Reconix decides) | Decision words open the step's menu | `apporve that scope` | Each time: "… Only you decide this: choose below. Nothing changes until you do." and the step's own menu in the chat. The scope stays a draft until you pick Approve scope. |
 | RULE-02 | 2b Chat: step rules (Reconix decides) | A question about the decision | `should I approve?` | "That's your call: Reconix never decides for you." with what to check, then the same menu; nothing is approved. |
 | RULE-03 | 2b Chat: step rules (Reconix decides) | Show the scope or the plan | `show me my scope manifest` | "The scope as it stands now:" (or plan) with its card and the step's menu. |
-| RULE-04 | 2b Chat: step rules (Reconix decides) | Ports go to your tick list | `add port 3389` | "Only you can change the scope. Tick what it allows, then press Enter to save." 3389 is offered unticked; 8080 is already in the scope, so it shows ticked; 0 and 99999 are dropped; "12 ports" is a count, never port 12. |
+| RULE-04 | 2b Chat: step rules (Reconix decides) | Ports go to your tick list | `add port 3389` | "Only you can change the scope. Tick what it allows, then press Enter to save." 3389 is offered unticked; 8080 is already in the scope, so it shows ticked; 0 and 99999 are dropped; "scan 12 ports" opens no tick list (a count, never port 12): the mock gives its fallback answer (it only answers prepared questions). |
 | RULE-05 | 2b Chat: step rules (Reconix decides) | The scope is locked after approval | `add port 3389` | "The scope is approved and locked…": start a new assessment (/new) to test something else. |
 | RULE-06 | 2b Chat: step rules (Reconix decides) | Reorder only the gated checks | `move 3b before 3a` | The first opens the order list ("Only you can change the order…"); the second is answered and nothing moves. |
 | CMD-01 | 3 Commands and settings | Help and the command list |  | ? shows the keys for this screen and the ones that work everywhere. Tab completes to /findings (or /finding). |
 | CMD-02 | 3 Commands and settings | Go straight to a template |  | The Web URL target prompt opens; the scope draft for that URL follows. |
 | CMD-03 | 3 Commands and settings | Open the flow screens |  | Each command opens that screen; a screen with nothing yet says so. |
-| CMD-04 | 3 Commands and settings | Export the report |  | Before: "The report is available once the assessment is complete." After: "✓ REPORT SAVED" with the file path (in apps/tui/reports/). |
+| CMD-04 | 3 Commands and settings | Export the report |  | Before: "The report is available once the assessment is complete." After: "✓ REPORT SAVED" with "Saved ./reports/<id>.pdf. Open it now?" (the folder is apps/tui/reports/ when Reconix runs from apps/tui). |
 | CMD-05 | 3 Commands and settings | Summary, assessments and the audit trail |  | The summary of this assessment; the list of this session's assessments (Enter reopens one); the activity log and audit trail with every decision. |
 | CMD-06 | 3 Commands and settings | Provider list with a masked key |  | Reconix mock (offline) [configured] · Reachable · sk-…1234 · reconix-mock-1. The full key never shows. |
 | CMD-07 | 3 Commands and settings | Test the mock |  | "Reconix mock (offline): REACHABLE — reconix-mock-1 (offline)". |
@@ -64,7 +64,7 @@
 | WEB-01 | 4a Local web from the TUI | Open the web |  | The browser opens http://127.0.0.1:3100 (the port RECONIX_WEB_PORT sets) and signs you in from the link. On the first /web the dashboard's own launcher opens the browser; a later /web opens it from the TUI, which says "Opening the web dashboard in your browser…". |
 | WEB-02 | 4a Local web from the TUI | The same run in the web |  | Each shows the run you just made in the TUI: the same target, findings and decisions; evidence stays masked (••••). |
 | WEB-03 | 4a Local web from the TUI | Download the report |  | Both files download and match the TUI report. |
-| WEB-04 | 4a Local web from the TUI | The web is read-only |  | There is none: a waiting step carries the badge "Waiting for approval", and its hint reads "Decide in the TUI." — two separate pieces, not one line. |
+| WEB-04 | 4a Local web from the TUI | The web is read-only |  | There is none: a waiting step shows "Waiting for approval"; its badge (hover it) and the legend say "Decide in the TUI". The web never approves. |
 | WEB-05 | 4a Local web from the TUI | Without Node.js |  | "The web dashboard needs Node.js (node and npm). Install Node.js (nodejs.org), then type /web again." The TUI keeps working. |
 | WEB-AI-01 | 4b Web AI Assistant (mock model) | No model yet |  | It says no model is set up and offers to choose one. |
 | WEB-AI-02 | 4b Web AI Assistant (mock model) | Set the mock |  | No network is used; the chip under the message box shows reconix-mock-1 and "Ask anything about your assessments…" is ready. A typed key is saved encrypted and never shown again. |

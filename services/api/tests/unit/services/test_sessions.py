@@ -20,3 +20,9 @@ def test_actor_fits_the_by_columns(monkeypatch):
     monkeypatch.setattr(sessions.getpass, "getuser", lambda: "u" * 80)
     monkeypatch.setattr(sessions.socket, "gethostname", lambda: "h" * 80)
     assert len(sessions.local_actor()) == sessions.MAX_ACTOR
+
+
+def test_a_sent_name_is_cleaned_and_fits():
+    assert sessions.clean_actor("  van\nneth@laptop\x07 ") == "vanneth@laptop"
+    assert len(sessions.clean_actor("x" * 300)) == sessions.MAX_ACTOR
+    assert sessions.clean_actor("   ") == ""

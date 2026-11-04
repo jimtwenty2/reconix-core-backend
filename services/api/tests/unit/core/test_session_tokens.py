@@ -82,7 +82,8 @@ def test_a_sign_in_code_names_the_session_that_asked():
     tokens = SessionTokens()
     operator = make_operator()
     code, _ = tokens.issue_sign_in_code(operator, NOW)
-    assert tokens.use_sign_in_code(code, NOW) == operator.session_id
+    used = tokens.use_sign_in_code(code, NOW)
+    assert (used.issued_by, used.actor) == (operator.session_id, operator.actor)
 
 
 def test_closing_the_session_cancels_its_sign_in_codes():
@@ -93,4 +94,4 @@ def test_closing_the_session_cancels_its_sign_in_codes():
     tokens.revoke_session(operator.session_id)
     with pytest.raises(PermissionError):
         tokens.use_sign_in_code(code, NOW)
-    assert tokens.use_sign_in_code(kept, NOW) == other.session_id
+    assert tokens.use_sign_in_code(kept, NOW).issued_by == other.session_id

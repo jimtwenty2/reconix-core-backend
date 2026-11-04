@@ -97,7 +97,7 @@ def build_run(assessment) -> RunBundle:
             impact="Low. One read request, no data changes",
             command=f"GET {url}{{path}} as token A"),
         high=approval(
-            "approval-002", risk="HIGH", action="limited_validation",
+            "approval-002", risk="HIGH", action="Cross-account read check",
             target="GET {path} (token B's order)", method="GET", path="/v1/orders/8843",
             param="Path",
             purpose="Check if token A can read an order owned by account B",

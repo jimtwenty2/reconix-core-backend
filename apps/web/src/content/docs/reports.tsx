@@ -55,6 +55,7 @@ export const reports: GroupContent = {
   },
   "understanding-findings": {
     lede: "What each field of a finding means, and how to filter, sort and triage.",
+    notice: "This reference is under review and may not match the latest implementation.",
     body: (
       <>
         <DocSection title="The fields">
@@ -96,6 +97,7 @@ export const reports: GroupContent = {
   },
   exporting: {
     lede: "Three formats (PDF, JSON and DOCX), written to ./reports/ once the assessment is complete.",
+    notice: "This reference is under review and may not match the latest implementation.",
     body: (
       <>
         <DocSection title="The formats">
@@ -166,8 +168,10 @@ export const reports: GroupContent = {
         <DocSection title="Opening it">
           <p>
             <Mono>/web</Mono> (or <Kbd>b</Kbd> on the Report screen) starts the dashboard in the background the first time
-            (<Mono>npm run dev</Mono> in <Mono>web/</Mono>, installing its packages first if needed) and opens your browser
-            on it; later calls just open it. It reads the saved copies in <Mono>~/.reconix/assessments</Mono>, so every
+            (<Mono>npm run dev</Mono> in <Mono>apps/web/</Mono>, installing its packages first if needed) and opens your
+            browser on it; later calls just open it. It listens on <Mono>127.0.0.1</Mono> only, on port{" "}
+            <Mono>3100</Mono> unless <Mono>RECONIX_WEB_PORT</Mono> says otherwise. It reads the saved copies in{" "}
+            <Mono>~/.reconix/assessments</Mono>, so every
             started assessment of every session is there, with secrets removed. Its views: Overview, Assessments,
             Findings, Reports, Terminal, AI Assistant. Nothing in the dashboard writes to or decides anything the
             terminal reads.

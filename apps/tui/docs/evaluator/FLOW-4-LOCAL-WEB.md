@@ -20,7 +20,8 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 #### WEB-02 · The same run in the web
 
-1. Open Overview, Assessments, Findings, Run log and Reports.
+1. Pick the run in the run switcher at the top (Assessment: …).
+2. Open Overview, Assessments, Findings, Run log and Reports.
 
 **Expected:** Each shows the run you just made in the TUI: the same target, findings and decisions; evidence stays masked (••••).
 
@@ -38,7 +39,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 1. Look for a way to approve or change the scope in the web.
 
-**Expected:** There is none: a waiting step carries the badge "Waiting for approval", and its hint reads "Decide in the TUI." — two separate pieces, not one line.
+**Expected:** There is none: a waiting step shows "Waiting for approval"; its badge (hover it) and the legend say "Decide in the TUI". The web never approves.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 

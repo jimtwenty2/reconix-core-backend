@@ -4,7 +4,8 @@
    the one that answers next, each with its provider and where it runs ("Stub · local"). One
    click, Enter or Space uses a model and closes the picker (the ✓ one just closes it), a remote
    one as much as a local one. Each row has a bin: an inline confirm ("Remove <model>
-   (<provider>)? …"), focused on No; Escape there keeps it. Removing a provider's last model
+   (<provider>)? …"), focused on No; Escape there keeps it. No is the rightmost button, where
+   the bin was: the second click of a double-click on the bin keeps the model. Removing a provider's last model
    removes the provider (and its saved key). One tab stop for the rows and their bins
    (use-roving.ts). + Model, at the bottom, opens Set the provider. The first time it opens the models are on their way ("Loading the models…"); once
    they are there, focus goes to the model that answers next (else the first, else + Model), or
@@ -140,13 +141,14 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
                           {error}
                         </p>
                       )}
+                      {/* No on the right, under the bin: a double-click on the bin keeps it */}
                       <div className="mt-2 flex justify-end gap-1.5">
-                        <button type="button" autoFocus onClick={() => keep(row)} className="ai-btn ai-btn-small ai-btn-outline">
-                          No
-                        </button>
                         <button type="button" onClick={() => void remove(row)} disabled={models.pending !== null} className="ai-btn ai-btn-small ai-btn-danger-solid">
                           {models.pending === `remove:${row.key}` && <Loader className="size-3.5 animate-spin" aria-hidden />}
                           Remove
+                        </button>
+                        <button type="button" autoFocus onClick={() => keep(row)} className="ai-btn ai-btn-small ai-btn-outline">
+                          No
                         </button>
                       </div>
                     </div>

@@ -20,6 +20,7 @@ from .choice import ChoiceScreen, details_body
 from .. import store, theme
 from ..models import GATE_APPROVAL_PREFIX, ApprovalRequest, Choice
 from ..widgets import Question, menu_hint
+from ..wording import clock
 
 
 def waiting_request() -> Optional[ApprovalRequest]:
@@ -154,7 +155,7 @@ class ApprovalScreen(ReconixScreen):
             approved = decision.decision == "APPROVED"
             line.append("✓ approved" if approved else "✕ rejected",
                         style=theme.GREEN if approved else theme.CRITICAL)
-            line.append(f" by {decision.operator} at {decision.created_at:%H:%M:%S}",
+            line.append(f" by {decision.operator} at {clock(decision.created_at)}",
                         style=theme.DIM)
             if decision.reason:
                 line.append(f" · “{decision.reason}”", style=theme.MUTED)
@@ -227,11 +228,23 @@ class ApprovalScreen(ReconixScreen):
         req = self._request
         return [
             Text.assemble(("$ ", f"bold {theme.GREEN}"), (req.command, theme.TEXT)),
-            Text(req.command_hash, style=theme.DIM),
+            self._hash_line(req.command_hash),
             Text(""),
             Text.assemble(("Purpose  ", theme.DIM), (req.purpose, theme.TEXT)),
             Text.assemble(("Impact   ", theme.DIM), (req.impact, theme.MUTED)),
         ]
+
+    def _hash_line(self, digest: str) -> Text:
+        """The command hash on one line: whole when the dialog is wide enough, else its
+        start and end with a pointer to View details, where it is shown in full (80×24
+        would wrap it and leave its last character alone on a line)."""
+        # .dialog: 96 wide, at most 95% of the screen; minus the border, padding, scrollbar
+        room = min(96, int(self.app.size.width * 0.95)) - 7
+        if len(digest) <= room:
+            return Text(digest, style=theme.DIM)
+        algo, _, hexpart = digest.partition(":")
+        short = f"{algo}:{hexpart[:12]}…{hexpart[-8:]}" if hexpart else digest[:room - 1] + "…"
+        return Text.assemble((short, theme.DIM), ("  (full hash in View details)", theme.DIM))
 
     def action_edit(self) -> None:
         if self._request is not None:
@@ -290,7 +303,7 @@ class ApprovalScreen(ReconixScreen):
                 (v.method, f"{v.path} · {v.reason}", theme.CRITICAL) for v in blocked
             ] or [("", "nothing blocked so far", theme.DIM)]),
             ("Audit trail", [
-                (e.created_at.strftime("%H:%M:%S"), f"{e.kind} · {e.operator}", theme.MUTED)
+                (clock(e.created_at), f"{e.kind} · {e.operator}", theme.MUTED)
                 for e in events[-6:]
             ] or [("", "no events for this request yet", theme.DIM)]),
         ])

@@ -12,7 +12,7 @@ class ApprovalRequest:
 
     request_id: str
     risk: str          # "MEDIUM" | "HIGH"
-    action: str        # e.g. "Baseline request (read-only)" or "limited_validation"
+    action: str        # its name as shown: "Baseline request (read-only)", "Default login probe"
     target: str        # what the dialog shows, e.g. "GET /api/orders/10482"
     method: str        # what the policy check sees: method + path
     path: str
