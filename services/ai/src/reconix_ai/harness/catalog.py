@@ -67,6 +67,13 @@ def _escalations() -> dict[str, dict[str, list[str]]]:
     return out
 
 
+def same_tool_names(tool: str) -> set[str]:
+    """Every UPPERCASE name Core may have saved for this tool: its catalog name and its
+    aliases. "zap" or "ZAP_SCAN" -> {"ZAP_SCAN", "ZAP"}."""
+    name = canonical(tool)
+    return {name.upper()} | {alias.upper() for alias, target in ALIASES.items() if target == name}
+
+
 def is_known_tool(tool: str) -> bool:
     return canonical(tool) in _tools()
 

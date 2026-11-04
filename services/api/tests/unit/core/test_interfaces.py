@@ -10,6 +10,7 @@ from reconix_api.core.interfaces import (
     AgentRequest,
     AgentTask,
     ApprovedScope,
+    ChatScope,
     CheckContext,
     CheckName,
     Decision,
@@ -164,3 +165,9 @@ async def test_call_tool_reports_container_down():
     )
     with pytest.raises(ConnectionError):
         await interfaces.call_tool(job)
+
+
+def test_scopes_keep_any_catalog_tool_uppercase():
+    assert make_scope(allowed_tools=["masscan", " Nmap "]).allowed_tools == ["MASSCAN", "NMAP"]
+    chat = ChatScope(status="DRAFT", allowed_tools=["sqlmap"])
+    assert chat.allowed_tools == ["SQLMAP"]

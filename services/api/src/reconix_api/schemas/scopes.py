@@ -7,19 +7,22 @@ from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from reconix_ai.harness.catalog import is_known_tool
 from reconix_api.core.code_files import check_code_path
+from reconix_api.core.interfaces import upper_tools
 from reconix_api.models.enums import AssessmentStatus, ManifestStatus, RiskLevel
 
 
 def _check_tools(tools: list[str] | None) -> list[str] | None:
-    """Every tool must be in the Kali catalog (tool_specs.json)."""
-    for tool in tools or []:
+    """Every tool must be in the Kali catalog (tool_specs.json). Saved UPPERCASE."""
+    if tools is None:
+        return None
+    for tool in tools:
         if not is_known_tool(tool):
             raise ValueError(f"tool {tool!r} is not in the Kali catalog (tool_specs.json)")
-    return tools
+    return upper_tools(tools)
 
 
 DOMAIN = re.compile(r"^(\*\.)?([a-z0-9-]+\.)*[a-z0-9-]+$", re.IGNORECASE)
@@ -67,7 +70,7 @@ class ScopeDraft(BaseModel):
 
     max_risk: RiskLevel = RiskLevel.LOW
     allowed_tools: list[str] = Field(min_length=1)
-    # The ports nmap may scan. Empty puts no limit on ports.
+    # The ports the tools may reach. Empty puts no limit on ports.
     allowed_ports: list[Port] = Field(default_factory=list, max_length=MAX_PORTS)
     allowed_actions: list[Literal["discovery", "scan", "validation"]] = Field(default_factory=list)
     allowed_methods: list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] = (
@@ -84,10 +87,10 @@ class ScopeDraft(BaseModel):
             raise ValueError("ends_at must be after starts_at")
         return self
 
-    @model_validator(mode="after")
-    def tools_in_catalog(self) -> Self:
-        _check_tools(self.allowed_tools)
-        return self
+    @field_validator("allowed_tools")
+    @classmethod
+    def tools_in_catalog(cls, tools: list[str] | None) -> list[str] | None:
+        return _check_tools(tools)
 
 
 class ScopeUpdate(BaseModel):
@@ -105,10 +108,10 @@ class ScopeUpdate(BaseModel):
     limitations: str | None = Field(default=None, max_length=4000)
     targets: list[ScopeTargetIn] | None = Field(default=None, max_length=200)
 
-    @model_validator(mode="after")
-    def tools_in_catalog(self) -> Self:
-        _check_tools(self.allowed_tools)
-        return self
+    @field_validator("allowed_tools")
+    @classmethod
+    def tools_in_catalog(cls, tools: list[str] | None) -> list[str] | None:
+        return _check_tools(tools)
 
 
 class ScopeSubmit(BaseModel):

@@ -10,6 +10,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_ai.harness.catalog import canonical, is_known_tool
 from reconix_api.core.errors import ApiError
 from reconix_api.core.finding_memory import FindingMemory, MemoryUnavailable
 from reconix_api.core.interfaces import (
@@ -17,7 +18,6 @@ from reconix_api.core.interfaces import (
     AgentTask,
     Interfaces,
     Operator,
-    ToolName,
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets, mask_output
@@ -53,8 +53,8 @@ MEMORY_TIMEOUT_SECONDS = 30  # one embedding and one Qdrant write; the review is
 READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     "nmap": nmap_findings.read,
     "osv_scanner": osv_findings.read,
-    # ZAP's report is SARIF (zap_report, template sarif-json).
-    "zap": partial(sarif_findings.read, "zap_alert"),
+    # ZAP's report is SARIF (zap_report, template sarif-json). Core's "ZAP" is zap_scan.
+    "zap_scan": partial(sarif_findings.read, "zap_alert"),
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
 }
 
@@ -63,12 +63,13 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
-def parse_run(tool: ToolName | str, output: str) -> tuple[list[NewFinding], int]:
+def parse_run(tool: str, output: str) -> tuple[list[NewFinding], int]:
     """A tool's masked output -> (findings, requests sent). Tools without a reader: none.
 
+    Looked up by the catalog name, so "ZAP", "zap" and "zap_scan" find the same reader.
     A tool with no reader still keeps its masked output on the tool run.
     """
-    reader = READERS.get(str(tool).lower())
+    reader = READERS.get(canonical(str(tool)))
     return reader(output) if reader else ([], 0)
 
 
@@ -104,6 +105,8 @@ def save_findings(
 def list_findings(db: Db, filters: FindingFilters | None = None) -> list[FindingOut]:
     """Every finding, or one assessment's; each filter given must match."""
     filters = filters or FindingFilters()
+    if filters.tool is not None and not is_known_tool(filters.tool):
+        raise ApiError(422, "UNKNOWN_TOOL", "This tool is not in the Kali catalog.")
     if filters.assessment_id is not None and assessment_repo.get(db, filters.assessment_id) is None:
         raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
     rows = finding_repo.list_matching(db, **filters.model_dump())

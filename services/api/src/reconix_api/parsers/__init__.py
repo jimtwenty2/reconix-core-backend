@@ -1,1 +1,1 @@
-"""Raw tool output readers: nmap, nuclei, ZAP, semgrep, gitleaks."""
+"""Raw tool output readers. Which Kali tool uses which reader: services/findings.py READERS."""

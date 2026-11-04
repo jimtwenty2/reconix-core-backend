@@ -38,14 +38,17 @@ def tool_call(job: ToolJob) -> tuple[str, dict[str, Any]]:
     The tool name is the catalog name (lowercased). The job's target fills the
     tool's primary input param (the first required param that is not opts/timeout);
     the approved arguments go in `opts` when the tool takes it, always sent (even
-    empty) so the server never falls back to its own unchecked defaults; `timeout`
-    is sent when the tool takes it.
+    empty) so the server never falls back to its own unchecked defaults; arguments for
+    a tool without `opts` are refused, never dropped. `timeout` is sent when the tool
+    takes it.
     """
     name = canonical(str(job.tool))
     schema = input_schema(name)
     if not is_known_tool(name) or not schema:
         raise McpError(f"UNKNOWN_TOOL: {job.tool}")
     props = schema.get("properties", {}) or {}
+    if job.arguments and "opts" not in props:
+        raise McpError(f"TOOL_TAKES_NO_OPTIONS: {job.tool}")  # never drop approved arguments
     args: dict[str, Any] = {}
     primary = _primary_param(schema.get("required", []), props)
     if primary:

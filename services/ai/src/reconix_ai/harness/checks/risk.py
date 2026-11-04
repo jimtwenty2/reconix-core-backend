@@ -46,14 +46,39 @@ def action_risk(tool: str, arguments: Sequence[str]) -> RiskLevel:
     base = baseline_risk(tool)
     if is_destructive(tool) or is_free_shell(tool):
         base = highest([base, HIGH])
-    joined = " ".join(str(argument) for argument in arguments).lower()
+    raw, words = argument_texts(arguments)
     matched = [
         level
         for level, patterns in escalations(tool).items()
         for pattern in patterns
-        if pattern in joined
+        if pattern in raw or " " + " ".join(pattern.replace("=", " ").split()) + " " in words
     ]
     return highest([base, *matched])
+
+
+def argument_texts(arguments: Sequence[str]) -> tuple[str, str]:
+    """Two lowercased texts the risk patterns are matched against, each with a space at both
+    ends so a pattern like "-a " also matches a last "-A":
+
+    - raw: the arguments joined with spaces, as written;
+    - words: "--opt=a,b" and "--opt a,b" both written as "--opt a --opt b", so a pattern
+      like "--script exploit" matches "--script=safe,exploit" too."""
+    parts = [str(argument).lower() for argument in arguments]
+    words: list[str] = []
+    index = 0
+    while index < len(parts):
+        option, equals, value = parts[index].partition("=")
+        if not equals and option.startswith("-") and index + 1 < len(parts):
+            following = parts[index + 1]
+            if not following.startswith("-"):
+                value, equals = following, "="
+                index += 1
+        if equals and option.startswith("-"):
+            words.extend(f"{option} {piece}" for piece in value.split(",") if piece)
+        else:
+            words.append(parts[index])
+        index += 1
+    return " " + " ".join(parts) + " ", " " + " ".join(words) + " "
 
 
 def highest(levels: Sequence[RiskLevel]) -> RiskLevel:

@@ -1,7 +1,7 @@
 import pytest
 
 from reconix_ai.harness.checks.result import Decision, RiskLevel
-from reconix_ai.harness.checks.risk import check_risk
+from reconix_ai.harness.checks.risk import action_risk, check_risk
 
 LOW, MEDIUM, HIGH = RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH
 
@@ -113,3 +113,16 @@ def test_low_scope_only_allows_low_actions() -> None:
 def test_max_risk_can_be_a_plain_string() -> None:
     # The shared ApprovedScope uses its own RiskLevel enum; its values are the same strings.
     assert check_risk("NMAP", [], False, max_risk="MEDIUM").decision == Decision.ALLOW
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [["--script", "safe,exploit"], ["--script=dos"], ["--script", "vuln"], ["--script=brute"]],
+)
+def test_offensive_script_categories_are_high_in_any_form(arguments: list[str]) -> None:
+    assert action_risk("NMAP", arguments) == RiskLevel.HIGH
+
+
+@pytest.mark.parametrize("arguments", [["-A"], ["-O"], ["-Pn", "-A"], ["-sU"]])
+def test_intrusive_nmap_options_are_medium_even_as_the_last_argument(arguments) -> None:
+    assert action_risk("NMAP", arguments) == RiskLevel.MEDIUM
