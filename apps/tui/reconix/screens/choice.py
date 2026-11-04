@@ -75,6 +75,8 @@ class ChoiceScreen(ModalScreen[Optional[str]]):
         `.dialog` may take 90% of the screen; a short body keeps its natural height."""
         dialogs = self.query(".dialog")
         bodies = self.query(".dialog-body")
+        if dialogs and not bodies:
+            self._fit_menu(dialogs.first())
         if dialogs and bodies:
             dialog, body = dialogs.first(), bodies.first()
             pinned = sum(child.outer_size.height + child.styles.margin.top
@@ -83,6 +85,18 @@ class ChoiceScreen(ModalScreen[Optional[str]]):
             room = int(self.size.height * 0.9) - dialog.styles.gutter.height - pinned
             body.styles.max_height = max(3, room - body.styles.margin.bottom)
         self.call_after_refresh(self._show_scroll_hint)
+
+    def _fit_menu(self, dialog) -> None:
+        """A dialog with no body lets its menu use the room the screen has (the menu's own
+        cap is 12 rows), so a long list such as /provider shows from its first choice
+        whenever every choice fits, instead of scrolling while rows stay free."""
+        menu = self.query_one("#dialog-menu", ChoiceMenu)
+        pinned = sum(child.outer_size.height for child in dialog.children) - menu.outer_size.height
+        room = int(self.size.height * 0.9) - dialog.styles.gutter.height - pinned
+        wanted = max(12, room)
+        if menu.styles.max_height is None or menu.styles.max_height.value != wanted:
+            menu.styles.max_height = wanted
+            self.call_after_refresh(menu.scroll_to_highlight)
 
     SCROLL_HINT = "PgUp/PgDn scroll"     # short: the whole hint fits one line at 80 columns
 

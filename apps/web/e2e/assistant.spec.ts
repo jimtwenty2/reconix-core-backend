@@ -255,7 +255,7 @@ test.describe("with reduced motion", () => {
 
     await ask(page, "Give me the whole story [stub:long]");
     await expect(log(page)).toContainText("Paragraph 6");
-    const down = page.getByRole("button", { name: /new messages/i });
+    const down = page.getByRole("button", { name: /scroll to the latest/i }); // "New messages" while text still comes
     await expect(down).toBeHidden(); // following the text at the bottom
     await log(page).evaluate((el) => el.scrollTo({ top: 0 }));
     await expect(down).toBeVisible();
@@ -477,10 +477,17 @@ test.describe("the composer and its model picker", () => {
 
     // remove stub-model-2: asked first, No by default; Escape keeps it too
     await chip(page).click();
+    const bin = (await rows.getByRole("button", { name: "Remove stub-model-2 (Stub)" }).boundingBox())!;
     await rows.getByRole("button", { name: "Remove stub-model-2 (Stub)" }).click();
     const confirm = rows.getByRole("group", { name: "Remove stub-model-2 (Stub)?" });
     await expect(confirm).toContainText("Remove stub-model-2 (Stub)? Stub keeps its other models.");
     await expect(confirm.getByRole("button", { name: "No" })).toBeFocused();
+    // the second click of a double-click on the bin never lands on Remove (No is on the right)
+    const remove = (await confirm.getByRole("button", { name: "Remove", exact: true }).boundingBox())!;
+    const no = (await confirm.getByRole("button", { name: "No" }).boundingBox())!;
+    expect(remove.x + remove.width).toBeLessThan(no.x);
+    const [cx, cy] = [bin.x + bin.width / 2, bin.y + bin.height / 2];
+    expect(cx >= remove.x && cx <= remove.x + remove.width && cy >= remove.y && cy <= remove.y + remove.height).toBe(false);
     await page.keyboard.press("Escape");
     await expect(confirm).toHaveCount(0);
     await expect(picker(page, "Model")).toBeVisible(); // only the confirm went
@@ -530,7 +537,7 @@ test.describe("the composer and its model picker", () => {
     await picker(page, "Model").getByRole("button", { name: "+ Model" }).click();
     const form = picker(page, "Set the provider");
     const provider = form.getByLabel("Provider", { exact: true });
-    await expect(provider.locator("option")).toHaveText(["OpenAI", "Anthropic", "DeepSeek", "OpenRouter", "Groq", "Ollama (local)", "LM Studio (local)", "Custom (OpenAI-compatible)"]);
+    await expect(provider.locator("option")).toHaveText(["OpenAI", "Anthropic", "DeepSeek", "OpenRouter", "Groq", "Ollama (local)", "LM Studio (local)", "Reconix mock (offline)", "Custom (OpenAI-compatible)"]);
     for (const option of await provider.locator("option").all()) await expect(option).toBeEnabled(); // cloud allowed by default
     await expect(form.getByText(/LLM_ALLOW_REMOTE/)).toHaveCount(0);
     await provider.selectOption({ label: "Groq" });

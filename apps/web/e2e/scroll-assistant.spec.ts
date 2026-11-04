@@ -86,7 +86,7 @@ for (const size of [{ width: 1366, height: 768 }, { width: 390, height: 844 }]) 
 test.describe("the assistant's way back down", () => {
   test.use({ viewport: { width: 1366, height: 768 } });
 
-  test("New messages appears after scrolling up, follows nothing until clicked, then glides back and follows again", async ({ page }) => {
+  test("a way down appears after scrolling up (New messages only once something arrived), follows nothing until clicked, then glides back and follows again", async ({ page }) => {
     await page.goto("/?view=assistant");
     await ask(page, 1);
     await ask(page, 2);
@@ -94,8 +94,9 @@ test.describe("the assistant's way back down", () => {
     const box = (await log.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, -600);
-    const back = page.getByRole("button", { name: "New messages" });
+    const back = page.getByRole("button", { name: "Scroll to the latest message", exact: true });
     await expect(back).toBeVisible();
+    await expect(page.getByRole("button", { name: /new messages/i })).toBeHidden(); // nothing new arrived
     await clickMoving(page, back); // the panel breathes, so it is never "stable"
     await expect.poll(async () => { const s = await logState(page); return s.range - s.top; }).toBeLessThanOrEqual(1);
     await expect(back).toBeHidden();

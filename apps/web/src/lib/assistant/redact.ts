@@ -5,9 +5,22 @@
 
 export const MASK = "••••";
 
+/** `text` with each of `values` (secrets the server holds itself, such as the saved model API
+    keys: lib/assistant/models/known-keys.ts) masked wherever it occurs as is, longest first; a
+    value shorter than 4 characters is left alone (it would mask ordinary words). The TUI's
+    store/known_secrets.py does the same inside its redact(). */
+export function maskValues(text: string, values: readonly string[]): string {
+  const kept = [...new Set(values.map((v) => v.trim()).filter((v) => v.length >= 4))].sort((a, b) => b.length - a.length);
+  return kept.reduce((out, value) => out.split(value).join(MASK), text);
+}
+
 // Authorization schemes kept readable in front of the masked credential. A fixed list: a general
 // "word, then a space" would read a bare key as its scheme and leave the key visible.
 const SCHEMES = "bearer|basic|digest|token|negotiate|ntlm|dpop|apikey|aws4-hmac-sha256";
+
+// Plain words after "the token is …" that are no secret (the TUI's redact.py: the same list)
+const NOT_A_VALUE =
+  "a|an|the|not|no|now|set|unset|empty|missing|invalid|expired|required|wrong|correct|valid|stored|saved|masked|hidden|needed|ok|in|on|from|being|still|also|only|never|always|used|sent|shown|kept|encrypted|this|that|it";
 
 const PATTERNS: [RegExp, string][] = [
   // https://user:password@host → https://••••@host. The scheme starts where no scheme character
@@ -18,9 +31,20 @@ const PATTERNS: [RegExp, string][] = [
   [new RegExp(`\\b((?:proxy-)?authorization)\\b(\\s*[:=]\\s*)((?:${SCHEMES})\\s+)?("[^"]*"|'[^']*'|[^\\s,;&]+)`, "gi"), `$1$2$3${MASK}`],
   // Cookie: a=1; sid=2 → every cookie on the header line, not just the first
   [/\b((?:set-)?cookie)(\s*:\s*)[^\r\n]+/gi, `$1$2${MASK}`],
-  // cookie=…, password=…, api_key: "…" → keep the name, mask the value
+  // cookie=…, password=…, api_key: "…", DB_PASSWORD=…, OPENAI_API_KEY: … → keep the name, mask the
+  // value. The keyword may end a longer name (an env-style "DB_", "AWS_SECRET_" or "x-" in front
+  // stays as it is): it starts where no letter or digit precedes it ("bypass=1" and "compass: north"
+  // are no secret) and ":" or "=" must follow it ("passport=" is none either). A lookbehind, not a
+  // scanned name prefix: a prefix tried after every "_" of a long "a_a_a…" run would scan the rest
+  // of the run each time, quadratic in its length
   [
-    /\b((?:set-)?cookie|password|passwd|pwd|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|session[_-]?id|sessionid)\b(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;&]+)/gi,
+    /(?<![a-z0-9])((?:set-)?cookie|pass|password|passwd|pwd|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|api[_-]?key|access[_-]?key|private[_-]?key|session[_-]?id|sessionid)(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;&]+)/gi,
+    `$1$2${MASK}`,
+  ],
+  // "my password is hunter2", "the api key is …", "token is …": the next word is the secret, unless
+  // it is one of a few plain words ("the token is invalid", "the secret is not set")
+  [
+    new RegExp(`(?<![a-z0-9])(pass(?:word|phrase)|passwd|api[ _-]?key|token|secret)(\\s+is:?\\s+)(?!(?:${NOT_A_VALUE})(?![^\\s.,;:!?]))("[^"]*"|'[^']*'|\\S+)`, "gi"),
     `$1$2${MASK}`,
   ],
   [/\bbearer\s+[a-z0-9._~+/=-]{8,}/gi, `Bearer ${MASK}`],
@@ -55,10 +79,16 @@ export const HIDDEN_LINE = "[line hidden: control codes around a secret]";
 // selectors, variation selectors, Hangul fillers), the two non-characters and a lone carriage return
 // (CR LF stays a line break): any of them would split "token=" or "password" so the patterns miss
 // it. The TUI's redact.py builds the same set from unicodedata.
-const CONTROL_SOURCE =
-  "(?![\\t\\n\\r])[\\p{Cc}\\p{Cf}\\u034f\\u115f\\u1160\\u180b-\\u180f\\u3164\\ufe00-\\ufe0f\\uffa0\\ufffe\\uffff\\u{E0000}-\\u{E007F}\\u{E0100}-\\u{E01EF}]|\\r(?!\\n)";
+const CLASS =
+  "\\p{Cc}\\p{Cf}\\u034f\\u115f\\u1160\\u180b-\\u180f\\u3164\\ufe00-\\ufe0f\\uffa0\\ufffe\\uffff\\u{E0000}-\\u{E007F}\\u{E0100}-\\u{E01EF}";
+const CONTROL_SOURCE = `(?![\\t\\n\\r])[${CLASS}]|\\r(?!\\n)`;
 const CONTROL = new RegExp(CONTROL_SOURCE, "gu");
-const HAS_CONTROL = new RegExp(CONTROL_SOURCE, "u"); // no "g": `test` keeps no state
+// The same with the tab: `stripControls` keeps a tab, but one inside a secret's name splits it the
+// way the other controls do ("pass<TAB>word=…" read "pass word=…"), so the hidden-secret check
+// (`escapedSecret`) treats it as one of them (the TUI's _CONTROL_TAB)
+const CONTROL_TAB_SOURCE = `(?![\\n\\r])[${CLASS}]|\\r(?!\\n)`;
+const CONTROL_TAB = new RegExp(CONTROL_TAB_SOURCE, "gu");
+const HAS_CONTROL_TAB = new RegExp(CONTROL_TAB_SOURCE, "u"); // no "g": `test` keeps no state
 // One whole sequence: CSI (ESC [ or U+009B, its parameter and intermediate bytes, then a final byte
 // or the line's end), OSC / DCS / SOS / PM / APC (ESC ] P X ^ _ or U+009D / 0090 / 0098 / 009E /
 // 009F \u2026 BEL, ESC \, U+009C or the line's end) and the short ESC forms (ESC, any intermediate
@@ -82,28 +112,29 @@ export function stripControls(text: string): string {
   return text.replace(SEQUENCE, " ").replace(CONTROL, " ");
 }
 
-/** `text` holds a terminal escape sequence or control/invisible character AND some reading of it
-    holds something the masking hides: glued (each removed), spaced (`stripControls`), only the
-    control bytes dropped or each a space (the sequence's text stays: "<ESC>token=" is an ESC form
-    that eats the "t"), or only a CSI's introducer and parameters dropped. */
+/** `text` holds a terminal escape sequence or control/invisible character (a tab counts) AND some
+    reading of it holds something the masking hides: glued (each removed), spaced (`stripControls`,
+    the tab a space too), only the control bytes dropped or each a space (the sequence's text stays:
+    "<ESC>token=" is an ESC form that eats the "t"), or only a CSI's introducer and parameters
+    dropped. */
 export function escapedSecret(text: string): boolean {
   const plain = encodable(text);
-  if (!HAS_CONTROL.test(plain)) return false;
+  if (!HAS_CONTROL_TAB.test(plain)) return false;
   const readings = [
-    plain.replace(SEQUENCE, "").replace(CONTROL, ""),
-    stripControls(plain),
-    plain.replace(CONTROL, ""),
-    plain.replace(CONTROL, " "),
-    plain.replace(CSI_HEAD, "").replace(CONTROL, ""),
+    plain.replace(SEQUENCE, "").replace(CONTROL_TAB, ""),
+    plain.replace(SEQUENCE, " ").replace(CONTROL_TAB, " "),
+    plain.replace(CONTROL_TAB, ""),
+    plain.replace(CONTROL_TAB, " "),
+    plain.replace(CSI_HEAD, "").replace(CONTROL_TAB, ""),
   ];
-  return readings.some((reading) => mask(reading) !== reading);
+  return [...new Set(readings)].some((reading) => mask(reading) !== reading); // each distinct reading once
 }
 
 /** `text` ready for the patterns: every line hiding a secret behind control characters replaced
     whole, then every sequence and control character a space (the TUI's clean(_hide_lines(\u2026))). */
 export function prepare(text: string): string {
   const plain = encodable(text);
-  const shown = HAS_CONTROL.test(plain)
+  const shown = HAS_CONTROL_TAB.test(plain)
     ? plain.split("\n").map((line) => (escapedSecret(line) ? HIDDEN_LINE : line)).join("\n")
     : plain;
   return stripControls(shown);

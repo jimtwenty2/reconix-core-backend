@@ -9,6 +9,8 @@ Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CAS
 Set the mock model first (PROV-01).
 Type at the Start prompt, or inside a step with Chat about this. The mock gives prepared answers filled with this assessment's own data. It is not a real AI.
 It never says a step is approved or done, never asks "Shall we proceed?", writes no Markdown and never shows a secret.
+Its answers are labelled "◆ reconix-mock-1" (a real model shows its own name); Reconix's own lines keep "◆ reconix".
+A question at the Start prompt is answered, never turned into a template: "what is my api key?" gets the mock's answer, not "API needs …".
 
 #### CHAT-01 · Who are you?
 
@@ -232,10 +234,10 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 add port 3389
 ```
 
-1. Network scope review (MF-NET-04's question) → Chat about this → add port 3389.
+1. Network scope review (MF-NET-04's question) → Chat about this → add port 3389: the tick list opens on the 3389 row → Space, then Enter adds it.
 2. Then add 3389, 0, 99999, 8080 and then scan 12 ports.
 
-**Expected:** "Only you can change the scope. Tick what it allows, then press Enter to save." 3389 is offered unticked; 8080 is already in the scope, so it shows ticked; 0 and 99999 are dropped; "12 ports" is a count, never port 12.
+**Expected:** "Only you can change the scope. Tick what it allows, then press Enter to save." 3389 is offered unticked; 8080 is already in the scope, so it shows ticked; 0 and 99999 are dropped; "scan 12 ports" opens no tick list (a count, never port 12): the mock gives its fallback answer (it only answers prepared questions).
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 

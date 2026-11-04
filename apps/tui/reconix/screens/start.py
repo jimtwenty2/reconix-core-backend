@@ -21,6 +21,7 @@ from .. import store, theme
 from ..commands import COMMANDS
 from ..models import ChatEntry
 from ..widgets import ActivityStatus, PromptBox, UserMessage
+from ..widgets.step_chat import speaker_label
 
 # Colored by `#logo` in reconix.tcss.
 LOGO = r"""██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗██╗██╗  ██╗
@@ -66,7 +67,7 @@ def length_error(text: str) -> str:
     length = len(" ".join(text.split()))
     if length <= store.MAX_REQUEST_LENGTH:
         return ""
-    return (f"That line has {length:,} characters — keep it under "
+    return (f"That line has {length:,} characters — keep it to at most "
             f"{store.MAX_REQUEST_LENGTH} (a target, a question, or / for commands).")
 
 
@@ -90,12 +91,14 @@ def _answer(replies: List[ChatEntry]) -> Text:
     """Reconix's latest answer to your line (empty until it has one)."""
     if not replies:
         return Text("")
-    return Text.assemble(("◆ reconix  ", f"bold {theme.CYAN}"), (replies[-1].text, theme.MUTED))
+    last = replies[-1]
+    return Text.assemble((speaker_label(last.author), f"bold {theme.CYAN}"),
+                         (last.text, theme.MUTED))
 
 
 def _reconix_line(entry: ChatEntry) -> Text:
     """A past Reconix line in the scrollback (tone-colored, plain text)."""
-    return Text.assemble(("◆ reconix  ", f"bold {theme.CYAN}"),
+    return Text.assemble((speaker_label(entry.author), f"bold {theme.CYAN}"),
                          (entry.text, theme.TONE.get(entry.tone, theme.MUTED)))
 
 
@@ -243,8 +246,10 @@ class StartScreen(ReconixScreen):
             error = target_error(text)
         if error:
             box.show_error(error)
+            box.input.select_all()                   # kept to edit; typing replaces it
             return
         if self.app.submit_request(text):
             box.clear()
         else:
             box.release()                            # refused with a pop-up
+            box.input.select_all()                   # so "/new" typed now is a command

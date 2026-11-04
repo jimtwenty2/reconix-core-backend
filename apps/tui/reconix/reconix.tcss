@@ -251,9 +251,11 @@ SuggestionMenu {
     offset-y: -100%;
     width: 100%;
     background: $surface2;
-    border-top: solid $border-strong;
+    /* A whole box: it floats over what is above the prompt (the Start card at 80×24), so it
+       must read as a popup, not as a row cut into that card's border. */
+    border: round $border-strong;
     padding: 0 1;
-    max-height: 8;
+    max-height: 10;
 }
 
 /* Question widget: chip, bold question, numbered choices, key hint. */
@@ -476,7 +478,8 @@ HelpScreen {
 }
 
 #help-box {
-    width: 66;               /* room for the longest row beside a scrollbar */
+    width: 96%;              /* uses a wide terminal; long rows wrap under their own text */
+    max-width: 104;
     height: auto;
     max-height: 100%;
     background: $surface;
@@ -484,6 +487,10 @@ HelpScreen {
     border-title-color: $cyan;
     padding: 1 2;
 }
+
+#help-box .help-row { height: auto; }
+#help-box .help-keys { width: 11; }
+#help-box .help-desc { width: 1fr; }
 
 /* --------------------------------------------------- /tests checklist */
 TestGuideScreen {

@@ -13,6 +13,7 @@ import re
 from typing import Any, Dict, List
 
 from . import report_view as view
+from ..wording import counted
 
 # The colored pill class of each severity, validation state and triage status.
 SEV_CLASS = {"CRITICAL": "crit", "HIGH": "high", "MEDIUM": "med", "LOW": "low"}
@@ -411,7 +412,7 @@ def render_html(data: Dict[str, Any]) -> str:
         + _summary_narrative(data)
         + _severity_block(findings) +
         '</section>'
-        '<section class="block">' + _heading("2", f"{len(findings)} findings")
+        '<section class="block">' + _heading("2", counted(len(findings), "finding"))
         + _findings_table(findings) +
         '</section>'
         + _retest_block(data) +

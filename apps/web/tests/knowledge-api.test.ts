@@ -282,6 +282,15 @@ describe("POST /api/knowledge", () => {
     expect(leftovers()).toEqual([]);
   });
 
+  it("passes the CLI's refusal of the very same file on as a 400 with its message", async () => {
+    expect((await upload({ "notes.md": "same text" })).status).toBe(201);
+    const again = await upload({ "notes.md": "same text" });
+    expect(again.status).toBe(400);
+    expect((await again.json()).detail).toBe("notes.md is already added (the same file). Remove it first to add it again.");
+    expect((await upload({ "notes.md": "other text" })).status).toBe(201); // another file of that name is taken
+    expect(leftovers()).toEqual([]);
+  });
+
   it("can't start a CLI that isn't there: a fixed 500", async () => {
     process.env.RECONIX_KNOWLEDGE_CLI = path.join(root, "missing.py");
     process.env.RECONIX_PYTHON = path.join(root, "no-python");

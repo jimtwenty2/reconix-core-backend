@@ -15,6 +15,7 @@ from .choice import ChoiceScreen
 from .. import store, theme
 from ..models import Choice
 from ..widgets import SeverityStrip
+from ..wording import counted
 from ..widgets.findings import (
     for_display, reference_text, severity_text, triage_text, validation_text,
 )
@@ -30,8 +31,21 @@ def _status_label() -> str:
     if run.completed:
         return "assessment complete"
     if run.stopped:
-        return "assessment stopped"
+        return "testing stopped · what it found before the stop"
     return "testing in progress" if run.started else "no assessment yet"
+
+
+def _empty_note() -> str:
+    """Why the list is empty, by where the run is (a stopped run finds nothing more)."""
+    run = store.get_run()
+    if run.stopped:
+        return (f"Testing stopped ({run.stopped}) before anything was found — no findings "
+                "were recorded. /new starts another assessment.")
+    if run.completed:
+        return "The assessment completed with no findings."
+    if run.started:
+        return "No findings yet — they appear here as testing finds them."
+    return "No findings yet — start an assessment and they appear here as testing finds them."
 
 
 class FindingsListScreen(ReconixScreen):
@@ -108,7 +122,7 @@ class FindingsListScreen(ReconixScreen):
         confirmed = sum(1 for f in findings if not f.needs_review)
         self.query_one("#findings-label", Static).update(Text.assemble(
             ("◆ reconix ", theme.CYAN),
-            (f"{_status_label()} · {len(findings)} findings · {confirmed} confirmed",
+            (f"{_status_label()} · {counted(len(findings), 'finding')} · {confirmed} confirmed",
              theme.DIM)))
         self.query_one("#sev-strip", SeverityStrip).show(store.severity_counts())
         self.query_one("#view-line", Static).update(Text.assemble(
@@ -119,8 +133,7 @@ class FindingsListScreen(ReconixScreen):
         empty = self.query_one("#findings-empty", Static)
         empty.display = not rows
         if not findings:
-            empty.update(Text.assemble(
-                ("No findings yet — they appear here as testing finds them.", theme.MUTED)))
+            empty.update(Text(_empty_note(), style=theme.MUTED))
         else:
             empty.update(Text.assemble(
                 ("No findings match this filter — press ", theme.MUTED),

@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import report_view as view
 from .errors import StoreValidationError
+from ..wording import counted
 
 HAS_DOCX = importlib.util.find_spec("docx") is not None
 
@@ -110,7 +111,7 @@ def _summary(doc, data: Dict[str, Any], text_width) -> None:
 
 def _findings_summary(doc, data: Dict[str, Any], text_width) -> None:
     findings = view.ordered(data["findings"])
-    _heading(doc, "2", f"{len(findings)} findings")
+    _heading(doc, "2", counted(len(findings), "finding"))
     _grid(doc, view.FINDINGS_HEAD, [view.finding_row(f) for f in findings],
           view.NO_FINDINGS_ROW, text_width, FINDINGS_WIDTHS)
 

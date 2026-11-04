@@ -17,7 +17,7 @@ from typing import List, Optional, Tuple
 from ..llm import LLMError, catalog, client, crypto, db, guardrail, mock
 from ..models import ActiveModel
 from ..models.base import utc_now
-from .assessment import get_assessment
+from .assessment import get_assessment, shown_line
 from .errors import StoreValidationError
 from .redact import redact
 from .snapshot import uid_for
@@ -39,6 +39,15 @@ class Draft:
     sources: Tuple[str, ...] = ()
     active: Optional[ActiveModel] = None
     error: str = ""
+
+
+def model_label(active: Optional[ActiveModel]) -> str:
+    """How a model's line is labelled in the chat: its model id, folded, masked and cut to
+    32 characters ("" without a model: the line is Reconix's own)."""
+    if active is None:
+        return ""
+    label = shown_line(active.model or "").replace(" ", "")
+    return label[:32] or "model"
 
 
 def reply(text: str, active: ActiveModel) -> str:
@@ -74,7 +83,7 @@ def record_draft(draft: Draft) -> None:
                  f"LLM unavailable ({draft.error}). Showing the built-in reply.", tone="muted")
         add_chat("text", "reconix", draft.text, tone="muted")
         return
-    entry = add_chat("text", "reconix", draft.text)
+    entry = add_chat("text", "reconix", draft.text, author=model_label(draft.active))
     _persist(draft.active, draft.text, entry.seq)
     if draft.sources:
         # A muted note under the reply, so the operator sees which add-ons informed it.
