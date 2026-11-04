@@ -61,7 +61,7 @@ def session_factory(engine):
 
 
 @pytest.fixture
-def db_app(session_factory):
+def db_app(session_factory, tmp_path_factory):
     """The app with the real get_operator, get_approved_scope and database; fakes for the rest."""
     fake_interfaces, parts = build_fake_interfaces()
     tokens = SessionTokens()
@@ -80,6 +80,7 @@ def db_app(session_factory):
         database_url=TEST_DATABASE_URL,
         job_token_secret=JOB_TOKEN_SECRET,
         provider_encryption_key=FERNET_KEY,
+        vault_dir=str(tmp_path_factory.mktemp("vault")),  # never the repo's data/vault
     )
     parts["mcp"].secret = JOB_TOKEN_SECRET  # checks tokens the way the Kali side does
 

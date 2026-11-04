@@ -70,3 +70,42 @@ def count_waiting(db: Db, assessment_ids: list[UUID], requested_after: datetime)
         .group_by(owner)
     )
     return {row[0]: row[1] for row in db.execute(query)}
+
+
+LIMITS_LOCK = 0x5243584C  # "RCXL": one limit change is applied at a time
+
+
+def lock_limit_changes(db: Db) -> None:
+    """Held until commit, so two approved limit changes cannot both start from the same limits."""
+    db.execute(select(func.pg_advisory_xact_lock(LIMITS_LOCK)))
+
+
+def latest_limit_change(db: Db) -> Approval | None:
+    """The newest approved and used loop limit change: its config_change["after"] is in use."""
+    return db.scalar(
+        select(Approval)
+        .where(
+            Approval.kind == "configuration",
+            Approval.approval_status == ApprovalStatus.APPROVED,
+            Approval.consumed_at.is_not(None),
+            Approval.config_change["setting"].astext == "loop_limits",
+        )
+        .order_by(Approval.consumed_at.desc())
+        .limit(1)
+    )
+
+
+def pending_limit_changes(db: Db, requested_after: datetime) -> list[Approval]:
+    """Loop limit changes still waiting for a person (asked for after requested_after)."""
+    return list(
+        db.scalars(
+            select(Approval)
+            .where(
+                Approval.kind == "configuration",
+                Approval.approval_status == ApprovalStatus.PENDING,
+                Approval.requested_at > requested_after,
+                Approval.config_change["setting"].astext == "loop_limits",
+            )
+            .order_by(Approval.requested_at.desc())
+        )
+    )

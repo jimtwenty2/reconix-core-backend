@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     code_dir: str = "data/code"
     max_upload_mb: int = 100  # per upload, counted both packed and unpacked
 
+    # The real values behind masked evidence, encrypted with
+    # RECONIX_PROVIDER_ENCRYPTION_KEY, for a `disclosure` approval. Only this user can open
+    # the folder.
+    vault_dir: str = "data/vault"
+
     # Approvals
     approval_ttl_minutes: int = 30
 

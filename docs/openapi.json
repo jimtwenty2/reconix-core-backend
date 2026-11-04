@@ -493,6 +493,18 @@
             ],
             "title": "Decided By"
           },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
@@ -579,6 +591,7 @@
           "action_id",
           "manifest_id",
           "report_id",
+          "evidence_id",
           "config_change"
         ],
         "title": "ApprovalOut",
@@ -1480,6 +1493,55 @@
         "title": "CombinedReportIn",
         "type": "object"
       },
+      "DisclosedValueOut": {
+        "properties": {
+          "approval_id": {
+            "format": "uuid",
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "approval_id",
+          "index",
+          "kind",
+          "value"
+        ],
+        "title": "DisclosedValueOut",
+        "type": "object"
+      },
+      "DisclosureRequest": {
+        "properties": {
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "DisclosureRequest",
+        "type": "object"
+      },
       "EvidenceOut": {
         "properties": {
           "content": {
@@ -1967,6 +2029,25 @@
         "title": "Health",
         "type": "object"
       },
+      "HiddenValueOut": {
+        "description": "A masked value that can be shown with a `disclosure` approval; never the value.",
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "kind"
+        ],
+        "title": "HiddenValueOut",
+        "type": "object"
+      },
       "KnowledgeAddOnOut": {
         "properties": {
           "chunk_count": {
@@ -2104,6 +2185,76 @@
           "score"
         ],
         "title": "KnowledgeHitOut",
+        "type": "object"
+      },
+      "LimitBounds": {
+        "properties": {
+          "highest": {
+            "title": "Highest",
+            "type": "integer"
+          },
+          "lowest": {
+            "title": "Lowest",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lowest",
+          "highest"
+        ],
+        "title": "LimitBounds",
+        "type": "object"
+      },
+      "LimitChangeIn": {
+        "description": "Only the limits to change, e.g. {\"max_runs_per_assessment\": 300}.",
+        "properties": {
+          "changes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "maxProperties": 4,
+            "minProperties": 1,
+            "title": "Changes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "title": "LimitChangeIn",
+        "type": "object"
+      },
+      "LimitSettingsOut": {
+        "properties": {
+          "bounds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LimitBounds"
+            },
+            "title": "Bounds",
+            "type": "object"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/LoopLimitSettings"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/LoopLimitSettings"
+          },
+          "pending_approval_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Pending Approval Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "limits",
+          "defaults",
+          "bounds",
+          "pending_approval_ids"
+        ],
+        "title": "LimitSettingsOut",
         "type": "object"
       },
       "LlmProviderActivation": {
@@ -2383,6 +2534,35 @@
           }
         },
         "title": "LlmProviderUpdate",
+        "type": "object"
+      },
+      "LoopLimitSettings": {
+        "description": "The loop check's limits, once a `configuration` approval changed them.",
+        "properties": {
+          "max_actions_per_minute": {
+            "title": "Max Actions Per Minute",
+            "type": "integer"
+          },
+          "max_runs_per_assessment": {
+            "title": "Max Runs Per Assessment",
+            "type": "integer"
+          },
+          "max_same_command": {
+            "title": "Max Same Command",
+            "type": "integer"
+          },
+          "same_command_window_minutes": {
+            "title": "Same Command Window Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_same_command",
+          "same_command_window_minutes",
+          "max_actions_per_minute",
+          "max_runs_per_assessment"
+        ],
+        "title": "LoopLimitSettings",
         "type": "object"
       },
       "ManifestStatus": {
@@ -5372,6 +5552,177 @@
         ]
       }
     },
+    "/api/v1/evidence/{evidence_id}/disclosures": {
+      "post": {
+        "description": "Asks to see one masked value. This returns a `disclosure` approval; once a person approves\nit, reveal the value once with the reveal endpoint. Returns 404 HIDDEN_VALUE_NOT_FOUND if the\nevidence has no value with this index.",
+        "operationId": "request_disclosure_api_v1_evidence__evidence_id__disclosures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisclosureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Request Disclosure",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}/disclosures/{approval_id}/reveal": {
+      "post": {
+        "description": "Shows the real value once, after its `disclosure` approval was approved. The approval is\nused up, so a second call returns 409 APPROVAL_ALREADY_USED. Returns 409 APPROVAL_NOT_GRANTED\nif it is not approved yet, or 409 APPROVAL_EXPIRED after its time limit.",
+        "operationId": "reveal_value_api_v1_evidence__evidence_id__disclosures__approval_id__reveal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisclosedValueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Reveal Value",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}/hidden-values": {
+      "get": {
+        "description": "Lists the masked values in this evidence that a person may ask to see, by index and kind.\nThe values themselves are never listed.",
+        "operationId": "list_hidden_values_api_v1_evidence__evidence_id__hidden_values_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HiddenValueOut"
+                  },
+                  "title": "Response List Hidden Values Api V1 Evidence  Evidence Id  Hidden Values Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Hidden Values",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
     "/api/v1/findings": {
       "get": {
         "description": "Lists the findings, newest first.\n\nBusiness Rules:\n- With ?assessment_id=, lists only that assessment's findings, in the order they were found.\n- Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (a Kali\n  catalog tool that found it, in any case), ?target= (part of the target), and ?q= (part\n  of the code, title, target, description, or a CWE id).\n- Every filter you provide must match.\n- A ?tool= that is not in the Kali catalog returns 422 UNKNOWN_TOOL.\n\nSecurity:\n- Requires a valid session token.",
@@ -6015,6 +6366,78 @@
         "summary": "Search Knowledge",
         "tags": [
           "knowledge add-ons"
+        ]
+      }
+    },
+    "/api/v1/limit-settings": {
+      "get": {
+        "description": "Returns the loop check's limits in use now, the default limits, the range each limit may\ntake, and the ids of any changes still waiting for a person.",
+        "operationId": "read_limit_settings_api_v1_limit_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Limit Settings",
+        "tags": [
+          "limit settings"
+        ]
+      },
+      "post": {
+        "description": "Asks to change one or more loop limits. Nothing changes yet: this returns a `configuration`\napproval, and the new limits are used only after a person approves it. Returns 422 with\nUNKNOWN_LIMIT, NOT_A_NUMBER, OUT_OF_RANGE or NO_CHANGE if the change is not allowed.",
+        "operationId": "request_limit_change_api_v1_limit_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LimitChangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Request Limit Change",
+        "tags": [
+          "limit settings"
         ]
       }
     },

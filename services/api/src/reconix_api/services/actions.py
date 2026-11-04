@@ -42,7 +42,7 @@ from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import scopes as scope_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut, ToolRunOut
 from reconix_api.schemas.agent_runs import AgentRunDetailOut
-from reconix_api.services import agent_runs, tool_runs
+from reconix_api.services import agent_runs, limit_settings, tool_runs
 from reconix_api.services.audit import audit
 
 RECENT_MINUTES = 10  # the loop check looks at least this far back
@@ -379,7 +379,10 @@ def _check_context(
             409, "SCOPE_NOT_APPROVED", "This assessment has no approved scope."
         ) from error
     now = datetime.now(UTC)
-    recent = action_repo.recent_runs(db, assessment_id, now - timedelta(minutes=RECENT_MINUTES))
+    limits = limit_settings.current_limits(db)
+    # At least as far back as the same-command window, or a longer window counts too few runs.
+    minutes = max(RECENT_MINUTES, limits.same_command_window_minutes)
+    recent = action_repo.recent_runs(db, assessment_id, now - timedelta(minutes=minutes))
     return CheckContext(
         operator=operator,
         scope=scope,
@@ -394,6 +397,7 @@ def _check_context(
             for action, run in recent
         ],
         runs_in_assessment=action_repo.count_runs(db, assessment_id),
+        loop_limits=limits,
     )
 
 

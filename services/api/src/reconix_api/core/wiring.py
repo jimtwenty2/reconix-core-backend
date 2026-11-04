@@ -10,6 +10,7 @@ from typing import NoReturn
 from sqlalchemy.orm import Session, sessionmaker
 
 from reconix_ai import agent, harness
+from reconix_ai.harness.limits import limits_from_json
 from reconix_api.clients.mcp import make_call_tool
 from reconix_api.core.agent import make_ask_agent, postgres_graph
 from reconix_api.core.config import Settings
@@ -33,7 +34,10 @@ def _not_ready(part: str):
 
 def check(action: Action, context: CheckContext) -> CheckResult:
     """The harness pipeline, returned as the shared CheckResult."""
-    return CheckResult(**asdict(harness.check(action, context)))
+    if context.loop_limits is None:
+        return CheckResult(**asdict(harness.check(action, context)))
+    limits = limits_from_json(context.loop_limits.model_dump())
+    return CheckResult(**asdict(harness.check(action, context, limits)))
 
 
 def build_interfaces(

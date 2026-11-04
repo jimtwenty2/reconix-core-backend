@@ -12,6 +12,7 @@ from reconix_api.core.interfaces import (
     CheckContext,
     CheckName,
     Decision,
+    LoopLimitSettings,
     Operator,
     RiskLevel,
     ToolName,
@@ -78,3 +79,27 @@ def test_mask_secrets_hides_a_password():
     masked, hidden = build_mask_secrets()("password=hunter2")
     assert "hunter2" not in masked
     assert hidden == 1
+
+
+def test_check_uses_the_approved_loop_limits():
+    scope = ApprovedScope(
+        assessment_id=uuid4(),
+        ip_ranges=["172.20.0.0/24"],
+        allowed_tools=[ToolName.NMAP],
+        max_risk=RiskLevel.HIGH,
+    )
+    action = Action(tool=ToolName.NMAP, target="172.20.0.5", arguments=["-sV"])
+    context = _context(scope).model_copy(update={"runs_in_assessment": 5})
+    limits = LoopLimitSettings(
+        max_same_command=3,
+        same_command_window_minutes=10,
+        max_actions_per_minute=20,
+        max_runs_per_assessment=5,
+    )
+
+    default = build_interfaces().check(action, context)
+    limited = build_interfaces().check(action, context.model_copy(update={"loop_limits": limits}))
+
+    assert default.decision != Decision.BLOCKED  # 5 runs is under the default 200
+    assert (limited.decision, limited.blocked_by) == (Decision.BLOCKED, CheckName.LOOP)
+    assert limited.reason == "RUN_LIMIT_REACHED"
