@@ -54,33 +54,10 @@ API_PREFIX = "/api/v1"  # every route lives under it
 
 # Shown at the top of Swagger (/docs).
 API_DESCRIPTION = """\
-This is the local API of Reconix Core. It runs only on this computer (127.0.0.1), and the
-terminal app, the local web and the VS Code extension all talk to it.
-
-**How a test goes.** You write a scope, the agent plans the test and suggests each step, a
-person approves the steps that need it, the tools run, and the results become findings, an
-analysis and finally a report you can download.
-
-**Signing in.** Call `POST /api/v1/sessions` to get a session token. It is shown only once, so
-keep it. Send it on every other call as `Authorization: Bearer <token>`; in this page, use the
-**Authorize** button. Only `GET /health`, `POST /sessions` and `POST /sessions/web-sign-in`
-work without a token.
-
-**The AI suggests, the API decides.** The agent never runs a tool itself. Every action it
-suggests is checked first: its input, its scope, its command, its risk and whether it repeats
-itself. A `LOW` risk action runs right away. A `MEDIUM` or `HIGH` one waits until a person
-approves it. Anything riskier than the scope allows is `BLOCKED` with a 422. An approval
-expires after 30 minutes and can be used only once.
-
-**Terminal.** `WS /api/v1/terminal` opens the terminal app for the web Terminal page (WebSockets
-are not listed below). Send the token as the subprotocol `token.<token>` next to
-`reconix.terminal`; only the local web's Origin is accepted, and one terminal per session.
-
-**Errors.** Every error has the same shape:
-`{"code": "UPPER_CASE", "message": "...", "details": {...}}`. Secrets are masked in every
-answer the API gives. Each session token may send a set number of requests a minute (signing
-in has a smaller limit); after that the API answers 429 TOO_MANY_REQUESTS with a Retry-After
-header.
+Reconix is an AI-assisted penetration testing tool that runs on your own computer. You set the
+scope, the AI plans the test and suggests each step, you approve the risky ones, and approved
+steps run real security tools in a locked-down Kali container. The results become findings,
+an analysis and a report.
 """
 
 # One entry per router tag, in the order of the main flow; Swagger lists them in this order.
@@ -96,6 +73,11 @@ API_TAGS = [
     {
         "name": "messages",
         "description": "Chat with the agent. Every message is saved in its session.",
+    },
+    {
+        "name": "vscode chat",
+        "description": "Chat from the VS Code extension. A message can call a chat function, "
+        "such as listing findings or starting a scan.",
     },
     {
         "name": "code",
@@ -150,6 +132,11 @@ API_TAGS = [
     {
         "name": "llm providers",
         "description": "Choose which AI model Reconix uses. Only one provider is active at a time.",
+    },
+    {
+        "name": "limit settings",
+        "description": "How often a command may repeat, and how many tool runs are allowed. "
+        "A change waits for a person's approval.",
     },
     {
         "name": "knowledge add-ons",
