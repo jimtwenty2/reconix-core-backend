@@ -253,7 +253,7 @@ app = create_app(
         get_session_factory(),
         _settings.audit_log_path,
         _settings.kali_mcp_url,
-        _settings.mcp_access_key.get_secret_value(),
+        _settings.mcp_auth_token.get_secret_value(),
         _settings.database_url,
         _settings,
     ),
