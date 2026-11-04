@@ -77,7 +77,7 @@ One uv workspace (Python 3.12) plus one npm app.
 | `apps/tui/` | Terminal app: Textual, Typer. Package `reconix` (see section 11). | Vanhong |
 | `apps/web/` | Local web: Next.js, xterm.js | Sokpiseth |
 | `apps/sample-data/` | Fake data for the TUI and web, built from `deploy/seed.sql` | shared |
-| `deploy/` | Docker Compose (`docker-compose.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
+| `deploy/` | Docker Compose (`docker-compose.yml`, `kali-standalone.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
 | `docs/` | `reconix-plan-v2.md`, `openapi.json` (generated), `erd/` | Pojim |
 | `.claude/`, `AGENTS.md` files | Agent rules, skills, subagents, hooks (section 9) | Pojim |
 
@@ -115,6 +115,69 @@ tests wire the fakes in `services/api/tests/fakes/`. If the other side is not re
 - There are no roles: anyone with a valid session token may do everything. ERD V3 has no
   `sessions.role`.
 - Errors use one shape: `{"code": "UPPER_CASE", "message": "...", "details": {...}}`.
+
+### Source code scan
+
+Code goes into `RECONIX_CODE_DIR/<session>/` (Kali sees it read-only at
+`/workspace/code/<session>`). Every input replaces the session's code, and every one drops
+`.git/`, links, non-regular files and the folders `node_modules .venv venv __pycache__ dist
+build target .idea .vscode`, with the upload limits (`RECONIX_MAX_UPLOAD_MB`, 20 000 files).
+
+| Input | Route (under `/api/v1`) | Notes |
+|---|---|---|
+| Upload | `POST /sessions/{id}/code/sync`, then `PUT /sessions/{id}/code` (tar.gz) | Sync says which files (by sha256) the upload must hold |
+| GitHub URL | `POST /sessions/{id}/code/clone {url, token?}` | Only `https://github.com/<owner>/<repo>`. A clone under `RECONIX_LOCAL_REPO_ROOTS` (comma-separated, searched 4 levels deep, matched on `origin` in `.git/config`) is copied first, never pulled. Otherwise `git clone --depth 1` over https only, 300 s. A local clone the deny list refuses (Reconix's own repo, a dotfiles repo at `~`) is cloned from GitHub instead. A private repo: pass `token` (sent to git through the environment only; never stored, logged, audited or echoed in errors); without one, this computer's git credential helper applies (ssh `insteadOf` rules do not, since only https is allowed). git gets no `RECONIX_*` variable, no hooks and no password prompt. Audit `CODE_CLONED {url, source: LOCAL_CLONE\|GITHUB, files}` |
+| Local folder | `POST /sessions/{id}/code/folder {path}` | Absolute, resolved, must be a folder. **Deny list** (refused when inside one, or holding one): `~/.ssh ~/.gnupg ~/.aws ~/.azure ~/.config/gh ~/.config/gcloud ~/.config/google-chrome ~/.config/chromium ~/.mozilla ~/.kube ~/.docker ~/.password-store ~/.local/share/keyrings ~/.claude /etc /proc /sys /dev /root /boot /var /run`, and `RECONIX_CODE_DIR`, the reports folder and the audit log folder (so Reconix's own repo, with its `.env`). Audit `CODE_COPIED {path, files}`, or `CODE_FOLDER_REFUSED {code}`. A copy that cannot be stored leaves the old code |
+
+**Scan:** `POST /sessions/{id}/code-scans {paths?, tools?, analyze=true}` (202). The first one
+approves a scope that is only the session's code folder by itself (one `SCOPE_APPROVED` line,
+`reason: CODE_SESSION_FOLDER`, also kept on the approval) and reuses it later. That scope takes
+only the code scan's own tool calls, with no options: any other action on it is BLOCKED
+`CODE_SCAN_ONLY`. `POST /assessments/{id}/code-scans` still
+works on a scope written by hand. Then `GET /code-scans/{id}`, `POST /code-scans/{id}/cancel`,
+`GET /code-scans/{id}/findings?include_false_positives=` (path, line, rule, masked snippet,
+`verdict`, `explanation`, `fix_recommendation`) and `GET /code-scans/{id}/logs/{tool}` (a tool's
+masked output as text, e.g. the `sonar_scan` log). Each tool is one `send_action` on a
+per-scan copy (`<session>/_reconix_scan_<run8>/`: every file in `reconix-<session hex>/`, the
+SonarQube project name, and the changed files in `changed/`; removed afterwards):
+
+| Tool | Reads | Runs when |
+|---|---|---|
+| SEMGREP, GITLEAKS | `changed/` | some file is new or changed |
+| TRIVY, GRYPE, OSV_SCANNER, SYFT | every file | a full scan, or a manifest or lockfile changed |
+| SONAR_SCAN | every file | anything changed |
+
+- **Incremental:** a full scan runs the first time, when Kali's tool versions (`tools_info`)
+  change or the tool set grows. Otherwise only the due tools run, and earlier findings of
+  unchanged files carry over (`plan.carried`). A rescan with no change makes no Kali call.
+  A `paths` scan compares only the files under its paths; the rest keep what the last scan
+  knew. A tool that was due and failed keeps its earlier findings on a changed file.
+  Dependency findings are one per vulnerability, package and manifest.
+- **Notes, not failures:** a BLOCKED or failed tool becomes a note (`"GRYPE FAILED"`,
+  `"TRIVY BLOCKED TOO_MANY_ACTIONS"`); the scan
+  fails only when every due tool failed. A scan cut off by an API restart ends FAILED
+  `INTERRUPTED` at the next start. SYFT gives a note `SYFT <n> packages`, SONAR_SCAN a
+  note `SONAR_SCAN OK|FAILED`; neither gives findings. GITLEAKS findings are HIGH.
+- **AI review** (`services/code_review.py`): a verdict per finding (`CONFIRMED` only from a
+  validation), cached per finding, file hash and model in `plan.reviews`. The prompt holds a
+  masked ±20-line window inside a random `<data X>` fence; lines of secret findings are
+  `[MASKED]`, and a file no gitleaks run read as it is now (GITLEAKS not selected, or it
+  failed on the changed files) sends no code at all. `include_false_positives=false` hides an
+  AI `likely_false_positive` only below HIGH and never for GITLEAKS; a person's FALSE_POSITIVE
+  always.
+- **The 200-runs cap** (harness loop check) is per assessment, and a session keeps one
+  assessment: about 28 full 7-tool scans, more when rescans are incremental. Close the
+  session and start a new one past it. The loop check's 20 actions a minute also applies.
+- **Core MCP server** at `http://127.0.0.1:<api port>/mcp` (streamable HTTP, not under
+  `/api/v1`, not in `openapi.json`), same session bearer token as REST, a thin wrapper over the
+  same services (`api/code_mcp.py`). Tools: `sync_code`, `clone_repo`, `copy_folder`,
+  `start_code_scan`, `get_code_scan`, `watch_code_scan` (progress each change, 10 s heartbeat),
+  `cancel_code_scan`, `list_code_findings`, `get_code_scan_log`. The upload itself stays REST
+  `PUT /sessions/{id}/code`. Errors are `CODE: message`.
+- **Kali for code scans** is `reconix-kali-container` in `deploy/docker-compose.yml`. With the
+  API on the host, run it standalone instead (`deploy/kali-standalone.yml`, see
+  `deploy/AGENTS.md`): `RECONIX_KALI_MCP_URL=http://127.0.0.1:8096/mcp` and an absolute
+  `RECONIX_CODE_DIR`.
 
 ---
 
@@ -309,6 +372,14 @@ Keep this list true; remove an item in the PR that closes it.
   the database, logs, audit log, AI requests, API answers and report files, but not Qdrant
   (the API writes nothing there yet) or disclosure. Check those by hand with `run-leak-test`.
 - Imported findings and finding categories: decision pending.
+- **Kali standalone does not check job tokens.** The `dannygg02/reconix-kali-container` image
+  checks only `KALI_MCP_AUTH_TOKEN`; whoever holds `RECONIX_MCP_AUTH_TOKEN` can call any Kali
+  tool on `127.0.0.1:8096` and skip core's checks. It also keeps `NET_ADMIN`/`NET_RAW`, has
+  internet and uses the `latest` tag (see `deploy/AGENTS.md`).
+- **Kali's semgrep default rules (`p/default`) miss Jinja `| safe` XSS** (vuln-lab
+  `posts.view.html:23`); only `r/python.flask` finds it. Adding rule sets is a decision pending.
+- **Dependency findings only change when a manifest changes.** New advisories in the trivy and
+  grype databases show up on the next scan that changes a manifest or Kali's tool versions.
 - **An excluded path does not stop a tool on the folder around it.** The harness scope check
   blocks a target *inside* an excluded path, but not one that *contains* it, so a manual
   SEMGREP or GITLEAKS action on `/workspace/code/<s>` still reads `/workspace/code/<s>/secrets`

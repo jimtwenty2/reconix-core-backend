@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_api.core import code_files
 from reconix_api.core.config import Settings
 from reconix_api.core.disclosure import DisclosureVault, vault_for_tool_runs
 from reconix_api.core.errors import ApiError
@@ -39,16 +40,19 @@ async def run_action(
     action: Action,
     action_hash: str,
     approval: Approval | None,
+    now: datetime | None = None,
 ) -> ToolRun:
     """`action` and `action_hash` must already be checked against the approval.
 
     A LOW action has no approval. Any other action needs an approval that is APPROVED,
-    not expired and not used; running it uses it up.
+    not expired and not used; running it uses it up. `now` is the time the approval was
+    checked at, so a just-approved action is never refused here as expired.
     """
     secret = settings.job_token_secret.get_secret_value()
     if not secret:
+        db.commit()  # the action is kept as sent; it just cannot run yet
         raise ApiError(503, "NOT_READY", "RECONIX_JOB_TOKEN_SECRET is not set.")
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
     if approval is not None:
         ensure_can_use(approval_state(approval, settings.approval_ttl_minutes), now)
         approval.consumed_at = now
@@ -110,8 +114,10 @@ async def run_action(
 
 
 def _save_result(run: ToolRun, row: ActionRow, mask: MaskSecrets, result: ToolResult) -> None:
-    # The tool's own result file is what the parsers read; stdout is the fallback.
-    output, hidden = mask_output(mask, result.output_file or result.stdout)
+    # The tool's own result file is what the parsers read; stdout is the fallback. Paths in
+    # a code scan's copy folder become the code folder's before any finding is deduped.
+    raw = code_files.canonical_paths(result.output_file or result.stdout)
+    output, hidden = mask_output(mask, raw)
     # stderr is shown in the TUI and the web: no terminal codes from the tool reach them.
     stderr, hidden_in_stderr = mask(CONTROL.sub("", TERMINAL_CODES.sub("", result.stderr)))
     run.output_masked = output

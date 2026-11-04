@@ -47,7 +47,9 @@ async def send_action(
 
 
 @router.get("/assessments/{assessment_id}/actions")
-def list_actions(assessment_id: UUID, db: Db, _: CurrentOperator) -> list[ActionOut]:
+def list_actions(
+    assessment_id: UUID, db: Db, _: CurrentOperator, mask: CurrentMask
+) -> list[ActionOut]:
     """Lists every action in the assessment, newest first, with its tool runs.
 
     Business Rules:
@@ -56,11 +58,11 @@ def list_actions(assessment_id: UUID, db: Db, _: CurrentOperator) -> list[Action
     Security:
     - Requires a valid session token.
     """
-    return actions.list_actions(db, assessment_id)
+    return actions.list_actions(db, assessment_id, mask)
 
 
 @router.get("/actions/{action_id}")
-def read_action(action_id: UUID, db: Db, _: CurrentOperator) -> ActionOut:
+def read_action(action_id: UUID, db: Db, _: CurrentOperator, mask: CurrentMask) -> ActionOut:
     """Returns one action with its risk level, status, the approval it is waiting for (if any), and
     its tool runs.
 
@@ -70,4 +72,4 @@ def read_action(action_id: UUID, db: Db, _: CurrentOperator) -> ActionOut:
     Security:
     - Requires a valid session token.
     """
-    return actions.read_action(db, action_id)
+    return actions.read_action(db, action_id, mask)

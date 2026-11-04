@@ -63,6 +63,11 @@ class ToolName(StrEnum):
     ZAP = "ZAP"
     SEMGREP = "SEMGREP"
     GITLEAKS = "GITLEAKS"
+    TRIVY = "TRIVY"
+    GRYPE = "GRYPE"
+    OSV_SCANNER = "OSV_SCANNER"
+    SYFT = "SYFT"
+    SONAR_SCAN = "SONAR_SCAN"
 
 
 class ToolRunStatus(StrEnum):

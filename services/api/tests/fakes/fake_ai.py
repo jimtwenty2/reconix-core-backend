@@ -9,8 +9,10 @@ decision only for the action the run waits on. Any provider is called, as the re
 ask_agent does with the run's own provider.
 """
 
+import json
 from uuid import UUID
 
+from reconix_ai.providers import Completion, Message, ProviderConfig
 from reconix_api.core.errors import ApiError
 from reconix_api.core.finding_memory import MemoryUnavailable
 from reconix_api.core.interfaces import (
@@ -26,6 +28,7 @@ from reconix_api.core.interfaces import (
     ToolName,
 )
 from reconix_api.schemas.findings import FindingOut
+from tests.fakes.fake_core import fake_mask_secrets
 
 SUPPORTED_TASKS = {
     AgentTask.PLAN,
@@ -191,3 +194,38 @@ class FakeFindingMemory:
         if self.down:
             raise MemoryUnavailable("KNOWLEDGE_UNAVAILABLE")
         self.calls.append((finding.code, accepted))
+
+
+REVIEW_ANSWER = {
+    "verdict": "likely_real",
+    "explanation": "Fake review: the code does what the rule warns about.",
+    "fix_recommendation": "Fake review: do not do that.",
+}
+
+
+class FakeReviewModel:
+    """Fake of reconix_ai.providers.complete for the code review (services/code_review.py).
+    Answers REVIEW_ANSWER, or the next of `answers` (a dict, a text or an exception), and
+    keeps every prompt it was sent, unmasked, so a test can look for leaks."""
+
+    def __init__(self) -> None:
+        self.prompts: list[list[Message]] = []
+        self.answers: list[object] = []  # set by a test: the next answers, in order
+
+    async def complete(
+        self,
+        messages: list[Message],
+        config: ProviderConfig,
+        json_answer: bool = False,
+        on_piece: OnPiece | None = None,
+    ) -> Completion:
+        self.prompts.append(messages)
+        answer = self.answers.pop(0) if self.answers else REVIEW_ANSWER
+        if isinstance(answer, Exception):
+            raise answer
+        text = answer if isinstance(answer, str) else json.dumps(answer)
+        masked, count = fake_mask_secrets(text)  # the real one masks the answer too
+        return Completion(masked, config.provider_type, config.model_name, 10, 5, count)
+
+    def sent_text(self) -> str:
+        return "\n".join(message.content for prompt in self.prompts for message in prompt)

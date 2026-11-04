@@ -2,10 +2,10 @@
 
 import ipaddress
 from functools import lru_cache
-from typing import Self
+from typing import Annotated, Self
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # mounts this folder read-only at /workspace/code (deploy/docker-compose.yml).
     code_dir: str = "data/code"
     max_upload_mb: int = 100  # per upload, counted both packed and unpacked
+    # Folders searched (4 levels deep) for a clone of a GitHub repo before git clones it,
+    # comma-separated in the environment.
+    local_repo_roots: Annotated[list[str], NoDecode] = []
 
     # The real values behind masked evidence, encrypted with
     # RECONIX_PROVIDER_ENCRYPTION_KEY, for a `disclosure` approval. Only this user can open
@@ -73,6 +76,13 @@ class Settings(BaseSettings):
     # (POST /sessions, POST /sessions/web-sign-in) has its own, smaller limit.
     rate_limit_per_minute: int = 600
     sign_in_limit_per_minute: int = 20
+
+    @field_validator("local_repo_roots", mode="before")
+    @classmethod
+    def split_paths(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [path.strip() for path in value.split(",") if path.strip()]
+        return value
 
     @model_validator(mode="after")
     def host_must_be_loopback(self) -> Self:

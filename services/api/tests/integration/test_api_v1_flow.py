@@ -304,3 +304,30 @@ def test_action_arguments_and_target_have_limits(db_client):
     ]
     assert [r.status_code for r in responses] == [422, 422, 422]
     assert {r.json()["code"] for r in responses} == {"VALIDATION_ERROR"}
+
+
+def test_the_client_names_the_operator(db_client, db_app):
+    # The client runs on the person's computer; in Docker the API's own OS names are the
+    # container's, so the name the client sends wins.
+    opened = db_client.post("/sessions", json={"interface": "cli", "operator": " vanneth@laptop\n"})
+    assert opened.status_code == 201, opened.json()
+    headers = {"Authorization": f"Bearer {opened.json()['token']}"}
+    assert db_client.get("/operator", headers=headers).json()["actor"] == "vanneth@laptop"
+    opened_event = [
+        e for e in db_app.state.parts["audit"].events if e.event_type == "SESSION_OPENED"
+    ][-1]
+    assert opened_event.details["operator_from"] == "client"
+
+
+def test_without_a_sent_name_the_server_names_the_operator(db_client):
+    for body in ({"interface": "cli"}, {"interface": "cli", "operator": "   "}):
+        token = db_client.post("/sessions", json=body).json()["token"]
+        actor = db_client.get("/operator", headers={"Authorization": f"Bearer {token}"}).json()[
+            "actor"
+        ]
+        assert actor == sessions_service.local_actor()
+
+
+def test_an_operator_name_over_100_characters_is_refused(db_client):
+    response = db_client.post("/sessions", json={"interface": "cli", "operator": "x" * 101})
+    assert response.status_code == 422

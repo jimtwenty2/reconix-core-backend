@@ -47,7 +47,7 @@ async def approve(
         )
     except ApiError as error:
         # The approval stays PENDING (a typo is not a rejection), but the refusal is recorded.
-        audit(write_audit, "APPROVAL_REFUSED", operator, details=_details(approval, error.code))
+        _audit_refused(db, write_audit, operator, approval, error.code)
         raise
     if approval.kind == "scope":
         scopes.approve_scope(db, interfaces.write_audit, operator, approval)
@@ -157,13 +157,24 @@ def _get_pending(
     one audit line."""
     approval = _get(db, approval_id, lock=True)
     if approval.approval_status != ApprovalStatus.PENDING:
+        _audit_refused(db, write_audit, operator, approval, "APPROVAL_ALREADY_DECIDED")
         raise ApiError(409, "APPROVAL_ALREADY_DECIDED", "This approval was already decided.")
     if datetime.now(UTC) >= expires_at(approval.requested_at, ttl_minutes):
         approval.approval_status = ApprovalStatus.EXPIRED
         db.commit()
-        audit(write_audit, "APPROVAL_EXPIRED", operator, details=_details(approval, "EXPIRED"))
+        assessment_id = approval_repo.assessment_of(db, approval)
+        details = _details(approval, "EXPIRED")
+        audit(write_audit, "APPROVAL_EXPIRED", operator, assessment_id, details)
         raise ApiError(409, "APPROVAL_EXPIRED", "This approval expired. Submit it again.")
     return approval
+
+
+def _audit_refused(
+    db: Db, write_audit: WriteAudit, operator: Operator, approval: Approval, reason: str
+) -> None:
+    """One APPROVAL_REFUSED line: the approval stays as it was."""
+    assessment_id = approval_repo.assessment_of(db, approval)
+    audit(write_audit, "APPROVAL_REFUSED", operator, assessment_id, _details(approval, reason))
 
 
 def _details(approval: Approval, reason: str) -> dict[str, str]:

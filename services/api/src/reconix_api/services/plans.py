@@ -274,7 +274,7 @@ async def send_suggested_step(
         )
     except ApiError as error:
         if error.code == "ACTION_BLOCKED":  # the API's own check refused it: keep the record
-            return actions.read_action(db, UUID(error.details["action_id"]))
+            return actions.read_action(db, UUID(error.details["action_id"]), mask)
         raise
 
 
@@ -326,6 +326,8 @@ async def settle_waiting_run(
                 )
             continue
         row, approval = found
+        if step_still_running(row, approval):
+            continue  # its approve request hands the tool's result back
         pending = approval.approval_status == ApprovalStatus.PENDING
         ttl = settings.approval_ttl_minutes
         if pending and datetime.now(UTC) < expires_at(approval.requested_at, ttl):
@@ -344,6 +346,18 @@ async def settle_waiting_run(
             )
         decided = "APPROVED" if approval.approval_status == ApprovalStatus.APPROVED else "REJECTED"
         await resume_claimed(db, interfaces, operator, run, row, approval, decided)
+
+
+def step_still_running(row: ActionRow, approval: Approval) -> bool:
+    """Approved, but its tool has not finished: resuming now would hand the plan "approved"
+    with no output. One approved more than STALE_MINUTES ago was cut off (e.g. the API
+    stopped), so it no longer holds the plan."""
+    if approval.approval_status != ApprovalStatus.APPROVED:
+        return False
+    if row.action_status != ActionStatus.APPROVED:
+        return False  # it ran (COMPLETED or FAILED) or was refused
+    decided_at = approval.decided_at or approval.requested_at
+    return decided_at > datetime.now(UTC) - timedelta(minutes=STALE_MINUTES)
 
 
 async def resume_after_decision(

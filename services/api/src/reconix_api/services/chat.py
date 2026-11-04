@@ -76,21 +76,22 @@ def start(
     content: str,
 ) -> StartedChat:
     """The message is saved first, so it is kept even when the agent fails. One chat per
-    session asks the agent at a time: 409 CHAT_IN_PROGRESS."""
-    message = messages.add_message(db, interfaces.write_audit, mask, operator, session_id, content)
+    session asks the agent at a time: 409 CHAT_IN_PROGRESS, and the refused message is not
+    kept. The message, the check and the new run share one transaction, under the session
+    row lock save_message takes, so two chats can never both start."""
+    saved, hidden = messages.save_message(db, mask, operator, session_id, content)
+    if agent_run_repo.running_chat(db, session_id) is not None:
+        db.rollback()
+        raise ApiError(409, "CHAT_IN_PROGRESS", "The agent is still answering. Try again soon.")
     chat_scope = session_scope(db, session_id, mask)
     assessment_id = chat_scope.assessment_id if chat_scope else None
     if assessment_id is None:
         assessment = assessment_repo.get_by_session(db, session_id)
         assessment_id = assessment.assessment_id if assessment else None
-    # The session row is locked while the open chats are checked and the run is saved,
-    # so two chats can never both start.
-    session_repo.get_for_update(db, session_id)
-    if agent_run_repo.running_chat(db, session_id) is not None:
-        db.rollback()
-        raise ApiError(409, "CHAT_IN_PROGRESS", "The agent is still answering. Try again soon.")
     run = agent_runs.new_agent_run(db, operator, assessment_id, task="CHAT")
     db.commit()
+    messages.audit_message(interfaces.write_audit, operator, saved, hidden)
+    message = MessageOut.model_validate(saved, from_attributes=True)
     return StartedChat(message, run, chat_scope)
 
 

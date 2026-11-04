@@ -1,3 +1,4 @@
+import json
 import os
 
 import pytest
@@ -145,6 +146,34 @@ async def test_secrets_in_the_answer_are_masked(model: FakeModel) -> None:
 
     assert "abc123secret" not in completion.text
     assert completion.masked_count == 1
+
+
+async def test_a_json_answer_stays_json_after_masking(model: FakeModel) -> None:
+    # Masked as one text, "password = ?" ate the closing quote and broke the JSON.
+    model.answer = json.dumps(
+        {
+            "fix": 'Use c.execute("SELECT * FROM users WHERE password = ?", (password,)).',
+            "password": "hunter2-secret",
+            "note": "Found token=abc123secret in the config.",
+        }
+    )
+
+    completion = await complete(QUESTION, reconix_provider(), json_answer=True)
+
+    answer = json.loads(completion.text)
+    assert answer["password"] == "[MASKED:password]"  # masked whole by its key name
+    assert "abc123secret" not in answer["note"]
+    assert "hunter2-secret" not in completion.text
+    assert answer["fix"].startswith('Use c.execute("SELECT * FROM users WHERE password = ')
+    assert completion.masked_count >= 2
+
+
+async def test_a_json_answer_that_is_not_json_is_masked_as_text(model: FakeModel) -> None:
+    model.answer = "Sure: token=abc123secret"
+
+    completion = await complete(QUESTION, reconix_provider(), json_answer=True)
+
+    assert "abc123secret" not in completion.text
 
 
 async def test_token_counts_are_returned(model: FakeModel) -> None:

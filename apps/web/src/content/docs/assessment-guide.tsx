@@ -67,6 +67,7 @@ export const assessmentGuide: GroupContent = {
   },
   scope: {
     lede: "The scope manifest says what will be tested, what may be done and what is never touched. Approving it locks it.",
+    notice: "Configuration details are under review and may change as development continues.",
     body: (
       <>
         <DocSection title="What the manifest holds">
@@ -217,6 +218,7 @@ export const assessmentGuide: GroupContent = {
   },
   "policy-checks": {
     lede: "Every request the run proposes is checked against the approved scope before it runs. The rest is blocked.",
+    notice: "Configuration details are under review and may change as development continues.",
     body: (
       <>
         <DocSection title="How a request is checked">

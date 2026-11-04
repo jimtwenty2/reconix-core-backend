@@ -89,7 +89,7 @@ class ScopeDraft(BaseModel):
     allowed_methods: list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] = (
         Field(default_factory=list)
     )
-    # A time without a timezone would be read in the database's timezone.
+    # A window time must carry its timezone (Z or +07:00), so the two can be compared.
     starts_at: AwareDatetime | None = None
     ends_at: AwareDatetime | None = None
     limitations: str | None = Field(default=None, max_length=4000)
@@ -127,7 +127,7 @@ class ScopeUpdate(BaseModel):
     allowed_methods: (
         list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] | None
     ) = None
-    # A time without a timezone would be read in the database's timezone.
+    # A window time must carry its timezone (Z or +07:00), so the two can be compared.
     starts_at: AwareDatetime | None = None
     ends_at: AwareDatetime | None = None
     limitations: str | None = Field(default=None, max_length=4000)
