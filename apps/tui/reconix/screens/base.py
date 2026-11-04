@@ -26,7 +26,7 @@ from ..widgets import (
 from ..widgets.step_chat import THINKING
 
 CHAT_DECISION = "chat-decision"
-CHAT_MENU_HINT = "Enter to select · ↑/↓ to navigate · Esc back to the step"
+CHAT_MENU_HINT = "Enter to select · ↑/↓ to navigate · type to chat · Esc back to the step"
 
 
 def scope_card() -> Optional[Widget]:
@@ -225,8 +225,15 @@ class ReconixScreen(Screen):
             self.decide(event.choice_id)
 
     async def on_choice_menu_typed(self, event: ChoiceMenu.Typed) -> None:
-        """ "Type something.": keep it as feedback, then answer it in the step chat."""
+        """ "Type something.": keep it as feedback, then answer it in the step chat. A
+        `/name` line is a command instead: it runs, and is neither feedback nor asked."""
         event.stop()
+        if self._refused_at_login():
+            return
+        if self._is_command(event.text):
+            chats = self.query(StepChat)
+            self._chat_command(chats.first(StepChat) if chats else None, event.text)
+            return
         try:
             store.add_feedback(self.flow_name, event.text)
         except store.StoreValidationError as exc:
@@ -258,7 +265,53 @@ class ReconixScreen(Screen):
 
     def on_step_chat_asked(self, event: StepChat.Asked) -> None:
         event.stop()
+        if self._refused_at_login():
+            return
+        if self._is_command(event.text):
+            self._chat_command(event.chat, event.text)
+            return
         self._ask_in_chat(event.chat, event.text)
+
+    def _refused_at_login(self) -> bool:
+        """At (or stopped at) the target login a typed line may be the password: refuse it
+        before anything else, so it never runs as a command, is never kept and never echoed."""
+        refusal = store.login_refusal()
+        if refusal:
+            self.notify_error(refusal)
+        return bool(refusal)
+
+    def _is_command(self, text: str) -> bool:
+        """`/name …` runs a command; a path (`/api/v1 …`) stays a chat line."""
+        return text.lstrip().startswith("/") and not self.app.is_path_line(text)
+
+    def _chat_command(self, chat: Optional[StepChat], text: str) -> None:
+        """A `/name` line typed in the chat or on "Type something.": it runs as from the
+        command bar (`run_command_line`), never reaches the model and is not feedback. A
+        command that moves to another screen takes the chat with it; otherwise the chat
+        stays, with a line saying it ran (or why it can't: an unknown command). The echo is
+        the masked line, as the history keeps it."""
+        check = self.app.check_command(text)
+        if chat is None:
+            if check.ok:
+                self.app.run_checked(text, check)
+            else:
+                self.notify_error(check.error)
+            return
+        try:
+            echo = store.recorded_line(text)
+        except store.StoreValidationError as exc:
+            self.notify_error(str(exc))
+            return
+        self._drop_decision()
+        chat.add_you(echo)
+        if not check.ok:
+            chat.add_reply(check.error, tone="warn")
+            chat.focus_input()
+            return
+        self.app.run_checked(text, check)
+        if self in self.app.screen_stack and chat.is_attached:  # still this screen
+            chat.add_reply(f"Ran /{check.command.name}.", tone="muted")
+            chat.focus_input()
 
     def on_step_chat_closed(self, event: StepChat.Closed) -> None:
         """Esc: the chat goes, the step's menu comes back (rebuilt if the step moved on)."""
@@ -301,6 +354,8 @@ class ReconixScreen(Screen):
             decision.choices,
             default=decision.default,
             hint=CHAT_MENU_HINT,
+            typing=False,  # typing anywhere goes to the chat: no "Type something." row
+            type_out=True,  # a typed key brings the input back (on_choice_menu_typed_out)
         )
         question.add_class(CHAT_DECISION)
         chat.add(question)
@@ -308,6 +363,20 @@ class ReconixScreen(Screen):
             bar.display = False
         # Queued on the question itself, so it runs once the menu is mounted.
         question.call_after_refresh(lambda: question.menu.focus())
+
+    def on_choice_menu_typed_out(self, event: ChoiceMenu.TypedOut) -> None:
+        """A key typed on the menu inside the chat: like "Chat about this", the menu goes and
+        the input comes back holding that key, so the line is asked as a chat line and a
+        typed digit or Enter never picks a choice."""
+        event.stop()
+        self._drop_decision()
+        chats = self.query(StepChat)
+        if not chats:
+            return
+        field = chats.first(StepChat).input
+        field.value += event.text  # later keys may still arrive here before the focus moves
+        field.cursor_position = len(field.value)
+        self.set_focus(field)
 
     def _drop_decision(self) -> None:
         """Take the menu shown in the chat away and bring the input back."""
@@ -342,11 +411,12 @@ class ReconixScreen(Screen):
         store refuses the line, so a password never goes out.
         """
         try:
+            echo = store.recorded_line(text)  # masked, as the chat and history keep it
             line = store.say_operator_line(f"About {self.chat_topic()}: {text}")
         except store.StoreValidationError as exc:
             self.notify_error(str(exc))
             return
-        chat.add_you(text)
+        chat.add_you(echo)
         for old in [*self.query(TickList), *self.query(PlanOrder)]:
             old.remove()
         self._drop_decision()

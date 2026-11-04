@@ -13,7 +13,7 @@ import { ChatRequestSchema, MAX_QUESTION } from "@/lib/assistant/request";
 import { createEventParser, createThinkFilter } from "@/lib/assistant/stream";
 
 import { sampleAssessments } from "./fixtures";
-import vectors from "./redact-vectors.json";
+import { redactVectors as vectors } from "./vectors";
 
 const samples = sampleAssessments();
 const withFindings = samples.find((a) => a.findings.some((f) => f.evidence.length > 0))!;
@@ -112,7 +112,7 @@ describe("buildContext", () => {
 });
 
 describe("redact", () => {
-  it.each(vectors as [string, string][])("masks like the TUI: %s", (text, masked) => {
+  it.each(vectors)("masks like the TUI: %s", (text, masked) => {
     expect(redact(text)).toBe(masked);
   });
 });

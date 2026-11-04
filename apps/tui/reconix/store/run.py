@@ -168,25 +168,30 @@ def _start(text: str, parsed: ParsedTarget, *, picked: bool) -> None:
         apply_template(parsed.template_id, auto=not picked)
 
 
+def login_refusal() -> Optional[str]:
+    """Why a typed line must not be taken right now (the run waits for, or stopped at, the
+    target login: the line may be the password), or None. Records nothing."""
+    if get_run().waiting_gate in (GATE_ACCOUNT, GATE_CODE):
+        # Don't record it: an operator may be pasting the login into the wrong place.
+        return ("Reconix is waiting for the target login. Press Enter on "
+                "the Execution screen to open the secure input; never "
+                "paste credentials into the chat.")
+    if get_run().stopped_at_gate in (GATE_ACCOUNT, GATE_CODE):
+        # Stopped at the login: the next line may still be the password. Never echo, record
+        # or send it to a model.
+        return ("This run stopped at the target login. Use /new to start "
+                "another assessment; never paste credentials into the "
+                "chat.")
+    return None
+
+
 def say_operator_line(text: str) -> str:
     """Record the operator's chat line and return it. Raises before any model is called."""
     if not get_run().started:
         raise StoreValidationError("Start an assessment first.")
-    if get_run().waiting_gate in (GATE_ACCOUNT, GATE_CODE):
-        # Don't record it: an operator may be pasting the login into the wrong place.
-        raise StoreValidationError(
-            "Reconix is waiting for the target login. Press Enter on "
-            "the Execution screen to open the secure input; never "
-            "paste credentials into the chat."
-        )
-    if get_run().stopped_at_gate in (GATE_ACCOUNT, GATE_CODE):
-        # Stopped at the login: the next line may still be the password. Never echo, record
-        # or send it to a model.
-        raise StoreValidationError(
-            "This run stopped at the target login. Use /new to start "
-            "another assessment; never paste credentials into the "
-            "chat."
-        )
+    refusal = login_refusal()
+    if refusal:
+        raise StoreValidationError(refusal)
     request = add_request(text)
     add_chat("text", "you", request.text)
     return request.text

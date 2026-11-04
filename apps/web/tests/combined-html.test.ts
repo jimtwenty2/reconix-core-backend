@@ -13,7 +13,7 @@ import { esc, escPre, renderReportHtml } from "@/lib/report/html";
 import { maskAssessment } from "@/lib/report/mask";
 
 import { sampleAssessments } from "./fixtures";
-import vectors from "./redact-vectors.json";
+import { redactVectors as vectors } from "./vectors";
 
 const all = sampleAssessments();
 const picked = all.slice(0, 3);
@@ -146,8 +146,9 @@ describe("masking at the report boundary", () => {
   });
 
   it("masks every vector of redact-vectors.json wherever it lands", () => {
-    for (const [raw, masked] of vectors as [string, string][]) {
-      if (raw === masked) continue;
+    for (const [raw, masked] of vectors) {
+      // only the cases that mask a secret (some only turn control characters into spaces)
+      if (raw === masked || !/••••|\[line hidden: /.test(masked)) continue;
       const a = maskAssessment(withFinding(base, { description: raw, evidence: [raw], affected_url: raw, triage_note: raw }));
       const out = renderReportHtml(a);
       expect(out, raw).not.toContain(esc(raw));
@@ -164,7 +165,7 @@ describe("masking at the report boundary", () => {
   });
 
   it("leaves a plain question alone", () => {
-    const [plain] = (vectors as [string, string][]).filter(([raw, masked]) => raw === masked);
+    const [plain] = vectors.filter(([raw, masked]) => raw === masked);
     const out = renderReportHtml(maskAssessment(withFinding(base, { description: plain[0] })));
     expect(out).toContain(esc(plain[0]));
   });

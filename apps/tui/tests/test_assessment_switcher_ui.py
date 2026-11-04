@@ -248,9 +248,10 @@ async def test_the_audit_masks_a_secret_and_keeps_the_stored_text(app):
         assert SECRET not in body
         assert "password=••••" in body
         assert "Your feedback" in body
-    # masking is for the screen only: the store still holds what the operator typed
-    assert any(SECRET in event.detail for event in store.list_events())
-    assert any(SECRET in entry.text for entry in store.list_feedback())
+    # the store keeps typed lines and feedback masked too (the audit line included)
+    assert not any(SECRET in event.detail for event in store.list_events())
+    assert not any(SECRET in entry.text for entry in store.list_feedback())
+    assert any("password=••••" in entry.text for entry in store.list_feedback())
 
 
 async def test_the_assessments_list_masks_a_secret_in_the_cards(app):

@@ -56,9 +56,9 @@ from .report import (
 from .retest import compare_findings, previous_assessment, retest, severity_trend
 from .run import (
     advance, counters, display_phase, elapsed, gate_state, get_run, is_completed, is_finished,
-    is_plan_started, llm_answer, new_assessment, peek, phase_progress, pipeline_stage,
-    plan_tasks, reject_scope, run_plan, say_operator_line, say_to_assistant, start_run,
-    stop_run, submit_prompt, time_limit, waiting_gate,
+    is_plan_started, llm_answer, login_refusal, new_assessment, peek, phase_progress,
+    pipeline_stage, plan_tasks, reject_scope, run_plan, say_operator_line, say_to_assistant,
+    start_run, stop_run, submit_prompt, time_limit, waiting_gate,
 )
 from .scope import (
     approve_scope, blocked_count, check_request, edit_scope, get_scope, is_scope_approved,
@@ -93,6 +93,7 @@ __all__ = [
     "is_empty_assessment",
     # the run
     "submit_prompt", "start_run", "check_target", "say_to_assistant", "say_operator_line",
+    "login_refusal",
     "TargetCheck", "looks_like_target", "validate_target", "DASH_RANGE_UNSUPPORTED",
     "llm_answer", "new_assessment",
     "advance", "peek", "gate_state", "stop_run",

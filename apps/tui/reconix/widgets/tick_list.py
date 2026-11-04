@@ -4,7 +4,7 @@ Used by the step chat for the scope's ports and tools. The rows and what starts 
 from the store (`answer_scope_change`); this widget only reports what the operator ticked.
 """
 
-from typing import List, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -53,8 +53,10 @@ class TickList(Vertical):
         tools: Sequence[Tuple[str, bool]],
         suggested: Sequence[int] = (),
         *,
-        id: str = "tick-list",
+        id: Optional[str] = None,
     ) -> None:
+        # A class, not a fixed id: a second scope change in the same chat mounts a new list
+        # while the old one may still be leaving the DOM.
         super().__init__(id=id, classes="tick-list")
         self._ports = list(ports)
         self._tools = list(tools)
