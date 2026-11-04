@@ -8,8 +8,15 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from reconix_api.core import terminal as terminal_core
 from reconix_api.core.config import Settings, get_settings
-from reconix_api.core.terminal import QUEUE_SIZE, Terminal, child_environment, default_command
+from reconix_api.core.terminal import (
+    QUEUE_SIZE,
+    Terminal,
+    TerminalAppMissing,
+    child_environment,
+    default_command,
+)
 from reconix_api.main import create_app
 from reconix_api.services.terminal import BadMessage, parse_message
 from tests.fakes import OPERATOR_TOKEN, build_fake_interfaces, fake_mask_secrets
@@ -215,9 +222,35 @@ def test_the_api_settings_never_reach_the_terminal_app(monkeypatch):
     assert env["RECONIX_DATA_DIR"] == "tui-data-folder"
 
 
-def test_the_default_command_ignores_files_in_the_home_folder():
+def installed(monkeypatch, *, in_api_env: bool, on_path: str | None) -> None:
+    """Fake where the terminal app is installed, so the tests never depend on this machine."""
+    real_find_spec = terminal_core.importlib.util.find_spec
+
+    def find_spec(name, *args, **kwargs):
+        if name == "reconix":
+            return object() if in_api_env else None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(terminal_core.importlib.util, "find_spec", find_spec)
+    monkeypatch.setattr(terminal_core.shutil, "which", lambda name: on_path)
+
+
+def test_the_default_command_ignores_files_in_the_home_folder(monkeypatch):
+    # -I: Python skips the working folder, so a stray reconix.py there is never loaded.
+    installed(monkeypatch, in_api_env=True, on_path=None)
     command = default_command()
-    assert command[0] != sys.executable or "-I" in command
+    assert command[:2] == [sys.executable, "-I"]
+
+
+def test_without_the_app_next_to_the_api_the_installed_command_is_used(monkeypatch):
+    installed(monkeypatch, in_api_env=False, on_path="/home/user/.local/bin/reconix")
+    assert default_command() == ["/home/user/.local/bin/reconix"]
+
+
+def test_without_any_app_the_command_says_how_to_install_it(monkeypatch):
+    installed(monkeypatch, in_api_env=False, on_path=None)
+    with pytest.raises(TerminalAppMissing, match="uv tool install ./apps/tui"):
+        default_command()
 
 
 async def test_a_page_that_stops_reading_does_not_fill_memory():
