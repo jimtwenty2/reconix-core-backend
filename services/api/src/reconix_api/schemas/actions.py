@@ -1,10 +1,10 @@
 """Request and response shapes for /assessments/{id}/actions and /actions."""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from reconix_ai.harness.catalog import is_known_tool
 from reconix_api.models.enums import ActionStatus, RiskLevel, ToolRunStatus
@@ -13,9 +13,13 @@ from reconix_api.models.enums import ActionStatus, RiskLevel, ToolRunStatus
 class ActionIn(BaseModel):
     """One tool run. Arguments are a list, never one shell string."""
 
+    model_config = ConfigDict(str_strip_whitespace=True)  # "   " fails min_length
+
     tool: str = Field(min_length=1, max_length=100)
     target: str = Field(min_length=1, max_length=2048)
-    arguments: list[str] = Field(default_factory=list, max_length=50)
+    arguments: list[Annotated[str, Field(min_length=1, max_length=2048)]] = Field(
+        default_factory=list, max_length=50
+    )
     purpose: Literal["discovery", "scan", "validation"] = "scan"
 
     @field_validator("tool")

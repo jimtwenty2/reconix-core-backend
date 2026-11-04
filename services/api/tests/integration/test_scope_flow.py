@@ -227,6 +227,9 @@ def test_unknown_ids_answer_404(db_client):
         db_client.get(f"/scope-manifests/{missing}", headers=headers).json()["code"]
         == "SCOPE_NOT_FOUND"
     )
+    response = db_client.get(f"/sessions/{missing}/scope-manifests", headers=headers)
+    assert response.status_code == 404
+    assert response.json()["code"] == "SESSION_NOT_FOUND"
     assert db_client.get(f"/approvals/{missing}", headers=headers).status_code == 404
 
 
@@ -245,3 +248,63 @@ def test_a_url_target_must_be_plain(db_client, value):
     response = db_client.post(scopes_path(db_client, headers), json=draft, headers=headers)
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("starts_at", "ends_at"),
+    [
+        ("2026-12-01T10:00:00", "2026-12-02T10:00:00Z"),  # one without a timezone
+        ("2026-12-01T10:00:00", "2026-12-02T10:00:00"),  # read in the database's timezone
+    ],
+)
+def test_a_scope_window_needs_a_timezone(db_client, starts_at, ends_at):
+    headers = open_session(db_client)
+    body = {**DRAFT, "starts_at": starts_at, "ends_at": ends_at}
+    response = db_client.post(scopes_path(db_client, headers), json=body, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["code"] == "VALIDATION_ERROR"
+
+
+def test_repeated_scope_entries_are_kept_once(db_client):
+    headers = open_session(db_client)
+    target = {"type": "ip", "value": "172.20.0.5"}
+    body = {
+        **DRAFT,
+        "allowed_tools": ["NMAP", "nmap", "NUCLEI", "NMAP"],
+        "allowed_ports": [80, 443, 80],
+        "allowed_actions": ["scan", "scan", "discovery"],
+        "allowed_methods": ["GET", "GET"],
+        "targets": [target, target],
+    }
+    scope = db_client.post(scopes_path(db_client, headers), json=body, headers=headers).json()
+    assert scope["allowed_tools"] == ["NMAP", "NUCLEI"]
+    assert scope["allowed_ports"] == [80, 443]
+    assert scope["allowed_actions"] == ["scan", "discovery"]
+    assert scope["allowed_methods"] == ["GET"]
+    assert [t["value"] for t in scope["targets"]] == ["172.20.0.5"]
+
+    patch = {"allowed_tools": ["NUCLEI", "NUCLEI"], "targets": [target, target]}
+    edited = db_client.patch(
+        f"/scope-manifests/{scope['manifest_id']}", json=patch, headers=headers
+    ).json()
+    assert edited["allowed_tools"] == ["NUCLEI"]
+    assert len(edited["targets"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "excluded", "status"),
+    [
+        ("0.0.0.0/0", False, 422),
+        ("10.0.0.0/0", False, 422),  # the host bits do not matter: still every address
+        ("::/0", False, 422),
+        ("0.0.0.0/0", True, 422),
+        ("10.0.0.0/8", False, 201),
+        ("2001:db8::/32", False, 201),
+    ],
+)
+def test_a_cidr_target_cannot_be_slash_zero(db_client, value, excluded, status):
+    headers = open_session(db_client)
+    target = {"type": "cidr", "value": value, "excluded": excluded}
+    body = {**DRAFT, "targets": [*DRAFT["targets"], target]}
+    response = db_client.post(scopes_path(db_client, headers), json=body, headers=headers)
+    assert response.status_code == status

@@ -3,11 +3,18 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=20000)  # masked before it is saved
+
+    @field_validator("content")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value  # kept as sent: leading spaces can matter in pasted code
 
 
 class MessageOut(BaseModel):

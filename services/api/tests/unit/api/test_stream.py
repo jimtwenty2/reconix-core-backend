@@ -2,6 +2,7 @@
 
 import threading
 import time
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -9,8 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from reconix_api.core.config import Settings, get_settings
+from reconix_api.core.db import get_session_factory
 from reconix_api.core.interfaces import AuditEvent
 from reconix_api.main import create_app
+from reconix_api.services import stream
 from tests.fakes import OPERATOR_TOKEN, build_fake_interfaces, fake_mask_secrets
 
 HEADERS = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
@@ -76,7 +79,9 @@ def test_the_stream_sends_audit_events_until_the_session_closes(stream_app, stre
     assert len(parts["audit"].events) == 2  # still one audit line per event
 
 
-def test_the_assessment_filter(stream_app, stream_client):
+def test_the_assessment_filter(stream_app, stream_client, monkeypatch):
+    stream_app.dependency_overrides[get_session_factory] = lambda: nullcontext  # no database here
+    monkeypatch.setattr(stream.assessment_repo, "get", lambda db, assessment_id: object())
     parts = stream_app.state.parts
     wanted = uuid4()
     events = [make_event("TOOL_RUN_STARTED", uuid4()), make_event("TOOL_RUN_FINISHED", wanted)]

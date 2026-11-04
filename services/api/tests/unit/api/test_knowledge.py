@@ -25,6 +25,9 @@ def test_knowledge_search_needs_a_query_and_known_sources(client, operator_heade
         "/knowledge/search", params={"q": "x", "source": "NEWS"}, headers=operator_headers
     )
     assert bad.status_code == 422
+    blank = client.get("/knowledge/search", params={"q": "   "}, headers=operator_headers)
+    assert blank.status_code == 422
+    assert blank.json()["code"] == "VALIDATION_ERROR"
 
 
 def test_knowledge_search_with_qdrant_down_is_503(audit_events, operator_headers):

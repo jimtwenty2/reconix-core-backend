@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy.orm import Session as Db
 
 from reconix_api.core.config import Settings
@@ -248,12 +249,17 @@ async def send_suggested_step(
     run: AgentRun,
     step: Action,
 ) -> ActionOut:
-    body = ActionIn(
-        tool=step.tool,
-        target=step.target,
-        arguments=step.arguments,
-        purpose="validation" if step.is_validation else "scan",
-    )
+    try:
+        body = ActionIn(
+            tool=step.tool,
+            target=step.target,
+            arguments=step.arguments,
+            purpose="validation" if step.is_validation else "scan",
+        )
+    except ValidationError as error:  # the agent's Action has none of ActionIn's limits
+        raise ApiError(
+            422, "INVALID_STEP", "The agent suggested a step that is not valid."
+        ) from error
     try:
         return await actions.send_action(
             db,

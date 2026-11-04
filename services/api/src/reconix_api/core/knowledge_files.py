@@ -113,7 +113,9 @@ def kind_of(file_name: str) -> str:
 def display_name(masked_name: str) -> str:
     """The name to save and show: no folders, on one line, at most MAX_NAME characters.
     Mask the whole name before this, so a secret is never cut in half and missed."""
-    flat = " ".join(base_name(masked_name).split())
+    # Control characters out too: "\x1b[..." would drive the terminal that shows the name.
+    shown = "".join(ch for ch in base_name(masked_name) if ch.isprintable() or ch.isspace())
+    flat = " ".join(shown.split())
     return flat[:MAX_NAME].rstrip() or "untitled"
 
 
