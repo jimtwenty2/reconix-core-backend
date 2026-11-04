@@ -35,7 +35,8 @@ async def start_code_scan(
     Business Rules:
     - With analyze, the agent also analyzes the results afterward.
     - The scope needs a "path" target for that code.
-    - Returns 422 NO_CODE if no code was sent, or 409 SCAN_RUNNING if a scan is already running.
+    - Returns 422 NO_CODE if no code was sent, 422 CODE_EXCLUDED if the scope excludes the
+      whole code folder, or 409 SCAN_RUNNING if a scan is already running.
 
     Execution Behavior:
     - Runs each tool through the same safety checks as any action.
@@ -43,6 +44,8 @@ async def start_code_scan(
 
     State Changes:
     - Creates a code scan.
+    - Deletes excluded "path" targets inside the code folder (for example ".../node_modules")
+      from the stored code before the scan, so the tools never read them.
 
     Security:
     - Requires a valid session token.

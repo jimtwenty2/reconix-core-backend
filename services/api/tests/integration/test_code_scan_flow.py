@@ -73,11 +73,16 @@ def send_code(client, headers, session_id, files: dict[str, bytes]) -> dict:
     return synced.json()
 
 
-def code_assessment(client, headers, target: str) -> str:
+def code_assessment(client, headers, target: str, excluded: tuple[str, ...] = ()) -> str:
+    """An ACTIVE assessment whose scope is the code folder, minus the excluded folders
+    (relative to it, e.g. "node_modules")."""
     draft = {
         "max_risk": "LOW",
         "allowed_tools": ["SEMGREP", "GITLEAKS"],
-        "targets": [{"type": "path", "value": target}],
+        "targets": [
+            {"type": "path", "value": target},
+            *({"type": "path", "value": f"{target}/{path}", "excluded": True} for path in excluded),
+        ],
     }
     session_id = client.get("/operator", headers=headers).json()["session_id"]
     scope = client.post(f"/sessions/{session_id}/scope-manifests", json=draft, headers=headers)
@@ -427,15 +432,60 @@ def test_closing_the_session_cancels_its_running_scan(client, db_app):
     assert event_types(db_app).count("AGENT_RUN_CANCELLED") == 1
 
 
-def test_a_scope_that_excludes_a_code_folder_cannot_be_scanned(client, db_app):
+TUI_EXCLUDED = (".git", "node_modules", "vendor", "secrets")  # the TUI's source template
+WITH_EXCLUDED = {
+    **CODE,
+    "node_modules/express/index.js": b"module.exports = {};\n",
+    "secrets/prod.key": b"not-a-real-key\n",
+    "vendor/lib.js": b"var x = 1;\n",
+}
+
+
+def test_excluded_folders_are_removed_before_the_scan(client, db_app, code_dir):
+    headers, session_id = vscode_session(client)
+    target = send_code(client, headers, session_id, WITH_EXCLUDED)["target"]  # before the scope
+    tool_outputs(db_app, target)
+    assessment_id = code_assessment(client, headers, target, TUI_EXCLUDED)
+
+    started = start(client, headers, assessment_id)
+    assert started.status_code == 202, started.json()
+    scan = wait_for_end(client, headers, started.json()["agent_run_id"])
+
+    assert scan["agent_runs_status"] == "COMPLETED"
+    stored = sorted(
+        p.relative_to(code_dir / session_id).as_posix()
+        for p in (code_dir / session_id).rglob("*")
+        if p.is_file()
+    )
+    assert stored == ["config.js", "src/app.js"]
+    started_events = [
+        e for e in db_app.state.parts["audit"].events if e.event_type == "CODE_SCAN_STARTED"
+    ]
+    assert started_events[0].details["excluded_files_removed"] == "3"
+
+
+def test_after_approval_excluded_files_are_never_asked_for_or_stored(client, db_app, code_dir):
+    headers, session_id = vscode_session(client)
+    target = f"/workspace/code/{session_id}"
+    code_assessment(client, headers, target, TUI_EXCLUDED)
+
+    synced = send_code(client, headers, session_id, WITH_EXCLUDED)
+    sneaked = upload(client, headers, session_id, tar_gz({"vendor/extra.js": b"x"}))
+
+    assert synced["missing"] == ["config.js", "src/app.js"]
+    assert sneaked.status_code == 200
+    assert sneaked.json()["files"] == 0
+    assert not (code_dir / session_id / "vendor").exists()
+
+
+def test_a_scope_that_excludes_the_whole_code_cannot_be_scanned(client, db_app):
     headers, session_id = vscode_session(client)
     target = send_code(client, headers, session_id, CODE)["target"]
     draft = {
-        "max_risk": "LOW",
-        "allowed_tools": ["SEMGREP", "GITLEAKS"],
+        "allowed_tools": ["SEMGREP"],
         "targets": [
             {"type": "path", "value": target},
-            {"type": "path", "value": f"{target}/config", "excluded": True},
+            {"type": "path", "value": target, "excluded": True},
         ],
     }
     scope = client.post(f"/sessions/{session_id}/scope-manifests", json=draft, headers=headers)
@@ -449,5 +499,5 @@ def test_a_scope_that_excludes_a_code_folder_cannot_be_scanned(client, db_app):
     response = start(client, headers, submitted["assessment"]["assessment_id"])
 
     assert response.status_code == 422
-    assert response.json()["code"] == "EXCLUDED_PATH_NOT_SUPPORTED"
+    assert response.json()["code"] == "CODE_EXCLUDED"
     assert db_app.state.parts["mcp"].jobs == []

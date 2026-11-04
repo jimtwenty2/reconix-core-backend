@@ -32,6 +32,7 @@ from reconix_api.api import (
     system,
     terminal,
     timeline,
+    vscode_chat,
 )
 from reconix_api.core.agent import prepare_checkpoints
 from reconix_api.core.config import Settings, get_settings
@@ -219,6 +220,7 @@ def create_app(
         code_scans,
         messages,
         chat,
+        vscode_chat,
         scopes,
         assessments,
         actions,

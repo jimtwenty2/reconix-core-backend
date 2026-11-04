@@ -1535,6 +1535,24 @@
         "title": "EvidenceOut",
         "type": "object"
       },
+      "FileCount": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "count"
+        ],
+        "title": "FileCount",
+        "type": "object"
+      },
       "FindingAnalysis": {
         "description": "The agent's suggestions for one finding (the 8 parts of workflow v5).\n\nSuggestions only: a person accepts them. next_step is never run on its own; an\noperator picks it and it becomes a normal action, with check() and an approval.",
         "properties": {
@@ -1809,6 +1827,18 @@
         "title": "FindingOut",
         "type": "object"
       },
+      "FindingResult": {
+        "properties": {
+          "finding": {
+            "$ref": "#/components/schemas/CodeFindingOut"
+          }
+        },
+        "required": [
+          "finding"
+        ],
+        "title": "FindingResult",
+        "type": "object"
+      },
       "FindingReview": {
         "description": "A person's review of a finding.",
         "properties": {
@@ -1830,6 +1860,86 @@
         ],
         "title": "FindingStatus",
         "type": "string"
+      },
+      "FindingsResult": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/CodeFindingOut"
+            },
+            "title": "Findings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "findings"
+        ],
+        "title": "FindingsResult",
+        "type": "object"
+      },
+      "FunctionCall": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "title": "Arguments",
+            "type": "object"
+          },
+          "name": {
+            "$ref": "#/components/schemas/FunctionName"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FunctionCall",
+        "type": "object"
+      },
+      "FunctionName": {
+        "enum": [
+          "LIST_FINDINGS",
+          "EXPLAIN_FINDING",
+          "SUMMARIZE_FINDINGS",
+          "SCAN_STATUS",
+          "CANCEL_SCAN",
+          "START_SCAN",
+          "PROPOSE_FIX",
+          "SWITCH_MODEL"
+        ],
+        "title": "FunctionName",
+        "type": "string"
+      },
+      "FunctionSpec": {
+        "description": "One chat function as a client or a model sees it.",
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/components/schemas/FunctionName"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "runs_on": {
+            "$ref": "#/components/schemas/RunsOn"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "runs_on",
+          "confirm",
+          "parameters"
+        ],
+        "title": "FunctionSpec",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2619,6 +2729,33 @@
         "title": "RiskLevel",
         "type": "string"
       },
+      "RunsOn": {
+        "enum": [
+          "SERVER",
+          "CLIENT"
+        ],
+        "title": "RunsOn",
+        "type": "string"
+      },
+      "ScanResult": {
+        "properties": {
+          "scan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodeScanOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "scan"
+        ],
+        "title": "ScanResult",
+        "type": "object"
+      },
       "ScopeDraft": {
         "description": "A new draft, or a draft after a partial edit is applied.",
         "properties": {
@@ -3271,6 +3408,48 @@
         "title": "SeverityStatus",
         "type": "string"
       },
+      "SummaryResult": {
+        "description": "Open findings of the latest code scan, counted. No model writes any of it.",
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/SeverityStatus"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileCount"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "fix_first": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Fix First",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "counts",
+          "files",
+          "fix_first"
+        ],
+        "title": "SummaryResult",
+        "type": "object"
+      },
       "TimelineEventOut": {
         "properties": {
           "actor": {
@@ -3597,6 +3776,84 @@
         ],
         "title": "ValidationStatus",
         "type": "string"
+      },
+      "VscodeChatOut": {
+        "description": "The person's message as saved and the answer to it, both masked.\n\nA question is answered by the agent (agent_run_id set, function_call None). A chat\nfunction is answered at once without the agent: SERVER functions put their answer\nin result, CLIENT functions leave VS Code to run function_call.",
+        "properties": {
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id"
+          },
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "function_call": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FunctionCall"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "$ref": "#/components/schemas/MessageOut"
+          },
+          "reply": {
+            "$ref": "#/components/schemas/MessageOut"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FindingsResult"
+              },
+              {
+                "$ref": "#/components/schemas/FindingResult"
+              },
+              {
+                "$ref": "#/components/schemas/SummaryResult"
+              },
+              {
+                "$ref": "#/components/schemas/ScanResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "runs_on": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunsOn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message",
+          "reply",
+          "agent_run_id",
+          "function_call",
+          "runs_on",
+          "confirm",
+          "result"
+        ],
+        "title": "VscodeChatOut",
+        "type": "object"
       },
       "WebSignIn": {
         "properties": {
@@ -4460,7 +4717,7 @@
     },
     "/api/v1/assessments/{assessment_id}/code-scans": {
       "post": {
-        "description": "Scans the code sent to the assessment's session with SEMGREP, then GITLEAKS.\n\nBusiness Rules:\n- With analyze, the agent also analyzes the results afterward.\n- The scope needs a \"path\" target for that code.\n- Returns 422 NO_CODE if no code was sent, or 409 SCAN_RUNNING if a scan is already running.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- Creates a code scan.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Scans the code sent to the assessment's session with SEMGREP, then GITLEAKS.\n\nBusiness Rules:\n- With analyze, the agent also analyzes the results afterward.\n- The scope needs a \"path\" target for that code.\n- Returns 422 NO_CODE if no code was sent, 422 CODE_EXCLUDED if the scope excludes the\n  whole code folder, or 409 SCAN_RUNNING if a scan is already running.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- Creates a code scan.\n- Deletes excluded \"path\" targets inside the code folder (for example \".../node_modules\")\n  from the stored code before the scan, so the tools never read them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "start_code_scan_api_v1_assessments__assessment_id__code_scans_post",
         "parameters": [
           {
@@ -6998,7 +7255,7 @@
     },
     "/api/v1/sessions/{session_id}/code/sync": {
       "post": {
-        "description": "Reports which files the workspace currently has, each with its path, size, and SHA-256.\n\nBusiness Rules:\n- The response's `missing` field lists the files to upload next.\n- Returns 409 SESSION_CLOSED if the session is closed.\n\nState Changes:\n- Deletes stored files that are not in the list.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own open session; returns 403 NOT_YOUR_SESSION otherwise.",
+        "description": "Reports which files the workspace currently has, each with its path, size, and SHA-256.\n\nBusiness Rules:\n- The response's `missing` field lists the files to upload next.\n- Once the scope is approved, files in its excluded folders are never asked for or stored.\n- Returns 409 SESSION_CLOSED if the session is closed.\n\nState Changes:\n- Deletes stored files that are not in the list.\n\nSecurity:\n- Requires a valid session token.\n- Works only on your own open session; returns 403 NOT_YOUR_SESSION otherwise.",
         "operationId": "sync_code_api_v1_sessions__session_id__code_sync_post",
         "parameters": [
           {
@@ -7275,6 +7532,65 @@
         ]
       }
     },
+    "/api/v1/sessions/{session_id}/vscode-chat": {
+      "post": {
+        "description": "Saves the person's message and answers it. A message that asks for a chat function\n(\"list the high findings\", \"scan this project\", \"stop\") is answered at once: a SERVER\nfunction's answer is in result, a CLIENT function is for VS Code to run after it asks\nthe person (confirm is true). Anything else is answered by the agent, like /chat.\n403 NOT_YOUR_SESSION, 404 SESSION_NOT_FOUND, 409 NOT_VSCODE_SESSION, 409 SESSION_CLOSED;\nfor a question answered by the agent also 409 CHAT_IN_PROGRESS.",
+        "operationId": "chat_in_vscode_api_v1_sessions__session_id__vscode_chat_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VscodeChatOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Chat In Vscode",
+        "tags": [
+          "vscode chat"
+        ]
+      }
+    },
     "/api/v1/stream": {
       "get": {
         "description": "Streams every audit event live as Server-Sent Events, the moment it is written.\n\nBusiness Rules:\n- With ?assessment_id=, you receive only that assessment's events.\n- The stream ends when the session is closed; reconnect and reload your lists to catch up.\n\nExecution Behavior:\n- Each message is `event: <EVENT_TYPE>` with `data: {event_type, assessment_id, session_id,\n  actor, at, details}`, masked.\n- A `: ping` comment arrives every few seconds to keep the connection open.\n\nSecurity:\n- Requires a valid session token, sent as a Bearer header (read the stream with fetch, not\n  EventSource).",
@@ -7324,6 +7640,37 @@
         "summary": "Read Stream",
         "tags": [
           "stream"
+        ]
+      }
+    },
+    "/api/v1/vscode-chat/functions": {
+      "get": {
+        "description": "Every chat function: what it does, its arguments (JSON schema), where it runs and\nwhether VS Code asks the person first.",
+        "operationId": "list_chat_functions_api_v1_vscode_chat_functions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FunctionSpec"
+                  },
+                  "title": "Response List Chat Functions Api V1 Vscode Chat Functions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Chat Functions",
+        "tags": [
+          "vscode chat"
         ]
       }
     }
