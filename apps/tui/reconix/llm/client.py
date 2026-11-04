@@ -7,11 +7,16 @@ redacted message, so keys never leak through a traceback.
 """
 
 import json
+import os
 import urllib.error
 import urllib.request
 from typing import List, Optional, Tuple
 
-import litellm
+# LiteLLM downloads its model price list from the internet when it is imported, unless told to
+# use the copy it ships with: the app makes no call it wasn't asked to make (set before import).
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+import litellm  # noqa: E402
 
 from . import catalog, config, mock
 

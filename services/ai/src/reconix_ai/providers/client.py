@@ -53,7 +53,7 @@ litellm.turn_off_message_logging = True
 
 # How LiteLLM names each provider type.
 LITELLM_PREFIX = {
-    ProviderType.RECONIX: "ollama_chat",
+    ProviderType.RECONIX: "openai",  # the Reconix team's OpenAI-compatible server
     ProviderType.OLLAMA: "ollama_chat",
     ProviderType.OPENAI: "openai",
     ProviderType.ANTHROPIC: "anthropic",
@@ -62,7 +62,7 @@ LITELLM_PREFIX = {
 }
 NO_KEY = "none"  # sent instead of an empty key, so LiteLLM never looks one up itself
 # Ollama runs on this computer (or the compose service) and needs no key.
-LOCAL_TYPES = {ProviderType.RECONIX, ProviderType.OLLAMA}
+LOCAL_TYPES = {ProviderType.OLLAMA}
 # The 3 cloud services: their own address unless one is set, and always a key.
 CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
 
@@ -208,6 +208,10 @@ def checked_base_url(config: ProviderConfig) -> str | None:
     if not base_url and config.provider_type in LOCAL_TYPES:
         base_url = ollama_url()
     if not base_url:
+        if config.provider_type == ProviderType.RECONIX:
+            raise ProviderError(
+                "PROVIDER_URL_MISSING", "Set RECONIX_MODEL_URL to use the built-in RECONIX model."
+            )
         if config.provider_type == ProviderType.OPENAI_API_COMPATIBLE:
             raise ProviderError(
                 "PROVIDER_URL_MISSING", "An OpenAI-compatible provider needs its address."

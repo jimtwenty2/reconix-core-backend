@@ -16,44 +16,42 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 
 | File | Holds |
 |---|---|
-| `docker-compose.yml` | The local stack: `postgres` (16), `qdrant`, `ollama`, `kali-mcp`, plus the one-off `nuclei-templates` (profile `setup`) that fills the read-only templates volume `kali-mcp` uses. `kali-mcp` also mounts `../data/code` (the API's `RECONIX_CODE_DIR`) read-only at `/workspace/code`; create it with `mkdir -p data/code` before the first `up`, or Docker makes it owned by root and the API cannot write there |
-| `kali-standalone.yml` | The Kali container for the source code scan, run on its own: an override on top of the Kali repo's `../reconix-kali-backend/docker-compose.yml` (left unedited). It sets `KALI_MCP_AUTH_TOKEN` from `RECONIX_MCP_ACCESS_KEY`, `KALI_AUTO_BOOTSTRAP=1` (sonar_scan's SonarQube server, about 1 minute on first start) and mounts `RECONIX_CODE_DIR` (absolute) read-only at `/workspace/code`. The MCP port is pinned to `127.0.0.1:8096` (`ports: !override`, so a missing `HOST_PORT` never opens it on every interface); core uses `RECONIX_KALI_MCP_URL=http://127.0.0.1:8096/mcp` |
-| `docker-compose.dev.yml` | Dev only: while the API runs on the host, a small relay (`kali-mcp-relay`) publishes the Kali MCP port on `127.0.0.1` (`RECONIX_MCP_PORT`). Kali itself keeps no published port: Docker drops ports on a container with only internal networks. Drop the file once the API runs in Compose |
+| `docker-compose.yml` | The local stack: `api` (built from `services/api/Dockerfile`, on `127.0.0.1:8000`; it migrates the database when it starts), `postgres` (16), `qdrant`, `embeddings` (BGE-M3 on CPU, Hugging Face text-embeddings-inference), `reconix-kali-container`. The Kali image already holds the nuclei templates. `reconix-kali-container` mounts `../data/code` (the API's `RECONIX_CODE_DIR`) read-only at `/workspace/code`; create it with `mkdir -p data/code` before the first `up`, or Docker makes it owned by root and the API cannot write there |
+| `kali-standalone.yml` | Kali on its own, for when the API runs on the host (Compose's Kali has no port on this computer): an override on top of the Kali repo's `../reconix-kali-backend/docker-compose.yml` (left unedited). It sets `KALI_MCP_AUTH_TOKEN` from `RECONIX_MCP_AUTH_TOKEN`, `KALI_AUTO_BOOTSTRAP=1` (sonar_scan's SonarQube server, about 1 minute on first start) and mounts `RECONIX_CODE_DIR` (absolute) read-only at `/workspace/code`. The MCP port is pinned to `127.0.0.1:8096` (`ports: !override`, so a missing `HOST_PORT` never opens it on every interface); core uses `RECONIX_KALI_MCP_URL=http://127.0.0.1:8096/mcp` |
 | `lab/` | Test targets: OWASP Juice Shop and a small repo with known bugs and a fake secret (empty, to build) |
-| `seed.sql` | Sample data matching ERD V3; `apps/sample-data/` is built from it (placeholder) |
+| `seed.sql` | Sample data matching ERD V3; `apps/sample-data/api/` is built from it |
 | `install.sh` | Installs Reconix-Core (backend, terminal app, local web) and pulls the Kali image (placeholder) |
 
 ## Networks
 
 | Network | Who is on it | Internet |
 |---|---|---|
-| `backend` | `postgres`, `qdrant`, `ollama` (and the API, once it runs in Compose) | Yes |
-| `tools` | API ↔ `kali-mcp` (in dev: `kali-mcp-relay` ↔ `kali-mcp`) | **No** (`internal: true`) |
-| `reconix-lab` | `kali-mcp` ↔ lab targets | **No** (`internal: true`) |
-| `mcp-host` (dev only) | `kali-mcp-relay` only, so Docker can publish its port | Yes |
-| `downloads` | the one-off `nuclei-templates` only | Yes |
+| `models` | `api` ↔ `postgres`, `qdrant`, `embeddings` (the model download, AI providers) | Yes |
+| `tools` | `api` ↔ `reconix-kali-container` | Yes |
+| `reconix-lab` | `reconix-kali-container` ↔ lab targets | **No** (`internal: true`) |
 | default network of project `reconix-kali` | the standalone Kali container (`kali-standalone.yml`) | Yes |
 
 ## Rules
 
-- **Loopback only.** Every published port binds to `127.0.0.1`, never `0.0.0.0` or a bare port.
+- **Only the API has a host port**, `127.0.0.1:8000`. Never publish another service's port, and
+  never bind to `0.0.0.0` or a bare port. Use `docker compose exec` to reach the others.
+- **Each service joins only the networks it needs.** Every service has internet except on `reconix-lab`; Postgres and Qdrant share `models` with `embeddings`.
+  Inside its container the API listens on `0.0.0.0`; that is only allowed with
+  `RECONIX_IN_CONTAINER=1`, which only the Dockerfile sets.
 - **The Kali container stays locked down.** No published port in `docker-compose.yml`, only the
-  `tools` and `reconix-lab` networks, both internal. Keep `cap_drop: [ALL]`, only `NET_RAW`,
+  `tools` and `reconix-lab` networks. Keep `cap_drop: [ALL]`, only `NET_RAW`,
   `NET_ADMIN` and `NET_BIND_SERVICE` (nmap needs all three), and `no-new-privileges`. Never add
   `privileged`, host networking or a Docker socket mount.
-- **One exception: the nuclei templates download.** Only the one-off `nuclei-templates`
-  service (profile `setup`) runs the Kali image with internet, on its own `downloads` network.
-  It never joins `tools` or `reconix-lab`, its entrypoint is fixed to the template update, it
-  keeps `cap_drop: [ALL]` and `no-new-privileges`, and `kali-mcp` mounts the result read-only.
-- **Second exception: Kali standalone for the code scan.** `kali-standalone.yml` runs the Kali
-  repo's image (`dannygg02/reconix-kali-container:latest`, the tag that repo's compose uses) on a
-  normal network with internet: semgrep fetches its rules, trivy and grype their databases. It
-  only reads code, mounted read-only, and its port binds `127.0.0.1:8096` only. This image checks
+- **Kali has internet** through `tools` (decided 4 Nov 2026; the lead's approval is pending), so
+  its tools can update their own data. The network no longer stops a tool from reaching a target
+  outside the lab: the harness scope check and approvals are the only limit.
+- **Kali standalone (`kali-standalone.yml`)** runs the Kali repo's image on a normal network with
+  internet, reads code mounted read-only, and binds `127.0.0.1:8096` only. This image checks
   only `KALI_MCP_AUTH_TOKEN`, not core's job tokens, keeps the Kali repo's `NET_ADMIN`/`NET_RAW`
-  and has no `cap_drop` or `no-new-privileges`: anyone holding `RECONIX_MCP_ACCESS_KEY` can call
-  any Kali tool directly, so keep that key out of reach. Never `docker exec` into it; talk to it
-  over MCP. When it runs, start only `postgres qdrant ollama`
-  from `docker-compose.yml` (not `kali-mcp` or the dev relay).
+  and has no `cap_drop` or `no-new-privileges`: anyone holding `RECONIX_MCP_AUTH_TOKEN` can call
+  any Kali tool directly, so keep that token out of reach. Never `docker exec` into it; talk to
+  it over MCP. When it runs, do not also start `reconix-kali-container` or `api` from
+  `docker-compose.yml`.
 - **Tools run only against the lab.** Nothing in this folder may point a tool at a target outside
   `reconix-lab`.
 - **Pinned images.** Use exact tags (for example `qdrant/qdrant:v1.13.2`), never `latest`. The Kali
@@ -67,8 +65,8 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 - **`install.sh`:** `set -euo pipefail`, quote every variable, no `curl | sh` of unpinned scripts,
   and never ask for or store a provider API key.
 - **The API image needs Pango** (`libpango-1.0-0`, `libpangoft2-1.0-0` on Debian): the AI
-  Service draws the PDF report with WeasyPrint. Install it in the image when the API moves into
-  Compose, and check for it in `install.sh`.
+  Service draws the PDF report with WeasyPrint. `services/api/Dockerfile` installs it; check for
+  it in `install.sh` too.
 - A change here that affects how other parts start (ports, variable names, networks) must be called
   out in the PR so their owners can check it.
 
@@ -78,10 +76,10 @@ Keep this table true; update the row in the PR that changes it.
 
 | Plan item | Week | Owner | Status |
 |---|---|---|---|
-| Compose: Postgres 16, Qdrant, Ollama, Kali container on a private network | 1 | Vanneth | Done |
+| Compose: Postgres 16, Qdrant, the embedding server, Kali container on a private network | 1 | Vanneth | Done |
 | Lab: `reconix-lab` network with Juice Shop and a test repo with known bugs and a fake secret | 1 | Youlong | Network exists; targets to add in `lab/` |
-| `seed.sql` matching ERD V3, sample files rebuilt from it | 1 | Sreyleak | To do (placeholder) |
-| API (and every backend service) in Compose; one command starts everything | 2 | Vanneth | To do: API runs on the host with `docker-compose.dev.yml` |
+| `seed.sql` matching ERD V3, sample files rebuilt from it | 1 | Sreyleak | Done: one demo assessment; `make_sample_data.py` writes `apps/sample-data/api/` |
+| API (and every backend service) in Compose; one command starts everything | 2 | Vanneth | Done: `api` service; `./deploy/dev.sh` starts everything |
 | `install.sh` and uv install steps (backend, TUI, web, Kali image) | 2 | Vanneth | To do (placeholder) |
 | Clean demo data on the lab for Wed 4 Nov | 3 | Youlong | To do |
 | Fresh install with uv and with `install.sh` (Wed 4 Nov, Mon 23 Nov) | 3, 5 | Vanneth | To do (`cut-release` skill) |
@@ -91,14 +89,12 @@ Keep this table true; update the row in the PR that changes it.
 Run from the repo root.
 
 ```bash
-# dev: the API runs on the host
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml --env-file .env up -d
-# once after the first up, and to update: kali-mcp has no internet to fetch nuclei templates
-docker compose -f deploy/docker-compose.yml --env-file .env run --rm nuclei-templates
+# start everything (--build rebuilds the API)
+docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 
-docker compose -f deploy/docker-compose.yml ps
-docker compose -f deploy/docker-compose.yml logs -f kali-mcp
-docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml down  # -v wipes the data volumes and the nuclei templates
+docker compose -f deploy/docker-compose.yml --env-file .env ps
+docker compose -f deploy/docker-compose.yml --env-file .env logs -f api
+docker compose -f deploy/docker-compose.yml --env-file .env down  # -v wipes the data volumes
 
 # source code scan: core's services, then Kali standalone (pull, then the same flags with up -d --no-build)
 docker compose -f deploy/docker-compose.yml --env-file .env up -d postgres qdrant ollama
@@ -114,7 +110,6 @@ bash -n deploy/install.sh
 
 - `docker compose ... config --quiet` passes and the stack starts with `up -d`; every service is
   healthy in `ps`.
-- No port is published outside `127.0.0.1`, and the Kali container still has no published port and
-  no internet.
+- No port is published outside `127.0.0.1`, and the Kali container still has no published port.
 - The full flow still runs (`run-full-flow-test` skill) if a service, network or variable changed.
 - `.env.example` and the "Plan status" table above are updated when needed.

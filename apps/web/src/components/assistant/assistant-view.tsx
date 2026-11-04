@@ -4,10 +4,12 @@
    one centred column (the welcome and its globe slot while it is empty), and the composer (with
    the model chip) over its footnote. The three pieces carry data-assistant-piece so the open animation can bring
    them in as the surface settles. The conversation follows new text while the reader is at the
-   bottom; scrolled up, "New messages" brings them back (useStickToBottom). */
-import { forwardRef, useEffect, useRef } from "react";
+   bottom; scrolled up, a ↓ button brings them back (useStickToBottom), "New messages" once
+   something arrived since. */
+import { forwardRef, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Info, Loader, ShieldAlert } from "lucide-react";
+import { contentMark } from "@/lib/scroll/stick-rules";
 import { useAssistant } from "./assistant-provider";
 import { AssistantHeader } from "./assistant-header";
 import { Composer } from "./composer";
@@ -32,6 +34,12 @@ export const AssistantView = forwardRef<HTMLTextAreaElement, { onMinimize: () =>
   const { ref: scroller, atBottom, scrollToBottom, scrollToTop } = useStickToBottom<HTMLDivElement>();
   const view = useRef<HTMLElement>(null);
   const { model } = info;
+  // what the reader has seen: kept up to date while they follow; scrolled up, anything newer
+  // turns the ↓ button into "New messages"
+  const mark = contentMark(messages);
+  const [seen, setSeen] = useState(mark);
+  if (atBottom && seen !== mark) setSeen(mark);
+  const fresh = !atBottom && seen !== mark;
   // "New messages" goes away once used: carry on where the next question is typed
   const toLatest = () => {
     scrollToBottom();
@@ -87,7 +95,7 @@ export const AssistantView = forwardRef<HTMLTextAreaElement, { onMinimize: () =>
           </div>
         </div>
         {/* over the log, not inside the scrolling element */}
-        <ScrollToBottom show={!atBottom && messages.length > 0} onClick={toLatest} className="ai-scroll-down" />
+        <ScrollToBottom show={!atBottom && messages.length > 0} fresh={fresh} onClick={toLatest} className="ai-scroll-down" />
       </div>
 
       <div data-assistant-piece className="ai-composer-area">

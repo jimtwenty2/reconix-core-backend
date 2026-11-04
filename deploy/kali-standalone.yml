@@ -5,10 +5,11 @@
 #   docker compose -p reconix-kali --env-file .env \
 #     -f ../reconix-kali-backend/docker-compose.yml -f deploy/kali-standalone.yml pull
 #   (same flags) up -d --no-build
-# .env needs RECONIX_MCP_ACCESS_KEY and an absolute RECONIX_CODE_DIR.
+# Use it when the API runs on the host (Compose's Kali has no port on this computer).
+# .env needs RECONIX_MCP_AUTH_TOKEN and an absolute RECONIX_CODE_DIR.
 # shortcut: this Kali image checks only KALI_MCP_AUTH_TOKEN, not core's job tokens, so
-# whoever holds RECONIX_MCP_ACCESS_KEY can call any Kali tool directly; keep the old
-# kali-mcp path (deploy/docker-compose.yml) where that matters, until Kali checks them.
+# whoever holds RECONIX_MCP_AUTH_TOKEN can call any Kali tool directly; use the Compose
+# stack (deploy/docker-compose.yml) where that matters, until Kali checks them.
 
 services:
   reconix-kali-container:
@@ -17,7 +18,7 @@ services:
     ports: !override
       - "127.0.0.1:8096:8080"
     environment:
-      - KALI_MCP_AUTH_TOKEN=${RECONIX_MCP_ACCESS_KEY:?set RECONIX_MCP_ACCESS_KEY in .env}
+      - KALI_MCP_AUTH_TOKEN=${RECONIX_MCP_AUTH_TOKEN:?set RECONIX_MCP_AUTH_TOKEN in .env}
       # sonar_scan needs its in-container SonarQube server (about 1 minute on first start).
       - KALI_AUTO_BOOTSTRAP=1
     volumes:

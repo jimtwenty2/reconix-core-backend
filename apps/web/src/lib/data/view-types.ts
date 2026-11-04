@@ -110,7 +110,7 @@ export interface LibraryItem {
   target: string;
   status: Status;
   when: string; // "5 Oct 14:23"
-  waiting: string; // what the run waits on ("HIGH approval for secret_validation"), or ""
+  waiting: string; // what the run waits on ("HIGH approval for Check the flagged credential once"), or ""
 }
 
 /** A saved file the dashboard could not read, and why (see store.ts). */

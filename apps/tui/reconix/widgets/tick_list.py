@@ -53,6 +53,7 @@ class TickList(Vertical):
         tools: Sequence[Tuple[str, bool]],
         suggested: Sequence[int] = (),
         *,
+        focus: str = "",
         id: Optional[str] = None,
     ) -> None:
         # A class, not a fixed id: a second scope change in the same chat mounts a new list
@@ -61,6 +62,7 @@ class TickList(Vertical):
         self._ports = list(ports)
         self._tools = list(tools)
         self._suggested = set(suggested)
+        self._focus = focus  # the row to open on ("port:3389"; "" = the first)
 
     def compose(self) -> ComposeResult:
         what = "ports and tools" if self._ports else "tools"
@@ -79,9 +81,14 @@ class TickList(Vertical):
     def _port_label(self, port: int) -> Text:
         label = Text(f"port  {port:<6}")
         if port in self._suggested:
-            label.append("suggested by the model · not in the scope until you tick it",
-                         style=theme.DIM)
+            label.append("suggested by the model · tick to add", style=theme.DIM)
         return label
 
     def on_mount(self) -> None:
-        self.query_one(_Ticks).focus()
+        ticks = self.query_one(_Ticks)
+        values = [f"port:{port}" for port, _ticked in self._ports] + [
+            f"tool:{tool}" for tool, _ticked in self._tools
+        ]
+        if self._focus in values:  # the row the line named: Space ticks that one
+            ticks.highlighted = values.index(self._focus)
+        ticks.focus()

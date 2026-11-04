@@ -19,6 +19,7 @@ from .base import ReconixScreen
 from .. import store, theme
 from ..models import GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, PlanTask
 from ..widgets import RunLog, Spinner, duration_text
+from ..wording import counted
 
 LABEL_WIDTH = 30          # a task label's column; a longer label is cut
 
@@ -44,8 +45,15 @@ ACTIVE_DETAIL = {"running": "running…", "stopped": "stopped"}
 
 
 def task_line(task: PlanTask, state: str) -> Text:
-    color, glyph = theme.STATUS.get(task.status, (theme.DIM, "·"))
-    detail = "done" if task.status == "done" else "queued"
+    status = task.status
+    detail = "done" if status == "done" else "queued"
+    if task.key == "validation" and status == "done":
+        rejected, gated = store.rejected_checks()
+        if gated and rejected == gated:
+            status, detail = "skipped", "skipped · you rejected its checks"
+        elif rejected:
+            detail = f"done · {counted(rejected, 'check')} skipped"
+    color, glyph = theme.STATUS.get(status, (theme.DIM, "·"))
     if task.status == "active":
         detail = ACTIVE_DETAIL.get(state, "paused · waiting for you")
     if task.key == "report" and task.status == "active":
@@ -133,7 +141,15 @@ class ExecutionScreen(ReconixScreen):
 
     def on_mount(self) -> None:
         self.refresh_live()
+        self.call_after_refresh(self._refit)          # again once the panel has its width
         self.set_interval(1, self._draw_spinner)      # the elapsed time keeps counting
+
+    def on_resize(self) -> None:
+        self.call_after_refresh(self._refit)          # the border's counters fit the width
+
+    def _refit(self) -> None:
+        if self.is_mounted and self.query("#exec-hint"):   # not while the screen rebuilds
+            self.refresh_live()
 
     def _draw_spinner(self, tasks: Optional[List[PlanTask]] = None) -> None:
         """While running: the task Reconix is on and the testing time so far."""
@@ -159,18 +175,28 @@ class ExecutionScreen(ReconixScreen):
         panel = self.query_one("#exec-panel", Vertical)
         title, color = PANEL_TITLE[state]
         panel.border_title = Text(title, style=f"bold {color}")
-        counters = store.counters()
-        done = sum(1 for t in tasks if t.status == "done")
-        panel.border_subtitle = Text(f"{done} of {len(tasks)} complete · "
-                                     f"{counters['requests']} requests · "
-                                     f"{counters['blocked']} blocked · "
-                                     f"{counters['findings']} finding"
-                                     f"{'' if counters['findings'] == 1 else 's'}"
-                                     f"{self._time_note(state)}")
+        panel.border_subtitle = Text(self._counters_line(tasks, state, panel.size.width))
         log = self.query_one("#live-log", RunLog)
         log.sync(LOG_STATE.get(state, "paused"))
         log.set_status(self._log_status(state))
         self.query_one("#exec-hint", Static).update(hint_line(state))
+
+    def _counters_line(self, tasks: List[PlanTask], state: str, width: int) -> str:
+        """The panel's bottom border: tasks done, requests, blocked, findings and the time.
+
+        A narrow panel (80 columns) gets the short words, so nothing is cut with "…"."""
+        counters = store.counters()
+        done = sum(1 for t in tasks if t.status == "done")
+        time_note = self._time_note(state)
+        full = (f"{done} of {len(tasks)} complete · {counted(counters['requests'], 'request')}"
+                f" · {counters['blocked']} blocked · "
+                f"{counted(counters['findings'], 'finding')}{time_note}")
+        if not width or len(full) + 6 <= width:
+            return full
+        short_time = time_note.replace("paused at ", "paused ").replace(" in total", " total")
+        return (f"{done}/{len(tasks)} done · {counters['requests']:,} req · "
+                f"{counters['blocked']} blocked · {counted(counters['findings'], 'finding')}"
+                f"{short_time}")
 
     def _time_note(self, state: str) -> str:
         """The testing time while the spinner is hidden: frozen at a pause, final at the end.

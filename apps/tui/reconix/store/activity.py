@@ -59,7 +59,8 @@ def add_feedback(gate: str, text: str) -> Feedback:
     if not text:
         raise StoreValidationError("Type some feedback first.")
     if len(text) > MAX_FEEDBACK_LENGTH:
-        raise StoreValidationError(f"Keep feedback under {MAX_FEEDBACK_LENGTH} characters.")
+        raise StoreValidationError(
+            f"Keep feedback to at most {MAX_FEEDBACK_LENGTH} characters.")
     text = redact(text)
     feedback = Feedback(gate=gate, text=text, operator=current_operator(),
                         assessment=_current_label())

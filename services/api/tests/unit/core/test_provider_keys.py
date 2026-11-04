@@ -9,7 +9,7 @@ FAKE_API_KEY = "sk-fake-test-key-0000-abcd"  # noqa: S105
 
 
 def settings_with(fernet_key: str) -> Settings:
-    return Settings(fernet_key=fernet_key)
+    return Settings(provider_encryption_key=fernet_key)
 
 
 def test_a_key_is_encrypted_and_reads_back():

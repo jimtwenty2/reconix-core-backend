@@ -12,10 +12,12 @@ ranker are the contract the web is built to (`rank.py`, `files.py`).
 """
 
 import dataclasses
+import hashlib
 from typing import List, Tuple
 
 from ..activity import log_event
 from ..errors import StoreValidationError
+from ...wording import counted
 from ..redact import redact
 from . import files, original, paths
 from .chunk import split
@@ -59,14 +61,35 @@ def add_source(path_text: str, name: str = "", origin: str = "terminal") -> Sour
     passages, passages_cut = split(redact(extracted.text))
     if not passages:
         raise StoreValidationError("That file has no readable text to add.")
+    if any(_same_file(s, extracted, passages) for s in existing):
+        raise StoreValidationError(f"{extracted.name} is already added (the same file). "
+                                   "Remove it first to add it again.")
 
     source = Source(id=_new_id(existing), name=extracted.name, kind=extracted.kind,
                     bytes=extracted.bytes, chunks=len(passages), added_at=_now(), source=origin,
                     original=True)
     _save(source, passages, existing, extracted.data)
-    log_event("knowledge.added", f"{source.name} ({source.kind}, {source.chunks} passages)")
+    log_event("knowledge.added", f"{source.name} ({source.kind}, "
+                                 f"{counted(source.chunks, 'passage')})")
     cut = f"cut to the first {len(passages):,} passages" if passages_cut else extracted.cut
     return dataclasses.replace(source, cut=cut)
+
+
+def _same_file(source: Source, extracted, passages: List[str]) -> bool:
+    """`source` is this very file again: the same name and size, and the same content (the
+    SHA-256 of the kept original, or the same redacted passages for an older source)."""
+    if source.name != extracted.name or source.bytes != extracted.bytes:
+        return False
+    if source.original:
+        try:
+            kept = original.read_original(source.id)
+        except StoreValidationError:
+            return False                        # unreadable original: not provably the same
+        return hashlib.sha256(kept).digest() == hashlib.sha256(extracted.data).digest()
+    try:
+        return files.read_chunks(source.id) == passages
+    except StoreValidationError:
+        return False
 
 
 def _save(source: Source, passages: List[str], existing: List[Source],

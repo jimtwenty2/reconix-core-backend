@@ -1,0 +1,54 @@
+{
+  "manifest_id": "b0000000-0000-4000-8000-000000000001",
+  "version": 1,
+  "manifests_status": "APPROVED",
+  "max_risk": "MEDIUM",
+  "allowed_tools": [
+    "NMAP",
+    "NUCLEI",
+    "ZAP"
+  ],
+  "allowed_ports": [
+    80,
+    443,
+    3000
+  ],
+  "allowed_actions": [
+    "discovery",
+    "scan",
+    "validation"
+  ],
+  "allowed_methods": [
+    "GET",
+    "HEAD",
+    "OPTIONS"
+  ],
+  "starts_at": "2026-11-01T00:00:00Z",
+  "ends_at": "2026-12-31T23:59:00Z",
+  "limitations": "No denial of service. Do not touch the /ftp/ folder.",
+  "decided_by": "demo-tester",
+  "decided_at": "2026-11-02T09:04:00Z",
+  "reject_reason": null,
+  "session_id": "c0000000-0000-4000-8000-000000000001",
+  "assessment_id": "a0000000-0000-4000-8000-000000000001",
+  "targets": [
+    {
+      "type": "ip",
+      "value": "192.0.2.10",
+      "excluded": false,
+      "scope_target_id": "b1000000-0000-4000-8000-000000000002"
+    },
+    {
+      "type": "url",
+      "value": "http://juice-shop.example:3000/",
+      "excluded": false,
+      "scope_target_id": "b1000000-0000-4000-8000-000000000001"
+    },
+    {
+      "type": "url",
+      "value": "http://juice-shop.example:3000/ftp/",
+      "excluded": true,
+      "scope_target_id": "b1000000-0000-4000-8000-000000000003"
+    }
+  ]
+}

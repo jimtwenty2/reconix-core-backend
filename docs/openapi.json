@@ -493,6 +493,18 @@
             ],
             "title": "Decided By"
           },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
@@ -579,6 +591,7 @@
           "action_id",
           "manifest_id",
           "report_id",
+          "evidence_id",
           "config_change"
         ],
         "title": "ApprovalOut",
@@ -1591,6 +1604,55 @@
         "title": "CombinedReportIn",
         "type": "object"
       },
+      "DisclosedValueOut": {
+        "properties": {
+          "approval_id": {
+            "format": "uuid",
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "approval_id",
+          "index",
+          "kind",
+          "value"
+        ],
+        "title": "DisclosedValueOut",
+        "type": "object"
+      },
+      "DisclosureRequest": {
+        "properties": {
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "DisclosureRequest",
+        "type": "object"
+      },
       "EvidenceOut": {
         "properties": {
           "content": {
@@ -2078,6 +2140,25 @@
         "title": "Health",
         "type": "object"
       },
+      "HiddenValueOut": {
+        "description": "A masked value that can be shown with a `disclosure` approval; never the value.",
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "kind"
+        ],
+        "title": "HiddenValueOut",
+        "type": "object"
+      },
       "KnowledgeAddOnOut": {
         "properties": {
           "chunk_count": {
@@ -2215,6 +2296,76 @@
           "score"
         ],
         "title": "KnowledgeHitOut",
+        "type": "object"
+      },
+      "LimitBounds": {
+        "properties": {
+          "highest": {
+            "title": "Highest",
+            "type": "integer"
+          },
+          "lowest": {
+            "title": "Lowest",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lowest",
+          "highest"
+        ],
+        "title": "LimitBounds",
+        "type": "object"
+      },
+      "LimitChangeIn": {
+        "description": "Only the limits to change, e.g. {\"max_runs_per_assessment\": 300}.",
+        "properties": {
+          "changes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "maxProperties": 4,
+            "minProperties": 1,
+            "title": "Changes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "title": "LimitChangeIn",
+        "type": "object"
+      },
+      "LimitSettingsOut": {
+        "properties": {
+          "bounds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/LimitBounds"
+            },
+            "title": "Bounds",
+            "type": "object"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/LoopLimitSettings"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/LoopLimitSettings"
+          },
+          "pending_approval_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Pending Approval Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "limits",
+          "defaults",
+          "bounds",
+          "pending_approval_ids"
+        ],
+        "title": "LimitSettingsOut",
         "type": "object"
       },
       "LlmProviderActivation": {
@@ -2494,6 +2645,35 @@
           }
         },
         "title": "LlmProviderUpdate",
+        "type": "object"
+      },
+      "LoopLimitSettings": {
+        "description": "The loop check's limits, once a `configuration` approval changed them.",
+        "properties": {
+          "max_actions_per_minute": {
+            "title": "Max Actions Per Minute",
+            "type": "integer"
+          },
+          "max_runs_per_assessment": {
+            "title": "Max Runs Per Assessment",
+            "type": "integer"
+          },
+          "max_same_command": {
+            "title": "Max Same Command",
+            "type": "integer"
+          },
+          "same_command_window_minutes": {
+            "title": "Same Command Window Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_same_command",
+          "same_command_window_minutes",
+          "max_actions_per_minute",
+          "max_runs_per_assessment"
+        ],
+        "title": "LoopLimitSettings",
         "type": "object"
       },
       "ManifestStatus": {
@@ -4039,7 +4219,7 @@
     }
   },
   "info": {
-    "description": "This is the local API of Reconix Core. It runs only on this computer (127.0.0.1), and the\nterminal app, the local web and the VS Code extension all talk to it.\n\n**How a test goes.** You write a scope, the agent plans the test and suggests each step, a\nperson approves the steps that need it, the tools run, and the results become findings, an\nanalysis and finally a report you can download.\n\n**Signing in.** Call `POST /api/v1/sessions` to get a session token. It is shown only once, so\nkeep it. Send it on every other call as `Authorization: Bearer <token>`; in this page, use the\n**Authorize** button. Only `GET /health`, `POST /sessions` and `POST /sessions/web-sign-in`\nwork without a token.\n\n**The AI suggests, the API decides.** The agent never runs a tool itself. Every action it\nsuggests is checked first: its input, its scope, its command, its risk and whether it repeats\nitself. A `LOW` risk action runs right away. A `MEDIUM` or `HIGH` one waits until a person\napproves it. Anything riskier than the scope allows is `BLOCKED` with a 422. An approval\nexpires after 30 minutes and can be used only once.\n\n**Errors.** Every error has the same shape:\n`{\"code\": \"UPPER_CASE\", \"message\": \"...\", \"details\": {...}}`. Secrets are masked in every\nanswer the API gives.\n",
+    "description": "This is the local API of Reconix Core. It runs only on this computer (127.0.0.1), and the\nterminal app, the local web and the VS Code extension all talk to it.\n\n**How a test goes.** You write a scope, the agent plans the test and suggests each step, a\nperson approves the steps that need it, the tools run, and the results become findings, an\nanalysis and finally a report you can download.\n\n**Signing in.** Call `POST /api/v1/sessions` to get a session token. It is shown only once, so\nkeep it. Send it on every other call as `Authorization: Bearer <token>`; in this page, use the\n**Authorize** button. Only `GET /health`, `POST /sessions` and `POST /sessions/web-sign-in`\nwork without a token.\n\n**The AI suggests, the API decides.** The agent never runs a tool itself. Every action it\nsuggests is checked first: its input, its scope, its command, its risk and whether it repeats\nitself. A `LOW` risk action runs right away. A `MEDIUM` or `HIGH` one waits until a person\napproves it. Anything riskier than the scope allows is `BLOCKED` with a 422. An approval\nexpires after 30 minutes and can be used only once.\n\n**Terminal.** `WS /api/v1/terminal` opens the terminal app for the web Terminal page (WebSockets\nare not listed below). Send the token as the subprotocol `token.<token>` next to\n`reconix.terminal`; only the local web's Origin is accepted, and one terminal per session.\n\n**Errors.** Every error has the same shape:\n`{\"code\": \"UPPER_CASE\", \"message\": \"...\", \"details\": {...}}`. Secrets are masked in every\nanswer the API gives. Each session token may send a set number of requests a minute (signing\nin has a smaller limit); after that the API answers 429 TOO_MANY_REQUESTS with a Retry-After\nheader.\n",
     "title": "Reconix API",
     "version": "0.0.0"
   },
@@ -5579,6 +5759,177 @@
         ]
       }
     },
+    "/api/v1/evidence/{evidence_id}/disclosures": {
+      "post": {
+        "description": "Asks to see one masked value. This returns a `disclosure` approval; once a person approves\nit, reveal the value once with the reveal endpoint. Returns 404 HIDDEN_VALUE_NOT_FOUND if the\nevidence has no value with this index.",
+        "operationId": "request_disclosure_api_v1_evidence__evidence_id__disclosures_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisclosureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Request Disclosure",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}/disclosures/{approval_id}/reveal": {
+      "post": {
+        "description": "Shows the real value once, after its `disclosure` approval was approved. The approval is\nused up, so a second call returns 409 APPROVAL_ALREADY_USED. Returns 409 APPROVAL_NOT_GRANTED\nif it is not approved yet, or 409 APPROVAL_EXPIRED after its time limit.",
+        "operationId": "reveal_value_api_v1_evidence__evidence_id__disclosures__approval_id__reveal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Approval Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisclosedValueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Reveal Value",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
+    "/api/v1/evidence/{evidence_id}/hidden-values": {
+      "get": {
+        "description": "Lists the masked values in this evidence that a person may ask to see, by index and kind.\nThe values themselves are never listed.",
+        "operationId": "list_hidden_values_api_v1_evidence__evidence_id__hidden_values_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HiddenValueOut"
+                  },
+                  "title": "Response List Hidden Values Api V1 Evidence  Evidence Id  Hidden Values Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "List Hidden Values",
+        "tags": [
+          "evidence"
+        ]
+      }
+    },
     "/api/v1/findings": {
       "get": {
         "description": "Lists the findings, newest first.\n\nBusiness Rules:\n- With ?assessment_id=, lists only that assessment's findings, in the order they were found.\n- Filter with ?severity_status=, ?validation_status=, ?finding_status=, ?tool= (a Kali\n  catalog tool that found it, in any case), ?target= (part of the target), and ?q= (part\n  of the code, title, target, description, or a CWE id).\n- Every filter you provide must match.\n- A ?tool= that is not in the Kali catalog returns 422 UNKNOWN_TOOL.\n\nSecurity:\n- Requires a valid session token.",
@@ -6225,6 +6576,78 @@
         ]
       }
     },
+    "/api/v1/limit-settings": {
+      "get": {
+        "description": "Returns the loop check's limits in use now, the default limits, the range each limit may\ntake, and the ids of any changes still waiting for a person.",
+        "operationId": "read_limit_settings_api_v1_limit_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Limit Settings",
+        "tags": [
+          "limit settings"
+        ]
+      },
+      "post": {
+        "description": "Asks to change one or more loop limits. Nothing changes yet: this returns a `configuration`\napproval, and the new limits are used only after a person approves it. Returns 422 with\nUNKNOWN_LIMIT, NOT_A_NUMBER, OUT_OF_RANGE or NO_CHANGE if the change is not allowed.",
+        "operationId": "request_limit_change_api_v1_limit_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LimitChangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Request Limit Change",
+        "tags": [
+          "limit settings"
+        ]
+      }
+    },
     "/api/v1/llm-providers": {
       "get": {
         "description": "Retrieves the LLM providers, oldest first.\n\nBusiness Rules:\n- The built-in RECONIX provider is always present.\n\nSecurity:\n- Requires a valid session token.",
@@ -6498,7 +6921,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/models": {
       "get": {
-        "description": "Lists the models that a RECONIX or OLLAMA provider's Ollama has on this computer.\n\nBusiness Rules:\n- Cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Lists the models that an OLLAMA provider's Ollama has on this computer.\n\nBusiness Rules:\n- RECONIX and cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_models_api_v1_llm_providers__llm_provider_id__models_get",
         "parameters": [
           {

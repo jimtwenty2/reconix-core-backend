@@ -33,17 +33,57 @@ def model(monkeypatch: pytest.MonkeyPatch) -> FakeModel:
     fake = FakeModel()
     monkeypatch.setattr(client.litellm, "acompletion", fake.acompletion)
     monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    # The Reconix team's model server (OpenAI-compatible), as set in .env.
+    monkeypatch.setenv("RECONIX_MODEL_URL", RECONIX_URL)
+    monkeypatch.setenv("RECONIX_MODEL_API_KEY", "fake-reconix-key")
+    monkeypatch.delenv("RECONIX_MODEL_NAME", raising=False)
     return fake
 
 
-async def test_reconix_calls_the_local_ollama_model(model: FakeModel) -> None:
+RECONIX_URL = "https://models.reconix.example/v1"
+
+
+async def test_reconix_calls_the_reconix_team_server(model: FakeModel) -> None:
     completion = await complete(QUESTION, reconix_provider())
 
     assert completion.text == "Port 3000 is open."
     assert completion.provider_type == ProviderType.RECONIX
     assert completion.model_name == "reconix"
-    assert model.calls[0]["model"] == "ollama_chat/reconix"
-    assert model.calls[0]["api_base"] == "http://127.0.0.1:11434"
+    assert model.calls[0]["model"] == "openai/reconix"
+    assert model.calls[0]["api_base"] == RECONIX_URL
+    assert model.calls[0]["api_key"] == "fake-reconix-key"
+
+
+async def test_reconix_without_its_url_never_falls_back_to_ollama(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_MODEL_URL")
+
+    with pytest.raises(ProviderError) as error:
+        await complete(QUESTION, reconix_provider())
+
+    assert error.value.code == "PROVIDER_URL_MISSING"
+    assert model.calls == []
+
+
+async def test_reconix_without_a_key_sends_no_real_key(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_MODEL_API_KEY")
+
+    await complete(QUESTION, reconix_provider())
+
+    assert model.calls[0]["api_key"] == client.NO_KEY
+
+
+async def test_reconix_model_name_comes_from_the_environment(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RECONIX_MODEL_NAME", "reconix-qwen3")
+
+    await complete(QUESTION, reconix_provider())
+
+    assert model.calls[0]["model"] == "openai/reconix-qwen3"
 
 
 async def test_json_answer_asks_for_a_json_object(model: FakeModel) -> None:
@@ -55,7 +95,7 @@ async def test_json_answer_asks_for_a_json_object(model: FakeModel) -> None:
 
 
 async def test_every_call_caps_the_answer_length(model: FakeModel) -> None:
-    short = ProviderConfig(ProviderType.RECONIX, "reconix", max_tokens=300)
+    short = ProviderConfig(ProviderType.RECONIX, "reconix", RECONIX_URL, max_tokens=300)
 
     await complete(QUESTION, reconix_provider())
     await complete(QUESTION, short)
@@ -69,7 +109,7 @@ async def test_ollama_url_comes_from_the_environment(
 ) -> None:
     monkeypatch.setenv("RECONIX_OLLAMA_URL", "http://ollama:11434")
 
-    await complete(QUESTION, reconix_provider())
+    await complete(QUESTION, ProviderConfig(ProviderType.OLLAMA, "llama3.1:8b"))
 
     assert model.calls[0]["api_base"] == "http://ollama:11434"
 
@@ -402,6 +442,7 @@ async def test_on_piece_errors_still_hide_the_provider_text(monkeypatch) -> None
         pass
 
     monkeypatch.setattr(client.litellm, "acompletion", down)
+    monkeypatch.setenv("RECONIX_MODEL_URL", RECONIX_URL)  # the call must get as far as the model
     with pytest.raises(ProviderError) as raised:
         await complete(QUESTION, reconix_provider(), on_piece=on_piece)
     assert raised.value.code == "MODEL_UNAVAILABLE"

@@ -139,19 +139,20 @@ async def start_session(client: httpx.AsyncClient, url: str, headers: dict[str, 
 
 
 def make_call_tool(
-    url: str, access_key: str, transport: httpx.AsyncBaseTransport | None = None
+    url: str, auth_token: str, transport: httpx.AsyncBaseTransport | None = None
 ) -> CallTool:
-    """`transport` is only for tests."""
-    if not access_key:
-        raise ValueError("RECONIX_MCP_ACCESS_KEY is not set")
+    """`auth_token` (RECONIX_MCP_AUTH_TOKEN) is optional: when empty, no Authorization
+    header is sent. The one-time job token is sent on every call either way.
+    `transport` is only for tests."""
 
     async def call_tool(job: ToolJob) -> ToolResult:
         name, arguments = tool_call(job)
         headers = {
-            "Authorization": f"Bearer {access_key}",
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
         }
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
         call = {
             "jsonrpc": "2.0",
             "id": 2,

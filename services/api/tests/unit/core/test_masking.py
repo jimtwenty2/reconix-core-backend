@@ -110,3 +110,10 @@ def test_a_cookie_header_inside_json_is_masked():
 def test_the_real_zap_report_keeps_no_cookie():
     masked, _ = mask_output(mask_secrets, LAB_ZAP)
     assert FAKE_SECRET.findall(masked) == []
+
+
+def test_a_named_secret_is_hidden_where_it_repeats_in_nested_values():
+    secret = "RepeatedHunter2Value"
+    row = {"password": secret, "results": [f"value {secret}"], "more": {"line": secret + "!"}}
+    masked, _ = mask_output(mask_secrets, json.dumps(row))
+    assert secret not in masked

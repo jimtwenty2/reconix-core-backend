@@ -4,11 +4,9 @@
    name is shown and saved, never used as a path: cleanName keeps its base name only. */
 import { escapedSecret, stripControls } from "@/lib/assistant/redact";
 
-/** At most 10 MB (extract.py MAX_FILE_BYTES). */
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-export const MAX_UPLOAD_LABEL = "10 MB";
-/** The whole multipart body: the file plus room for its part's headers and the boundaries. */
-export const MAX_BODY_BYTES = MAX_UPLOAD_BYTES + 64 * 1024;
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "./limits";
+
+export { MAX_BODY_BYTES, MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "./limits";
 /** A source's display name, in characters (code points; the index's MAX_NAME). */
 export const MAX_NAME = 120;
 

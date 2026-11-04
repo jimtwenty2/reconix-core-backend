@@ -35,7 +35,7 @@ WEB = Flow(
         ),
         ("Login", "email/username + password, then a 6-digit one-time code (OWASP ZAP needs it)"),
         ("MEDIUM", "Baseline request (read-only) · GET /api/orders/10482"),
-        ("HIGH", "limited_validation · GET /api/orders/10483 (test account B)"),
+        ("HIGH", "Cross-account read check · GET /api/orders/10483 (test account B)"),
         ("Blocked in the run", "Blocked: GET /admin · Path outside approved scope. Not executed."),
         (
             "Findings",
@@ -123,16 +123,16 @@ WEB = Flow(
             (
                 "Approve scope → Run plan → login → MEDIUM Approve & run.",
                 'HIGH → Reject (↑/↓ then Enter; it has no number) → "Rejected: '
-                'limited_validation. Not executed — the plan goes on with its next step." (on '
-                "Execution's live output; scroll it up on a short terminal)",
+                'Cross-account read check. Not executed — the plan goes on with its next step." '
+                "(on Execution's live output; scroll it up on a short terminal)",
                 'The run goes on to the end: "Assessment completed. 3 findings: 0 confirmed, 3 '
                 'marked for review." and "Open the report (Alt+8 or /report) to export it."',
                 "/findings → 001 stays Unconfirmed: the validation that would confirm it was "
                 "rejected.",
                 REPORT_EXPORT.format(key="p (PDF)"),
             ),
-            "limited_validation never runs; the same assessment completes and its report can be "
-            "exported.",
+            "Cross-account read check never runs; the same assessment completes and its report "
+            "can be exported.",
             ask="Check https://shop.example.com for web security issues",
         ),
     ),
@@ -155,7 +155,7 @@ API = Flow(
         ),
         ("Login", "a session cookie (the API tools send it)"),
         ("MEDIUM", "Baseline request (read-only) · GET /v1/orders/8842 (token A)"),
-        ("HIGH", "limited_validation · GET /v1/orders/8843 (token B's order)"),
+        ("HIGH", "Cross-account read check · GET /v1/orders/8843 (token B's order)"),
         (
             "Blocked in the run",
             "Blocked: GET /internal/metrics · Path outside approved scope. Not executed.",
@@ -203,11 +203,14 @@ API = Flow(
             "Reject the scope",
             (
                 API_FORM,
-                'Scope → Reject (↑/↓ then Enter; it has no number) → "Scope rejected. Nothing '
-                'was tested." then "Assessment stopped. Nothing else will run. Type /new to '
-                'start a new assessment."',
-                "You stay in the same assessment: the Template step shows ✕ and the screen asks "
-                '"Start again?" (Start a new assessment / Back to the start).',
+                'Scope → Reject (↑/↓ then Enter; it has no number) → the toast "Scope rejected '
+                '— nothing was tested."',
+                "You stay in the same assessment: the Template step shows ✕, the screen says "
+                '"◆ reconix this assessment stopped before testing: you rejected the scope" and '
+                'asks "Start again?" (Start a new assessment / Back to the start).',
+                'Ctrl+O on Execution (or /audit) → "Scope rejected. Nothing was tested." and '
+                '"Assessment stopped. Nothing else will run. Type /new to start a new '
+                'assessment."',
                 "/audit → the rejection is in the audit trail.",
                 '"Start again?" → Start a new assessment → /assessments still lists the rejected '
                 "one as Stopped.",
@@ -240,8 +243,10 @@ API = Flow(
             (
                 API_FORM,
                 "Approve scope → Run plan → cookie.",
-                'MEDIUM → Reject (↑/↓ then Enter) → "Rejected: Baseline request (read-only). '
-                'Not executed — the plan goes on with its next step."',
+                "MEDIUM → Reject (↑/↓ then Enter) → the app goes straight to the HIGH "
+                'approval, which shows "✕ Skipped: Baseline request (read-only) (rejected)". The '
+                'line "Rejected: Baseline request (read-only). Not executed — the plan goes on '
+                'with its next step." is in the Execution log (Ctrl+O) and in /audit.',
                 "The HIGH step still asks for its own approval: Approve & run → second "
                 "confirmation → Yes.",
                 'The run completes: "Assessment completed. …" /audit lists approval.rejected '
@@ -269,7 +274,7 @@ NETWORK = Flow(
             "time limit 30 min; no login",
         ),
         ("MEDIUM", "Banner and TLS check (read-only) · TCP 10.0.0.1:8443"),
-        ("HIGH", "single_login_probe · one default credential on /manager"),
+        ("HIGH", "Default login probe · one default credential on /manager"),
         (
             "Blocked in the run",
             "Blocked: TCP 198.51.100.9 · Host outside approved scope. Not executed.",
@@ -318,6 +323,8 @@ NETWORK = Flow(
                 'CIDR, e.g. 10.0.0.0/27."',
                 'scan my network → "Network needs an IPv4 address or range, or a hostname — e.g. '
                 '10.0.0.0/24"',
+                "Each refused line stays in the prompt, selected: typing replaces it (type "
+                "/new and the command list opens instead of adding to the address).",
                 "Then scan 10.0.0.0/28 → accepted → finish the flow.",
             ),
             "Each bad address shows its message and nothing starts; the CIDR range starts.",
@@ -333,8 +340,11 @@ NETWORK = Flow(
                 'Excluded 10.0.0.0/33 → "Exclude a host, range or host:port (e.g. '
                 '10.0.0.5:22): 10.0.0.0/33."; Excluded 10.0.0.5:22 → Save scope.',
                 'Chat about this → type add port 3389 → "Only you can change the scope. Tick what '
-                'it allows, then press Enter to save." and a tick list with 3389 unticked.',
-                "Tick 3389 (Space) → Enter → the scope card shows port 3389.",
+                'it allows, then press Enter to save." and a tick list with 3389 unticked; the '
+                "list opens on the 3389 row.",
+                "Press Space (ticks 3389), then Enter → the scope card shows port 3389.",
+                'Type add ports 1-1024 → "The scope lists single ports, not a range (1-1024)…"; '
+                'add 10.0.0.99 to the scope → "Hosts can\'t change here…" (no tick list).',
                 "Approve scope → Run plan → finish.",
             ),
             "Only your tick changed the scope; the wrong values changed nothing.",
@@ -352,10 +362,13 @@ NETWORK = Flow(
                 "10.0.0.7:8443 → accepted.",
                 "Approve & run → second confirmation → No, go back (nothing runs) → Approve & run "
                 "→ Yes.",
-                "Findings → f → Critical & High → open 001 → "
+                "Findings → f → Critical & High → open 001 (on 10.0.0.1:8443): it stays "
+                "UNCONFIRMED with the evidence \"Not collected: the check ran on 10.0.0.7:8443, "
+                "not on this finding's own host and port, so it can't confirm it.\" → "
                 + REPORT_EXPORT.format(key="w (DOCX)"),
             ),
-            "Only an in-scope host:port can be set; HIGH runs only after the second Yes.",
+            "Only an in-scope host:port can be set; HIGH runs only after the second Yes; a check "
+            "moved to another host never confirms the finding.",
             ask="Check 10.0.0.0/24 for exposed management consoles",
         ),
     ),
@@ -376,7 +389,7 @@ SOURCE = Flow(
             "Semgrep, gitleaks and pip-audit; no login",
         ),
         ("MEDIUM", "Read the flagged line (read-only) · app/config/settings.py:42"),
-        ("HIGH", "secret_validation · one try of the flagged credential on a test database"),
+        ("HIGH", "Check the flagged credential once · one try on a test database"),
         (
             "Blocked in the run",
             "Blocked: read .git/config · Path excluded from the review. Not executed.",
@@ -439,8 +452,9 @@ SOURCE = Flow(
             (
                 'Approve scope → at the plan: Chat about this → move 3b before 3a → "Only you can '
                 'change the order…" and an order list.',
-                'Move secret_validation up (Shift+↑) → Enter → "Plan updated" and the plan '
-                "card shows 3a secret_validation (HIGH), 3b Read the flagged line (MEDIUM).",
+                'Move "Check the flagged credential once" up (Shift+↑) → Enter → "Plan updated" '
+                "and the plan card shows 3a Check the flagged credential once (HIGH), "
+                "3b Read the flagged line (MEDIUM).",
                 "Type move step 1 to the end → the order list again: only the gated checks can "
                 "move; phases 1–5 stay fixed.",
                 "Run plan → HIGH is asked first, then MEDIUM → approve both.",
@@ -455,7 +469,7 @@ SOURCE = Flow(
             (
                 'Approve scope → Run plan → while it runs press Ctrl+C → "Stop this '
                 'assessment?" → Keep running → it goes on.',
-                'Ctrl+C again → Stop now → "Stopped by the operator. Nothing else will run."',
+                'Ctrl+C again → Stop now → "You stopped it. Nothing else will run."',
                 "/findings → only what was found so far. /summary → the stop.",
                 "/new → start again.",
             ),
