@@ -100,7 +100,7 @@ def step_status() -> StepStatus:
         return StepStatus("Template · scope review", "the scope is a draft: nothing is "
                           "approved and nothing has run",
                           "Approve scope, Edit manifest or Reject in the menu (after Approve "
-                          "scope comes the Plan step: nothing runs until the operator chooses "
+                          "scope comes the Plan step: nothing runs until you choose "
                           "Run plan there)", pending=True)
     if scope is None or scope.status != "APPROVED":
         return StepStatus("Template", "Reconix is drafting the scope; nothing has run",

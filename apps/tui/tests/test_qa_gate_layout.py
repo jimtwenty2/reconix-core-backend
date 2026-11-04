@@ -130,9 +130,10 @@ async def test_a_gate_with_hidden_choices_says_how_to_reach_them():
     async with app.run_test(size=SMALL) as pilot:
         await _to_gate(app, pilot, "scope")
         app.clear_notifications()
+        app.screen._hinted = False              # it may have shown once already: show it again
         app.screen._hint_hidden_choices()       # the check the gate runs once it is laid out
         await settle(pilot)
-        assert any("press ↓" in str(n.message) for n in app._notifications)
+        assert any("↓ moves down to them" in str(n.message) for n in app._notifications)
 
 
 async def test_a_tall_terminal_needs_no_hint():
@@ -140,7 +141,7 @@ async def test_a_tall_terminal_needs_no_hint():
     async with app.run_test(size=(140, 45)) as pilot:
         await _to_gate(app, pilot, "approval:")
         notes = [str(n.message) for n in app._notifications]
-        assert not any("press ↓" in note for note in notes)
+        assert not any("↓ moves down to them" in note for note in notes)
 
 
 def test_a_rejected_action_is_never_shown_with_a_green_tick():

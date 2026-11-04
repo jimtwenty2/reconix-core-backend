@@ -15,7 +15,7 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
-from typing import IO, Optional
+from typing import IO, Dict, List, Optional
 from urllib.parse import urlsplit
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"   # apps/web, next to apps/tui
@@ -33,13 +33,51 @@ def problem() -> str:
 
 
 def needs_install() -> bool:
-    """Some of its packages aren't installed yet (the first start, or new ones were added)."""
+    """`npm install` is due: some packages aren't installed (the first start, or new ones
+    were added), or a pull moved package-lock.json on and node_modules still holds other
+    versions (e.g. next 16.3.8 installed, 16.4.1 locked)."""
     try:
-        names = json.loads((WEB_DIR / "package.json").read_text(encoding="utf-8"))["dependencies"]
-    except (OSError, ValueError, KeyError, TypeError):
-        names = ["next"]
+        manifest = json.loads((WEB_DIR / "package.json").read_text(encoding="utf-8"))
+        names = list(manifest["dependencies"])
+        direct = names + list(manifest.get("devDependencies") or {})
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        names = direct = ["next"]
     modules = WEB_DIR / "node_modules"
-    return not all((modules / name / "package.json").is_file() for name in names)
+    if not all((modules / name / "package.json").is_file() for name in names):
+        return True
+    wanted = _locked(WEB_DIR / "package-lock.json")
+    have = {**_locked(modules / ".package-lock.json"), **_installed(modules, direct)}
+    # one the lockfile names but npm left out (another platform's optional build) is fine
+    return any(have.get(key, version) != version for key, version in wanted.items())
+
+
+def _locked(lock_file: Path) -> Dict[str, str]:
+    """{"node_modules/<name>": version} from an npm lockfile (package-lock.json, or npm's
+    record of what it installed, node_modules/.package-lock.json); {} if unreadable."""
+    try:
+        packages = json.loads(lock_file.read_text(encoding="utf-8"))["packages"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    if not isinstance(packages, dict):
+        return {}
+    return {key: entry["version"] for key, entry in packages.items()
+            if key.startswith("node_modules/") and isinstance(entry, dict)
+            and isinstance(entry.get("version"), str)}
+
+
+def _installed(modules: Path, names: List[str]) -> Dict[str, str]:
+    """The installed version of each direct package, from its own package.json (what Node
+    really loads, even when npm's record is missing)."""
+    found = {}
+    for name in names:
+        try:
+            version = json.loads((modules / name / "package.json").read_text(encoding="utf-8"))
+            version = version["version"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if isinstance(version, str):
+            found[f"node_modules/{name}"] = version
+    return found
 
 
 def _log() -> IO[bytes]:

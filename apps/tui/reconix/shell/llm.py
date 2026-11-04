@@ -15,6 +15,22 @@ from ..screens.forms import ProviderForm
 _VERBS = {"set", "update", "test", "unset"}
 
 
+def _setup_hint(view) -> str:
+    """What the set-up form asks for this provider (the mock has no address and no model)."""
+    if view.kind == "mock":
+        return "An optional API key; offline, no address or model to set"
+    parts = []
+    if view.shows_key_field:
+        parts.append("API key" + ("" if view.needs_key else " (optional)"))
+    if view.shows_base_field:
+        parts.append("base URL")
+    if view.shows_models_field:
+        parts.append("model(s)" if view.multi_model else "model")
+    if not parts:
+        return "Its settings"
+    return parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
+
+
 class LlmMixin:
     """Mixed into ReconixApp."""
 
@@ -118,14 +134,20 @@ class LlmMixin:
     def open_provider_submenu(self, provider_id: str) -> None:
         p = store.get_provider(provider_id)
         setup = "Update" if p.configured else "Set up"
+        if not p.configured:
+            use_reason = "set up first"
+        elif not p.reachable:
+            use_reason = "test first"
+        else:
+            use_reason = "no model listed"
         choices = [
-            Choice("set", f"{setup} {p.label}", "API key, base URL and model(s)"),
+            Choice("set", f"{setup} {p.label}", _setup_hint(p)),
             Choice("test", "Test connection", "Check the key and that the model is reachable",
-                   disabled=not p.configured),
+                   disabled=not p.configured, reason="set up first"),
             Choice("model", "Use a model", "Make one of its models the active choice",
-                   disabled=not (p.reachable and p.models)),
+                   disabled=not (p.reachable and p.models), reason=use_reason),
             Choice("unset", "Unset", "Remove this provider", disabled=not p.configured,
-                   separated=True),
+                   separated=True, reason="not set up"),
         ]
         self.open_dialog(
             ChoiceScreen(f"◆ {p.label.upper()}", f"{p.label} · {p.status.title()}",
@@ -180,9 +202,18 @@ class LlmMixin:
         self.call_from_thread(self._test_done, view)
 
     def _test_done(self, view) -> None:
+        """Say how the test went. A reachable provider becomes the active model when none is
+        active yet (as the start-up dialog does), and the notice says so."""
+        message = f"{view.label}: {view.status} — {view.status_detail}"
+        if view.reachable and view.models and store.active_model() is None:
+            try:
+                active = store.activate(view.id, view.models[0])
+                message += f" · Active model now: {active.label} · {active.model}"
+            except store.StoreValidationError as exc:
+                message += f" {exc}"
         self.refresh_view()
-        self.notify(f"{view.label}: {view.status} — {view.status_detail}",
-                    severity="information" if view.reachable else "warning", markup=False)
+        self.notify(message, severity="information" if view.reachable else "warning",
+                    markup=False)
 
     # --- unset --------------------------------------------------------------------------------
     def confirm_unset(self, provider_id: str) -> None:

@@ -8,10 +8,12 @@ looks (HTML escapes it, python-docx writes it), so the two documents never disag
 
 from typing import Any, Dict, List, Tuple
 
+from ..wording import counted
+
 # Severity ranked high-to-low; used for ordering and the counts.
 SEV_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 STATUS_LABEL = {"open": "Open", "fixed": "Fixed", "accepted": "Accepted",
-                "false-positive": "False+"}
+                "false-positive": "False positive"}
 
 TITLE = "Security Assessment Report"
 CONFIDENTIAL = "CONFIDENTIAL — AUTHORIZED RECIPIENTS ONLY"
@@ -136,7 +138,7 @@ def summary(data: Dict[str, Any]) -> List[Segment]:
         ("Reconix performed an authorized assessment of ", False),
         (data.get("target") or "the target", True),
         (f" ({data.get('template') or 'assessment'}). It recorded ", False),
-        (f"{len(findings)} finding(s)", True),
+        (counted(len(findings), "finding"), True),
         (f" — {breakdown}. The highest severity is ", False),
         (high_sev.title(), True),
     ]

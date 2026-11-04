@@ -27,7 +27,7 @@ A URL like https://shop.example.com picks Web URL at once. A bare hostname asks 
 | Scope | methods GET and POST; never touches /admin; tools Nuclei and OWASP ZAP; time limit 30 min |
 | Login | email/username + password, then a 6-digit one-time code (OWASP ZAP needs it) |
 | MEDIUM | Baseline request (read-only) · GET /api/orders/10482 |
-| HIGH | limited_validation · GET /api/orders/10483 (test account B) |
+| HIGH | Cross-account read check · GET /api/orders/10483 (test account B) |
 | Blocked in the run | Blocked: GET /admin · Path outside approved scope. Not executed. |
 | Findings | 001 MEDIUM Broken object-level authorization · 002 MEDIUM Reflected input in search page · 003 LOW Session cookie missing SameSite |
 
@@ -121,12 +121,12 @@ Check https://shop.example.com for web security issues
 ```
 
 1. Approve scope → Run plan → login → MEDIUM Approve & run.
-2. HIGH → Reject (↑/↓ then Enter; it has no number) → "Rejected: limited_validation. Not executed — the plan goes on with its next step." (on Execution's live output; scroll it up on a short terminal)
+2. HIGH → Reject (↑/↓ then Enter; it has no number) → "Rejected: Cross-account read check. Not executed — the plan goes on with its next step." (on Execution's live output; scroll it up on a short terminal)
 3. The run goes on to the end: "Assessment completed. 3 findings: 0 confirmed, 3 marked for review." and "Open the report (Alt+8 or /report) to export it."
 4. /findings → 001 stays Unconfirmed: the validation that would confirm it was rejected.
 5. Report screen (Alt+8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
 
-**Expected:** limited_validation never runs; the same assessment completes and its report can be exported.
+**Expected:** Cross-account read check never runs; the same assessment completes and its report can be exported.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -140,7 +140,7 @@ The "API TEMPLATE: BASE URL AND SPEC" form opens first: press Esc to skip it (MF
 | Scope | methods GET and POST; never touches /internal and /admin; tools Nuclei, Postman and ZAP API scan; time limit 30 min |
 | Login | a session cookie (the API tools send it) |
 | MEDIUM | Baseline request (read-only) · GET /v1/orders/8842 (token A) |
-| HIGH | limited_validation · GET /v1/orders/8843 (token B's order) |
+| HIGH | Cross-account read check · GET /v1/orders/8843 (token B's order) |
 | Blocked in the run | Blocked: GET /internal/metrics · Path outside approved scope. Not executed. |
 | Findings | 001 MEDIUM Broken object-level authorization · 002 MEDIUM Missing authorization on export endpoint · 003 LOW No rate limiting on login |
 
@@ -192,10 +192,11 @@ Check https://api.example.com/v1 endpoints
 ```
 
 1. The "API TEMPLATE: BASE URL AND SPEC" form opens first: press Esc to skip it (MF-API-02 attaches a spec).
-2. Scope → Reject (↑/↓ then Enter; it has no number) → "Scope rejected. Nothing was tested." then "Assessment stopped. Nothing else will run. Type /new to start a new assessment."
-3. You stay in the same assessment: the Template step shows ✕ and the screen asks "Start again?" (Start a new assessment / Back to the start).
-4. /audit → the rejection is in the audit trail.
-5. "Start again?" → Start a new assessment → /assessments still lists the rejected one as Stopped.
+2. Scope → Reject (↑/↓ then Enter; it has no number) → the toast "Scope rejected — nothing was tested."
+3. You stay in the same assessment: the Template step shows ✕, the screen says "◆ reconix this assessment stopped before testing: you rejected the scope" and asks "Start again?" (Start a new assessment / Back to the start).
+4. Ctrl+O on Execution (or /audit) → "Scope rejected. Nothing was tested." and "Assessment stopped. Nothing else will run. Type /new to start a new assessment."
+5. /audit → the rejection is in the audit trail.
+6. "Start again?" → Start a new assessment → /assessments still lists the rejected one as Stopped.
 
 **Expected:** Nothing ran: no plan step started and there are no findings. Reject never opens a new assessment by itself.
 
@@ -230,7 +231,7 @@ Test the REST API at https://api.example.com/v1 for authorization issues
 
 1. The "API TEMPLATE: BASE URL AND SPEC" form opens first: press Esc to skip it (MF-API-02 attaches a spec).
 2. Approve scope → Run plan → cookie.
-3. MEDIUM → Reject (↑/↓ then Enter) → "Rejected: Baseline request (read-only). Not executed — the plan goes on with its next step."
+3. MEDIUM → Reject (↑/↓ then Enter) → the app goes straight to the HIGH approval, which shows "✕ Skipped: Baseline request (read-only) (rejected)". The line "Rejected: Baseline request (read-only). Not executed — the plan goes on with its next step." is in the Execution log (Ctrl+O) and in /audit.
 4. The HIGH step still asks for its own approval: Approve & run → second confirmation → Yes.
 5. The run completes: "Assessment completed. …" /audit lists approval.rejected for the MEDIUM step.
 
@@ -246,7 +247,7 @@ An IPv4 address or CIDR range (10.0.0.0/24, 192.0.2.10) picks Network at once. P
 |---|---|
 | Scope | TCP connect; ports 22, 80, 443, 8080 and 8443; tools nmap and testssl.sh; time limit 30 min; no login |
 | MEDIUM | Banner and TLS check (read-only) · TCP 10.0.0.1:8443 |
-| HIGH | single_login_probe · one default credential on /manager |
+| HIGH | Default login probe · one default credential on /manager |
 | Blocked in the run | Blocked: TCP 198.51.100.9 · Host outside approved scope. Not executed. |
 | Findings | 001 HIGH Management console exposed · 002 MEDIUM Deprecated TLS 1.0 offered · 003 LOW SSH banner reveals version |
 
@@ -297,7 +298,8 @@ scan 10.0.0.300
 3. scan 10.0.0.20-10.0.0.1 → "… runs backwards — put the lower address first …"
 4. scan 10.0.0.1-10.0.0.20 → "Dash ranges aren't supported by the scope yet — use CIDR, e.g. 10.0.0.0/27."
 5. scan my network → "Network needs an IPv4 address or range, or a hostname — e.g. 10.0.0.0/24"
-6. Then scan 10.0.0.0/28 → accepted → finish the flow.
+6. Each refused line stays in the prompt, selected: typing replaces it (type /new and the command list opens instead of adding to the address).
+7. Then scan 10.0.0.0/28 → accepted → finish the flow.
 
 **Expected:** Each bad address shows its message and nothing starts; the CIDR range starts.
 
@@ -313,9 +315,10 @@ Scan 10.0.0.0/24 for open ports
 
 1. Scope → Edit manifest → Allowed ports 0 → "Not a valid port (1–65535): 0."; 99999 → the same; empty → "Keep at least one allowed port."
 2. Excluded 10.0.0.0/33 → "Exclude a host, range or host:port (e.g. 10.0.0.5:22): 10.0.0.0/33."; Excluded 10.0.0.5:22 → Save scope.
-3. Chat about this → type add port 3389 → "Only you can change the scope. Tick what it allows, then press Enter to save." and a tick list with 3389 unticked.
-4. Tick 3389 (Space) → Enter → the scope card shows port 3389.
-5. Approve scope → Run plan → finish.
+3. Chat about this → type add port 3389 → "Only you can change the scope. Tick what it allows, then press Enter to save." and a tick list with 3389 unticked; the list opens on the 3389 row.
+4. Press Space (ticks 3389), then Enter → the scope card shows port 3389.
+5. Type add ports 1-1024 → "The scope lists single ports, not a range (1-1024)…"; add 10.0.0.99 to the scope → "Hosts can't change here…" (no tick list).
+6. Approve scope → Run plan → finish.
 
 **Expected:** Only your tick changed the scope; the wrong values changed nothing.
 
@@ -335,9 +338,9 @@ Check 10.0.0.0/24 for exposed management consoles
 4. 10.0.0.7 → "Give a host and a port, e.g. 10.0.0.1:8443."
 5. 10.0.0.7:8443 → accepted.
 6. Approve & run → second confirmation → No, go back (nothing runs) → Approve & run → Yes.
-7. Findings → f → Critical & High → open 001 → Report screen (Alt+8) → press w (DOCX) → "✓ REPORT SAVED" shows the file path.
+7. Findings → f → Critical & High → open 001 (on 10.0.0.1:8443): it stays UNCONFIRMED with the evidence "Not collected: the check ran on 10.0.0.7:8443, not on this finding's own host and port, so it can't confirm it." → Report screen (Alt+8) → press w (DOCX) → "✓ REPORT SAVED" shows the file path.
 
-**Expected:** Only an in-scope host:port can be set; HIGH runs only after the second Yes.
+**Expected:** Only an in-scope host:port can be set; HIGH runs only after the second Yes; a check moved to another host never confirms the finding.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -349,7 +352,7 @@ A git repo (https://…/x.git, git@host:owner/repo, github.com/owner/repo) or a 
 |---|---|
 | Scope | read only; never touches .git, node_modules, vendor and secrets; tools Semgrep, gitleaks and pip-audit; no login |
 | MEDIUM | Read the flagged line (read-only) · app/config/settings.py:42 |
-| HIGH | secret_validation · one try of the flagged credential on a test database |
+| HIGH | Check the flagged credential once · one try on a test database |
 | Blocked in the run | Blocked: read .git/config · Path excluded from the review. Not executed. |
 | Findings | 001 HIGH Hardcoded database password · 002 MEDIUM SQL built by string concatenation · 003 LOW Vulnerable dependency |
 
@@ -416,7 +419,7 @@ Review https://git.example.com/acme/app.git for security issues
 ```
 
 1. Approve scope → at the plan: Chat about this → move 3b before 3a → "Only you can change the order…" and an order list.
-2. Move secret_validation up (Shift+↑) → Enter → "Plan updated" and the plan card shows 3a secret_validation (HIGH), 3b Read the flagged line (MEDIUM).
+2. Move "Check the flagged credential once" up (Shift+↑) → Enter → "Plan updated" and the plan card shows 3a Check the flagged credential once (HIGH), 3b Read the flagged line (MEDIUM).
 3. Type move step 1 to the end → the order list again: only the gated checks can move; phases 1–5 stay fixed.
 4. Run plan → HIGH is asked first, then MEDIUM → approve both.
 5. Report screen (Alt+8) → press j (JSON) → "✓ REPORT SAVED" shows the file path.
@@ -434,7 +437,7 @@ Review the repo https://git.example.com/acme/app.git for secrets and insecure co
 ```
 
 1. Approve scope → Run plan → while it runs press Ctrl+C → "Stop this assessment?" → Keep running → it goes on.
-2. Ctrl+C again → Stop now → "Stopped by the operator. Nothing else will run."
+2. Ctrl+C again → Stop now → "You stopped it. Nothing else will run."
 3. /findings → only what was found so far. /summary → the stop.
 4. /new → start again.
 

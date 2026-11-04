@@ -11,7 +11,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..models import AssessmentSummary, ReportFormat
 from ..models.base import utc_now
@@ -31,6 +31,12 @@ from .transcript import add_activity, add_chat
 
 REPORTS_DIR = Path("reports")   # relative to where reconix runs; tests point it elsewhere
 SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+MAX_COPIES = 999                 # RCX-DEMO-001-2.pdf … -999.pdf, then refuse
+
+# Report files this app wrote, by full path → the assessment that wrote it. Every session
+# numbers its assessments from RCX-DEMO-001, so a file of that name may be another session's
+# report: an assessment overwrites only a file it wrote itself, else it takes "<id>-2" etc.
+_WRITTEN: Dict[str, str] = {}
 
 BINARY_FORMATS = {"docx", "pdf"}
 
@@ -135,15 +141,31 @@ def _display_path(path: Path) -> str:
     return str(path) if path.is_absolute() else f"./{path.as_posix()}"
 
 
-def _report_path(assessment_id: str, extension: str) -> Path:
-    """REPORTS_DIR/<id>.<ext>, refusing any id that could leave the folder."""
+def _report_path(assessment_id: str, extension: str, owner: Optional[str] = None) -> Path:
+    """REPORTS_DIR/<id>.<ext>, refusing any id that could leave the folder.
+
+    With `owner` (the assessment exporting): a file there that `owner` did not write (an
+    earlier session's report of the same id) is never replaced; the next free
+    "<id>-2.<ext>", "<id>-3.<ext>", … is used instead. A re-export overwrites its own file.
+    """
     if not SAFE_NAME.fullmatch(assessment_id):
         raise StoreValidationError("The assessment id can't be used as a file name.")
     folder = REPORTS_DIR.resolve()
-    path = (folder / f"{assessment_id}.{extension}").resolve()
-    if path.parent != folder:
-        raise StoreValidationError("Reports can only be saved in the reports folder.")
-    return REPORTS_DIR / path.name
+    for copy in range(1, MAX_COPIES + 1):
+        stem = assessment_id if copy == 1 else f"{assessment_id}-{copy}"
+        path = (folder / f"{stem}.{extension}").resolve()
+        if path.parent != folder:
+            raise StoreValidationError("Reports can only be saved in the reports folder.")
+        if owner is None or _WRITTEN.get(str(path)) == owner or not path.exists():
+            return REPORTS_DIR / path.name
+    raise StoreValidationError("Too many reports of this assessment in the reports folder; "
+                               "move some of them first.")
+
+
+def _owner_key() -> str:
+    """Who is exporting: this assessment (its id and when it was created)."""
+    assessment = get_assessment()
+    return f"{assessment.assessment_id}@{assessment.created_at.isoformat()}"
 
 
 def _render_json(data: Dict[str, Any]) -> str:
@@ -191,8 +213,10 @@ def generate_report(format_id: str) -> str:
         raise StoreValidationError("The report is available once the assessment is complete.")
     fmt = _format(format_id)
     data = report_data()
-    path = _report_path(data["assessment_id"], fmt.extension)
+    owner = _owner_key()
+    path = _report_path(data["assessment_id"], fmt.extension, owner)
     _write(fmt, data, path)
+    _WRITTEN[str(path.resolve())] = owner
     shown = _display_path(path)
     run.report_path = shown
     run.progress["report"] = 100

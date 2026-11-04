@@ -41,7 +41,7 @@ from .openapi import (
     remove_api_spec,
 )
 from .persist import autosave, close_session, web_dashboard_url
-from .plan import gated_count, plan_overview
+from .plan import gated_count, plan_overview, rejected_checks, validation_skipped
 from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
 from .plan_order import movable as movable_checks
 from .providers import (
@@ -67,7 +67,9 @@ from .scope import (
 from .scope_ask import ScopeChoices, answer_scope_change, wants_scope_change
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
-from .step_intent import asks_about_decision, decision_reply, wants_decision, wants_view
+from .step_intent import (
+    asks_about_decision, decision_reply, view_reply, wants_decision, wants_view,
+)
 from .step_text import approval_text, plan_text, scope_text, template_text
 from .targets import (
     DASH_RANGE_UNSUPPORTED, TargetCheck, check_target, looks_like_target, validate_target,
@@ -99,6 +101,7 @@ __all__ = [
     "advance", "peek", "gate_state", "stop_run",
     "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",
     "phase_progress", "plan_tasks", "plan_overview", "gated_count", "step_states",
+    "rejected_checks", "validation_skipped",
     "pipeline_stage", "elapsed", "time_limit",
     # gates
     "list_templates", "get_template", "select_template", "selected_template",
@@ -108,7 +111,7 @@ __all__ = [
     # the chat inside a step ("Chat about this"): its content as text, scope change asks
     "scope_text", "plan_text", "approval_text", "template_text",
     "wants_scope_change", "answer_scope_change", "ScopeChoices",
-    "wants_decision", "asks_about_decision", "wants_view", "decision_reply",
+    "wants_decision", "asks_about_decision", "wants_view", "decision_reply", "view_reply",
     "wants_plan_reorder", "answer_plan_reorder", "reorder_gated", "movable_checks",
     "step_status", "StepStatus",
     "provide_auth", "current_auth_challenge", "has_test_account",

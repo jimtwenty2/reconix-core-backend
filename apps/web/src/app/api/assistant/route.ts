@@ -19,6 +19,7 @@ import { addQuestion, HistoryError, keptQuestion, readConversation } from "@/lib
 import { scopeOf } from "@/lib/assistant/insights";
 import { readIntent } from "@/lib/assistant/intent";
 import { searchKnowledge } from "@/lib/assistant/knowledge";
+import { maskSavedKeys } from "@/lib/assistant/models/known-keys";
 import { isMockAddress, mockFactsFor } from "@/lib/assistant/models/mock";
 import { activeModel } from "@/lib/assistant/models/resolve";
 import { fenceTag, systemPrompt } from "@/lib/assistant/prompt";
@@ -49,7 +50,8 @@ export async function POST(request: Request) {
     if (!body.ok) return body.response;
     const parsed = ChatRequestSchema.safeParse(body.value);
     if (!parsed.success) return fail("The request does not match what the assistant accepts.", 400);
-    const { conversationId, question, retry } = parsed.data;
+    const { conversationId, retry } = parsed.data;
+    const question = await maskSavedKeys(parsed.data.question); // a saved model key, by its value
 
     let existing: Conversation | null = null;
     let library: Library;

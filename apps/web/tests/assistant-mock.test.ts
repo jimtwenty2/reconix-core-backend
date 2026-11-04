@@ -108,6 +108,8 @@ describe("the mock preset's address is fixed", () => {
     expect(fitsPreset(preset, MOCK_BASE_URL)).toBe(true);
     expect(fitsPreset(preset, `${MOCK_BASE_URL}/`)).toBe(true);
     expect(fitsPreset(preset, "https://llm.example.net/v1")).toBe(false);
+    // and no other preset passes for it at its address (the picker shows such a one as Custom)
+    for (const other of ["ollama", "custom", "lmstudio"]) expect(fitsPreset(presetOf(other), MOCK_BASE_URL)).toBe(false);
     expect(showsUrl(preset)).toBe(false);
   });
 

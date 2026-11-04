@@ -23,6 +23,9 @@ class ChatEntry:
     rows: Tuple[Tuple[str, str], ...] = ()   # card rows (label, value)
     created_at: datetime = field(default_factory=utc_now)
     seq: int = 0               # session-monotonic order (chat and activity share one stream)
+    # The model that wrote this line ("" = Reconix itself), shown as its label. In memory
+    # only: saved copies keep the same shape (the snapshot has no such field).
+    author: str = ""
 
 
 @dataclass

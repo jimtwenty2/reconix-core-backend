@@ -125,11 +125,11 @@ class FlowProgress(Static):
         ── ✓ Start ─ ✓ Template ─ ● Plan ─ ○ Approval ─ ○ Execution ─ ○ Findings ─ ○ Report ──
 
     ✓ settled, ✕ stopped, ! waiting for you, ○ pending; the current step is bold cyan. On
-    narrow terminals only the current step keeps its label.
+    narrow terminals only the current step keeps its label. A step is ✓ only when the store
+    says it is done (`store.step_states`), never because you moved past it.
     """
 
     SUB_STEPS = {"detail": "findings"}    # screens shown under another step
-    PASSED_IS_DONE = ("findings",)        # no settling event; done once you move past
 
     def __init__(self, flow_name: str) -> None:
         super().__init__()
@@ -153,7 +153,7 @@ class FlowProgress(Static):
             return "✕", theme.CRITICAL
         if state == "waiting":
             return "!", theme.MEDIUM
-        if state == "done" or (name in self.PASSED_IS_DONE and index < current):
+        if state == "done":
             return "✓", theme.GREEN
         if index == current:
             return "●", theme.CYAN

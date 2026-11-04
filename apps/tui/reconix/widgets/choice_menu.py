@@ -4,6 +4,7 @@ A destructive choice (`tone="danger"`: Reject, Stop, Remove…) never gets a num
 digit must not be able to stop a run or reject a scope. It takes ↑/↓ and Enter.
 """
 
+import textwrap
 from typing import Any, List, Optional, Sequence, Tuple
 
 from rich.text import Text
@@ -100,6 +101,7 @@ class ChoiceMenu(OptionList):
         self._pointer: Optional[int] = None
         self._draft = ""                # text typed into the input row
         self._armed_at = 0.0            # when picks start to count (see ARM_DELAY)
+        self._width = 0                 # the width hints wrap to (0 until laid out)
         super().__init__(*self._build_options(), id=id, classes=classes)
 
     # --- public API -----------------------------------------------------------------
@@ -198,7 +200,7 @@ class ChoiceMenu(OptionList):
             number = " " * len(number)              # destructive: no digit picks it
         if choice.disabled:                         # dead end: visible but not pickable
             line.append(number + choice.label, style=theme.DIM)
-            line.append("  (not in demo)", style=f"italic {theme.DIM}")
+            line.append(f"  ({choice.reason or 'not in demo'})", style=f"italic {theme.DIM}")
             return line
         line.append(number, style=accent if highlighted else theme.DIM)
         if choice.kind == "input":
@@ -221,8 +223,28 @@ class ChoiceMenu(OptionList):
             if self._inline:        # one line per choice: the hint sits beside the label
                 line.append(f"  {choice.hint}", style=theme.MUTED)
             else:
-                line.append("\n" + " " * (2 + len(number)) + choice.hint, style=theme.MUTED)
+                indent = " " * (2 + len(number))
+                for part in self._hint_lines(choice.hint, len(indent)):
+                    line.append("\n" + indent + part, style=theme.MUTED)
         return line
+
+    def _hint_lines(self, hint: str, indent: int) -> List[str]:
+        """The hint in lines that fit beside its indent, so a long one wraps under itself
+        (never back to column 0). Before the menu has a width it stays one line."""
+        room = self._width - indent - 1
+        if room < 12 or len(hint) <= room:
+            return [hint]
+        return textwrap.wrap(hint, room, break_on_hyphens=False) or [hint]
+
+    def on_resize(self) -> None:
+        """Re-wrap the hints to the new width."""
+        width = self.scrollable_content_region.width
+        if width == self._width:
+            return
+        self._width = width
+        for i, choice in enumerate(self._choices):
+            self.replace_option_prompt_at_index(
+                i, self._render_choice(i, choice, i == self._pointer))
 
     def _move_pointer(self, index: Optional[int]) -> None:
         old, self._pointer = self._pointer, index
