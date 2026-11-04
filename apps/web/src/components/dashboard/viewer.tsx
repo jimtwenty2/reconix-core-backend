@@ -20,7 +20,8 @@ export type { View };
  * which opens over the top bar and content (AssistantStage). The views are
  * server-rendered and passed in as props; all stay mounted and are toggled with `hidden` so the
  * globe keeps its WebGL context (it pauses itself when it can't be seen) and the intro's
- * one-shot reveal never leaves a remounted view's cards stuck hidden. The open view lives in the
+ * one-shot reveal never leaves a remounted view's cards stuck hidden. `notice` sits above them
+ * all, so it is read on whichever view the address opens. The open view lives in the
  * address bar (`?view=`, see view-url.ts); `shown` is the view on screen, which trails the address
  * while the assistant animates in or out. While the assistant is shown, the Overview stays laid
  * out underneath as its backdrop (unseen and inert, data-assistant-backdrop in motion.css): its
@@ -30,6 +31,7 @@ export type { View };
  */
 export function Viewer({
   topBar,
+  notice,
   overview,
   assessments,
   findings,
@@ -39,6 +41,8 @@ export function Viewer({
   assistant,
 }: {
   topBar: React.ReactNode;
+  /** A line above whichever view is open (an address naming a run this folder doesn't hold). */
+  notice?: React.ReactNode;
   overview: React.ReactNode;
   assessments: React.ReactNode;
   findings: React.ReactNode;
@@ -76,7 +80,10 @@ export function Viewer({
           <Sidebar active={view} onSelect={select} />
           {topBar}
           {/* tabIndex -1: focusable by script and click, so the keys scroll it (no tab stop) */}
-          <main className="dash-content" tabIndex={-1}>
+          {/* under the open assistant it holds only the inert backdrop, so it stops scrolling:
+              a scroller nothing inside can be focused is a WCAG 2.2 failure (QAL-002) */}
+          <main className="dash-content" tabIndex={-1} data-under-assistant={backdrop ? "" : undefined}>
+            {notice}
             <div
               data-view-pane="overview"
               hidden={shown !== "overview" && !backdrop}

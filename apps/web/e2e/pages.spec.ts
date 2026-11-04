@@ -325,9 +325,17 @@ test("the removed Audit log and Scope addresses open the Overview", async ({ pag
   await expect(page.locator('[data-view-pane="scope"]')).toHaveCount(0);
 });
 
-test("an unknown assessment opens every run, and an unknown page is a 404", async ({ page }) => {
-  await page.goto("/?uid=20200101-000000-dead_NOPE-1");
+/* A stale or hand-typed ?uid= used to show every run with nothing to say the one asked for was
+   not there (QA-LOCAL-WEB-REPORT, QAL-003), on any view. */
+test("an unknown assessment says so on every view and opens every run, and an unknown page is a 404", async ({ page }) => {
+  const notice = page.getByText("That assessment isn't in this folder");
+  for (const view of ["", "&view=findings", "&view=log", "&view=reports", "&view=assessments"]) {
+    await page.goto(`/?uid=20200101-000000-dead_NOPE-1${view}`);
+    await expect(notice).toBeVisible();
+  }
   await expect(page.getByRole("button", { name: "Choose an assessment" })).toContainText(`All (${sample().length})`);
+  await page.goto(`/?uid=${newest().uid}`);
+  await expect(notice).toHaveCount(0);                    // a run that is there says nothing
   const res = await page.goto("/no-such-page");
   expect(res!.status()).toBe(404);
   await expect(page.getByRole("link", { name: "Open the dashboard" })).toBeVisible();

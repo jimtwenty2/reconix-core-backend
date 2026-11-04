@@ -48,6 +48,9 @@ export default async function Home({ searchParams }: Props) {
     model,
   };
   const empty = <EmptyView dir={dir} problems={library.problems} compact />;
+  /* A stale or hand-typed ?uid= used to fall straight through to the all-runs view, with nothing
+     to say the run asked for was not there (QA-LOCAL-WEB-REPORT, QAL-003). */
+  const missing = wanted && !chosen && views.length > 0;
   const runs = views.map(runRow); // once: the Assessments view and the all-runs Report share it
   const report = chosen && dash ? reportCards(chosen, dash.findings, dash.cards.findings) : overall ? overallReportCards(views, overall.cards.findings, runs) : null;
 
@@ -62,6 +65,13 @@ export default async function Home({ searchParams }: Props) {
           renderedAt={clock(library.readAt)}
           skipped={library.problems}
         />
+      }
+      notice={
+        missing ? (
+          <p role="status" className="dash-missing-run">
+            That assessment isn&apos;t in this folder — showing all runs.
+          </p>
+        ) : null
       }
       overview={
         dash ? (
