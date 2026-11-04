@@ -186,7 +186,7 @@ command suggestions, and `?` shows the keys for the screen you are on.
 | `Enter` | confirm the highlighted choice, send the request, or run the command; on Execution, open what the run waits for |
 | `Esc` | close a menu or dialog, clear the prompt, or go back (on Approval: decide later) |
 | `Tab` | complete the highlighted command; on Plan, switch between menu and steps |
-| `←` / `→` | previous / next screen in the flow; while typing they move the cursor, and with a step chat open they stay (Esc closes it first). They never decide a gate |
+| `←` / `→` | previous / next screen in the flow, unless you are typing or editing: in text, a typed draft or a dialog they stay, and with a step chat open they stay (Esc closes it first). `→` waits at a gate that still waits for your choice (`←` still goes back); the first and last step say so. They never decide a gate |
 | `1`…`9` | pick a numbered choice in the focused menu (a red choice such as Reject has no number: `↑`/`↓` and `Enter`) |
 | `Alt+1`…`Alt+8` | jump to any screen (`Alt+2` = Template) |
 | `d` | approval details (scope limits, exact request, audit trail) |

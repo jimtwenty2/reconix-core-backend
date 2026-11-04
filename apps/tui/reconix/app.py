@@ -16,7 +16,7 @@ from textual.app import App
 from textual.binding import Binding
 
 from . import store, theme
-from .commands import COMMANDS, Command, CommandCheck, check_command_line, parse
+from .commands import COMMANDS, Command, CommandCheck, check_command_line, find, parse
 from .screens import ChoiceScreen, CommandBarScreen, HelpScreen, StartScreen
 from .shell import (
     ActionsMixin, AgentMixin, DialogsMixin, KnowledgeMixin, LlmMixin, NavigationMixin,
@@ -116,17 +116,45 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
         """`/home/me/app` is a local path, not a command (its "name" holds a slash)."""
         return "/" in parse(text)[0]
 
+    # At the target login a typed line may be the password: only these, with no argument.
+    LOGIN_COMMANDS = ("stop", "new", "help", "quit")
+
+    def login_blocks(self, text: str) -> Optional[str]:
+        """Why `text` can't run while the run waits for (or stopped at) the target login, or
+        None. Only /stop, /new, /help and /quit with no argument pass; anything else may be
+        the password, so it is never run, echoed or kept in the history."""
+        refusal = store.login_refusal()
+        if refusal is None:
+            return None
+        name, arg = parse(text)
+        command = None if self.is_path_line(text) else find(COMMANDS, name)
+        if command is not None and command.name in self.LOGIN_COMMANDS and arg is None:
+            return None
+        return refusal
+
     def run_command_line(self, text: str) -> bool:
         """Run `/name [arg]`. Returns False (and warns) when the line can't run."""
+        refusal = self.login_blocks(text)
+        if refusal is not None:
+            self.notify(refusal, severity="warning", markup=False)
+            return False
         if self.is_path_line(text):
             return self.submit_request(text)
         check = self.check_command(text)
         if not check.ok:
             self.notify(check.error, severity="warning", markup=False)
             return False
+        self.run_checked(text, check)
+        return True
+
+    def run_checked(self, text: str, check: CommandCheck) -> None:
+        """Run a line `check_command` already passed (kept in the history like the bar's)."""
+        refusal = self.login_blocks(text)
+        if refusal is not None:  # never run, echoed or kept at the target login
+            self.notify(refusal, severity="warning", markup=False)
+            return
         self._remember(text)
         self.run_command(check.command, check.arg)
-        return True
 
     def run_command(self, command: Command, arg: Optional[str] = None) -> None:
         """Run a command; if it needs a choice that wasn't typed, ask with a menu."""

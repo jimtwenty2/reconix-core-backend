@@ -77,9 +77,9 @@ Do these first. Each one is its own PR (`add-endpoint` or `add-approval-flow`, p
   responses match it; there is none yet.
 - [ ] **How to run it.** Write down how an app owner starts the API:
   `uv run --package reconix-api python -m reconix_api.main` serves 127.0.0.1:8000 against
-  Postgres after `alembic upgrade head`. `RECONIX_KALI_MCP_URL` has a default, but without
-  `RECONIX_MCP_ACCESS_KEY` and `RECONIX_JOB_TOKEN_SECRET` (already listed in `.env.example`),
-  actions answer 503 `NOT_READY`.
+  Postgres after `alembic upgrade head`. `RECONIX_KALI_MCP_URL` has a default and
+  `RECONIX_MCP_AUTH_TOKEN` is optional, but without `RECONIX_JOB_TOKEN_SECRET` (already listed
+  in `.env.example`) actions cannot run.
 
 ### 3. Turn API calls on in the apps (app owners, from `apps/`)
 
@@ -124,12 +124,12 @@ for assessments.
 ### 5. Test each step
 
 - **Backend:**
-  - `uv run --package reconix-api pytest`
+  - `uv run --package reconix-api pytest services/api/tests`
   - on merge day, the full-flow test (`run-full-flow-test`, `services/api/tests/e2e/`)
 - **TUI:**
   - tests for success, 401, 403, 409, 422 and network failure, with `httpx` mocked
   - mock mode still runs the whole demo
-  - run with `uv run --package reconix-tui pytest`
+  - run with `uv run --package reconix-tui pytest apps/tui/tests`
 - **Web:**
   - vitest with `fetch` mocked
   - `npm run lint && npm run typecheck && npm test`

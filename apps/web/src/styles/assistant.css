@@ -507,3 +507,15 @@
   .ai-typing > span { animation: none; opacity: 0.6; }
   .ai-prompt, .ai-prompt:hover { transform: none; transition: none; }
 }
+
+/* ---- "Switch the chat to …?" (switch-dialog.tsx; its frame is .ui-dialog, styles/ui.css) ---- */
+.ai-dialog-quote {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--surface) 60%, transparent);
+  overflow-wrap: anywhere;
+}
+.ai-dialog-foot > * { flex: 1 1 auto; } /* wrapped (a long run name): each fills the row */

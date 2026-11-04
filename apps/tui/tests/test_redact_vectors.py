@@ -4,14 +4,27 @@
 (web/tests/redact-vectors.json, web/tests/redact-list-vectors.json), so the two stay in step."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
 
-from reconix.store.redact import clean, redact, redact_all
+from reconix.store.redact import (
+    HIDDEN_LINE, clean, escaped_secret, redact, redact_all, strip_controls,
+)
 
 _DIR = Path(__file__).parents[2] / "web" / "tests"   # apps/web/tests
-VECTORS = json.loads((_DIR / "redact-vectors.json").read_text("utf-8"))
+_REPEAT = re.compile(r"\{\{(.)\*(\d+)\}\}")
+
+
+def _expand(text: str) -> str:
+    """A long fake key is written "{{X*N}}" in the shared file (X repeated N times), so no file
+    holds a key-shaped string a secret scanner would flag (web/tests/vectors.ts does the same)."""
+    return _REPEAT.sub(lambda m: m.group(1) * int(m.group(2)), text)
+
+
+VECTORS = [(_expand(text), _expand(masked)) for text, masked in
+           json.loads((_DIR / "redact-vectors.json").read_text("utf-8"))]
 LIST_VECTORS = json.loads((_DIR / "redact-list-vectors.json").read_text("utf-8"))
 
 
@@ -42,9 +55,31 @@ def test_a_list_of_other_values_is_masked_item_by_item():
                                                                   "Cookie: ••••"]
 
 
-def test_clean_drops_the_control_characters_xml_cannot_hold():
-    # DEL and the C1 controls go too (U+009B / U+009D are 8-bit CSI / OSC)
-    assert clean("a\x00b\x1b[31mc\x07\x0b\x0c\x7fd￾￿e") == "ab[31mcde"
+def test_clean_turns_escape_sequences_and_control_characters_into_spaces():
+    # A whole sequence is one space (no "[31m" left, no two words glued); DEL and the C1
+    # controls go too (U+009B / U+009D are 8-bit CSI / OSC)
+    assert clean("a\x00b\x1b[31mc\x07\x0b\x0c\x7fd￾￿e") == "a b c    d  e"
     assert clean("tab\there\nline\r\nend") == "tab\there\nline\r\nend"
     assert clean("lone \ud800 surrogate") == "lone ? surrogate"
-    assert redact_all(["x\x00\n\x00y", "\x1bpassword=hunter2"]) == ["x\ny", "password=••••"]
+    assert clean("10.0.0.1\x1b(Bnext \x90q\x9cend \x1b]0;title\x07x") == "10.0.0.1 next  end  x"
+    # A secret behind a control character: no reading is sure to mask it, the line is hidden
+    assert redact_all(["x\x00\n\x00y", "\x1bpassword=hunter2"]) == ["x \n y", HIDDEN_LINE]
+
+
+@pytest.mark.parametrize("text", [
+    "10.0.0.1\x00token=SUPERSECRET1",          # glued, the masking misses it
+    "pass\x00word=SUPERSECRET1",                # spaced, the masking misses it
+    "\x1b[31token=SUPERSECRET1",                # the CSI's final byte eats the "t"
+    "\x1bpassword=hunter2",                     # ESC p is a sequence of its own
+])
+def test_a_secret_behind_control_characters_is_found(text):
+    assert escaped_secret(text)
+    assert redact(text) == HIDDEN_LINE
+
+
+def test_control_characters_without_a_secret_only_become_spaces():
+    assert not escaped_secret("scan 10.0.0.1\x1b[31mred\x1b[0m\x00end")
+    assert not escaped_secret("password=x")              # no control character: plain masking
+    assert strip_controls("scan 10.0.0.1\x1b[31mred") == "scan 10.0.0.1 red"
+    # only the lines that hide a secret go; the others are masked as usual
+    assert redact("a\nb\x00token=x\nc password=y") == f"a\n{HIDDEN_LINE}\nc password=••••"

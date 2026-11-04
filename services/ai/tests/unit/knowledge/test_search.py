@@ -132,7 +132,7 @@ def test_compose_qdrant_address_is_allowed() -> None:
 
 @pytest.mark.skipif(
     os.environ.get("RECONIX_QDRANT_SMOKE") != "1",
-    reason="Set RECONIX_QDRANT_SMOKE=1 with Qdrant and Ollama (bge-m3) running.",
+    reason="Set RECONIX_QDRANT_SMOKE=1 with Qdrant and the bge-m3 embedding server running.",
 )
 async def test_smoke_real_qdrant_and_bge_m3(tmp_path: Path) -> None:
     real = store.connect()

@@ -1,6 +1,6 @@
 """Moving through the screen flow: ←/→, the Alt+1–8 jumps, goto() and rebuilding a screen."""
 
-from typing import List
+from typing import List, Optional, Tuple
 
 from .. import store
 from ..flow import screen_for
@@ -29,19 +29,34 @@ FLOW_CLASSES = {name: cls for name, cls in FLOW}
 # changes or the plan's order list would be thrown away unsaved.
 OPEN_PANELS = (StepChat, TickList, PlanOrder)
 PANEL_OPEN = "Esc closes the chat first."
+# ← on the first screen and → on the last say so, instead of doing nothing.
+FIRST_STEP = "This is the first step."
+LAST_STEP = "This is the last step."
+
+
+def _gate_names(gate: str) -> Tuple[str, str]:
+    """`gate` as words, and how to come back to it: one list for both hints below."""
+    if gate == GATE_TEMPLATE:
+        return "The template choice", "Alt+2 to come back"
+    if gate == GATE_PLAN:
+        return "The plan", "Alt+3 or /plan"
+    if gate.startswith(GATE_APPROVAL_PREFIX):
+        return "The approval", "Alt+4 or /approval"
+    if screen_for(gate) == "execution":
+        return "The target login", "Alt+5 or /status"
+    return "The scope", "Alt+2 to come back"
 
 
 def gate_hint(gate: str) -> str:
-    """How to come back to `gate` after ←/→ left it waiting (nothing was decided)."""
-    if gate == GATE_TEMPLATE:
-        return "The template choice still waits for you — Alt+2 to come back."
-    if gate == GATE_PLAN:
-        return "The plan still waits for you — Alt+3 or /plan."
-    if gate.startswith(GATE_APPROVAL_PREFIX):
-        return "An approval still waits for you — Alt+4 or /approval."
-    if screen_for(gate) == "execution":
-        return "The target login still waits for you — Alt+5 or /status."
-    return "The scope still waits for you — Alt+2 to come back."
+    """How to come back to `gate` after ← left it waiting (nothing was decided)."""
+    what, back = _gate_names(gate)
+    return f"{what} still waits for you — {back}."
+
+
+def gate_blocks(gate: str) -> str:
+    """Why → stays on a gate that still waits: it is decided first (← still goes back)."""
+    what, _ = _gate_names(gate)
+    return f"{what} still waits for your choice — decide it first (← goes back)."
 
 
 class NavigationMixin:
@@ -84,27 +99,45 @@ class NavigationMixin:
             return not getattr(self, "selected_finding", "")
         return False
 
-    def _step(self, delta: int) -> None:
-        """←/→: the neighbouring screen, stepping over screens with nothing to show."""
+    def _neighbour(self, delta: int) -> Optional[int]:
+        """The previous / next screen's index, stepping over screens with nothing to show;
+        None at either end of the flow."""
         index = self._index + delta
         while 0 <= index < len(FLOW_ORDER) and self._skipped(FLOW_ORDER[index]):
             index += delta
-        if 0 <= index < len(FLOW_ORDER):
+        return index if 0 <= index < len(FLOW_ORDER) else None
+
+    def _step(self, delta: int) -> None:
+        """←/→: the neighbouring screen, stepping over screens with nothing to show."""
+        index = self._neighbour(delta)
+        if index is not None:
             self._show(index)
+
+    def _gate_here(self) -> str:
+        """The gate that still waits on the shown screen ("" when none does)."""
+        gate = store.waiting_gate()
+        if (gate and not store.is_finished() and store.gate_state(gate) == "pending"
+                and screen_for(gate) == self.current_flow):
+            return gate
+        return ""
 
     def _arrow(self, delta: int) -> None:
         """The ←/→ keys: like `_step`, but never away from an open chat, tick list or order
-        list, and with a hint when they leave a gate that still waits (they decide nothing)."""
+        list, never forward past a gate that still waits (← goes back, with a hint how to
+        return; they decide nothing), and saying so at either end of the flow."""
         if any(self.screen.query(panel) for panel in OPEN_PANELS):
             self.notify(PANEL_OPEN, timeout=3)
             return
-        gate = store.waiting_gate()
-        left_gate = (bool(gate) and not store.is_finished()
-                     and store.gate_state(gate) == "pending"
-                     and screen_for(gate) == self.current_flow)
+        gate = self._gate_here()
+        if gate and delta > 0:
+            self.notify(gate_blocks(gate), timeout=4)
+            return
+        if self._neighbour(delta) is None:
+            self.notify(FIRST_STEP if delta < 0 else LAST_STEP, timeout=3)
+            return
         before = self._index
         self._step(delta)
-        if left_gate and self._index != before:
+        if gate and self._index != before:
             self.notify(gate_hint(gate), timeout=4)
 
     def go_next(self) -> None:

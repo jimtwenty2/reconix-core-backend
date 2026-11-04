@@ -46,7 +46,7 @@ ACTIVATE = "ACTIVATE_LLM_PROVIDER"  # config_change["change"] of an activation a
 # computer can still be a proxy or a tunnel to the cloud.
 CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
 # With no address, these call RECONIX_OLLAMA_URL.
-OLLAMA_TYPES = {ProviderType.RECONIX, ProviderType.OLLAMA}
+OLLAMA_TYPES = {ProviderType.OLLAMA}
 DISPLAY_NAME_LENGTH = 100  # llm_providers.display_name is VARCHAR(100)
 
 
@@ -152,8 +152,10 @@ def delete_provider(
 def activate(
     db: Db, write_audit: WriteAudit, operator: Operator, llm_provider_id: UUID, ttl_minutes: int
 ) -> tuple[LlmProviderOut, Approval | None]:
-    """A provider on this computer is active at once. Any other one gets a
-    `configuration` approval and stays inactive until a person approves it.
+    """A provider on this computer, and the built-in RECONIX provider, are active at once.
+    Any other one gets a `configuration` approval and stays inactive until a person
+    approves it. RECONIX's address is set in .env by whoever installs Reconix and can never
+    be changed through the API, so there is no edited address for an approval to guard.
 
     One open approval per provider: one that lapsed, or that is for settings the
     provider no longer has, is closed as EXPIRED first."""
@@ -161,7 +163,9 @@ def activate(
     provider = _get(db, llm_provider_id, lock=True)
     if provider.is_active:
         raise ApiError(409, "PROVIDER_ALREADY_ACTIVE", "This provider is already active.")
-    local = is_local(provider.provider_type, provider.base_url)
+    local = provider.provider_type == ProviderType.RECONIX or is_local(
+        provider.provider_type, provider.base_url
+    )
     if not local:
         _refuse_if_waiting(provider, open_approval, ttl_minutes)
     expired = _expire(open_approval)
@@ -312,11 +316,13 @@ def check_settings(provider_type: ProviderType, base_url: str | None, has_key: b
 
 def is_local(provider_type: ProviderType, base_url: str | None) -> bool:
     """On this computer: the address that is really called is localhost or a loopback
-    IP. The 3 cloud services never are. RECONIX and Ollama with no address call
-    RECONIX_OLLAMA_URL."""
+    IP. The 3 cloud services never are. RECONIX calls RECONIX_MODEL_URL (the Reconix
+    team's server); Ollama with no address calls RECONIX_OLLAMA_URL."""
     if provider_type in CLOUD_TYPES:
         return False
-    if not base_url and provider_type in OLLAMA_TYPES:
+    if provider_type == ProviderType.RECONIX:
+        base_url = provider_urls.reconix_model_url()
+    elif not base_url and provider_type in OLLAMA_TYPES:
         base_url = provider_urls.default_ollama_url()
     return bool(base_url) and provider_urls.is_local_address(base_url)
 
@@ -415,7 +421,7 @@ async def test_provider(
 
 
 async def list_models(db: Db, llm_provider_id: UUID) -> LlmProviderModelsOut:
-    """The models an Ollama on this computer has (RECONIX and OLLAMA providers only)."""
+    """The models an Ollama on this computer has (OLLAMA providers only)."""
     provider = _get(db, llm_provider_id)
     if provider.provider_type not in OLLAMA_TYPES:
         raise ApiError(

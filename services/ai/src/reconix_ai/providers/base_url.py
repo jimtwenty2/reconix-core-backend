@@ -10,8 +10,8 @@ to another path: no user:password, no query, no fragment, and no path except
 import ipaddress
 from urllib.parse import urlsplit
 
-# Service names inside deploy/docker-compose.yml, on the private backend network.
-LOCAL_HOST_NAMES = {"localhost", "ollama", "qdrant"}
+# Service names inside deploy/docker-compose.yml, on its private networks.
+LOCAL_HOST_NAMES = {"localhost", "ollama", "qdrant", "embeddings"}
 METADATA_HOST_NAMES = {"metadata.google.internal", "metadata"}
 # AWS's IPv6 metadata address is not link-local, so it is named here.
 METADATA_ADDRESSES = {ipaddress.ip_address("fd00:ec2::254")}

@@ -7,11 +7,12 @@
    server reads it ("Reading the file…"). A refusal keeps the dialog open with the server's message
    (Upload tries again); success closes it and the page says what was added. While a file is on
    its way the dialog can't be closed (the server would add it anyway). */
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Loader, Upload, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { useModalDialog } from "@/components/ui/use-modal-dialog";
 import { uploadKnowledge } from "@/lib/knowledge/client";
 import { humanSize } from "@/lib/knowledge/format";
 import { MAX_UPLOAD_LABEL, UPLOAD_ACCEPT, UPLOAD_TYPES, uploadProblem } from "@/lib/knowledge/rules";
@@ -20,7 +21,7 @@ import type { KnowledgeItem } from "@/lib/knowledge/types";
 type Phase = { at: "choose" } | { at: "sending"; sent: number } | { at: "reading" };
 
 export function UploadDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: (item: KnowledgeItem) => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModalDialog(open);
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [problem, setProblem] = useState<string | null>(null); // the page's own check of the file
@@ -29,14 +30,6 @@ export function UploadDialog({ open, onClose, onAdded }: { open: boolean; onClos
   const busy = phase.at !== "choose";
   const error = problem ?? refusal;
   const id = useId();
-
-  // the dialog follows `open`
-  useEffect(() => {
-    const d = dialog.current;
-    if (!d) return;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
-  }, [open]);
 
   const reset = () => {
     setFile(null);
@@ -76,7 +69,7 @@ export function UploadDialog({ open, onClose, onAdded }: { open: boolean; onClos
       ref={dialog}
       aria-labelledby={`${id}-title`}
       aria-describedby={`${id}-about`}
-      className="kn-dialog"
+      className="ui-dialog"
       onCancel={(e) => {
         e.preventDefault(); // Escape: through close(), which waits while a file is on its way
         close();
@@ -88,16 +81,16 @@ export function UploadDialog({ open, onClose, onAdded }: { open: boolean; onClos
         onClose();
       }}
     >
-      <form onSubmit={send} className="kn-dialog-body" aria-busy={busy}>
-        <header className="kn-dialog-head">
-          <h2 id={`${id}-title`} className="kn-dialog-title">
+      <form onSubmit={send} className="ui-dialog-body" aria-busy={busy}>
+        <header className="ui-dialog-head">
+          <h2 id={`${id}-title`} className="ui-dialog-title">
             Upload a knowledge file
           </h2>
           <IconButton label="Close" onClick={close} disabled={busy} className="size-7">
             <X aria-hidden />
           </IconButton>
         </header>
-        <p id={`${id}-about`} className="kn-dialog-text">
+        <p id={`${id}-about`} className="ui-dialog-text">
           The AI Assistant quotes the passages that match a question. Secrets in the text are masked before it is saved, and the
           original is kept encrypted on this computer.
         </p>
@@ -152,7 +145,7 @@ export function UploadDialog({ open, onClose, onAdded }: { open: boolean; onClos
           </p>
         )}
 
-        <footer className="kn-dialog-foot">
+        <footer className="ui-dialog-foot">
           <Button variant="outline" onClick={close} disabled={busy}>
             Cancel
           </Button>

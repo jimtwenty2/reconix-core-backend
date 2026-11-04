@@ -63,8 +63,9 @@ def test_the_built_in_provider_is_there_and_active(db_client):
 
     providers = db_client.get("/llm-providers", headers=headers).json()
 
+    # Not local: RECONIX is the Reconix team's server (RECONIX_MODEL_URL), not this computer.
     assert [(p["provider_type"], p["is_active"], p["is_local"]) for p in providers] == [
-        ("RECONIX", True, True)
+        ("RECONIX", True, False)
     ]
 
 

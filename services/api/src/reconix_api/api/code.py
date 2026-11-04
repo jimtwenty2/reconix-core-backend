@@ -42,6 +42,7 @@ def sync_code(
 
     Business Rules:
     - The response's `missing` field lists the files to upload next.
+    - Once the scope is approved, files in its excluded folders are never asked for or stored.
     - Returns 409 SESSION_CLOSED if the session is closed.
 
     State Changes:
