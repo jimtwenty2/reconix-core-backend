@@ -142,7 +142,9 @@ def test_control_characters_never_stop_the_docx_report(reports_dir, tmp_path):
     store.generate_report("docx")
     store.generate_report("json")
     xml = _docx_text(reports_dir / "RCX-DEMO-001.docx")
-    assert "Banner [31mred[0m leak" in xml and "Path [1moutside approved scope" in xml
+    # each escape sequence is a space: no "[31m" left, no two words glued together
+    assert re.search(r"Banner\s+red\s+leak", xml) and re.search(r"Path\s+outside\s+approved", xml)
+    assert "[31m" not in xml and "[1m" not in xml
     assert not CONTROL.search(xml)
     assert not CONTROL.search((reports_dir / "RCX-DEMO-001.json").read_text("utf-8"))
 
@@ -186,7 +188,7 @@ def test_the_html_the_pdf_prints_is_a_full_styled_document():
 
 def test_the_html_the_pdf_prints_escapes_dynamic_text(monkeypatch):
     run_to(None)
-    finding = store.list_findings()[0]
+    finding = lists.current().findings[0]        # the live row: list_findings() copies
     monkeypatch.setattr(finding, "description", '<script>alert("x")</script>')
     text = render_html(store.report_data())
     assert "<script>alert" not in text                    # injected markup is escaped

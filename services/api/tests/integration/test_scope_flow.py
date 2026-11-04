@@ -136,6 +136,58 @@ def test_rejected_scope_frees_the_assessment_for_a_new_version(db_client):
     assert second["assessment"]["assessment_id"] == first["assessment"]["assessment_id"]
 
 
+def test_a_second_scope_waits_for_the_first_to_be_decided(db_client):
+    """One assessment per session holds one scope: a second submit is 409, not a 500."""
+    headers = open_session(db_client)
+    first = draft_and_submit(db_client, headers)
+    second = db_client.post(
+        scopes_path(client=db_client, headers=headers), json=DRAFT, headers=headers
+    )
+
+    response = db_client.post(
+        f"/scope-manifests/{second.json()['manifest_id']}/submit", json=SUBMIT, headers=headers
+    )
+
+    assert response.status_code == 409, response.json()
+    assert response.json()["code"] == "SCOPE_PENDING"
+    assert response.json()["details"]["manifest_id"] == first["scope"]["manifest_id"]
+    # Rejecting the first lets the second through, on the same assessment.
+    db_client.post(f"/approvals/{first['approval_id']}/reject", json={}, headers=headers)
+    retry = db_client.post(
+        f"/scope-manifests/{second.json()['manifest_id']}/submit", json=SUBMIT, headers=headers
+    )
+    assert retry.status_code == 201, retry.json()
+    assert retry.json()["assessment"]["assessment_id"] == first["assessment"]["assessment_id"]
+
+
+def test_a_scope_whose_approval_expired_frees_the_assessment(db_client, db_app, session_factory):
+    """Nobody decided the first scope in time: a second one is not stuck behind it."""
+    headers = open_session(db_client)
+    first = draft_and_submit(db_client, headers)
+    with session_factory() as db:
+        db.execute(
+            update(Approval)
+            .where(Approval.approval_id == first["approval_id"])
+            .values(requested_at=datetime.now(UTC) - timedelta(minutes=31))
+        )
+        db.commit()
+    second = db_client.post(scopes_path(db_client, headers), json=DRAFT, headers=headers).json()
+
+    response = db_client.post(
+        f"/scope-manifests/{second['manifest_id']}/submit", json=SUBMIT, headers=headers
+    )
+
+    assert response.status_code == 201, response.json()
+    assert response.json()["assessment"]["assessment_id"] == first["assessment"]["assessment_id"]
+    old = db_client.get(f"/approvals/{first['approval_id']}", headers=headers).json()
+    assert old["approval_status"] == "EXPIRED"
+    events = [event.event_type for event in db_app.state.parts["audit"].events]
+    assert events.count("APPROVAL_EXPIRED") == 1
+    # The old scope gave the assessment up and is a plain draft again.
+    freed = db_client.get(f"/scope-manifests/{first['scope']['manifest_id']}", headers=headers)
+    assert freed.json()["assessment_id"] is None
+
+
 def test_expired_approval_is_refused_and_marked(db_client, session_factory):
     headers = open_session(db_client)
     approval_id = draft_and_submit(db_client, headers)["approval_id"]

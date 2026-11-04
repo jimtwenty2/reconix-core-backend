@@ -1,15 +1,22 @@
 """Risk check: the fourth of the 5 checks.
 
-A rule table gives each tool a base level and each option its own level. The
-action's risk is the highest of them. Anything the table does not know counts
-as HIGH, and validating a finding (a PoC) is at least MEDIUM. An action above
-the scope's max risk is blocked; otherwise the risk decides what happens next:
-LOW runs right away, MEDIUM and HIGH wait for a person to approve.
+A call's risk starts at the tool's baseline (the "risk" field in tool_specs.json),
+and a destructive or free-shell tool is pushed to at least HIGH. risk_ops.json
+then raises a single call above that baseline when one of the tool's escalation
+patterns is a substring of the (lowercased, space-joined) argument values. A tool
+the catalog does not know counts as HIGH, and validating a finding (a PoC) is at
+least MEDIUM. An action above the scope's max risk is blocked; otherwise the risk
+decides what happens next: LOW runs right away, MEDIUM and HIGH wait for a person.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 
+from reconix_ai.harness.catalog import (
+    baseline_risk,
+    escalations,
+    is_destructive,
+    is_free_shell,
+)
 from reconix_ai.harness.checks.result import (
     RISK_ORDER,
     CheckOutcome,
@@ -19,57 +26,6 @@ from reconix_ai.harness.checks.result import (
 )
 
 LOW, MEDIUM, HIGH = RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH
-
-
-@dataclass(frozen=True)
-class ToolRisk:
-    base: RiskLevel
-    options: dict[str, RiskLevel] = field(default_factory=dict)
-
-
-# Base levels follow the "risk" in tool_specs.json from Reconix-Kali-MCP.
-# The option rows match ALLOWED_OPTIONS in command.py, which blocks any other
-# option first. Draft: tuned again with real runs on the lab (week 2).
-RISK_RULES: dict[str, ToolRisk] = {
-    "NMAP": ToolRisk(
-        base=MEDIUM,
-        options={
-            "-p": LOW,
-            "--top-ports": LOW,
-            "-F": LOW,
-            "-Pn": LOW,
-            "-n": LOW,
-            "-sT": LOW,
-            "-sS": LOW,
-            "-sV": LOW,
-            "-sC": MEDIUM,
-            "-sU": MEDIUM,
-            "-O": MEDIUM,
-            "-A": MEDIUM,
-            "-T0": LOW,
-            "-T1": LOW,
-            "-T2": LOW,
-            "-T3": LOW,
-            "-T4": MEDIUM,
-            "-T5": HIGH,
-            "--script": HIGH,
-        },
-    ),
-    "NUCLEI": ToolRisk(
-        base=MEDIUM,
-        options={
-            "-severity": LOW,
-            "-tags": LOW,
-            "-exclude-tags": LOW,
-            "-rate-limit": LOW,
-            "-timeout": LOW,
-            "-retries": LOW,
-        },
-    ),
-    "ZAP": ToolRisk(base=HIGH),  # active scan sends attack requests
-    "SEMGREP": ToolRisk(base=LOW, options={"--config": LOW}),
-    "GITLEAKS": ToolRisk(base=LOW, options={"--log-opts": LOW}),
-}
 
 
 def check_risk(
@@ -87,16 +43,42 @@ def check_risk(
 
 
 def action_risk(tool: str, arguments: Sequence[str]) -> RiskLevel:
-    rules = RISK_RULES.get(tool.upper())
-    if rules is None:
-        return HIGH
-    levels = [rules.base]
-    for argument in arguments:
-        if argument.startswith("-"):
-            # "--script=vuln" is the same option as "--script vuln".
-            option = argument.split("=", 1)[0]
-            levels.append(rules.options.get(option, HIGH))
-    return highest(levels)
+    base = baseline_risk(tool)
+    if is_destructive(tool) or is_free_shell(tool):
+        base = highest([base, HIGH])
+    raw, words = argument_texts(arguments)
+    matched = [
+        level
+        for level, patterns in escalations(tool).items()
+        for pattern in patterns
+        if pattern in raw or " " + " ".join(pattern.replace("=", " ").split()) + " " in words
+    ]
+    return highest([base, *matched])
+
+
+def argument_texts(arguments: Sequence[str]) -> tuple[str, str]:
+    """Two lowercased texts the risk patterns are matched against, each with a space at both
+    ends so a pattern like "-a " also matches a last "-A":
+
+    - raw: the arguments joined with spaces, as written;
+    - words: "--opt=a,b" and "--opt a,b" both written as "--opt a --opt b", so a pattern
+      like "--script exploit" matches "--script=safe,exploit" too."""
+    parts = [str(argument).lower() for argument in arguments]
+    words: list[str] = []
+    index = 0
+    while index < len(parts):
+        option, equals, value = parts[index].partition("=")
+        if not equals and option.startswith("-") and index + 1 < len(parts):
+            following = parts[index + 1]
+            if not following.startswith("-"):
+                value, equals = following, "="
+                index += 1
+        if equals and option.startswith("-"):
+            words.extend(f"{option} {piece}" for piece in value.split(",") if piece)
+        else:
+            words.append(parts[index])
+        index += 1
+    return " " + " ".join(parts) + " ", " " + " ".join(words) + " "
 
 
 def highest(levels: Sequence[RiskLevel]) -> RiskLevel:

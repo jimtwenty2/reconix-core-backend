@@ -2,7 +2,7 @@
 
 # Flow 3 · Commands and settings
 
-Mark each case in the app with `/tests` (p / f / s).
+Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
 
 ## 3 Commands and settings
 
@@ -29,7 +29,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 #### CMD-03 · Open the flow screens
 
 1. During a run type /plan, /approval, /status, /findings, /finding 001, /report.
-2. Press 1 … 8 (not while typing) to jump between the same screens.
+2. Press Alt+1 … Alt+8 to jump between the same screens (a bare digit only picks a menu choice).
 
 **Expected:** Each command opens that screen; a screen with nothing yet says so.
 
@@ -81,7 +81,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 1. /provider → Custom OpenAI-compatible → Set up → API key sk-test-0000-1234 · Base URL http://127.0.0.1:9/v1 (nothing listens there) · Model test-model → Save provider → Yes, test it now.
 2. Afterwards /provider → Custom OpenAI-compatible → Unset → Yes, remove it.
 
-**Expected:** Only sk-…1234 is shown. The test says UNREACHABLE with a short reason; nothing leaves this computer and the mock stays the active model.
+**Expected:** Only sk-…1234 is shown. The test says UNREACHABLE — connection refused; nothing leaves this computer and the mock stays the active model.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -99,7 +99,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 1. Type /assess 10.0.0.0/24.
 
-**Expected:** Static mode can't run the AI agent: Reconix explains it needs a model (and the backend harness). Nothing runs.
+**Expected:** "Agent mode needs a real AI model and the backend harness; the static version has neither. Nothing runs." Nothing runs.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 

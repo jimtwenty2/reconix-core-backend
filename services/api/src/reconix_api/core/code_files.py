@@ -71,6 +71,30 @@ def check_rel_path(path: str) -> str:
     return path
 
 
+def excluded_inside(excluded_targets: list[str], target: str) -> list[str]:
+    """The scope's excluded paths inside the code folder `target`, made relative to it:
+    "/workspace/code/<s>/node_modules" -> "node_modules". Anything else is left out."""
+    prefix = target + "/"
+    inside = [entry.removeprefix(prefix) for entry in excluded_targets if entry.startswith(prefix)]
+    return sorted({path for path in inside if _is_safe(path)})
+
+
+def is_excluded(path: str, skip: list[str]) -> bool:
+    """True when the relative path is one of the skipped paths or inside one."""
+    return any(path == entry or path.startswith(entry + "/") for entry in skip)
+
+
+def remove_excluded(folder: Path, skip: list[str]) -> int:
+    """Deletes the stored files under the skipped paths; returns how many."""
+    removed = 0
+    for path, file in stored_files(folder).items():
+        if is_excluded(path, skip):
+            file.unlink()
+            removed += 1
+    _remove_empty_folders(folder)
+    return removed
+
+
 def is_tool_config(path: str) -> bool:
     """True for a scanner's own settings file, which is never stored."""
     return path.rsplit("/", 1)[-1] in TOOL_CONFIG_NAMES
@@ -95,17 +119,22 @@ def stored_files(folder: Path) -> dict[str, Path]:
     }
 
 
-def sync(folder: Path, wanted: dict[str, str]) -> list[str]:
+def sync(folder: Path, wanted: dict[str, str], skip: list[str] | None = None) -> list[str]:
     """wanted is relative path -> sha256 of every file the workspace has now.
 
     Returns the paths whose content the server does not have yet, sorted, then deletes
-    the stored files the workspace no longer has. Scanner settings files are never
-    asked for (see TOOL_CONFIG_NAMES)."""
+    the stored files the workspace no longer has. Scanner settings files and files under
+    a skipped path (the scope's excluded folders) are never asked for, and are deleted
+    if stored."""
     if len(wanted) > MAX_FILES:
         raise CodeFileError(f"at most {MAX_FILES} files")
     for path in wanted:
         check_rel_path(path)
-    wanted = {path: sha256 for path, sha256 in wanted.items() if not is_tool_config(path)}
+    wanted = {
+        path: sha256
+        for path, sha256 in wanted.items()
+        if not is_tool_config(path) and not is_excluded(path, skip or [])
+    }
     stored = stored_files(folder)
     try:
         missing = sorted(
@@ -122,17 +151,20 @@ def sync(folder: Path, wanted: dict[str, str]) -> list[str]:
     return missing
 
 
-def unpack(archive: BinaryIO, folder: Path, max_bytes: int) -> tuple[int, int]:
+def unpack(
+    archive: BinaryIO, folder: Path, max_bytes: int, skip: list[str] | None = None
+) -> tuple[int, int]:
     """Unpacks a tar.gz into the folder, replacing files with the same path.
 
     Returns (files, bytes) written. Raises CodeFileError and changes nothing if any entry
     is not a plain file or folder, has a bad or repeated path, clashes with a stored
     file or folder, or if the upload or the session's stored code would be larger than
     max_bytes. Every byte is counted as it is unpacked, the tar headers too, so a small
-    archive cannot unpack to a huge one. Scanner settings files are skipped."""
+    archive cannot unpack to a huge one. Scanner settings files and files under a skipped
+    path (the scope's excluded folders) are not stored."""
     folder.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=folder.parent, prefix=".upload-") as temp:
-        files, total = _unpack_to(archive, Path(temp), max_bytes)
+        files, total = _unpack_to(archive, Path(temp), max_bytes, skip or [])
         _check_fits(folder, files, total, max_bytes)
         try:
             for path in files:
@@ -165,7 +197,9 @@ class _LimitedReader:
         return data
 
 
-def _unpack_to(archive: BinaryIO, temp: Path, max_bytes: int) -> tuple[list[str], int]:
+def _unpack_to(
+    archive: BinaryIO, temp: Path, max_bytes: int, skip: list[str]
+) -> tuple[list[str], int]:
     files: list[str] = []
     seen: set[str] = set()
     entries = 0
@@ -189,7 +223,7 @@ def _unpack_to(archive: BinaryIO, temp: Path, max_bytes: int) -> tuple[list[str]
                     continue
                 if not member.isfile():
                     raise CodeFileError(f"only plain files are allowed: {_shown(path)}")
-                if is_tool_config(path):
+                if is_tool_config(path) or is_excluded(path, skip):
                     continue
                 source = tar.extractfile(member)
                 if source is None:
@@ -246,3 +280,11 @@ def _remove_empty_folders(folder: Path) -> None:
 def _shown(path: str) -> str:
     """The path for an error message, cut short: a bad path can be megabytes long."""
     return repr(path if len(path) <= 120 else path[:120] + "...")
+
+
+def _is_safe(path: str) -> bool:
+    try:
+        check_rel_path(path)
+    except CodeFileError:
+        return False
+    return True

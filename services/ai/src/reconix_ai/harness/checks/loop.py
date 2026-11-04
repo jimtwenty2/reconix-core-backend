@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
 
+from reconix_ai.harness.catalog import canonical
 from reconix_ai.harness.checks.result import ALLOWED, CheckOutcome, blocked
 
 
@@ -75,7 +76,7 @@ def check_loop(
 def command_key(tool: str, target: str, arguments: Sequence[str]) -> tuple:
     """Two commands count as the same even if the case, spacing or argument order differ."""
     return (
-        tool.upper(),
+        canonical(tool),  # "ZAP" and "ZAP_SCAN" are one tool
         target.strip().lower(),
         tuple(sorted(argument.strip() for argument in arguments)),
     )

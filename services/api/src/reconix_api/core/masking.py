@@ -5,9 +5,13 @@ wiring.py puts a NOT_READY stub here, and tests use the fake in tests/fakes/fake
 """
 
 import json
+import re
 from collections.abc import Callable
 from typing import Annotated, Any
+from xml.etree.ElementTree import Element, ParseError, tostring
 
+from defusedxml import DefusedXmlException
+from defusedxml.ElementTree import fromstring
 from fastapi import Depends, Request
 
 MaskSecrets = Callable[[str], tuple[str, int]]
@@ -24,10 +28,66 @@ def get_mask_secrets(request: Request) -> MaskSecrets:
 CurrentMask = Annotated[MaskSecrets, Depends(get_mask_secrets)]
 
 
+# nmap -sV copies the scanned host's raw reply into its XML: the servicefp attribute and
+# the fingerprint-strings script. nmap escapes it (\x20, \r\n, \"), which the masker
+# cannot read through, so a cookie or password in it would be kept. No finding uses them:
+# they are dropped before anything is saved.
+RAW_REPLY_ATTRIBUTES = ("servicefp",)
+RAW_REPLY_SCRIPTS = ("fingerprint-strings",)
+RAW_REPLY_TEXT = [
+    re.compile(r'\s+servicefp="[^"]*"?'),
+    re.compile(r'<script id="fingerprint-strings".*?(?:/>|</script>|\Z)', re.DOTALL),
+]
+
+
 def mask_output(mask: MaskSecrets, text: str) -> tuple[str, int]:
-    """Tool output, masked. JSON is masked value by value, so the masking cannot break it."""
+    """Tool output, masked. JSON and XML are masked value by value, so the masking
+    cannot break them and an escaped secret is still found."""
     masked = mask_json(mask, text)
-    return masked if masked is not None else mask(text)
+    if masked is None:
+        masked = mask_xml(mask, text)
+    return masked if masked is not None else mask(drop_raw_replies(text))
+
+
+def mask_xml(mask: MaskSecrets, text: str) -> tuple[str, int] | None:
+    """XML (nmap -oX) -> masked XML: every attribute and text masked after the XML is
+    read, so "&quot;" or "&#xa;" no longer hide a secret, and nmap's raw replies dropped.
+    Not XML, or cut off: None."""
+    if not text.lstrip().startswith("<"):
+        return None
+    try:
+        root = fromstring(text)
+    except (ParseError, DefusedXmlException):
+        return None
+    total = 0
+    for node in root.iter():
+        for script in [s for s in node.findall("script") if s.get("id") in RAW_REPLY_SCRIPTS]:
+            node.remove(script)
+        for name in RAW_REPLY_ATTRIBUTES:
+            node.attrib.pop(name, None)
+        total += _mask_node(mask, node)
+    return tostring(root, encoding="unicode"), total
+
+
+def _mask_node(mask: MaskSecrets, node: Element) -> int:
+    total = 0
+    for name, value in node.attrib.items():
+        node.attrib[name], count = mask(value)
+        total += count
+    for part in ("text", "tail"):
+        value = getattr(node, part)
+        if value:
+            masked, count = mask(value)
+            setattr(node, part, masked)
+            total += count
+    return total
+
+
+def drop_raw_replies(text: str) -> str:
+    """The same raw replies, cut out of XML that could not be read (e.g. cut off)."""
+    for pattern in RAW_REPLY_TEXT:
+        text = pattern.sub("", text)
+    return text
 
 
 def mask_json(mask: MaskSecrets, text: str) -> tuple[str, int] | None:
@@ -98,10 +158,14 @@ def _mask_object(mask: MaskSecrets, value: dict[str, Any]) -> tuple[dict[str, An
 
 
 def _secret_label(mask: MaskSecrets, key: str) -> str | None:
-    """e.g. "Secret" -> "[MASKED:token]"; "File" -> None. The masker decides, by name."""
-    probe = f"{key}={PROBE}"
-    masked, count = mask(probe)
-    if not count or masked == probe:
-        return None
-    prefix = f"{key}="
-    return masked[len(prefix) :] if masked.startswith(prefix) else "[MASKED:secret]"
+    """e.g. "Secret" -> "[MASKED:token]"; "File" -> None. The masker decides, by name.
+    Asked twice: as an assignment (Secret=...) and as an HTTP header (Set-Cookie: ...),
+    since tools like ZAP put response headers in JSON keyed by the header's name."""
+    for separator in ("=", ": "):
+        probe = f"{key}{separator}{PROBE}"
+        masked, count = mask(probe)
+        if not count or masked == probe:
+            continue
+        prefix = f"{key}{separator}"
+        return masked[len(prefix) :] if masked.startswith(prefix) else "[MASKED:secret]"
+    return None

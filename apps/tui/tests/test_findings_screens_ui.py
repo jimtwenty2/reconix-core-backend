@@ -314,7 +314,7 @@ async def test_triage_status_is_visible_in_the_row_without_scrolling(app):
         table = _table(app)
         assert "STATUS" in _fully_visible_columns(table) and table.scroll_offset.x == 0
         key = table.coordinate_to_cell_key((_row_ids(app).index("002"), 3)).column_key
-        assert table.get_cell("002", key).plain == "False +"    # the new status, in the row
+        assert table.get_cell("002", key).plain == "False positive"    # the new status, in the row
 
 
 async def test_the_full_title_shows_at_120x36(app):

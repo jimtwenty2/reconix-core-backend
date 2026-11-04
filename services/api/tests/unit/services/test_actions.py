@@ -9,12 +9,15 @@ from reconix_api.core.interfaces import (
     RiskLevel,
     ToolName,
 )
+from reconix_api.models import Action as ActionRow
+from reconix_api.schemas.actions import ActionIn
 from reconix_api.services.actions import (
     NextStep,
     action_hash,
     ensure_unchanged,
     masked_snapshot,
     next_step,
+    to_action,
 )
 from tests.fakes import fake_mask_secrets
 
@@ -77,3 +80,13 @@ def test_the_masked_copy_hides_secrets_in_target_and_arguments():
     assert "hunter22" not in snapshot["target"]
     assert snapshot["arguments"][0] == "--log-opts"
     assert "abc123" not in snapshot["arguments"][1]
+
+
+def test_a_saved_catalog_tool_becomes_an_action():
+    row = ActionRow(tool="MASSCAN", target="172.20.0.0/24", args=["--rate", "100"], purpose="scan")
+    assert to_action(row).tool == "MASSCAN"
+
+
+@pytest.mark.parametrize(("sent", "saved"), [("masscan", "MASSCAN"), ("NMAP", "NMAP")])
+def test_action_in_saves_the_tool_uppercase(sent, saved):
+    assert ActionIn(tool=sent, target="172.20.0.5").tool == saved

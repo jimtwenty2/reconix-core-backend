@@ -119,7 +119,7 @@ export function ReportCombine({ runs }: { runs: ReportRunRow[] }) {
       <DashCard
         id="report-combine"
         title="Combine runs"
-        docsHref={DOCS.exporting}
+        docsHref={DOCS.panelCombine}
         meta={
           <span aria-live="polite">
             {selected.length} of {COMBINE_MAX} selected

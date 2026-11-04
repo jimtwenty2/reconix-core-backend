@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     # Approvals
     approval_ttl_minutes: int = 30
 
+    # GET /stream sends a ping this often, and checks the session is still open
+    stream_heartbeat_seconds: float = 15
+
+    # Too many requests: per session token, per minute (429 after that). Signing in
+    # (POST /sessions, POST /sessions/web-sign-in) has its own, smaller limit.
+    rate_limit_per_minute: int = 600
+    sign_in_limit_per_minute: int = 20
+
     @model_validator(mode="after")
     def host_must_be_loopback(self) -> Self:
         if self.in_container and self.host == "0.0.0.0":  # noqa: S104  published on 127.0.0.1

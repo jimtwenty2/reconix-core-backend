@@ -84,9 +84,21 @@ def test_source_tools_send_a_path():
     assert arguments["path"] == "/workspace/app"
 
 
-def test_zap_refuses_extra_arguments():
-    with pytest.raises(McpError):
+def test_zap_maps_to_zap_scan():
+    name, args = tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", []))
+    assert name == "zap_scan"
+    assert args == {"url": "http://juice-shop:3000/", "timeout": args["timeout"]}
+
+
+def test_arguments_for_a_tool_without_opts_are_refused_not_dropped():
+    with pytest.raises(McpError, match="TOOL_TAKES_NO_OPTIONS"):
         tool_call(job(ToolName.ZAP, "http://juice-shop:3000/", ["-x"]))
+
+
+def test_the_target_goes_in_the_primary_param():
+    name, args = tool_call(job("sqlmap", "http://juice-shop:3000/?id=1", ["--level", "2"]))
+    assert name == "sqlmap"
+    assert args["url"] == "http://juice-shop:3000/?id=1"
 
 
 async def test_call_sends_the_key_session_and_job_token():

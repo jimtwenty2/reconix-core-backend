@@ -97,3 +97,33 @@ def test_source_tools_have_no_ports() -> None:
 def test_a_port_list_reads_as_a_set() -> None:
     assert port_set("22,80-82") == {22, 80, 81, 82}
     assert port_set("22,,80") is None
+
+
+@pytest.mark.parametrize("tool", ["MASSCAN", "RUSTSCAN", "NETCAT", "HYDRA", "masscan"])
+def test_other_tools_on_a_host_are_blocked_when_ports_are_limited(tool: str) -> None:
+    # They pick their own ports (masscan scans all of them) and Core cannot limit them.
+    assert reason(["-p", "1-65535"], tool=tool) == "PORTS_NOT_SUPPORTED"
+
+
+def test_other_tools_on_a_host_are_allowed_without_a_port_limit() -> None:
+    assert reason([], tool="MASSCAN", scope=Scope(allowed_ports=[])) is None
+
+
+@pytest.mark.parametrize(
+    ("target", "code"),
+    [
+        ("http://172.20.0.5:8000/", None),
+        ("https://172.20.0.5/", None),
+        ("http://172.20.0.5:9999/", "PORTS_OUT_OF_SCOPE"),
+    ],
+)
+def test_other_tools_on_a_url_reach_only_its_allowed_port(target: str, code: str | None) -> None:
+    assert reason([], tool="SQLMAP", target=target) == code
+
+
+def test_other_tools_on_a_path_reach_no_port() -> None:
+    assert reason([], tool="TRIVY", target="/lab/vuln-repo") is None
+
+
+def test_zap_scan_is_checked_like_zap() -> None:
+    assert reason([], tool="zap_scan", target="http://172.20.0.5:9999/") == "PORTS_OUT_OF_SCOPE"

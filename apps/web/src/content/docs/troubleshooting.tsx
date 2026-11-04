@@ -175,8 +175,9 @@ export const troubleshooting: GroupContent = {
         </DocSection>
         <DocSection title="Keys that seem dead">
           <p>
-            <Kbd>1</Kbd>…<Kbd>8</Kbd> jump between screens only when no menu has focus (in a menu they pick a numbered
-            choice); <Kbd>?</Kbd> on the Start prompt works only when it is empty; <Kbd>5</Kbd> and <Kbd>→</Kbd> skip
+            A bare <Kbd>1</Kbd>…<Kbd>9</Kbd> only picks a numbered menu choice (screens are <Kbd>Alt+1</Kbd>…<Kbd>Alt+8</Kbd>),
+            and a red choice such as Reject has no number: use <Kbd>↑</Kbd>/<Kbd>↓</Kbd> and <Kbd>Enter</Kbd>;{" "}
+            <Kbd>?</Kbd> on the Start prompt works only when it is empty; <Kbd>Alt+5</Kbd> and <Kbd>→</Kbd> skip
             Execution until the plan has run. <Kbd>?</Kbd> lists what works right now.
           </p>
         </DocSection>

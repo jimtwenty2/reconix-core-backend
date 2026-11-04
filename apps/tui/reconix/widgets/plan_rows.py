@@ -5,7 +5,8 @@
 chat shows it when you ask for the plan or change its order.
 """
 
-from typing import Sequence
+import textwrap
+from typing import List, Sequence
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -35,18 +36,24 @@ def plan_line(row: PlanRow, width: int = 0, full: bool = False) -> Text:
     """Two lines per row: number, label and what it does; then risk, gate and status.
 
     With `width` (the list's inner width) a long label or command is cut with "…" so the
-    row never wraps; `full` (the highlighted row) shows it whole. A missing value shows as
-    "—" and an unknown status as its own text: nothing is made up.
+    row never wraps; `full` (the highlighted row) shows it whole, its long text continued on
+    lines under its own column (never wrapped back to the row's first column). A missing
+    value shows as "—" and an unknown status as its own text: nothing is made up.
     """
     label = row.label or MISSING
     what = f"$ {row.command}" if row.command else (row.detail or "")
+    room = width - NUM_WIDTH - LABEL_WIDTH
     if width and not full:
         label = fit(label, LABEL_WIDTH - 1)
-        what = fit(what, width - NUM_WIDTH - LABEL_WIDTH)
+        what = fit(what, room)
+    whats = _wrap(what, room) if width and full else [what]
     line = Text()
     line.append(f" {row.num or MISSING:<3}", style=f"bold {theme.MUTED}")
     line.append(f"{label:<{LABEL_WIDTH}}", style=f"bold {theme.TEXT}")
-    line.append(what, style=theme.TEAL if row.command else theme.MUTED)
+    for i, part in enumerate(whats):
+        if i:
+            line.append("\n" + " " * (NUM_WIDTH + LABEL_WIDTH))
+        line.append(part, style=theme.TEAL if row.command else theme.MUTED)
     line.append("\n     ")
     risk = row.risk or MISSING
     line.append(f"● {risk}", style=f"bold {theme.RISK.get(risk, theme.MUTED)}")
@@ -56,6 +63,13 @@ def plan_line(row: PlanRow, width: int = 0, full: bool = False) -> Text:
     line.append(f"   {note}", style=color)
     return line
 
+
+
+def _wrap(text: str, width: int) -> List[str]:
+    """`text` in lines of at most `width` characters (one line when it fits)."""
+    if width <= 0 or len(text) <= width:
+        return [text]
+    return textwrap.wrap(text, width, break_on_hyphens=False) or [text]
 
 
 class PlanPanel(Vertical):

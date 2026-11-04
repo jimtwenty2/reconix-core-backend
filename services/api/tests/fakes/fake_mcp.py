@@ -30,7 +30,8 @@ class FakeMcp:
         self.jobs: list[ToolJob] = []
         self.down = False  # set True to simulate the container being unreachable
         self.secret: str | None = None
-        self.outputs: dict[ToolName, str] = {}  # set by a test: the raw output per tool
+        self.outputs: dict[str, str] = {}  # set by a test: the raw output per tool
+        self.stderr = ""  # set by a test: what the tool writes to stderr
 
     def expect_token(self, token: str) -> None:
         """Tests call this where the real backend would sign a token."""
@@ -55,6 +56,7 @@ class FakeMcp:
             status=ToolRunStatus.COMPLETED,
             exit_code=0,
             stdout=output,
+            stderr=self.stderr,
             duration_ms=1200,
         )
 

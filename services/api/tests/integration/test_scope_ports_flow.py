@@ -65,7 +65,7 @@ def test_a_scope_without_ports_keeps_its_old_snapshot(db_client):
     assert "allowed_ports" not in approval["subject_snapshot"]
 
 
-def test_nmap_on_an_allowed_port_waits_for_approval(harness_client, harness_app):  # noqa: F811
+def test_nmap_on_an_allowed_port_passes_the_scope_check(harness_client, harness_app):  # noqa: F811
     headers = open_session(harness_client)
     assessment_id = active_assessment(harness_client, headers, WITH_PORTS)
 
@@ -79,7 +79,8 @@ def test_nmap_on_an_allowed_port_waits_for_approval(harness_client, harness_app)
     )
 
     assert response.status_code == 201, response.json()
-    assert response.json()["action_status"] == "PENDING"
+    # These are all LOW options on a LOW tool, so the action runs straight away.
+    assert response.json()["action_status"] == "COMPLETED"
 
 
 def test_nmap_on_another_port_is_blocked_by_the_scope_check(harness_client, harness_app):  # noqa: F811

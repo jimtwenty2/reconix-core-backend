@@ -16,7 +16,7 @@ from textual.app import App
 from textual.binding import Binding
 
 from . import store, theme
-from .commands import COMMANDS, Command, CommandCheck, check_command_line, parse
+from .commands import COMMANDS, Command, CommandCheck, check_command_line, find, parse
 from .screens import ChoiceScreen, CommandBarScreen, HelpScreen, StartScreen
 from .shell import (
     ActionsMixin, AgentMixin, DialogsMixin, KnowledgeMixin, LlmMixin, NavigationMixin,
@@ -40,16 +40,21 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
         Binding("slash", "command_bar", "commands", key_display="/"),
         Binding("question_mark", "help", "help", key_display="?"),
         Binding("ctrl+q", "quit", "quit"),
+        # Priority, so Ctrl+C stops a run (it asks first) on every flow screen, also with the
+        # Start prompt focused; in a dialog or a field with selected text it is left to them.
+        Binding("ctrl+c", "stop_assessment", "stop", show=False, priority=True),
         Binding("ctrl+o", "toggle_activity", "expand steps", show=False),
-        # Quick jumps for presenting — hidden to keep the footer clean.
-        Binding("1", "jump('start')", "start", show=False),
-        Binding("2", "jump('template')", "template", show=False),
-        Binding("3", "jump('plan')", "plan", show=False),
-        Binding("4", "jump('approval')", "approval", show=False),
-        Binding("5", "jump('execution')", "execution", show=False),
-        Binding("6", "jump('findings')", "findings", show=False),
-        Binding("7", "jump('detail')", "detail", show=False),
-        Binding("8", "jump('report')", "report", show=False),
+        # Quick jumps for presenting — hidden to keep the footer clean. On Alt, never on a
+        # bare digit: a menu's digits pick a choice, and the same key must not mean "show
+        # me screen N" on one screen and "decide this gate" on the next (QA-008).
+        Binding("alt+1", "jump('start')", "start", show=False),
+        Binding("alt+2", "jump('template')", "template", show=False),
+        Binding("alt+3", "jump('plan')", "plan", show=False),
+        Binding("alt+4", "jump('approval')", "approval", show=False),
+        Binding("alt+5", "jump('execution')", "execution", show=False),
+        Binding("alt+6", "jump('findings')", "findings", show=False),
+        Binding("alt+7", "jump('detail')", "detail", show=False),
+        Binding("alt+8", "jump('report')", "report", show=False),
     ]
 
     def __init__(self) -> None:
@@ -111,17 +116,45 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, AgentMixin, Dialog
         """`/home/me/app` is a local path, not a command (its "name" holds a slash)."""
         return "/" in parse(text)[0]
 
+    # At the target login a typed line may be the password: only these, with no argument.
+    LOGIN_COMMANDS = ("stop", "new", "help", "quit")
+
+    def login_blocks(self, text: str) -> Optional[str]:
+        """Why `text` can't run while the run waits for (or stopped at) the target login, or
+        None. Only /stop, /new, /help and /quit with no argument pass; anything else may be
+        the password, so it is never run, echoed or kept in the history."""
+        refusal = store.login_refusal()
+        if refusal is None:
+            return None
+        name, arg = parse(text)
+        command = None if self.is_path_line(text) else find(COMMANDS, name)
+        if command is not None and command.name in self.LOGIN_COMMANDS and arg is None:
+            return None
+        return refusal
+
     def run_command_line(self, text: str) -> bool:
         """Run `/name [arg]`. Returns False (and warns) when the line can't run."""
+        refusal = self.login_blocks(text)
+        if refusal is not None:
+            self.notify(refusal, severity="warning", markup=False)
+            return False
         if self.is_path_line(text):
             return self.submit_request(text)
         check = self.check_command(text)
         if not check.ok:
             self.notify(check.error, severity="warning", markup=False)
             return False
+        self.run_checked(text, check)
+        return True
+
+    def run_checked(self, text: str, check: CommandCheck) -> None:
+        """Run a line `check_command` already passed (kept in the history like the bar's)."""
+        refusal = self.login_blocks(text)
+        if refusal is not None:  # never run, echoed or kept at the target login
+            self.notify(refusal, severity="warning", markup=False)
+            return
         self._remember(text)
         self.run_command(check.command, check.arg)
-        return True
 
     def run_command(self, command: Command, arg: Optional[str] = None) -> None:
         """Run a command; if it needs a choice that wasn't typed, ask with a menu."""

@@ -25,7 +25,7 @@ OUT = ROOT.parent / "web" / "src" / "content" / "docs" / "commands.json"
 # COMMANDS must appear exactly once; a new command fails `build()` until it is placed here.
 GROUPS = (
     ("start", "Start & navigate", ("help", "new", "template")),
-    ("flow", "Flow", ("plan", "approval", "status")),
+    ("flow", "Flow", ("plan", "approval", "status", "stop")),
     ("findings", "Findings & reports", ("findings", "finding", "report", "export", "summary")),
     ("data", "Assessments & data", ("assessments", "audit")),
     ("ai", "AI models & agent", ("assess", "add-on", "provider", "model")),

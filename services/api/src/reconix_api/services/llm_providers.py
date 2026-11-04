@@ -152,8 +152,10 @@ def delete_provider(
 def activate(
     db: Db, write_audit: WriteAudit, operator: Operator, llm_provider_id: UUID, ttl_minutes: int
 ) -> tuple[LlmProviderOut, Approval | None]:
-    """A provider on this computer is active at once. Any other one gets a
-    `configuration` approval and stays inactive until a person approves it.
+    """A provider on this computer, and the built-in RECONIX provider, are active at once.
+    Any other one gets a `configuration` approval and stays inactive until a person
+    approves it. RECONIX's address is set in .env by whoever installs Reconix and can never
+    be changed through the API, so there is no edited address for an approval to guard.
 
     One open approval per provider: one that lapsed, or that is for settings the
     provider no longer has, is closed as EXPIRED first."""
@@ -161,7 +163,9 @@ def activate(
     provider = _get(db, llm_provider_id, lock=True)
     if provider.is_active:
         raise ApiError(409, "PROVIDER_ALREADY_ACTIVE", "This provider is already active.")
-    local = is_local(provider.provider_type, provider.base_url)
+    local = provider.provider_type == ProviderType.RECONIX or is_local(
+        provider.provider_type, provider.base_url
+    )
     if not local:
         _refuse_if_waiting(provider, open_approval, ttl_minutes)
     expired = _expire(open_approval)
@@ -199,6 +203,11 @@ def approve_activation(
     Approving uses it."""
     provider = _get(db, UUID(approval.config_change["llm_provider_id"]), lock=True)
     if activation_hash(provider) != approval.subject_hash:
+        # Not what the person was shown: this approval is spent, and a new one is needed.
+        approval.approval_status = ApprovalStatus.EXPIRED
+        approval.reason = "PROVIDER_CHANGED"
+        db.commit()
+        _audit(write_audit, "APPROVAL_EXPIRED", operator, provider, approval, "PROVIDER_CHANGED")
         raise ApiError(
             409,
             "PROVIDER_CHANGED",
@@ -449,12 +458,15 @@ def _audit(
     operator: Operator,
     provider: LlmProvider,
     approval: Approval | None = None,
+    reason: str | None = None,
 ) -> None:
-    """Never the key or the address: only which provider, and which approval."""
+    """Never the key or the address: only which provider, which approval, and why."""
     details = {
         "llm_provider_id": str(provider.llm_provider_id),
         "provider_type": str(provider.provider_type),
     }
     if approval is not None:
         details["approval_id"] = str(approval.approval_id)
+    if reason is not None:
+        details["reason"] = reason
     audit(write_audit, event_type, operator, details=details)

@@ -6,6 +6,7 @@ comes back, so no secret reaches a model, a log or the database from here.
 
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 # LiteLLM reads these once, when it is imported, so they are forced here and
@@ -42,7 +43,7 @@ for name in PROVIDER_ENV:
 import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
-from reconix_ai.harness import mask_secrets  # noqa: E402
+from reconix_ai.harness import StreamMasker, mask_secrets  # noqa: E402
 from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
@@ -63,6 +64,10 @@ NO_KEY = "none"  # sent instead of an empty key, so LiteLLM never looks one up i
 LOCAL_TYPES = {ProviderType.OLLAMA}
 # The 3 cloud services: their own address unless one is set, and always a key.
 CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
+
+
+OnPiece = Callable[[str], Awaitable[None]]
+"""Gets the answer in masked pieces while the model writes it, for showing only."""
 
 
 @dataclass(frozen=True)
@@ -91,27 +96,36 @@ class ProviderError(Exception):
 
 
 async def complete(
-    messages: list[Message], config: ProviderConfig, json_answer: bool = False
+    messages: list[Message],
+    config: ProviderConfig,
+    json_answer: bool = False,
+    on_piece: OnPiece | None = None,
 ) -> Completion:
     """Send masked messages to the configured model and return its masked answer.
 
     json_answer asks the model for one JSON object. The caller still parses it.
+    With on_piece the answer is streamed: on_piece gets what StreamMasker lets through,
+    and the whole answer is still masked once here and returned as usual.
     """
     model = litellm_model(config)
     base_url = checked_base_url(config)
     check_key(config)
     masked_messages, masked_count = mask_messages(messages)
+    request = {
+        "model": model,
+        "messages": masked_messages,
+        "api_base": base_url,
+        "api_key": config.api_key or NO_KEY,
+        "timeout": config.timeout_seconds,
+        "max_tokens": config.max_tokens,
+        "response_format": {"type": "json_object"} if json_answer else None,
+    }
     failure = None
     try:
-        response = await litellm.acompletion(
-            model=model,
-            messages=masked_messages,
-            api_base=base_url,
-            api_key=config.api_key or NO_KEY,
-            timeout=config.timeout_seconds,
-            max_tokens=config.max_tokens,
-            response_format={"type": "json_object"} if json_answer else None,
-        )
+        if on_piece is None:
+            response = await litellm.acompletion(**request)
+        else:
+            response = await streamed(request, on_piece)
     except openai.OpenAIError as error:
         failure = provider_error(error, config)
     if failure is not None:
@@ -119,7 +133,7 @@ async def complete(
         # carry the request and its key) is not attached to it at all.
         raise failure
 
-    if not response.choices:
+    if response is None or not response.choices:
         raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
     choice = response.choices[0]
     text, answer_count = mask_secrets(choice.message.content or "")
@@ -140,6 +154,18 @@ async def complete(
         completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
         masked_count=masked_count + answer_count,
     )
+
+
+async def streamed(request: dict, on_piece: OnPiece) -> litellm.ModelResponse | None:
+    """The answer as it arrives, built back into one response (None when nothing came)."""
+    masker = StreamMasker()
+    chunks = []
+    async for chunk in await litellm.acompletion(**request, stream=True):
+        chunks.append(chunk)
+        piece = chunk.choices[0].delta.content if chunk.choices else None
+        if piece and (shown := masker.feed(piece)):
+            await on_piece(shown)
+    return litellm.stream_chunk_builder(chunks, messages=request["messages"])
 
 
 def mask_messages(messages: list[Message]) -> tuple[list[dict[str, str]], int]:

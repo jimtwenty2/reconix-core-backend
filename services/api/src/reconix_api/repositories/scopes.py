@@ -34,6 +34,11 @@ def next_version(db: Db, session_id: UUID) -> int:
     return (latest or 0) + 1
 
 
+def get_by_assessment(db: Db, assessment_id: UUID) -> ScopeManifest | None:
+    """The one manifest an assessment points at (unique), whatever its status."""
+    return db.scalar(select(ScopeManifest).where(ScopeManifest.assessment_id == assessment_id))
+
+
 def get_approved(db: Db, assessment_id: UUID) -> ScopeManifest | None:
     return db.scalar(
         select(ScopeManifest).where(

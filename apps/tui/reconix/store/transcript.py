@@ -1,5 +1,10 @@
-"""The assistant chat and the activity log the dashboard shows."""
+"""The assistant chat and the activity log the dashboard shows.
 
+`list_activity()` returns copies: changing a returned entry changes nothing in the store.
+Store code that has to change a row reaches the assessment's own list instead.
+"""
+
+from dataclasses import replace
 from typing import List, Optional, Sequence, Tuple
 
 from ..models import ActivityEntry, ChatEntry
@@ -25,7 +30,7 @@ def last_exchange() -> Tuple[Optional[ChatEntry], List[ChatEntry]]:
 
 
 def list_activity() -> List[ActivityEntry]:
-    return list(lists.current().activity)
+    return [replace(entry) for entry in lists.current().activity]
 
 
 def add_chat(

@@ -1,7 +1,10 @@
 import json
+import re
+from pathlib import Path
 
 from reconix_ai.harness import mask_secrets
 from reconix_api.core.masking import mask_json, mask_output
+from reconix_api.findings import nmap as nmap_findings
 
 GENERIC = "tok9f8e7d6c5b4a39281706f5e4d3c2b1a0zz"  # no known shape: only its key name gives it away
 
@@ -48,3 +51,62 @@ def test_text_that_is_not_json_is_masked_as_text():
     assert mask_json(mask_secrets, "<nmaprun/>") is None
     assert mask_json(mask_secrets, "") is None
     assert mask_output(mask_secrets, "password=hunter2") == ("password=[MASKED:password]", 1)
+
+
+# Real nmap 7.99 output (-sV -sC) from a lab host that sends a fake cookie and password.
+LAB_NMAP = (Path(__file__).parents[2] / "fixtures" / "nmap" / "lab_fake_secrets.xml").read_text()
+FAKE_SECRET = re.compile(r"FAKE(?:cookie|pass)\w*")
+# Real ZAP SARIF report (zap_report) from the same lab host.
+LAB_ZAP = (
+    Path(__file__).parents[2] / "fixtures" / "zap" / "lab_fake_secrets.sarif.json"
+).read_text()
+
+
+def nmap_port(body: str) -> str:
+    return (
+        '<?xml version="1.0"?><nmaprun><host><address addr="10.0.0.5" addrtype="ipv4"/>'
+        f'<ports><port protocol="tcp" portid="80"><state state="open"/>{body}</port>'
+        "</ports></host></nmaprun>"
+    )
+
+
+def test_nmap_raw_replies_are_dropped_before_saving():
+    masked, _ = mask_output(mask_secrets, LAB_NMAP)
+    assert FAKE_SECRET.findall(masked) == []
+    assert "servicefp" not in masked and "fingerprint-strings" not in masked
+    [finding] = nmap_findings.read(masked)[0]  # still read as before
+    assert finding.title == "Open port 80/tcp (http, lab-test)"
+
+
+def test_a_cut_off_nmap_output_still_loses_its_raw_replies():
+    masked, _ = mask_output(mask_secrets, LAB_NMAP[: len(LAB_NMAP) * 2 // 3])
+    assert FAKE_SECRET.findall(masked) == []
+
+
+def test_xml_values_are_masked_after_the_xml_is_read():
+    headers = "&#xa;  Server: x&#xa;  Set-Cookie: session=FAKEcookie42; Path=/&#xa;"
+    script = f'<script id="http-headers" output="{headers}"/>'
+    escaped = '<script id="x" output="password=&quot;FAKEpass42&quot;"/>'
+    masked, count = mask_output(mask_secrets, nmap_port(script + escaped))
+    assert FAKE_SECRET.findall(masked) == []
+    assert count == 2
+    assert "Server: x" in masked  # the rest of the script output is kept
+
+
+def test_text_that_is_not_xml_is_masked_as_text():
+    masked, count = mask_output(mask_secrets, "<not closed password=FAKEpass42")
+    assert FAKE_SECRET.findall(masked) == []
+    assert count == 1
+
+
+def test_a_cookie_header_inside_json_is_masked():
+    # As ZAP's report keeps a response's headers.
+    headers = {"Server": "lab-test", "Set-Cookie": "session=FAKEcookie42; Path=/"}
+    masked, _ = mask_output(mask_secrets, json.dumps({"response": {"headers": headers}}))
+    assert FAKE_SECRET.findall(masked) == []
+    assert json.loads(masked)["response"]["headers"]["Server"] == "lab-test"
+
+
+def test_the_real_zap_report_keeps_no_cookie():
+    masked, _ = mask_output(mask_secrets, LAB_ZAP)
+    assert FAKE_SECRET.findall(masked) == []

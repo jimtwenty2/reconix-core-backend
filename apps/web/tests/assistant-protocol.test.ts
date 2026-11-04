@@ -7,7 +7,7 @@ import { NOTICES, pickCards } from "@/lib/assistant/cards";
 import { cleanTitle } from "@/lib/assistant/history-schema";
 import { fenceTag, systemPrompt } from "@/lib/assistant/prompt";
 import { CardSchema, createFrameReader, encodeFrame, type Frame, isConversationId, parseFrame } from "@/lib/assistant/protocol";
-import { MASK } from "@/lib/assistant/redact";
+import { HIDDEN_LINE, MASK } from "@/lib/assistant/redact";
 
 import { sampleAssessments } from "./fixtures";
 
@@ -88,7 +88,10 @@ describe("frames", () => {
 
 describe("titles", () => {
   it("are masked, one line, without invisible characters, and cut", () => {
-    expect(cleanTitle("  Why\nis​ token=abc123 ‮odd  ")).toBe(`Why is token=${MASK} odd`);
+    expect(cleanTitle("  Why\nis​ the ‮odd  ")).toBe("Why is the odd");
+    expect(cleanTitle("  Why\nis token=abc123 odd  ")).toBe(`Why is token=${MASK} odd`);
+    // a line hiding a secret behind invisible characters is hidden whole (redact's HIDDEN_LINE)
+    expect(cleanTitle("Why\nis​ token=abc123 ‮odd")).toBe(`Why ${HIDDEN_LINE}`);
     const long = cleanTitle("word ".repeat(40), 60);
     expect(long.length).toBeLessThanOrEqual(60);
     expect(long.endsWith("…")).toBe(true);

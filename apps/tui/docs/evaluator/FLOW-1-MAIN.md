@@ -2,10 +2,34 @@
 
 # Flow 1 · The main flow, one template at a time
 
-with `/tests` 
+Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CASES.md). Mark each case in the app with `/tests` (p / f / s).
 
 Every template walks the same gates, in this order:
 
+| Gate | What you see and choose |
+|---|---|
+| Scope review | "Approve this scope manifest?" → Approve scope / Edit manifest / Reject (API also: Attach OpenAPI spec). Edit manifest is all or nothing; after Approve the scope is locked. Reject (red) has no number: a digit never picks it, use ↑/↓ and Enter. |
+| Plan | "Run this plan?" → Run plan / Edit steps / Cancel (red, no number). The other rows run on their own; the target login (when the tools need one), 3a (MEDIUM) and 3b (HIGH) wait for you. |
+| Target login | Only when the scope's tools need one (Web URL: account + one-time code; API: session cookie). What you type is never shown or saved. |
+| MEDIUM approval | "Run <action> on <target>?" → Approve & run / Reject / View details / Edit params. Reject (red) has no number: use ↑/↓ and Enter. A rejected action is skipped and the plan goes on. On a short terminal the screen opens on the request; a note says to press ↓ for the choices. |
+| HIGH approval | The same menu, then "◆ HIGH-RISK · second confirmation"; its default is No, go back. |
+| Execution | One request outside the scope is proposed and blocked: "Blocked: … Not executed." Ctrl+C asks "Stop this assessment?". |
+| Findings and report | 3 findings per template (Enter open, f filter, s sort, t triage); on the Report screen p PDF, j JSON, w DOCX once the run is complete (saved in apps/tui/reports/). |
+
+**Test values:** any password (it never shows) and the one-time code `123456`. Type `/new` before each case.
+
+## 1.1 Web URL (a website)
+
+A URL like https://shop.example.com picks Web URL at once. A bare hostname asks "Which kind of target is it?".
+
+| What this template sets up | |
+|---|---|
+| Scope | methods GET and POST; never touches /admin; tools Nuclei and OWASP ZAP; time limit 30 min |
+| Login | email/username + password, then a 6-digit one-time code (OWASP ZAP needs it) |
+| MEDIUM | Baseline request (read-only) · GET /api/orders/10482 |
+| HIGH | limited_validation · GET /api/orders/10483 (test account B) |
+| Blocked in the run | Blocked: GET /admin · Path outside approved scope. Not executed. |
+| Findings | 001 MEDIUM Broken object-level authorization · 002 MEDIUM Reflected input in search page · 003 LOW Session cookie missing SameSite |
 
 #### MF-WEB-01 · The whole flow, approve everything
 
@@ -21,8 +45,8 @@ Check https://shop.example.com for web security issues
 4. MEDIUM: "Run Baseline request (read-only) on …?" → Approve & run.
 5. HIGH → Approve & run → "◆ HIGH-RISK · second confirmation" → move down to Yes, run … → Enter.
 6. Execution: the log shows "Blocked: GET /admin · Path outside approved scope. Not executed."
-7. Findings (6): 3 findings. Open 001 (Enter): evidence shows usr_••••42 and token: •••••••••• (masked).
-8. Report screen (8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
+7. Findings (Alt+6): 3 findings. Open 001 (Enter): evidence shows usr_••••42 and token: •••• (masked).
+8. Report screen (Alt+8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** Every step on the step line ends at ✓; no password, token or cookie shows anywhere.
 
@@ -43,7 +67,7 @@ Assess staging.example.com
 5. MEDIUM → View details: scope limits, the exact request and its sha256 hash → Back to the choices → Approve & run.
 6. HIGH → Approve & run → second confirmation → press Enter on the default No, go back → you are back at the approval; nothing ran.
 7. HIGH → Approve & run → "◆ HIGH-RISK · second confirmation" → move down to Yes, run … → Enter.
-8. Report screen (8) → press j (JSON) → "✓ REPORT SAVED" shows the file path.
+8. Report screen (Alt+8) → press j (JSON) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** The approved scope has /checkout and 20 min; the first "No, go back" ran nothing.
 
@@ -82,13 +106,13 @@ Test https://shop.example.com for access control problems
 4. Edit params → /api/orders/10490 → accepted; the request now shows /api/orders/10490 → Approve & run.
 5. HIGH → Approve & run → "◆ HIGH-RISK · second confirmation" → move down to Yes, run … → Enter.
 6. Findings → open 002 → t (triage) → False positive → the list shows the new status.
-7. Report screen (8) → press w (DOCX) → "✓ REPORT SAVED" shows the file path.
+7. Report screen (Alt+8) → press w (DOCX) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** Blocked values never run; the accepted edit is what ran; the triage is in the report.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
-#### MF-WEB-05 · Reject at HIGH, then start again
+#### MF-WEB-05 · Reject at HIGH, the plan goes on
 
 **Type this:**
 
@@ -97,12 +121,12 @@ Check https://shop.example.com for web security issues
 ```
 
 1. Approve scope → Run plan → login → MEDIUM Approve & run.
-2. HIGH → Reject → "Rejected: limited_validation. Not executed." then "Assessment stopped. Nothing else will run. Type /new to start a new assessment."
-3. The step line shows ✕. /findings lists only finding 001 (found before the stop).
-4. /report → p → "The report is available once the assessment is complete."
-5. /new → a clean Start screen; /assessments still lists the stopped one.
+2. HIGH → Reject (↑/↓ then Enter; it has no number) → "Rejected: limited_validation. Not executed — the plan goes on with its next step." (on Execution's live output; scroll it up on a short terminal)
+3. The run goes on to the end: "Assessment completed. 3 findings: 0 confirmed, 3 marked for review." and "Open the report (Alt+8 or /report) to export it."
+4. /findings → 001 stays Unconfirmed: the validation that would confirm it was rejected.
+5. Report screen (Alt+8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
 
-**Expected:** Nothing runs after Reject; the stopped assessment is kept and can be reopened.
+**Expected:** limited_validation never runs; the same assessment completes and its report can be exported.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -134,7 +158,7 @@ Test the REST API at https://api.example.com/v1 for authorization issues
 4. MEDIUM → Approve & run.
 5. HIGH → Approve & run → "◆ HIGH-RISK · second confirmation" → move down to Yes, run … → Enter.
 6. Execution: "Blocked: GET /internal/metrics · Path outside approved scope. Not executed."
-7. Findings: 3 → Report screen (8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
+7. Findings: 3 → Report screen (Alt+8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** Every step at ✓; the cookie value never shows in the log, the findings or the report.
 
@@ -153,7 +177,7 @@ Assess the api at api.example.com
 3. Remove OpenAPI spec → gone; Attach OpenAPI spec → the same file again.
 4. A wrong path (nope.yaml) → "No file at that path."
 5. Approve scope → Run plan → cookie → approve MEDIUM and HIGH.
-6. Report screen (8) → press j (JSON) → "✓ REPORT SAVED" shows the file path.
+6. Report screen (Alt+8) → press j (JSON) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** The spec (4 endpoints, GET and POST) is read but never widens the scope.
 
@@ -168,11 +192,12 @@ Check https://api.example.com/v1 endpoints
 ```
 
 1. The "API TEMPLATE: BASE URL AND SPEC" form opens first: press Esc to skip it (MF-API-02 attaches a spec).
-2. Scope → Reject → "Scope rejected. Nothing was tested." then "Assessment stopped. Nothing else will run. Type /new to start a new assessment."
-3. "Start again?" → Start a new assessment.
+2. Scope → Reject (↑/↓ then Enter; it has no number) → "Scope rejected. Nothing was tested." then "Assessment stopped. Nothing else will run. Type /new to start a new assessment."
+3. You stay in the same assessment: the Template step shows ✕ and the screen asks "Start again?" (Start a new assessment / Back to the start).
 4. /audit → the rejection is in the audit trail.
+5. "Start again?" → Start a new assessment → /assessments still lists the rejected one as Stopped.
 
-**Expected:** Nothing ran: no plan step started and there are no findings.
+**Expected:** Nothing ran: no plan step started and there are no findings. Reject never opens a new assessment by itself.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -189,9 +214,9 @@ Test https://api.example.com/v1 for API security issues
 3. Edit manifest → Excluded paths: v1/x → "Excluded paths start with '/': v1/x."
 4. Approve scope → Run plan → cookie → approve MEDIUM and HIGH.
 5. /audit → the blocked GET /internal/metrics is listed with its reason.
-6. Report → the approved scope section lists DELETE and /v1/admin.
+6. Report → p (PDF): the exported report's scope section lists DELETE and /v1/admin.
 
-**Expected:** The report shows exactly the scope you approved; the blocked request is in the audit trail.
+**Expected:** The exported report shows exactly the scope you approved; the blocked request is in the audit trail.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -205,10 +230,11 @@ Test the REST API at https://api.example.com/v1 for authorization issues
 
 1. The "API TEMPLATE: BASE URL AND SPEC" form opens first: press Esc to skip it (MF-API-02 attaches a spec).
 2. Approve scope → Run plan → cookie.
-3. MEDIUM → Reject → "Rejected: Baseline request (read-only). Not executed." and the assessment stops.
-4. /approval → the HIGH step is never asked. /summary shows the stop.
+3. MEDIUM → Reject (↑/↓ then Enter) → "Rejected: Baseline request (read-only). Not executed — the plan goes on with its next step."
+4. The HIGH step still asks for its own approval: Approve & run → second confirmation → Yes.
+5. The run completes: "Assessment completed. …" /audit lists approval.rejected for the MEDIUM step.
 
-**Expected:** Nothing runs after the MEDIUM reject; HIGH is never reached.
+**Expected:** The rejected MEDIUM request never runs; the plan goes on and HIGH runs only after its own approval.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
@@ -236,7 +262,7 @@ Scan 10.0.0.0/24 for open ports and weak services
 2. MEDIUM → Approve & run.
 3. HIGH → Approve & run → "◆ HIGH-RISK · second confirmation" → move down to Yes, run … → Enter.
 4. Execution: "Blocked: TCP 198.51.100.9 · Host outside approved scope. Not executed."
-5. Findings: 001 HIGH, 002 MEDIUM, 003 LOW → Report screen (8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
+5. Findings: 001 HIGH, 002 MEDIUM, 003 LOW → Report screen (Alt+8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** Every step at ✓ and no login was asked.
 
@@ -309,7 +335,7 @@ Check 10.0.0.0/24 for exposed management consoles
 4. 10.0.0.7 → "Give a host and a port, e.g. 10.0.0.1:8443."
 5. 10.0.0.7:8443 → accepted.
 6. Approve & run → second confirmation → No, go back (nothing runs) → Approve & run → Yes.
-7. Findings → f → HIGH only → open 001 → Report screen (8) → press w (DOCX) → "✓ REPORT SAVED" shows the file path.
+7. Findings → f → Critical & High → open 001 → Report screen (Alt+8) → press w (DOCX) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** Only an in-scope host:port can be set; HIGH runs only after the second Yes.
 
@@ -339,7 +365,7 @@ Review the repo https://git.example.com/acme/app.git for secrets and insecure co
 2. MEDIUM → Approve & run.
 3. HIGH → Approve & run → "◆ HIGH-RISK · second confirmation" → move down to Yes, run … → Enter.
 4. Execution: "Blocked: read .git/config · Path excluded from the review. Not executed."
-5. Findings → open 001: the password is masked (••••) → Report screen (8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
+5. Findings → open 001: the password is masked (••••) → Report screen (Alt+8) → press p (PDF) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** Every step at ✓; the hardcoded password never shows in plain text.
 
@@ -393,7 +419,7 @@ Review https://git.example.com/acme/app.git for security issues
 2. Move secret_validation up (Shift+↑) → Enter → "Plan updated" and the plan card shows 3a secret_validation (HIGH), 3b Read the flagged line (MEDIUM).
 3. Type move step 1 to the end → the order list again: only the gated checks can move; phases 1–5 stay fixed.
 4. Run plan → HIGH is asked first, then MEDIUM → approve both.
-5. Report screen (8) → press j (JSON) → "✓ REPORT SAVED" shows the file path.
+5. Report screen (Alt+8) → press j (JSON) → "✓ REPORT SAVED" shows the file path.
 
 **Expected:** The run follows the order you saved; the phases never move.
 

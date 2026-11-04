@@ -16,6 +16,7 @@ from reconix_api.core.interfaces import Operator, WriteAudit
 from reconix_api.models.enums import SessionStatus
 from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import assessments as assessment_repo
+from reconix_api.repositories import scopes as scope_repo
 from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.code import CodeFileIn, CodeSyncOut, CodeUploadOut
 from reconix_api.services.audit import audit
@@ -31,12 +32,14 @@ def sync_code(
     session_id: UUID,
     files: list[CodeFileIn],
 ) -> CodeSyncOut:
-    """Drops stored files the workspace no longer has; answers which ones to upload."""
+    """Drops stored files the workspace no longer has; answers which ones to upload.
+    Once the scope is approved, files in its excluded folders are never asked for."""
     ensure_own_open_session(db, operator, session_id)
     ensure_not_scanning(db, session_id)
     folder = code_files.session_folder(settings.code_dir, session_id)
     try:
-        missing = code_files.sync(folder, {file.path: file.sha256 for file in files})
+        wanted = {file.path: file.sha256 for file in files}
+        missing = code_files.sync(folder, wanted, excluded_folders(db, session_id))
     except code_files.CodeFileError as error:
         raise ApiError(422, "INVALID_CODE_FILES", str(error)) from error
     db.commit()  # the lock taken by ensure_not_scanning
@@ -53,12 +56,14 @@ def upload_code(
     session_id: UUID,
     archive: BinaryIO,
 ) -> CodeUploadOut:
-    """Unpacks a tar.gz into the session's code folder. A bad upload changes nothing."""
+    """Unpacks a tar.gz into the session's code folder. A bad upload changes nothing.
+    Once the scope is approved, files in its excluded folders are not stored."""
     ensure_own_open_session(db, operator, session_id)
     ensure_not_scanning(db, session_id)
     folder = code_files.session_folder(settings.code_dir, session_id)
     try:
-        files, size = code_files.unpack(archive, folder, settings.max_upload_mb * MB)
+        limit = settings.max_upload_mb * MB
+        files, size = code_files.unpack(archive, folder, limit, excluded_folders(db, session_id))
     except code_files.CodeFileError as error:
         raise ApiError(422, "INVALID_CODE_UPLOAD", str(error)) from error
     db.commit()  # the lock taken by ensure_not_scanning
@@ -85,3 +90,14 @@ def ensure_not_scanning(db: Db, session_id: UUID) -> None:
     assessment_repo.lock(db, assessment.assessment_id)
     if agent_run_repo.running_code_scan(db, assessment.assessment_id):
         raise ApiError(409, "SCAN_RUNNING", "Wait for the code scan to end, or cancel it.")
+
+
+def excluded_folders(db: Db, session_id: UUID) -> list[str]:
+    """The approved scope's excluded paths inside this session's code, relative to it
+    (e.g. "node_modules"). Empty before the scope is approved."""
+    assessment = assessment_repo.get_by_session(db, session_id)
+    manifest = assessment and scope_repo.get_approved(db, assessment.assessment_id)
+    if not manifest:
+        return []
+    excluded = [t.value for t in scope_repo.list_targets(db, manifest.manifest_id) if t.excluded]
+    return code_files.excluded_inside(excluded, code_files.container_path(session_id))

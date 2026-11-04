@@ -181,9 +181,7 @@ def test_a_stopped_assessment_has_no_report_yet():
     from .support import run_to
 
     run_to("approval:approval-002", test_guide.find_case("MF-WEB-05").ask)
-    store.reject("approval-002")
-    while store.advance() is not None:
-        pass
+    store.stop_run()                     # (a Reject no longer stops the run: QA-003)
     assert store.get_run().stopped
     with pytest.raises(
         store.StoreValidationError, match="available once the assessment is complete"

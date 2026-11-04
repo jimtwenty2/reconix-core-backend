@@ -38,9 +38,20 @@ def sync_code(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> CodeSyncOut:
-    """Send every file the workspace has now (path, size, SHA-256). Stored files that are
-    not in the list are deleted; `missing` lists the ones to upload next. Only your own
-    open session (403 NOT_YOUR_SESSION, 409 SESSION_CLOSED)."""
+    """Reports which files the workspace currently has, each with its path, size, and SHA-256.
+
+    Business Rules:
+    - The response's `missing` field lists the files to upload next.
+    - Once the scope is approved, files in its excluded folders are never asked for or stored.
+    - Returns 409 SESSION_CLOSED if the session is closed.
+
+    State Changes:
+    - Deletes stored files that are not in the list.
+
+    Security:
+    - Requires a valid session token.
+    - Works only on your own open session; returns 403 NOT_YOUR_SESSION otherwise.
+    """
     return code.sync_code(db, interfaces.write_audit, settings, operator, session_id, body.files)
 
 
@@ -53,10 +64,22 @@ async def upload_code(
     interfaces: CurrentInterfaces,
     settings: CurrentSettings,
 ) -> CodeUploadOut:
-    """The body is a tar.gz of the missing files, with relative paths. It must be at most
-    RECONIX_MAX_UPLOAD_MB packed and unpacked (413 UPLOAD_TOO_LARGE, 422
-    INVALID_CODE_UPLOAD). Links, devices, absolute paths and `..` are refused, and a
-    refused upload changes nothing."""
+    """Uploads the missing files as one tar.gz of relative paths.
+
+    Business Rules:
+    - The archive may be at most RECONIX_MAX_UPLOAD_MB, both packed and unpacked.
+    - A packed archive over the limit returns 413 UPLOAD_TOO_LARGE.
+    - One that is too large unpacked, is broken, or holds a link, device, absolute path, or `..`
+      returns 422 INVALID_CODE_UPLOAD.
+    - A refused upload changes nothing.
+
+    State Changes:
+    - Stores the uploaded files for the session.
+
+    Security:
+    - Requires a valid session token.
+    - Works only on your own open session.
+    """
     code.ensure_own_open_session(db, operator, session_id)  # before reading the body
     limit = settings.max_upload_mb * MB
     with tempfile.SpooledTemporaryFile(max_size=SPOOL_BYTES) as archive:

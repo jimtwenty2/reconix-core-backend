@@ -128,6 +128,30 @@ def test_the_orig_file_is_encrypted_and_the_passages_are_redacted(kenv, tmp_path
     assert cli(kenv, "original", source["id"]).stdout.count(TEST_PASSWORD.encode()) == 1
 
 
+def test_a_secret_behind_colour_codes_never_reaches_the_passages_or_the_index(kenv, tmp_path):
+    """A colour code glued to "password" hid it from the masking: the line is hidden whole."""
+    path = tmp_path / "colour.txt"
+    path.write_bytes(b"intro line\n\x1b[33mpassword=hunter2xyz\x1b[0m\nplain token=abc123def\n")
+    source = ok(cli(kenv, "add", "--file", str(path), "--name", "colour.txt",
+                    "--source", "web"))["source"]
+    folder = Path(kenv["RECONIX_KNOWLEDGE_DIR"])
+    for name in (f"{source['id']}.json", "index.json"):
+        text = (folder / name).read_text()
+        assert "hunter2xyz" not in text and "abc123def" not in text
+    passages = (folder / f"{source['id']}.json").read_text()
+    assert "line hidden: control codes around a secret" in passages and "intro line" in passages
+
+
+def test_a_file_name_hiding_a_secret_is_refused(kenv, tmp_path):
+    path, _ = make(tmp_path, "a.txt")
+    error = refused(cli(kenv, "add", "--file", str(path), "--name",
+                        "\x1b[0mtoken=SUPERSECRET1.txt", "--source", "web"), "file name hides")
+    assert "SUPERSECRET1" not in error
+    folder = Path(kenv["RECONIX_KNOWLEDGE_DIR"])
+    assert not any("SUPERSECRET1" in f.read_text(errors="replace")
+                   for f in folder.glob("*.json")) if folder.exists() else True
+
+
 def test_remove_deletes_the_passages_and_the_original(kenv, tmp_path):
     path, _ = make(tmp_path, "a.txt")
     source = ok(cli(kenv, "add", "--file", str(path), "--name", "a.txt",
