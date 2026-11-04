@@ -47,7 +47,7 @@ from .ai_plan import (
     apply_plan_draft, fetch_plan_draft, plan_author, plan_draft_failed, plan_draft_request,
     plan_drafting,
 )
-from .plan import gated_count, plan_overview
+from .plan import gated_count, plan_overview, rejected_checks, validation_skipped
 from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
 from .plan_order import movable as movable_checks
 from .providers import (
@@ -74,7 +74,9 @@ from .scope import (
 from .scope_ask import ScopeChoices, answer_scope_change, wants_scope_change
 from .scope_view import describe_scope
 from .seed import DEMO_REQUEST, load_demo_data
-from .step_intent import asks_about_decision, decision_reply, wants_decision, wants_view
+from .step_intent import (
+    asks_about_decision, decision_reply, view_reply, wants_decision, wants_view,
+)
 from .step_text import approval_text, plan_text, scope_text, template_text
 from .targets import (
     DASH_RANGE_UNSUPPORTED, TargetCheck, check_target, looks_like_target, validate_target,
@@ -109,6 +111,7 @@ __all__ = [
     # the plan's phases drafted by the active model (store/ai_plan.py)
     "plan_draft_request", "fetch_plan_draft", "apply_plan_draft", "plan_draft_failed",
     "plan_drafting", "plan_author",
+    "rejected_checks", "validation_skipped",
     "pipeline_stage", "elapsed", "time_limit",
     # gates
     "list_templates", "get_template", "select_template", "selected_template",
@@ -118,7 +121,7 @@ __all__ = [
     # the chat inside a step ("Chat about this"): its content as text, scope change asks
     "scope_text", "plan_text", "approval_text", "template_text",
     "wants_scope_change", "answer_scope_change", "ScopeChoices",
-    "wants_decision", "asks_about_decision", "wants_view", "decision_reply",
+    "wants_decision", "asks_about_decision", "wants_view", "decision_reply", "view_reply",
     "wants_plan_reorder", "answer_plan_reorder", "reorder_gated", "movable_checks",
     "step_status", "StepStatus",
     "provide_auth", "current_auth_challenge", "has_test_account",

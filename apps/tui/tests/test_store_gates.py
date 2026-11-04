@@ -201,7 +201,7 @@ def test_high_needs_the_double_check_but_no_reason(high):
     token = store.request_confirmation(HIGH, high.command_hash)
     decision = store.approve(HIGH, command_hash=high.command_hash, confirmation_token=token)
     assert decision.reason == "" and store.is_approved(HIGH)
-    assert "Approved: limited_validation (double-checked)" in [
+    assert "Approved: Cross-account read check (double-checked)" in [
         e.message for e in store.list_activity()]
 
 

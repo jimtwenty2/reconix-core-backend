@@ -11,6 +11,11 @@ list of numbers in a sentence about ports ("add 4000, 3000 and 5432"), or a bare
 the operator's own line. A count ("12 ports") or a part of an address or
 range (1.1.1.0/24) is never a port. On a scope with ports (network), "add 3389, 8080" asks
 for a change even without the word "port".
+
+Some changes the tick list can't make, so Reconix says why instead: a port range ("add ports
+1-1024": the scope lists single ports), a host ("add 10.0.0.99 to the scope": the target is
+fixed, /new starts again), and a tool the template doesn't use ("add nikto"). The tick list
+opens on the first row the line named (the new port, the tool), so Space ticks that one.
 """
 
 import re
@@ -50,6 +55,12 @@ _NOT_PORTS = re.compile(r"(?:\b(?:steps?|phases?|rows?)\s+$)|(?:^\s*(?:hosts?|st
                         r"min|seconds?|requests?|%))", re.IGNORECASE)
 _SENTENCE_END = re.compile(r"(?<=[!?;])\s+|(?<=\.)\s+|\n+")
 _PROTO = re.compile(r"(?<![\w.:/-])(\d{1,5})/(?:tcp|udp)\b", re.IGNORECASE)
+# "1-1024", "1000 to 2000": a range of ports (not part of an address: 10.0.0.1-10.0.0.20).
+_PORT_RANGE = re.compile(r"(?<![\w.:/-])(\d{1,5})\s*(?:-|–|\bto\b)\s*(\d{1,5})(?![\w.:/-])",
+                         re.IGNORECASE)
+# A host in the line: an IPv4 address or range, a URL, or a host name (a tool name is not one).
+_HOST = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?(?![\w.])|\bhttps?://|"
+                   r"(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?![\w.-])", re.IGNORECASE)
 MAX_SUGGESTED = 20
 
 ONLY_YOU = "Only you can change the scope. Tick what it allows, then press Enter to save."
@@ -57,6 +68,13 @@ LOCKED = (
     "The scope is approved and locked, so it can't change now. Start a new "
     "assessment (/new) to test with a different scope."
 )
+RANGE = ("The scope lists single ports, not a range ({range}). Name each port you want "
+         "(add ports 8000, 8080), then tick it.")
+HOSTS = ("Hosts can't change here: the target is fixed for this assessment. To test another "
+         "host, start again with /new.")
+HOSTS_EXCLUDE = " To leave a host out, use Edit manifest (Excluded)."
+TOOLS = ("{names} can't be added here: this template uses only {tools}. To test with other "
+         "tools, start again with /new.")
 
 
 class ScopeChoices(NamedTuple):
@@ -66,15 +84,54 @@ class ScopeChoices(NamedTuple):
     ports: List[Tuple[int, bool]]
     tools: List[Tuple[str, bool]]
     suggested: Tuple[int, ...] = ()
+    focus: str = ""   # the row the list opens on ("port:3389", "tool:nmap"; "" = the first)
+
+
+def _named_tools(text: str) -> List[str]:
+    """The tools `text` names, as Reconix names them ("nikto" -> "Nikto")."""
+    from .parser import extract_tools   # the parser imports the templates, so not at the top
+
+    return list(extract_tools(text))
 
 
 def wants_scope_change(text: str) -> bool:
-    """A line that asks to add or remove ports, tools or the scope itself; on a scope with
-    ports also a change verb before bare numbers ("add 3389, 8080")."""
-    if _CHANGE.search(text) and _SUBJECT.search(text):
+    """A line that asks to add or remove ports, tools or the scope itself, or to change its
+    hosts or name a tool ("add nikto", "add 10.0.0.99"); on a scope with ports also a change
+    verb before bare numbers ("add 3389, 8080")."""
+    if _CHANGE.search(text) and (
+        _SUBJECT.search(text) or _named_tools(text) or _HOST.search(_no_tools(text))
+    ):
         return True
     scope = lists.current().scope
     return bool(scope is not None and scope.kind == "network" and _BARE_PORTS.search(text))
+
+
+def _no_tools(text: str) -> str:
+    """`text` without the tool names in it ("testssl.sh" reads like a host name)."""
+    from .parser import _TOOL_RE
+
+    return _TOOL_RE.sub(" ", text)
+
+
+def refusal(text: str) -> str:
+    """Why the tick list can't make the change `text` asks for ("" when it can): a port
+    range, a host, or a tool this template doesn't use."""
+    assessment = lists.current()
+    scope = assessment.scope
+    network = scope is not None and scope.kind == "network"
+    span = _PORT_RANGE.search(text)
+    if network and span and ("port" in text.casefold() or _BARE_PORTS.search(text)
+                             or _CHANGE.search(text)):
+        return RANGE.format(range=f"{int(span.group(1))}-{int(span.group(2))}")
+    if _HOST.search(_no_tools(text)) and not typed_ports(_HOST.sub(" ", text)):
+        return HOSTS + (HOSTS_EXCLUDE if network else "")
+    module = MODULES.get(assessment.selected_template or "")
+    template_tools = list(getattr(module, "TOOLS", [])) or list(scope.tools if scope else [])
+    usable = {tool.casefold() for tool in template_tools}
+    others = [tool for tool in _named_tools(text) if tool.casefold() not in usable]
+    if others:
+        return TOOLS.format(names=_and(others), tools=_and(template_tools))
+    return ""
 
 
 def _add(ports: List[int], values: Sequence[str]) -> None:
@@ -140,6 +197,12 @@ def suggested_ports(reply: str) -> List[int]:
     return named_ports(reply)[:MAX_SUGGESTED]
 
 
+def _and(names: Sequence[str]) -> str:
+    """ "a", "a and b", "a, b and c"."""
+    names = list(names)
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
 def scope_choices(text: str, reply: str = "") -> ScopeChoices:
     """The rows to tick for this scope; raises once the scope is approved. `reply`: the
     model's answer, whose ports are added unticked as suggestions."""
@@ -161,7 +224,22 @@ def scope_choices(text: str, reply: str = "") -> ScopeChoices:
         tool for tool in getattr(module, "TOOLS", []) if tool.casefold() not in allowed
     ]
     tools = [(tool, tool.casefold() in allowed) for tool in names]
-    return ScopeChoices(ports, tools, tuple(suggested))
+    return ScopeChoices(ports, tools, tuple(suggested), _focus(text, ports, tools, suggested))
+
+
+def _focus(text: str, ports: Sequence[Tuple[int, bool]], tools: Sequence[Tuple[str, bool]],
+           suggested: Sequence[int]) -> str:
+    """The row the tick list opens on: the first port the line named, else the first tool it
+    named, else the first port the model suggested ("" = the first row)."""
+    rows = {port for port, _ticked in ports}
+    for port in typed_ports(text) if rows else []:
+        if port in rows:
+            return f"port:{port}"
+    names = {tool.casefold(): tool for tool, _ticked in tools}
+    for tool in _named_tools(text):
+        if tool.casefold() in names:
+            return f"tool:{names[tool.casefold()]}"
+    return f"port:{suggested[0]}" if suggested else ""
 
 
 def answer_scope_change(text: str, reply: str = "") -> Optional[ScopeChoices]:
@@ -174,6 +252,10 @@ def answer_scope_change(text: str, reply: str = "") -> Optional[ScopeChoices]:
         choices = scope_choices(text, reply)
     except StoreValidationError:
         add_chat("text", "reconix", LOCKED, tone="muted")
+        return None
+    why = refusal(text)
+    if why:
+        add_chat("text", "reconix", why, tone="muted")
         return None
     add_chat("text", "reconix", ONLY_YOU)
     return choices

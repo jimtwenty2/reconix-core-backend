@@ -132,7 +132,7 @@ def _approvals(host: str, ports: Ports) -> Tuple[ApprovalRequest, ApprovalReques
         impact="Low. Connects once, sends no credentials",
         command="connect {path} · read banner + TLS")
     high = approval(
-        "approval-002", risk="HIGH", action="single_login_probe",
+        "approval-002", risk="HIGH", action="Default login probe",
         target="TCP {path}/manager", method="TCP", path=console, param="Host:port",
         purpose="Try one known default credential against the management console",
         impact="One authentication attempt. No change to the host",

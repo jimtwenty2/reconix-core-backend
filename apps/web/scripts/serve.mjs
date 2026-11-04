@@ -11,11 +11,13 @@
         else python3; python on Windows), RECONIX_WEB_TOKEN (only for tests; normally a new random token each start). */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import net from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
+
+import { openPrivately, waitUntilAnswering } from "./serve-helpers.mjs";
 
 const require = createRequire(import.meta.url);
 const mode = process.argv[2] === "dev" ? "dev" : "start";
@@ -53,11 +55,21 @@ const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), mo
   },
 });
 
+/* "Ready" comes before next.config.ts is loaded: the link is written and the browser opened only
+   once GET /login really answered (serve-helpers.mjs), never for a server that stopped. */
 let announced = false;
+let exited = false;
 child.stdout.on("data", (chunk) => {
   process.stdout.write(chunk);
   if (announced || !/ready/i.test(String(chunk))) return;
   announced = true;
+  void waitUntilAnswering(`http://127.0.0.1:${port}/login`, { stopped: () => exited }).then((answered) => {
+    if (answered) announce();
+    else if (!exited) console.error(`[web] The dashboard on 127.0.0.1:${port} did not answer; see the output above.`);
+  });
+});
+
+function announce() {
   writeLink();
   process.stdout.write(
     `\n  Reconix analysis dashboard\n` +
@@ -66,8 +78,8 @@ child.stdout.on("data", (chunk) => {
       `  The link changes every time the dashboard starts. Press Ctrl+C to stop.\n` +
       `  From the TUI, run /web to open it.\n\n`,
   );
-  if (openBrowser) open(link);
-});
+  if (openBrowser) closeRedirect = openPrivately(link);
+}
 
 /* The link signs in (the AI Assistant, the Security knowledge page), so it is printed only to a
    terminal, never into a log (started by the TUI, our output goes to ~/.reconix/web.log). */
@@ -97,38 +109,15 @@ function removeLink() {
   }
 }
 
-/* The browser is opened on a private redirect file (folder 0700, file 0600), never on the
-   link itself, so the token doesn't show up in other users' view of the process list. */
-let redirectDir = "";
-
-function open(url) {
-  redirectDir = mkdtempSync(path.join(tmpdir(), "reconix-web-"));
-  const file = path.join(redirectDir, "open.html");
-  writeFileSync(
-    file,
-    `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${url}">` +
-      `<title>Reconix</title><a href="${url}">Open the Reconix dashboard</a>\n`,
-    { mode: 0o600 },
-  );
-  const [cmd, args] =
-    process.platform === "darwin" ? ["open", [file]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", file]] : ["xdg-open", [file]];
-  try {
-    spawn(cmd, args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
-  } catch {
-    /* no browser available: the link is printed above */
-  }
-  setTimeout(cleanup, 60_000).unref();
-}
-
-function cleanup() {
-  if (redirectDir) rmSync(redirectDir, { recursive: true, force: true });
-  redirectDir = "";
-}
+/* The browser is opened on a private redirect file, never on the link itself
+   (serve-helpers.mjs openPrivately); it is removed after a minute, or when the server stops. */
+let closeRedirect = () => {};
 
 for (const signal of ["SIGINT", "SIGTERM"])
   process.on(signal, () => child.kill(signal));
 child.on("exit", (code) => {
-  cleanup();
+  exited = true;
+  closeRedirect();
   removeLink();
   process.exit(code ?? 0);
 });

@@ -10,6 +10,7 @@ from rich.text import Text
 
 from .. import theme
 from ..models import ActivityEntry, ChatEntry, Entry
+from ..wording import clock
 
 # who did a step, in plain words: activity-log sources, then chat speakers
 SOURCE_NAME = {"AI": "ai", "USER": "you", "TOOL": "tool", "POLICY": "policy", "SYS": "system"}
@@ -65,7 +66,7 @@ def step_row(entry: Entry) -> Table:
     grid.add_column(no_wrap=True, width=WHO_WIDTH)
     grid.add_column()
     grid.add_row(
-        Text(entry.created_at.strftime("%H:%M:%S"), style=theme.DIM),
+        Text(clock(entry.created_at), style=theme.DIM),
         step_who(entry),
         entry_text(entry),
     )
@@ -75,6 +76,6 @@ def step_row(entry: Entry) -> Table:
 def step_plain(entry: Entry) -> str:
     """A step as plain text, in the same columns (for tests and copies)."""
     return (
-        f"{entry.created_at.strftime('%H:%M:%S')}  "
+        f"{clock(entry.created_at)}  "
         f"{step_who(entry).plain:<{WHO_WIDTH}}  {entry_text(entry).plain}"
     )

@@ -21,7 +21,7 @@ def add_history(text: str) -> HistoryEntry:
     if not text:
         raise StoreValidationError("Nothing to add to the history.")
     if len(text) > MAX_REQUEST_LENGTH:
-        raise StoreValidationError(f"Keep prompts under {MAX_REQUEST_LENGTH} characters.")
+        raise StoreValidationError(f"Keep prompts to at most {MAX_REQUEST_LENGTH} characters.")
     if lists.PROMPT_HISTORY and lists.PROMPT_HISTORY[-1].text == text:
         return lists.PROMPT_HISTORY[-1]
     entry = HistoryEntry(text)

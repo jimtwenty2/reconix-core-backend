@@ -142,7 +142,8 @@ def clean_request(text: str) -> str:
     if not text:
         raise StoreValidationError("Type a request first.")
     if len(text) > MAX_REQUEST_LENGTH:
-        raise StoreValidationError(f"Keep the request under {MAX_REQUEST_LENGTH} characters.")
+        raise StoreValidationError(
+            f"Keep the request to at most {MAX_REQUEST_LENGTH} characters.")
     return text
 
 

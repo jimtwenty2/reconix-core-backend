@@ -1,8 +1,9 @@
 """/web: open the web dashboard, starting it first if it isn't running.
 
 The first /web of a session starts `npm run dev` in web/ in the background (and installs
-its packages if they're missing); the dashboard opens the browser itself once it's
-ready. Later /web calls just open it. A dashboard this TUI started stops when it quits.
+its packages if they're missing or not the versions its lockfile names); the dashboard
+opens the browser itself once it's ready. Later /web calls just open it. A dashboard this
+TUI started stops when it quits.
 """
 
 import threading
@@ -41,7 +42,7 @@ class WebDashboardMixin:
             how = " Install Node.js (nodejs.org), then type /web again." if has_folder else ""
             self._web_note(f"{why}{how}", severity="warning")
             return
-        first = " First time: installing its packages takes a few minutes." \
+        first = " Its packages are installed (or updated) first: that takes a few minutes." \
             if web_server.needs_install() else ""
         self._web_note(f"Starting the web dashboard… it opens in your browser when it's "
                        f"ready.{first}")
@@ -91,10 +92,14 @@ class WebDashboardMixin:
 
     # --- messages --------------------------------------------------------------------------
     def _open_in_browser(self, url: str) -> None:
+        """Through browser.open_url, which never puts the sign-in token on a command line;
+        without a browser, say where the link is (never the link: its token signs in)."""
         if browser.open_url(url):
             self._web_note("Opening the web dashboard in your browser…")
         else:
-            self._web_note(f"Open it in your browser:  {url}", severity="warning")
+            self._web_note("Couldn't open a browser. The sign-in link is in "
+                           f"{persist.WEB_URL_FILE} (only you can read it): open it in your "
+                           "browser.", severity="warning")
 
     def _web_note(self, message: str, severity: str = "information") -> None:
         self.notify(message, title="Web dashboard", severity=severity, markup=False,

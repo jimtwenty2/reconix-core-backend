@@ -26,6 +26,7 @@ from ..widgets import (
 from ..widgets.step_chat import THINKING
 
 CHAT_DECISION = "chat-decision"
+HIDDEN_CHOICES = "The choices are below — ↓ moves down to them."
 CHAT_MENU_HINT = "Enter to select · ↑/↓ to navigate · type to chat · Esc back to the step"
 
 
@@ -76,6 +77,7 @@ class ReconixScreen(Screen):
         self._view_state: object = None
         self._stale = False  # the layout changed while a dialog covered the screen
         self._hidden: list = []  # what the step chat hid (shown again when it closes)
+        self._hinted = False  # the "choices are below" hint showed on this screen already
 
     def compose(self) -> ComposeResult:
         self._view_state = self.view_state()
@@ -125,6 +127,8 @@ class ReconixScreen(Screen):
             self.app.reload_screen()
             return
         self.app.flow_screen_resumed()
+        # A dialog (the API base-URL form) covered the gate as it opened: hint now.
+        self.call_after_refresh(self._hint_hidden_choices)
 
     # --- navigation helpers (delegate to the app) -----------------------------------------
     def action_next(self) -> None:
@@ -160,13 +164,12 @@ class ReconixScreen(Screen):
         """On a short terminal the gate's choices start below the fold: say how to reach
         them, so nobody presses Enter on a choice they can't see."""
         menu = self.focused
-        if not isinstance(menu, ChoiceMenu) or self.app.screen is not self:
+        if self._hinted or not isinstance(menu, ChoiceMenu) or self.app.screen is not self:
             return
         bodies = self.query("#body")
         if bodies and menu.region.y >= bodies.first().region.bottom - 1:
-            self.notify(
-                "The choices are below — press ↓ to see them.", title="Your decision", timeout=6
-            )
+            self._hinted = True  # once per screen visit, not on every resume
+            self.notify(HIDDEN_CHOICES, title="Your decision", timeout=6)
 
     # --- answers from a Question ("Type something." / "Chat about this") --------------------
     def chat_topic(self) -> str:
@@ -228,7 +231,7 @@ class ReconixScreen(Screen):
         """ "Type something.": keep it as feedback, then answer it in the step chat. A
         `/name` line is a command instead: it runs, and is neither feedback nor asked."""
         event.stop()
-        if self._refused_at_login():
+        if self._refused_at_login(event.text):
             return
         if self._is_command(event.text):
             chats = self.query(StepChat)
@@ -265,17 +268,19 @@ class ReconixScreen(Screen):
 
     def on_step_chat_asked(self, event: StepChat.Asked) -> None:
         event.stop()
-        if self._refused_at_login():
+        if self._refused_at_login(event.text):
             return
         if self._is_command(event.text):
             self._chat_command(event.chat, event.text)
             return
         self._ask_in_chat(event.chat, event.text)
 
-    def _refused_at_login(self) -> bool:
+    def _refused_at_login(self, text: str) -> bool:
         """At (or stopped at) the target login a typed line may be the password: refuse it
-        before anything else, so it never runs as a command, is never kept and never echoed."""
-        refusal = store.login_refusal()
+        before anything else, so it never runs as a command, is never kept and never echoed.
+        Only what the command bar takes there passes (/stop, /new, /help, /quit, no argument:
+        `app.login_blocks`)."""
+        refusal = self.app.login_blocks(text)
         if refusal:
             self.notify_error(refusal)
         return bool(refusal)
@@ -321,9 +326,14 @@ class ReconixScreen(Screen):
             self._stale = False
             self.app.reload_screen()
             return
+        self._focus_step_menu()
+
+    def _focus_step_menu(self) -> None:
+        """Focus the step's own menu (shown again once the chat closed), so a dialog opened
+        from the chat gives the focus back to it, as one opened from the menu does."""
         for menu in self.query(ChoiceMenu):
             if menu.can_focus and menu.display:
-                menu.focus()
+                self.set_focus(menu)
                 return
 
     def _close_chat(self) -> None:
@@ -395,6 +405,7 @@ class ReconixScreen(Screen):
             return
         store.log_event(f"{self.flow_name}.chat.decided", choice_id)
         self._close_chat()
+        self._focus_step_menu()  # a dialog the choice opens returns the focus here
         self.decide(choice_id)
         if self._stale and self.app.screen is self:
             self._stale = False
@@ -424,7 +435,7 @@ class ReconixScreen(Screen):
         view = "" if scope_change else store.wants_view(text)
         card = CARDS[view]() if view else None
         if card is not None:  # its card, never the model's list
-            chat.add_reply(f"The {view} as it stands now:")
+            chat.add_reply(store.view_reply(view))  # recorded: the last exchange has it
             self._show_decision(chat, card)
             return
         reorder = not scope_change and store.wants_plan_reorder(text) and self.allows_reorder()
@@ -456,7 +467,8 @@ class ReconixScreen(Screen):
         def show() -> None:
             replies = store.last_exchange()[1]
             if replies:
-                chat.show_reply(reply, replies[-1].text, replies[-1].tone)
+                last = replies[-1]
+                chat.show_reply(reply, last.text, last.tone, last.author)
 
         def preview(so_far: str) -> None:
             if gen == self.app.llm_generation() and chat.is_mounted:
@@ -493,7 +505,9 @@ class ReconixScreen(Screen):
         entry = store.last_exchange()[1][-1]
         chat.add_reply(entry.text, entry.tone)
         if choices is not None:
-            chat.add(TickList(choices.ports, choices.tools, choices.suggested))
+            chat.add(
+                TickList(choices.ports, choices.tools, choices.suggested, focus=choices.focus)
+            )
 
     def on_tick_list_saved(self, event: TickList.Saved) -> None:
         """Your ticks become the scope (the store validates them); the chat stays open."""

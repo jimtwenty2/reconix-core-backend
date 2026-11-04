@@ -40,7 +40,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 1. Before the run ends type /export pdf.
 2. After a finished run type /export pdf, /export json, /export docx.
 
-**Expected:** Before: "The report is available once the assessment is complete." After: "✓ REPORT SAVED" with the file path (in apps/tui/reports/).
+**Expected:** Before: "The report is available once the assessment is complete." After: "✓ REPORT SAVED" with "Saved ./reports/<id>.pdf. Open it now?" (the folder is apps/tui/reports/ when Reconix runs from apps/tui).
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 

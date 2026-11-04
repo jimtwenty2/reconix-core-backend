@@ -87,7 +87,7 @@ def set_note(case_id: str, note: str) -> Result:
     """Attach a note (masked, one line, at most 500 characters; empty clears it)."""
     text = " ".join(redact(note or "").split())    # redact cleans, after the hidden-secret check
     if len(text) > MAX_NOTE:
-        raise StoreValidationError(f"Keep the note under {MAX_NOTE} characters.")
+        raise StoreValidationError(f"Keep the note to at most {MAX_NOTE} characters.")
     results = load()
     old = results.get(case_id, Result())
     results[case_id] = Result(old.mark, text, _now())

@@ -49,7 +49,7 @@ export const assessmentGuide: GroupContent = {
               to start over.&quot;, is never reached from the prompt.)
             </li>
             <li>
-              Be empty or too long: &quot;Type a request first.&quot;, &quot;Keep the request under 500 characters.&quot;
+              Be empty or too long: &quot;Type a request first.&quot;, &quot;Keep the request to at most 500 characters.&quot;
             </li>
             <li>
               Name a malformed target: <Mono>10.0.0.300</Mono> or a range wider than /16 is refused with the reason.
@@ -184,9 +184,9 @@ export const assessmentGuide: GroupContent = {
             caption="The gated steps of each template"
             head={["Template", "Steps"]}
             rows={[
-              { key: "Web URL, API", value: <><Badge variant="accent">MEDIUM</Badge> Baseline request (read-only) · <Badge variant="accent">HIGH</Badge> limited_validation</> },
-              { key: "Network", value: <><Badge variant="accent">MEDIUM</Badge> Banner and TLS check (read-only) · <Badge variant="accent">HIGH</Badge> single_login_probe</> },
-              { key: "Source Code", value: <><Badge variant="accent">MEDIUM</Badge> Read the flagged line (read-only) · <Badge variant="accent">HIGH</Badge> secret_validation</> },
+              { key: "Web URL, API", value: <><Badge variant="accent">MEDIUM</Badge> Baseline request (read-only) · <Badge variant="accent">HIGH</Badge> Cross-account read check</> },
+              { key: "Network", value: <><Badge variant="accent">MEDIUM</Badge> Banner and TLS check (read-only) · <Badge variant="accent">HIGH</Badge> Default login probe</> },
+              { key: "Source Code", value: <><Badge variant="accent">MEDIUM</Badge> Read the flagged line (read-only) · <Badge variant="accent">HIGH</Badge> Check the flagged credential once</> },
             ]}
           />
         </DocSection>

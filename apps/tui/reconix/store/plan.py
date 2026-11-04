@@ -5,7 +5,7 @@ the approval requests its validation raises), with each row's status read live f
 run. Empty until a template is chosen.
 """
 
-from typing import List
+from typing import List, Tuple
 
 from ..models import GATE_ACCOUNT, GATE_APPROVAL_PREFIX, GATE_CODE, PlanRow, PlanTask
 from . import lists
@@ -77,12 +77,28 @@ def plan_overview() -> List[PlanRow]:
         tools = scoped_tools(task)
         if tools:
             detail = f"{detail} · {', '.join(tools)}"
-        rows.append(PlanRow(str(n), task.label, detail, "LOW", "auto", task.status))
+        status = task.status
+        if task.key == "validation" and status == "done" and validation_skipped():
+            status = "skipped"            # every gated check was rejected: nothing validated
+        rows.append(PlanRow(str(n), task.label, detail, "LOW", "auto", status))
         if task.key == "scanning" and needs_login:
             rows.append(_login_row(f"{n}a"))
         if task.key == "validation":
             rows.extend(_approval_rows(str(n)))
     return rows
+
+
+def rejected_checks() -> Tuple[int, int]:
+    """(rejected, gated): how many of the validation's gated checks you rejected, of all."""
+    decisions = [decision_for(r.request_id) for r in lists.current().approvals]
+    rejected = sum(1 for d in decisions if d is not None and d.decision == "REJECTED")
+    return rejected, len(decisions)
+
+
+def validation_skipped() -> bool:
+    """Every gated check was rejected, so the validation step ran none of them."""
+    rejected, gated = rejected_checks()
+    return gated > 0 and rejected == gated
 
 
 def gated_count() -> int:

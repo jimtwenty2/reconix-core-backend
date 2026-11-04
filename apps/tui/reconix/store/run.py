@@ -36,11 +36,13 @@ from .assessment import (
     get_assessment,
     is_empty_assessment,
     recorded_line,
+    shown_line,
 )
+from .confirm_check import checks_finding, elsewhere_note
 from .errors import StoreValidationError
 from .findings import finding_exists, findings_line, list_findings
-from .parser import keyword_hint, parse_request
-from .replies import reply_after_run, reply_to, reply_while_running
+from .parser import parse_request
+from .replies import reply_after_run, reply_to, reply_while_running, template_hint
 from .scope import (
     blocked_count,
     check_request,
@@ -101,10 +103,10 @@ def submit_prompt(text: str) -> str:
     Before a run, a line that names a target starts the run on it; anything else (a
     greeting, a question, "scan my network" without an address) gets a short answer and
     nothing starts. With a model active (a real provider or the offline mock) that answer is
-    the model's, except for a line a template keyword names, which gets the template hint:
-    the masked line is recorded and "ask" tells the app to call `llm_answer` off the UI
-    thread. A malformed target (10.0.0.300) raises, so the operator can fix it. During a run
-    the line goes to the assistant.
+    the model's, except for a line a template keyword names and that isn't a question, which
+    gets the template hint: the masked line is recorded and "ask" tells the app to call
+    `llm_answer` off the UI thread. A malformed target (10.0.0.300) raises, so the operator
+    can fix it. During a run the line goes to the assistant.
     """
     from .providers import active_model
 
@@ -118,7 +120,8 @@ def submit_prompt(text: str) -> str:
         add_chat("text", "you", line)
         # A line that names a kind of test but no target ("scan my network") gets Reconix's
         # own template hint first, with or without a model: it says what to type next.
-        if active_model() is not None and keyword_hint(line) is None:
+        # (a question never gets a template hint)
+        if active_model() is not None and not template_hint(line):
             return "ask"  # the app asks the model (llm_answer) in a worker
         add_chat("text", "reconix", reply_to(line), tone="muted")
         return "answered"
@@ -318,7 +321,7 @@ def stop_run() -> None:
     if not run.started or is_finished():
         raise StoreValidationError("No assessment is running.")
     add_activity("USER", "Stop requested", tone="block")
-    _stop("you stopped it", "Stopped by the operator. Nothing else will run.")
+    _stop("you stopped it", "You stopped it. Nothing else will run.")
 
 
 # --- playing steps ---------------------------------------------------------------------------
@@ -428,6 +431,26 @@ def _confirmed_later(fid: str) -> bool:
                for step in lists.current().script[run.cursor + 1:])
 
 
+def _check_before(index: int) -> Optional[ApprovalRequest]:
+    """The gated check whose steps hold `script[index]` (None: no gate before it)."""
+    script = lists.current().script
+    for step in reversed(script[:index]):
+        if step.kind == "gate" and step.name.startswith(GATE_APPROVAL_PREFIX):
+            return get_approval(step.name[len(GATE_APPROVAL_PREFIX):])
+        if step.kind == "phase":
+            return None
+    return None
+
+
+def _ran_elsewhere(finding, request: ApprovalRequest) -> None:
+    """The check was moved (Edit params) off the finding's own location: it can't confirm
+    the finding, and what it saw is not the finding's evidence."""
+    where = shown_line(request.path)
+    finding.evidence = [elsewhere_note(request, where)]
+    add_activity("POLICY", f"{finding.fid} stays unconfirmed: the check ran on {where}, "
+                 "not on the finding's own location", tone="warn")
+
+
 def _finding(fid: str):
     """The live finding row `fid` (the store's own; getters hand out copies)."""
     for finding in lists.current().findings:
@@ -507,6 +530,10 @@ def _apply(step: RunStep) -> None:
         finding = _finding(step.name)
         if step.text:
             finding.description = step.text
+        request = _check_before(run.cursor)
+        if request is not None and not checks_finding(request, finding):
+            _ran_elsewhere(finding, request)  # stays UNCONFIRMED: it tested something else
+            return
         finding.evidence = [line for _, line in step.rows]
         if step.value:
             finding.validation = "CONFIRMED"

@@ -22,7 +22,7 @@ from typing import Callable, List, Optional, Tuple
 from ..llm import LLMError, catalog, client, crypto, db, guardrail, mock
 from ..models import ActiveModel, ChatEntry
 from ..models.base import utc_now
-from .assessment import get_assessment
+from .assessment import get_assessment, shown_line
 from .errors import StoreValidationError
 from .redact import redact
 from .snapshot import uid_for
@@ -53,6 +53,15 @@ class Draft:
     notes: Tuple[str, ...] = ()
     activity: Tuple[str, ...] = ()
     core: bool = False
+
+
+def model_label(active: Optional[ActiveModel]) -> str:
+    """How a model's line is labelled in the chat: its model id, folded, masked and cut to
+    32 characters ("" without a model: the line is Reconix's own)."""
+    if active is None:
+        return ""
+    label = shown_line(active.model or "").replace(" ", "")
+    return label[:32] or "model"
 
 
 def reply(text: str, active: ActiveModel,
@@ -123,6 +132,7 @@ def record_draft(draft: Draft, placeholder: Optional[ChatEntry] = None) -> None:
         entry = placeholder
     else:
         entry = add_chat("text", "reconix", draft.text)
+    entry.author = model_label(draft.active)
     if draft.core:
         for note in draft.activity:
             add_activity("AI", note)
@@ -253,7 +263,8 @@ def _stream(active: ActiveModel, messages: List[dict], key: Optional[str],
 def _streamed(active: ActiveModel, messages: List[dict], key: Optional[str],
               base: Optional[str], on_update: Callable[[], None]) -> ChatEntry:
     """The reply as one chat line that grows while the model writes; a failure removes it."""
-    entry = add_chat("text", "reconix", THINKING, tone="muted")
+    entry = add_chat("text", "reconix", THINKING, tone="muted",
+                     author=model_label(active))
 
     def show(text: str) -> None:
         entry.text, entry.tone = text, "default"

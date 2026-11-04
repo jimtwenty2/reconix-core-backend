@@ -104,6 +104,7 @@ STATUS = {
     "done":         (GREEN,  "✓"),
     "active":       (CYAN,   "◌"),
     "pending":      (DIM,    "·"),
+    "skipped":      (CRITICAL, "✕"),   # a step whose every gated check you rejected
 }
 
 # (color, label) for an analyst's triage status. The labels are the store's TRIAGE_LABELS
