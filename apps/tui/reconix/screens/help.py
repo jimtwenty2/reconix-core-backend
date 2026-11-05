@@ -25,6 +25,7 @@ GLOBAL_ROWS: List[Row] = [
     ("?", "toggle this help (not inside a dialog; on the prompt when it is empty)"),
     ("^C", "stop the running assessment (asks first; copies selected text in a field)"),
     ("^O", "expand / collapse the steps Reconix finished (click one to open it)"),
+    ("^Y", "copy the selected text (drag with the mouse to select) to the clipboard"),
     ("^Q", "quit"),
 ]
 

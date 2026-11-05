@@ -81,7 +81,7 @@ from .scope_ask import (
 )
 from .scope_suggest import (
     apply_scope_suggest, fetch_scope_suggest, scope_suggest_failed, scope_suggest_request,
-    scope_suggesting, suggested_tools,
+    scope_reading, scope_suggesting, suggested_tools,
 )
 from .scope_view import describe_scope
 from .seed import load_demo_data
@@ -137,7 +137,8 @@ __all__ = [
     "scope_text", "plan_text", "approval_text", "template_text",
     "wants_scope_change", "answer_scope_change", "ScopeChoices", "reopen_scope",
     "scope_tick_choices", "scope_suggest_request", "fetch_scope_suggest",
-    "apply_scope_suggest", "scope_suggest_failed", "scope_suggesting", "suggested_tools",
+    "apply_scope_suggest", "scope_suggest_failed", "scope_suggesting",
+    "suggested_tools", "scope_reading",
     "scope_changeable", "wants_plan_change",
     "wants_decision", "asks_about_decision", "wants_view", "decision_reply", "view_reply",
     "wants_plan_reorder", "answer_plan_reorder", "reorder_gated", "movable_checks",

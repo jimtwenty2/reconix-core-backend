@@ -281,3 +281,23 @@ def test_summary_counts_every_human_approval():
     assert summary.status == "Completed"
     assert summary.approvals == ["scope", "MEDIUM", "HIGH"]
     assert (summary.blocked, summary.confirmed, summary.for_review) == (0, 0, 3)
+
+
+def test_report_dates_use_the_laptop_local_timezone(monkeypatch):
+    """Times are stored UTC; the report shows them in the laptop's local zone, labelled so
+    they can't be misread. The operator cannot edit a recorded scan time."""
+    import os
+    import time
+
+    from reconix.store import report_view
+
+    os.environ["TZ"] = "Asia/Bangkok"  # UTC+7
+    time.tzset()
+    try:
+        # a UTC evening is the next local day for UTC+7
+        assert report_view.short_date("2026-11-05T19:30:00+00:00") == "2026-11-06"
+        assert report_view.short_date("2026-11-05T05:30:00+00:00") == "2026-11-05"
+        assert report_view.tz_label() == "UTC+07:00"
+    finally:
+        del os.environ["TZ"]
+        time.tzset()

@@ -131,6 +131,12 @@ def scope_suggest_failed(request: SuggestRequest, reason: str) -> None:
         )
 
 
+def scope_reading() -> str:
+    """The AI's one-line reading of the operator's goal ("" when none was evaluated)."""
+    suggest = lists.current().scope_suggest
+    return suggest.reading if suggest else ""
+
+
 def suggested_tools() -> List[str]:
     """The AI's suggested tools for the current assessment ([] when there are none)."""
     suggest = lists.current().scope_suggest

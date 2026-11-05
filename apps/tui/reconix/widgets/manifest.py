@@ -13,6 +13,14 @@ def manifest_text(scope: ScopeManifest) -> Text:
     """The store's plain-language summary. Built as Text, so a typed target is never markup."""
     summary = store.describe_scope(scope)
     text = Text(summary.headline, style=theme.TEXT)
+    if scope.target_url.startswith(("http://", "https://")):
+        text.append("\nTarget  ", style=f"bold {theme.TEXT}")
+        text.append(scope.target_url, style=f"link {scope.target_url} {theme.CYAN}")
+        text.append("  (ctrl+click to open)", style=theme.DIM)
+    reading = store.scope_reading()
+    if reading:
+        text.append("\n\nYour goal", style=f"bold {theme.TEXT}")
+        text.append(f"\n  {reading}", style=theme.MUTED)
     text.append("\n\nWhat it may do", style=f"bold {theme.TEXT}")
     for item in summary.may_do:
         text.append("\n  ✓ ", style=theme.GREEN)
@@ -23,8 +31,16 @@ def manifest_text(scope: ScopeManifest) -> Text:
             text.append("\n  ✗ ", style=theme.CRITICAL)
             text.append(item, style=theme.MUTED)
     if summary.tools:
+        recommended = {name.casefold() for name in store.suggested_tools()}
         text.append("\n\nTools it will use: ", style=f"bold {theme.TEXT}")
-        text.append(", ".join(summary.tools), style=theme.MUTED)
+        for i, tool in enumerate(summary.tools):
+            if i:
+                text.append(", ", style=theme.MUTED)
+            if tool.casefold() in recommended:
+                text.append(tool, style=theme.GREEN)
+                text.append(" (recommended)", style=theme.DIM)
+            else:
+                text.append(tool, style=theme.MUTED)
     text.append("\nTime limit: ", style=f"bold {theme.TEXT}")
     limit = f"{scope.time_limit_minutes} min" if scope.time_limit_minutes > 0 else "no limit"
     text.append(limit, style=theme.MUTED)
