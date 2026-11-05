@@ -1,13 +1,18 @@
-# Security scan: OSV-Scanner, Gitleaks, Semgrep and Trivy, one job each, in parallel.
+# Security scan: OSV-Scanner, Gitleaks, Semgrep and Trivy, one job each, in parallel, then one
+# Telegram message with the result of each.
 #
 # Runs on our own runner (label "self-hosted-runner"); it needs Docker. Every tool runs from
 # its pinned image with the repo mounted read-only, so nothing is written into the workspace.
 # The private repo has no GitHub Advanced Security, so results go to each job's Summary page
 # and log, not the Security tab.
 #
-# Blocks:  OSV-Scanner (any known vulnerability), Gitleaks (any secret),
-#          Trivy (HIGH/CRITICAL vulnerability).
+# Blocks:  OSV-Scanner (any known vulnerability), Trivy (HIGH/CRITICAL vulnerability).
+# Warns:   Gitleaks (a secret gives a warning, the job still passes).
 # Reports: Semgrep and Trivy misconfigurations (never fail, for now).
+#
+# Telegram uses the same secrets as telegram-alerts.yml (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
+# optional TELEGRAM_THREAD_ID). Without them the message is skipped. The message holds only
+# pass/fail and counts, never a finding or a secret: the details stay in the run.
 #
 # To update a tool, change its image tag below (pick a release at least two weeks old).
 name: Security scan
@@ -39,11 +44,14 @@ jobs:
     name: OSV-Scanner (dependencies)
     runs-on: [self-hosted, self-hosted-runner]
     timeout-minutes: 15
+    outputs:
+      note: ${{ steps.scan.outputs.note }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Scan uv.lock and package-lock.json
+        id: scan
         shell: bash
         run: |
           set +e -o pipefail
@@ -53,18 +61,25 @@ jobs:
           code=${PIPESTATUS[0]}
           { echo "## OSV-Scanner (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
             >> "$GITHUB_STEP_SUMMARY"
+          # e.g. "Total 3 packages affected by 5 known vulnerabilities ..." or "No issues found"
+          note=$(grep -m1 -oiE 'total [0-9]+ packages? affected by [0-9]+ known vulnerabilit[a-z]*|no issues found' "$log")
+          echo "note=${note}" >> "$GITHUB_OUTPUT"
           exit "$code"
 
   gitleaks:
     name: Gitleaks (secrets)
     runs-on: [self-hosted, self-hosted-runner]
     timeout-minutes: 15
+    outputs:
+      note: ${{ steps.scan.outputs.note }}
+      warn: ${{ steps.scan.outputs.warn }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history
           persist-credentials: false
       - name: Scan git history
+        id: scan
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -85,17 +100,29 @@ jobs:
           code=${PIPESTATUS[0]}
           { echo "## Gitleaks (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
             >> "$GITHUB_STEP_SUMMARY"
+          # "leaks found: 3" or "no leaks found"
+          note=$(grep -m1 -oE '(no )?leaks found(: [0-9]+)?' "$log")
+          echo "note=${note}" >> "$GITHUB_OUTPUT"
+          # Warn only: a leak (exit 1) does not fail the job. Any other error means gitleaks broke.
+          if [ "$code" -eq 1 ]; then
+            echo "::warning title=Gitleaks::${note:-leaks found}; rotate the secret, see the log"
+            echo "warn=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           exit "$code"
 
   semgrep:
     name: Semgrep (code)
     runs-on: [self-hosted, self-hosted-runner]
     timeout-minutes: 20
+    outputs:
+      note: ${{ steps.scan.outputs.note }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Scan Python and TypeScript
+        id: scan
         shell: bash
         run: |
           set +e -o pipefail
@@ -107,33 +134,132 @@ jobs:
           code=${PIPESTATUS[0]}
           { echo "## Semgrep (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
             >> "$GITHUB_STEP_SUMMARY"
+          # "Ran 512 rules on 300 files: 4 findings."
+          note=$(grep -m1 -oE '[0-9]+ findings?' "$log")
+          echo "note=${note:+${note} (report only)}" >> "$GITHUB_OUTPUT"
           exit "$code" # non-zero only when semgrep itself broke
 
   trivy:
     name: Trivy (dependencies + config)
     runs-on: [self-hosted, self-hosted-runner]
     timeout-minutes: 20
+    outputs:
+      note: ${{ steps.scan.outputs.note }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Scan dependencies, Dockerfile and Compose files
+        id: scan
         shell: bash
         run: |
           set +e -o pipefail
-          log="$RUNNER_TEMP/trivy.log"
+          vuln_log="$RUNNER_TEMP/trivy-vuln.log"
+          config_log="$RUNNER_TEMP/trivy-config.log"
           # The vulnerability database is kept in a Docker volume between runs.
           trivy() { docker run --rm -v "$PWD:/src:ro" -v reconix-trivy-cache:/root/.cache "$TRIVY_IMAGE" "$@"; }
 
-          echo "### Vulnerabilities (HIGH, CRITICAL)" | tee "$log"
           trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
-            --exit-code 1 /src 2>&1 | tee -a "$log"
+            --exit-code 1 /src 2>&1 | tee "$vuln_log"
           code=${PIPESTATUS[0]}
 
-          echo "### Misconfigurations (report only)" | tee -a "$log"
-          trivy config --exit-code 0 /src 2>&1 | tee -a "$log"
+          trivy config --exit-code 0 /src 2>&1 | tee "$config_log"
           [ "${PIPESTATUS[0]}" -eq 0 ] || code=2 # trivy itself broke
 
-          { echo "## Trivy (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
-            >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Trivy (exit $code)"
+            echo "### Vulnerabilities (HIGH, CRITICAL)"; echo '```'; head -c 40000 "$vuln_log"; echo '```'
+            echo "### Misconfigurations (report only)"; echo '```'; head -c 20000 "$config_log"; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Each target prints "Total: N (...)" (vulnerabilities) or "Failures: N" (config).
+          vulns=$(grep -oE 'Total: [0-9]+' "$vuln_log" | awk '{s+=$2} END {print s+0}')
+          misconf=$(grep -oE 'Failures: [0-9]+' "$config_log" | awk '{s+=$2} END {print s+0}')
+          echo "note=${vulns} HIGH/CRITICAL vulnerabilities, ${misconf} misconfigurations" >> "$GITHUB_OUTPUT"
           exit "$code"
+
+  telegram:
+    name: Send Telegram summary
+    needs: [osv-scanner, gitleaks, semgrep, trivy]
+    if: ${{ !cancelled() }} # also after a failed scan; not when a newer run cancelled this one
+    runs-on: [self-hosted, self-hosted-runner]
+    timeout-minutes: 5
+    # GitHub values go in through env, never into the script text, so a branch name or a
+    # tool's output cannot inject shell code. They are HTML-escaped before they enter the message.
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+      REPO: ${{ github.repository }}
+      BRANCH: ${{ github.head_ref || github.ref_name }}
+      EVENT_NAME: ${{ github.event_name }}
+      SHA: ${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      OSV_RESULT: ${{ needs.osv-scanner.result }}
+      OSV_NOTE: ${{ needs.osv-scanner.outputs.note }}
+      # A leak shows as "warning", not "success": the job passes but the message flags it.
+      GITLEAKS_RESULT: ${{ needs.gitleaks.outputs.warn == 'true' && 'warning' || needs.gitleaks.result }}
+      GITLEAKS_NOTE: ${{ needs.gitleaks.outputs.note }}
+      SEMGREP_RESULT: ${{ needs.semgrep.result }}
+      SEMGREP_NOTE: ${{ needs.semgrep.outputs.note }}
+      TRIVY_RESULT: ${{ needs.trivy.result }}
+      TRIVY_NOTE: ${{ needs.trivy.outputs.note }}
+    steps:
+      - name: Send summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bash 5.2+ reads "&" in ${s//x/y} as the matched text; keep "&lt;" literal.
+          shopt -u patsub_replacement 2>/dev/null || true
+
+          if [ -z "${TELEGRAM_BOT_TOKEN}" ] || [ -z "${TELEGRAM_CHAT_ID}" ]; then
+            echo "::notice::TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set; no summary sent."
+            exit 0
+          fi
+
+          esc() { # HTML-escape for Telegram's parse_mode=HTML
+            local s=${1-}
+            s=${s//&/&amp;}; s=${s//</&lt;}; s=${s//>/&gt;}
+            printf '%s' "$s"
+          }
+          icon() {
+            case "$1" in
+              success) printf '✅' ;; failure) printf '❌' ;; skipped) printf '⏭' ;; *) printf '⚠️' ;;
+            esac
+          }
+          line() { # name, result, note
+            printf '%s <b>%s</b>: %s' "$(icon "$2")" "$1" "$2"
+            if [ -n "$3" ]; then printf ' (%s)' "$(esc "$3")"; fi
+            printf '\n'
+          }
+
+          overall="passed ✅"
+          if [ "$GITLEAKS_RESULT" = "warning" ]; then overall="passed with a warning ⚠️"; fi
+          for r in "$OSV_RESULT" "$GITLEAKS_RESULT" "$SEMGREP_RESULT" "$TRIVY_RESULT"; do
+            if [ "$r" != "success" ] && [ "$r" != "warning" ]; then overall="failed ❌"; fi
+          done
+          now="$(TZ=Asia/Phnom_Penh date '+%-I:%M %p') (Phnom Penh)"
+
+          text=$(
+            printf 'Security scan %s\n\n' "$overall"
+            printf 'Repository: %s\n' "$(esc "$REPO")"
+            printf 'Branch: %s\n' "$(esc "$BRANCH")"
+            printf 'Trigger: %s\n' "$(esc "$EVENT_NAME")"
+            printf 'Commit: %s\n' "${SHA:0:7}"
+            printf 'Time: %s\n\n' "$now"
+            line "OSV-Scanner" "$OSV_RESULT" "$OSV_NOTE"
+            line "Gitleaks" "$GITLEAKS_RESULT" "$GITLEAKS_NOTE"
+            line "Semgrep" "$SEMGREP_RESULT" "$SEMGREP_NOTE"
+            line "Trivy" "$TRIVY_RESULT" "$TRIVY_NOTE"
+            printf '\n<a href="%s">Open the run</a>' "$(esc "$RUN_URL")"
+          )
+
+          form=(--form-string "chat_id=${TELEGRAM_CHAT_ID}" --form-string "parse_mode=HTML"
+                --form-string "text=${text}" --form-string 'link_preview_options={"is_disabled":true}')
+          if [ -n "${TELEGRAM_THREAD_ID}" ]; then
+            form+=(--form-string "message_thread_id=${TELEGRAM_THREAD_ID}")
+          fi
+          # GitHub masks the token in the log.
+          if ! curl --silent --show-error --fail-with-body --max-time 30 "${form[@]}" \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" >/dev/null; then
+            echo "::warning::Telegram summary failed to send."
+          fi
