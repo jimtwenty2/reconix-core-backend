@@ -27,7 +27,7 @@ jobs:
     if: >-
       (github.event_name == 'push' && !github.event.deleted) ||
       (github.event_name == 'pull_request' && !github.event.pull_request.draft)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, self-hosted-runner] # needs curl and jq on the runner
     timeout-minutes: 5
     # GitHub values go in through env, never into the script text, so a PR title or commit
     # message cannot inject shell code. They are HTML-escaped before they enter the message.
