@@ -26,6 +26,9 @@ class ApprovalRequest:
     param_label: str = ""      # "Path" | "Host:port" | "File"; "" = nothing to edit
     target_pattern: str = ""
     command_pattern: str = ""
+    # The Core API's approval this request shows ("" for none). The API checked the action
+    # twice already and decides it; the app only records your answer and sends it there.
+    api_approval_id: str = ""
 
 
 @dataclass
@@ -35,6 +38,8 @@ class ApprovalDecision:
     operator: str
     command_hash: str
     reason: str = ""   # no longer asked (HIGH is double-checked); older saved copies have one
+    typed_target: str = ""   # HIGH: the target as you typed it (the API compares it)
+    sent: bool = True        # False until the Core API has the decision
     created_at: datetime = field(default_factory=utc_now)
 
 

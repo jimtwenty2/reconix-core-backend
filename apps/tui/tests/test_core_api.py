@@ -15,6 +15,7 @@ from reconix.llm import client as llm_client
 from reconix.models import ScopeManifest
 
 from .support import run_to
+from .support import DEMO_REQUEST
 
 URL = "http://127.0.0.1:8000"
 TOKEN = "fake-session-token-0001"  # noqa: S105 - a fake
@@ -128,12 +129,6 @@ def approved(api, model_active):
 
 
 @pytest.fixture
-def direct_model(monkeypatch):
-    """The model called directly (the fallback) answers this."""
-    monkeypatch.setattr(llm_client, "complete", lambda *a, **k: "The model's own answer.")
-
-
-@pytest.fixture
 def no_direct_model(monkeypatch):
     """In Core API mode the app never calls the model itself."""
 
@@ -148,9 +143,10 @@ def last_reply() -> str:
     return store.get_assessment().chat[-1].text
 
 
-def test_off_unless_the_address_is_set(monkeypatch):
+def test_on_by_default_at_this_computers_api(monkeypatch):
     monkeypatch.delenv(client.ENV_URL, raising=False)
-    assert not core_api.enabled()
+    assert core_api.enabled()
+    assert client.base_url() == client.DEFAULT_URL == "http://127.0.0.1:8000"
 
 
 @pytest.mark.parametrize(
@@ -194,14 +190,13 @@ def test_the_api_uses_the_model_you_chose(api, approved, no_direct_model):
     assert any("Core API uses" in a.message for a in store.list_activity())
 
 
-def test_a_remote_model_is_not_approved_without_your_ok(api, model_active, direct_model):
+def test_a_remote_model_is_not_approved_without_your_ok(api, model_active, no_direct_model):
     store.llm_answer("hello")
 
     assert not any(p.endswith("/activate") or p.startswith("POST /approvals")
                    for p in api.paths())
-    texts = [e.text for e in store.get_assessment().chat]
-    assert any("needs your OK" in t and "/provider" in t for t in texts)
-    assert texts[-1] == "The model's own answer."          # chat still works, directly
+    assert not any(p.endswith("/chat") for p in api.paths())
+    assert "needs your OK" in last_reply() and "/provider" in last_reply()
 
 
 def test_a_model_on_this_computer_needs_no_ok(api, reachable, no_direct_model):
@@ -231,8 +226,8 @@ def test_only_a_remote_model_in_core_api_mode_asks(api, monkeypatch, model_activ
     store.activate("ollama", "llama3.2")
     assert not store.core_api_needs_ok()
     store.activate("openai", "gpt-4o-mini")
-    monkeypatch.delenv(client.ENV_URL)
-    assert not store.core_api_needs_ok()
+    monkeypatch.delenv(client.ENV_URL)          # the default address: the API is still used
+    assert store.core_api_needs_ok()
 
 
 def test_the_token_and_key_never_show(api, approved):
@@ -243,47 +238,35 @@ def test_the_token_and_key_never_show(api, approved):
     assert TOKEN not in shown and "sk-x-1234" not in shown
 
 
-def test_without_a_model_nothing_is_sent(api):
-    store.llm_answer("hello")
-
-    assert api.calls == []
-    texts = [e.text for e in store.get_assessment().chat]
-    assert not any("Core API" in t for t in texts)          # the built-in reply, as before
-
-
-def test_an_api_that_is_down_falls_back_to_the_model(api, approved, direct_model):
+def test_an_api_that_is_down_is_said_plainly(api, approved, no_direct_model):
     api.down = True
 
     store.llm_answer("hello")
 
     texts = [e.text for e in store.get_assessment().chat]
-    assert any("Core API unavailable (the Core API is not running" in t for t in texts)
     assert "thinking…" not in texts                    # the placeholder is taken back out
-    assert texts[-1] == "The model's own answer."
+    assert texts[-1].startswith("The AI couldn't answer: the Core API is not running")
 
 
-def test_an_api_error_is_shown_as_the_api_said_it(api, approved, direct_model):
+def test_an_api_error_is_shown_as_the_api_said_it(api, approved, no_direct_model):
     api.fail = (503, "MODEL_UNAVAILABLE", "The model could not answer. Is it running?")
 
     store.llm_answer("hello")
 
-    texts = [e.text for e in store.get_assessment().chat]
-    assert any("Core API unavailable (The model could not answer." in t for t in texts)
-    assert texts[-1] == "The model's own answer."
+    assert last_reply().startswith("The AI couldn't answer: The model could not answer.")
 
 
-def test_a_plan_the_api_cant_draft_is_asked_of_the_model(api, approved, monkeypatch):
+def test_a_plan_the_api_cant_draft_is_said_plainly(api, approved, no_direct_model):
     run_to("scope")
     store.approve_scope()
     request = store.plan_draft_request()
     api.down = True
-    phases = {"phases": [{"key": "discovery", "label": "Direct plan", "detail": "", "tools": []}]}
-    monkeypatch.setattr(llm_client, "complete", lambda *a, **k: json.dumps(phases))
 
-    raw = store.fetch_plan_draft(request)
+    with pytest.raises(client.CoreApiError) as exc:
+        store.fetch_plan_draft(request)
+    store.plan_draft_failed(request, str(exc.value))
 
-    assert store.apply_plan_draft(request, raw)
-    assert {t.key: t.label for t in store.plan_tasks()}["discovery"] == "Direct plan"
+    assert not store.plan_drafting()
     assert any("couldn't draft the plan" in a.message for a in store.list_activity())
 
 
@@ -300,7 +283,7 @@ def test_the_scope_goes_to_the_api_and_follows_your_edits(api, approved, no_dire
         "excluded": True,
     } in draft["targets"]
 
-    assert api.bodies("POST", "/sessions/s-1/messages") == [{"content": store.DEMO_REQUEST}]
+    assert api.bodies("POST", "/sessions/s-1/messages") == [{"content": DEMO_REQUEST}]
 
     store.edit_scope(tools=["Nuclei"])
     store.llm_answer("And now?")
@@ -323,7 +306,7 @@ def test_an_approved_scope_is_approved_on_the_api_and_the_plan_drafted(
     assert "POST /scope-manifests/m-1/submit" in paths
     assert "POST /approvals/a-scope/approve" in paths
     assert "POST /assessments/as-1/plan?draft=true" in paths
-    assert "POST /agent-runs/r-1/discard" in paths  # never sent to run from here
+    assert not any(p.endswith("/send") for p in paths)  # kept as a draft until Run plan
     tasks = {task.key: task for task in store.plan_tasks()}
     assert tasks["discovery"].label == "Find the shop's pages"
     assert tasks["discovery"].tools == ("OWASP ZAP",)  # the scope's own name
@@ -359,7 +342,7 @@ def network_scope(**values) -> ScopeManifest:
 def test_a_network_scope_in_the_apis_shape():
     draft = scope_map.scope_draft(network_scope())
 
-    assert draft["allowed_tools"] == ["NMAP"]  # testssl.sh: not an API tool
+    assert draft["allowed_tools"] == ["NMAP", "TESTSSL"]  # Kali catalog names
     assert draft["allowed_ports"] == [22, 443]
     assert draft["allowed_actions"] == ["discovery", "scan"]
     assert draft["allowed_methods"] == []
@@ -373,7 +356,7 @@ def test_a_network_scope_in_the_apis_shape():
     ("values", "code"),
     [
         ({"kind": "source"}, "SCOPE_NOT_SUPPORTED"),
-        ({"tools": ["testssl.sh"]}, "NO_API_TOOLS"),
+        ({"tools": []}, "NO_API_TOOLS"),
     ],
 )
 def test_a_scope_the_api_cant_take_is_refused(values, code):

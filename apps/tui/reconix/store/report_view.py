@@ -186,7 +186,8 @@ def scope_rows(data: Dict[str, Any]) -> List[Tuple[str, str]]:
     if scope.get("allowed_ports"):
         rows.append(("Allowed ports", ", ".join(str(p) for p in scope["allowed_ports"])))
     rows += [
-        ("Time limit", f"{scope.get('time_limit_minutes', 0)} minutes"),
+        ("Time limit", (f"{scope.get('time_limit_minutes', 0)} minutes"
+                        if scope.get('time_limit_minutes', 0) else "No limit")),
         ("Tools", ", ".join(scope.get("tools", [])) or "—"),
     ]
     return rows

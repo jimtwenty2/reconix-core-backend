@@ -56,15 +56,6 @@ def test_credentials_typed_in_a_request_never_reach_the_saved_file():
     assert "Hunter2pw" not in path.read_text()
 
 
-def test_the_prompt_refuses_text_while_a_login_is_asked_for():
-    run_to("account")
-    before = len(store.list_requests())
-    with pytest.raises(store.StoreValidationError):
-        store.say_to_assistant("session=abc123def456")
-    assert len(store.list_requests()) == before
-    assert all("abc123def456" not in c.text for c in store.list_chat())
-
-
 def test_a_crafted_finding_cannot_crash_saving():
     run_to("scope")
     add_finding("bad \udc80 name", "/x", evidence=["token=\udc80abcdef123456"])

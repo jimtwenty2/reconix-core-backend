@@ -9,7 +9,7 @@ import { escapedSecret, MASK, maskValues, redact } from "@/lib/assistant/redact"
 import { maskSavedKeys, savedKeys } from "@/lib/assistant/models/known-keys";
 import { addProvider } from "@/lib/assistant/models/store";
 
-const MOCK_KEY = "sk-mock-0000-1234"; // the evaluator's mock key: too short for the sk- shape
+const SHORT_KEY = "sk-mock-0000-1234"; // a fake key too short for the sk- shape
 const saved = { ...process.env };
 let root = "";
 
@@ -33,12 +33,12 @@ describe("maskValues", () => {
 describe("the saved model keys", () => {
   it("are none when nothing is saved", async () => {
     expect(await savedKeys()).toEqual([]);
-    expect(await maskSavedKeys(`my key ${MOCK_KEY}`)).toBe(`my key ${MOCK_KEY}`);
+    expect(await maskSavedKeys(`my key ${SHORT_KEY}`)).toBe(`my key ${SHORT_KEY}`);
   });
   it("are masked by value in a question", async () => {
-    await addProvider({ name: "Local", preset: "custom", baseUrl: "http://127.0.0.1:11434/v1", models: ["m"], apiKey: MOCK_KEY });
-    expect(redact(`my key ${MOCK_KEY}`)).toContain(MOCK_KEY); // no shape catches it
-    const masked = await maskSavedKeys(`my key ${MOCK_KEY} works`);
+    await addProvider({ name: "Local", preset: "custom", baseUrl: "http://127.0.0.1:11434/v1", models: ["m"], apiKey: SHORT_KEY });
+    expect(redact(`my key ${SHORT_KEY}`)).toContain(SHORT_KEY); // no shape catches it
+    const masked = await maskSavedKeys(`my key ${SHORT_KEY} works`);
     expect(masked).toBe(`my key ${MASK} works`);
   });
 });

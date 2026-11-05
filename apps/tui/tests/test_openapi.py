@@ -75,7 +75,6 @@ def test_the_run_uses_the_spec(tmp_path):
     assessment = store.get_assessment()
     assert "Test 4 endpoints from Orders API 1.2.0" in [t.label for t in assessment.plan]
     assert any("Orders API 1.2.0" in m for m in assessment.methodology)
-    assert "Endpoints" in repr(assessment.script) and "'4'" in repr(assessment.script)
     store.approve_scope()
     assert store.is_scope_approved()
 

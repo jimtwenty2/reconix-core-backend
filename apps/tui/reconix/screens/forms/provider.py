@@ -50,13 +50,6 @@ class ProviderForm(FormScreen):
                 ("Base URL and model come from .env (read-only):\n", theme.MUTED),
                 (f"  {self._view.base_url}\n  {model}", theme.DIM),
             )
-        if self._view.kind == "mock":                 # offline: prepared answers, no address
-            return Text.assemble(
-                ("Prepared answers on this computer, for testing. No network, no address.\n",
-                 theme.MUTED),
-                (f"  {', '.join(self._view.models)} · the key is optional\n"
-                 "  (try a fake one: only its last 4 characters are shown)", theme.DIM),
-            )
         if self._view.kind == "frontier":             # cloud: just the key, models are known
             return Text.assemble(
                 ("Just the API key — this provider's models are built in:\n", theme.MUTED),

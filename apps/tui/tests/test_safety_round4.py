@@ -12,15 +12,25 @@ from pathlib import Path
 import pytest
 
 from reconix import store
-from reconix.llm import catalog
 from reconix.store import known_secrets, persist
 from reconix.store.policy import repo_path_reason
 from reconix.store.redact import HIDDEN_LINE, MASK, escaped_secret, redact
 
-from .support import TEST_PASSWORD, decide, play_until_gate, run_to
+from .support import TEST_PASSWORD, play_until_gate, run_to
 
-MOCK_KEY = "sk-mock-0000-1234"  # the evaluator's mock key: too short for the sk- shape
+SHORT_KEY = "sk-fake-0000-1234"  # a fake key too short for the sk- shape  # noqa: S105
+PROVIDER = "openai"
 FIRST_KEY, OTHER_KEY = "first-key-1111", "other-key-2222"
+
+
+def _with_test_login() -> None:
+    """A run to the end, with the test account (TEST_PASSWORD) kept in this assessment's
+    vault, the way the target login stores it."""
+    from reconix.models.vault import Secret, VaultEntry
+
+    run_to(None)
+    store.get_assessment().vault.append(
+        VaultEntry("password", Secret(TEST_PASSWORD), identity="demo.tester"))
 
 
 def _recorded_texts():
@@ -66,7 +76,7 @@ def test_the_keyword_rules_are_linear_on_long_runs(unit):
 
 # --- S2: secrets Reconix holds, masked by their value -------------------------------------------
 def test_the_target_login_password_is_masked_wherever_it_is_typed():
-    run_to(None)  # the whole run: the test account (TEST_PASSWORD) was given at the login
+    _with_test_login()
     assert TEST_PASSWORD in known_secrets.values()
     line = f"does {TEST_PASSWORD} still work"
     sent = store.say_operator_line(line)  # what a model would be sent
@@ -80,20 +90,20 @@ def test_the_target_login_password_is_masked_wherever_it_is_typed():
 
 
 def test_a_saved_model_key_is_masked_in_a_typed_line():
-    assert redact(f"key {MOCK_KEY}") == f"key {MOCK_KEY}"  # no shape catches it
-    store.set_provider(catalog.MOCK_ID, api_key=MOCK_KEY)
-    assert redact(f"key {MOCK_KEY}") == f"key {MASK}"
-    store.submit_prompt(f"my key is {MOCK_KEY} ok?")
-    store.add_history(f"use {MOCK_KEY}")
-    assert not any(MOCK_KEY in text for text in _recorded_texts())
+    assert redact(f"key {SHORT_KEY}") == f"key {SHORT_KEY}"  # no shape catches it
+    store.set_provider(PROVIDER, api_key=SHORT_KEY, models=["gpt-4o-mini"])
+    assert redact(f"key {SHORT_KEY}") == f"key {MASK}"
+    store.submit_prompt(f"my key is {SHORT_KEY} ok?")
+    store.add_history(f"use {SHORT_KEY}")
+    assert not any(SHORT_KEY in text for text in _recorded_texts())
 
 
 def test_a_changed_model_key_is_masked_and_the_old_one_no_longer_is():
-    store.set_provider(catalog.MOCK_ID, api_key=FIRST_KEY)
+    store.set_provider(PROVIDER, api_key=FIRST_KEY, models=["gpt-4o-mini"])
     assert redact("first-key-1111") == MASK
-    store.set_provider(catalog.MOCK_ID, api_key=OTHER_KEY)
+    store.set_provider(PROVIDER, api_key=OTHER_KEY, models=["gpt-4o-mini"])
     assert redact("other-key-2222 first-key-1111") == f"{MASK} first-key-1111"
-    store.unset_provider(catalog.MOCK_ID)
+    store.unset_provider(PROVIDER)
     assert redact("other-key-2222") == "other-key-2222"
 
 
@@ -112,7 +122,7 @@ def test_reading_the_keys_creates_no_settings_or_key_file():
 
 
 def test_a_login_value_behind_a_control_character_hides_the_line():
-    run_to(None)
+    _with_test_login()
     half = len(TEST_PASSWORD) // 2
     hidden = TEST_PASSWORD[:half] + "\x00" + TEST_PASSWORD[half:]
     assert escaped_secret(hidden) and redact(f"x {hidden}") == HIDDEN_LINE
@@ -200,10 +210,11 @@ def test_percent_encoded_traversal_leaves_the_repository(target):
 
 def test_the_source_template_refuses_a_nested_excluded_folder():
     store.start_run("review repo https://git.example.com/acme/app.git")
-    decide(play_until_gate())  # scope (the repo picked Source Code)
-    assert store.check_request("read", "app/main.py").allowed
-    assert not store.check_request("read", "app/.git/config").allowed
-    assert not store.check_request("read", "app/secrets/prod.env").allowed
+    assert play_until_gate() == "scope"  # the repo picked Source Code; checked on the draft
+    excluded = store.get_scope().excluded_paths
+    assert repo_path_reason("app/main.py", excluded) == ""
+    assert repo_path_reason("app/.git/config", excluded)
+    assert repo_path_reason("app/secrets/prod.env", excluded)
 
 
 # --- S6: LiteLLM uses its own price list, no download ---------------------------------------------

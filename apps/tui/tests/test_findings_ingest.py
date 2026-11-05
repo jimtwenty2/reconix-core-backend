@@ -1,4 +1,4 @@
-"""Findings added from outside the scripted run (the AI agent): four severities, no repeats."""
+"""Findings added from outside the API run: the API's six severities only, no repeats."""
 
 from reconix import store
 from reconix.models import Finding
@@ -12,7 +12,7 @@ def _finding(severity: str, title: str = "T") -> Finding:
                    description="", affected_url="/p", impact="", remediation="", tool="agent")
 
 
-def test_only_the_four_severities_are_stored():
+def test_only_the_apis_severities_are_stored():
     run_to(None)
     before = len(store.list_findings())
     added = ingest_external([_finding("INFO", "a"), _finding("", "b"), _finding("BOGUS", "c"),
@@ -20,7 +20,8 @@ def test_only_the_four_severities_are_stored():
     assert added == 1
     assert len(store.list_findings()) == before + 1
     assert store.severity_counts()["HIGH"] == 1
-    assert set(store.severity_counts()) == {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
+    assert set(store.severity_counts()) == {"CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE",
+                                            "UNKNOWN"}
 
 
 def test_a_repeat_is_not_added_twice():

@@ -3,17 +3,17 @@
 import pytest
 
 from reconix import store
-from reconix.store.seed import DEMO_REQUEST as USER_REQUEST
 
 
-def test_history_is_seeded_with_the_demo_request():
-    assert store.list_history() == [USER_REQUEST]
+def test_history_starts_empty():
+    """No demo target is offered with ↑: a real scan is never one key away."""
+    assert store.list_history() == []
 
 
 def test_add_history_normalizes_and_skips_repeats():
     store.add_history("  /plan  ")
     store.add_history("/plan")
-    assert store.list_history() == [USER_REQUEST, "/plan"]
+    assert store.list_history() == ["/plan"]
 
 
 def test_add_history_rejects_empty_and_long_text():

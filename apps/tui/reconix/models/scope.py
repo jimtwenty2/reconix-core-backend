@@ -21,6 +21,16 @@ class ScopeManifest:
     status: str = "DRAFT"     # "DRAFT" | "APPROVED"
 
 
+@dataclass
+class ScopeSuggest:
+    """The AI's reading of the operator's goal at the Scope step, and what it suggests. The
+    suggestions are offered unticked; only the operator's tick changes the scope."""
+
+    reading: str                       # one line: what the AI understood the goal to need
+    tools: List[str] = field(default_factory=list)   # app tool names it suggests adding
+    paths: List[str] = field(default_factory=list)   # paths it suggests (excluded or focus)
+
+
 @dataclass(frozen=True)
 class ScopeSummary:
     """A scope manifest in plain words, for a person to read before approving it."""

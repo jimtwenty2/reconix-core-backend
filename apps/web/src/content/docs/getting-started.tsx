@@ -50,7 +50,6 @@ export const gettingStarted: GroupContent = {
               { key: "Terminal (TUI)", value: "The screens, keys and slash commands. Built with Textual. It only asks; it never decides." },
               { key: "Store", value: "The authority: every decision goes through a store function that validates it. Holds the run, the scope, the policy engine, the approvals and the findings." },
               { key: "LLM layer", value: "Providers and the active model (/provider, /model). Keys are encrypted in ~/.reconix/llm.db; the model is called through LiteLLM and can only propose text." },
-              { key: "Backend harness", value: "Optional, and not part of this release. The AI agent behind /assess: plans, runs tools through a Kali MCP server, reports findings into the store." },
               { key: "Reports", value: "PDF, JSON and DOCX written to ./reports/, in the directory you started Reconix in." },
               { key: "Web dashboard", value: "Optional, started by /web. Read-only views of the saved runs and an AI Assistant. Assessments run and are decided in this TUI only." },
             ]}

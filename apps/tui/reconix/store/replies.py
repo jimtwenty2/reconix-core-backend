@@ -25,7 +25,7 @@ RUNNING = ("Without a model I can't answer that, and a typed line changes nothin
 AFTER_RUN = ("The assessment is finished. With a model set (/model) you can ask about its "
              "findings; otherwise use /findings, /report, or /new to start another.")
 
-NO_MODEL = "No AI model is set: /provider sets one (the offline mock needs no key)."
+NO_MODEL = "No AI model of your own is set: /provider sets one (the Core API uses its own)."
 BEFORE_TARGET = ("Ask the model once an assessment has started: before a target, nothing "
                  "you type is sent to it.")
 

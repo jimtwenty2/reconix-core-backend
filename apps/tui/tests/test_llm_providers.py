@@ -139,4 +139,4 @@ def test_display_status_lists_every_provider():
     ids = [p.id for p in store.list_providers()]
     assert ids[0] == "reconix"                            # listed first / default
     assert set(ids) == {"reconix", "openai", "anthropic", "deepseek",
-                        "ollama", "openai_compatible", "mock"}
+                        "ollama", "openai_compatible"}

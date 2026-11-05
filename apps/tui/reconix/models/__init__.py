@@ -8,6 +8,7 @@ from .assessment import Assessment, UserRequest
 from .auth import AuthChallenge, AuthField, challenge_for
 from .choice import Choice
 from .finding import Finding
+from .live import LiveRun
 from .provider import ActiveModel, ProviderView
 from .report import AssessmentSummary, ReportFormat
 from .run import (
@@ -15,7 +16,7 @@ from .run import (
     PROGRESS_BARS,
     PlanRow, PlanTask, RunState, RunStep,
 )
-from .scope import PolicyVerdict, ScopeManifest, ScopeSummary
+from .scope import PolicyVerdict, ScopeManifest, ScopeSuggest, ScopeSummary
 from .template import Template
 from .transcript import ActivityEntry, ChatEntry, Entry, MessageItem, StreamItem, ThinkingItem
 from .vault import Secret, TestAccount, VaultEntry
@@ -24,9 +25,10 @@ __all__ = [
     "ApiSpec", "ApiFormResult", "ApiSchemaDigest", "ApiEndpoint", "ApiParam", "ApiBodyField",
     "Assessment", "UserRequest", "AuthChallenge", "AuthField", "challenge_for",
     "ApprovalRequest", "ApprovalDecision", "Confirmation",
-    "Finding", "AuditEvent", "HistoryEntry", "Choice", "Feedback", "Template",
+    "Finding", "LiveRun", "AuditEvent", "HistoryEntry", "Choice", "Feedback", "Template",
     "ProviderView", "ActiveModel",
-    "ScopeManifest", "ScopeSummary", "PolicyVerdict", "TestAccount", "VaultEntry", "Secret",
+    "ScopeManifest", "ScopeSummary", "ScopeSuggest", "PolicyVerdict", "TestAccount",
+    "VaultEntry", "Secret",
     "ChatEntry", "ActivityEntry", "Entry", "MessageItem", "ThinkingItem", "StreamItem",
     "RunStep", "RunState", "PlanTask", "PlanRow", "PROGRESS_BARS",
     "ReportFormat", "AssessmentSummary",

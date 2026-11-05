@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from reconix import store
 from reconix.commands import COMMANDS
 from reconix.screens import (
@@ -10,7 +12,7 @@ from reconix.screens import (
 )
 from reconix.widgets import PromptBox, UserMessage
 
-from .support import SIZE, settle, show
+from .support import SIZE, settle, show, wait_until
 
 
 def box(app) -> PromptBox:
@@ -71,15 +73,30 @@ async def test_conversation_history_is_scrollable(app):
         assert app.screen.query("#start-conversation")         # in the scrollable container
 
 
-async def test_a_question_gets_an_answer_and_nothing_starts(app):
+async def _ask(app, pilot, text: str) -> str:
+    """Type a question at Start; return the reply once the Core API's answer is in."""
+    box(app).input.value = text
+    await pilot.press("enter")
+    await settle(pilot)
+    await wait_until(pilot, lambda: "API" in str(app.screen.query_one("#start-reply").render())
+                     or "couldn't answer" in str(app.screen.query_one("#start-reply").render()),
+                     what="the reply")
+    return str(app.screen.query_one("#start-reply").render())
+
+
+async def test_a_question_gets_the_apis_answer_and_nothing_starts(app, local_model):
     async with app.run_test(size=SIZE) as pilot:
-        box(app).input.value = "hello"
-        await pilot.press("enter")
-        await settle(pilot)
+        reply = await _ask(app, pilot, "hello")
         assert isinstance(app.screen, StartScreen)
         assert not store.get_run().started
         assert "› hello" in str(app.screen.query_one(".user-msg").render())
-        assert "Hi!" in str(app.screen.query_one("#start-reply").render())
+        assert "The API's answer." in reply
+
+
+async def test_without_a_local_model_the_core_apis_own_model_answers(app):
+    async with app.run_test(size=SIZE) as pilot:
+        reply = await _ask(app, pilot, "hello")
+        assert "The API's answer." in reply
 
 
 async def test_a_target_starts_the_run_and_shows_the_request(app):
@@ -142,8 +159,8 @@ async def test_up_recalls_history(app):
         await pilot.pause()
         assert box(app).input.value == "/plan"
         assert not box(app).menu_open
-        await pilot.press("up")
-        assert box(app).input.value == store.DEMO_REQUEST
+        await pilot.press("up")                           # nothing older: no demo request
+        assert box(app).input.value == "/plan"
 
 
 async def test_question_mark_opens_help_only_on_an_empty_prompt(app):
@@ -186,3 +203,11 @@ async def test_the_bar_refuses_plain_text(app):
         await settle(pilot)
         assert isinstance(app.screen, CommandBarScreen)
         assert store.list_requests() == []
+
+
+@pytest.fixture
+def local_model(reachable):
+    """A model on this computer, active here: the Core API uses it at once (no approval)."""
+    store.set_provider("ollama", base_url="http://127.0.0.1:11434", models=["llama3.2"])
+    store.test_provider("ollama")
+    store.activate("ollama", "llama3.2")

@@ -31,7 +31,7 @@ def _broken_writer(reports_dir):
 
 
 def _refused_and_untouched(reports_dir, fmt: str) -> None:
-    saved = reports_dir / f"RCX-DEMO-001.{fmt}"
+    saved = reports_dir / f"RCX-001.{fmt}"
     before = saved.read_bytes()
     with pytest.raises(store.StoreValidationError) as refused:
         store.generate_report(fmt)

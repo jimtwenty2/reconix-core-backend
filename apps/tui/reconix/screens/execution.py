@@ -226,6 +226,12 @@ class ExecutionScreen(ReconixScreen):
     # --- keys ---------------------------------------------------------------------------------
     def action_advance(self) -> None:
         state = run_state()
+        if store.time_limit_pending():          # the time limit is up: ask Continue or Stop
+            self.app.ask_time_limit()
+            return
+        if store.retry_live():                  # a Core API call failed: ask it again
+            self.app.resume_run()
+            return
         if state in ("approval", "login"):
             self.app.open_gate(store.waiting_gate())
         elif state in ("complete", "stopped"):

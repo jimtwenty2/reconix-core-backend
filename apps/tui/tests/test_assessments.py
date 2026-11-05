@@ -5,7 +5,8 @@ from reconix.screens import (
     ApprovalScreen, ChoiceScreen, FindingsListScreen, StartScreen, TemplateScreen,
 )
 
-from .support import SIZE, decide, play_until_gate, run_to, settle
+from .support import SIZE, decide, play_until_gate, run_to, settle, wait_until
+from .support import DEMO_REQUEST
 
 
 def test_a_new_assessment_keeps_the_earlier_ones():
@@ -81,11 +82,12 @@ async def test_reopening_shows_where_it_stands(app):
 
 
 async def test_reopening_a_running_assessment_resumes_it(app):
-    # Drive the first assessment to a between-gates running state (no waiting gate).
-    store.start_run(store.DEMO_REQUEST)            # the URL picks Web URL itself
-    for _ in range(4):                             # scope, plan, account, code
+    # Drive the first assessment to a between-gates running state (no waiting gate): the
+    # plan is sent, its first step not asked for yet.
+    store.start_run(DEMO_REQUEST)            # the URL picks Web URL itself
+    for _ in range(2):                             # scope (and its plan draft), plan
         decide(play_until_gate())
-    store.advance()                                # play past the code gate
+    store.advance()                                # play past the plan gate
     assert store.waiting_gate() == "" and not store.is_finished()
     store.new_assessment()
 
@@ -93,9 +95,11 @@ async def test_reopening_a_running_assessment_resumes_it(app):
         await settle(pilot)
         app.switch_assessment(0)
         await settle(pilot)
-        # The run played on to the next (MEDIUM) gate, which opened its screen.
-        assert store.waiting_gate() == "approval:approval-001"
-        assert isinstance(app.screen, ApprovalScreen)
+        # The run played on: the Core API ran the LOW step and holds the MEDIUM one.
+        await wait_until(pilot, lambda: isinstance(app.screen, ApprovalScreen),
+                         what="the MEDIUM approval")
+        assert store.waiting_gate().startswith("approval:")
+        assert store.get_approval(store.waiting_gate().split(":", 1)[1]).risk == "MEDIUM"
 
 
 # --- /new on an assessment that is still empty -------------------------------------------------

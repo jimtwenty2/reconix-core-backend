@@ -94,6 +94,28 @@ def asks_about_decision(text: str) -> bool:
     return _has_verb(text) and _is_question(text)
 
 
+# A request to change the plan itself (not the scope): add/remove/change a step or phase,
+# focus somewhere, re-plan. Scope-level words (a tool or port) are handled by wants_scope_change
+# first, so this is for plan wording and emphasis the AI can re-draft within the same scope.
+_PLAN_CHANGE_VERB = (
+    "add", "remove", "drop", "change", "edit", "replace", "include", "skip", "focus",
+    "prioriti", "redraft", "re-draft", "redo", "replan", "re-plan", "another", "more",
+    "different", "instead", "also",
+)
+_PLAN_CHANGE_NOUN = ("step", "steps", "plan", "phase", "phases", "scan", "check", "test",
+                     "coverage", "stage")
+
+
+def wants_plan_change(text: str) -> bool:
+    """A line asking to change the test plan (add/change a step, focus somewhere, re-plan):
+    the AI re-drafts the plan and you review it. Only meaningful at the Plan step."""
+    low = text.casefold()
+    if not any(noun in low for noun in _PLAN_CHANGE_NOUN):
+        return False
+    return (any(verb in low for verb in _PLAN_CHANGE_VERB)
+            or (_is_question(text) and ("plan" in low or "step" in low)))
+
+
 def wants_view(text: str) -> str:
     """"show the scope", "give the plan": "scope" or "plan" (its card, then the menu)."""
     match = _VIEW.match(text.strip())

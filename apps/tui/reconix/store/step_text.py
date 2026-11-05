@@ -32,7 +32,8 @@ def scope_text() -> str:
         lines.append(f"Methods: {join_and(scope.allowed_methods)}")
     if summary.never:
         lines.append(f"Never touches: {join_and(summary.never)}")
-    lines.append(f"Tools: {join_and(scope.tools)} · time limit {scope.time_limit_minutes} min")
+    _limit = f"{scope.time_limit_minutes} min" if scope.time_limit_minutes > 0 else "no limit"
+    lines.append(f"Tools: {join_and(scope.tools)} · time limit {_limit}")
     return "\n".join(lines)
 
 

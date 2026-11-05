@@ -270,5 +270,5 @@ the exact table, column and enum names to use.
 
 When you work on something, branch from `Develop` with a name like `feat/<task>`, `fix/<task>` or
 `chore/<task>`. Write conventional commit messages that name the part, for example
-`feat(api): chat messages per session`. Open your pull request against `Develop`; it needs green CI
-and one review before it can be merged. Nobody pushes to `Main` or `Develop` directly.
+`feat(api): chat messages per session`. Open your pull request against `Develop`; run lint and the
+tests yourself first (there is no CI), and get one review before it can be merged. Nobody pushes to `Main` or `Develop` directly.

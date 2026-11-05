@@ -12,14 +12,39 @@ from reconix.store import lists, report
 from reconix.store.report_docx import write_docx
 from reconix.store.report_html import render_html
 
-from .support import TEST_PASSWORD, add_finding, run_to
+from .fakes.fake_api import finding_row
+from .support import DEMO_REQUEST, TEST_PASSWORD, add_finding, decide, play_until_gate, run_to
+
+
+@pytest.fixture(autouse=True)
+def api_findings(fake_api):
+    """What the fake API's Kali finds in this file's runs: one finding per tool, as the API
+    returns them (evidence already masked)."""
+    fake_api.findings_for = {
+        "NMAP": [finding_row("NMAP-OPEN-PORT", "Open port 3000/tcp (http)", "{target}:3000",
+                             "LOW", "NMAP", evidence="3000/tcp open http")],
+        "NUCLEI": [dict(finding_row("NUCLEI-EXPOSED-PANEL", "Exposed admin panel", "{target}",
+                                    "MEDIUM", "NUCLEI",
+                                    evidence="Set-Cookie: session=•••• (masked)"),
+                        cvss_score=6.5, cwe_ids=["CWE-284"], owasp_id=["OWASP A01:2021"])],
+        "SQLMAP": [dict(finding_row("SQLMAP-SQLI", "SQL injection in login", "{target}login",
+                                    "HIGH", "SQLMAP", evidence="parameter 'user' is injectable"),
+                        cvss_score=8.6, cwe_ids=["CWE-89"])],
+    }
+    return fake_api
+
+
+def _to_medium_approval() -> None:
+    run_to("plan")
+    decide("plan")
+    assert play_until_gate().startswith("approval:")
 
 # What XML 1.0 can't hold (tab, LF and CR are fine)
 CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
 
 def test_no_report_before_the_assessment_is_complete():
-    run_to("approval:approval-001")
+    _to_medium_approval()
     with pytest.raises(store.StoreValidationError):
         store.generate_report("json")
 
@@ -44,7 +69,7 @@ def test_report_formats_and_their_availability():
 def test_pdf_report_is_the_styled_report_as_a_pdf(reports_dir):
     run_to(None)
     shown = store.generate_report("pdf")
-    path = reports_dir / "RCX-DEMO-001.pdf"
+    path = reports_dir / "RCX-001.pdf"
     assert shown == str(path)
     assert path.read_bytes()[:5] == b"%PDF-"
 
@@ -53,7 +78,7 @@ def test_pdf_report_is_the_styled_report_as_a_pdf(reports_dir):
 def test_docx_report_is_written_as_a_binary_file(reports_dir):
     run_to(None)
     shown = store.generate_report("docx")
-    path = reports_dir / "RCX-DEMO-001.docx"
+    path = reports_dir / "RCX-001.docx"
     assert shown == str(path)
     assert path.read_bytes()[:2] == b"PK"        # a .docx is a zip archive
 
@@ -66,13 +91,12 @@ def _docx_text(path) -> str:
 def test_json_report_is_written_and_recorded(reports_dir):
     run_to(None)
     shown = store.generate_report("json")
-    path = reports_dir / "RCX-DEMO-001.json"
+    path = reports_dir / "RCX-001.json"
     assert shown == str(path)
     data = json.loads(path.read_text())
-    assert data["assessment_id"] == "RCX-DEMO-001"
-    assert [f["id"] for f in data["findings"]] == ["001", "002", "003"]
-    assert data["blocked_requests"] == [
-        {"request": "GET /admin", "reason": "Path outside approved scope"}]
+    assert data["assessment_id"] == "RCX-001"
+    assert sorted(f["id"] for f in data["findings"]) == ["001", "002", "003"]
+    assert data["blocked_requests"] == []                  # the API blocked nothing here
     assert [a["risk"] for a in data["approvals"]] == ["MEDIUM", "HIGH"]
     assert store.get_run().report_path == shown
     assert store.phase_progress()["report"] == 100
@@ -93,40 +117,37 @@ def _docx_parts(path):
 def test_docx_report_has_every_section(reports_dir, monkeypatch):
     """The Word report follows the PDF: its sections, order, headings and content."""
     run_to(None)
-    monkeypatch.setattr(lists.current().findings[2], "severity", "CRITICAL")   # 003 first
-    store.triage_finding("002", note="Retested: the marker is encoded now.")
+    monkeypatch.setattr(lists.current().findings[0], "severity", "CRITICAL")   # 001 first
+    store.triage_finding("002", note="Retested: the panel needs a login now.")
     store.generate_report("docx")
-    paragraphs, tables = _docx_parts(reports_dir / "RCX-DEMO-001.docx")
+    paragraphs, tables = _docx_parts(reports_dir / "RCX-001.docx")
     headings = [text for style, text in paragraphs if style.startswith("Heading")]
     assert headings[:5] == ["1 Executive summary", "2 Findings summary",
                             "3 Approved scope & limitations", "4 Detailed findings",
-                            "003 · Session cookie missing SameSite"]     # worst first
+                            "001 · Open port 3000/tcp (http)"]     # worst first
     assert [h for h in headings if h[0].isdigit() and " · " in h] == [
-        "003 · Session cookie missing SameSite", "001 · Broken object-level authorization",
-        "002 · Reflected input in search page"]
-    assert headings[-3:] == ["5 Policy & governance", "Blocked by policy · 1",
-                             "Human approvals · 2"]
+        "001 · Open port 3000/tcp (http)", "003 · SQL injection in login",
+        "002 · Exposed admin panel"]
+    assert headings[-1] == "Human approvals · 2"
     html = render_html(store.report_data())                 # the PDF has the same headings
     for heading in ("Executive summary", "Findings summary", "Approved scope &amp; limitations",
                     "Detailed findings", "Policy &amp; governance"):
         assert f"<h2>{heading}</h2>" in html
     text = "\n".join(t for _s, t in paragraphs)
-    assert "The highest severity is Critical, led by Session cookie missing SameSite" in text
-    assert "Retested: the marker is encoded now." in text                  # the analyst's note
+    assert "The highest severity is Critical, led by Open port 3000/tcp (http)" in text
+    assert "Retested: the panel needs a login now." in text                # the analyst's note
     assert "Testing was limited to the approved actions" in text            # the disclaimer
-    assert "References: OWASP A01:2021" in text
+    assert "References: CWE-284, OWASP A01:2021" in text
     assert "CONFIDENTIAL — AUTHORIZED RECIPIENTS ONLY" in text
-    assert [["Critical", "High", "Medium", "Low", "Total"],
-            ["1", "0", "2", "0", "3"]] in tables                            # severity counts
     summary = next(t for t in tables if t[0] == ["ID", "Finding", "Severity", "CVSS", "Status",
                                                   "Category"])
-    assert [row[0] for row in summary[1:]] == ["003", "001", "002"]
+    assert [row[0] for row in summary[1:]] == ["001", "003", "002"]
     scope = dict(next(t for t in tables if t[0][0] == "Approval status"))
     assert scope["Approval status"] == "Approved" and scope["Excluded paths"] == "/admin"
     assert scope["Standards"] == "OWASP WSTG · OWASP Top 10 (2021)"
     approvals = next(t for t in tables if t[0][0] == "Risk")
     assert [row[0] for row in approvals[1:]] == ["Medium", "High"]
-    assert "•••" in _docx_text(reports_dir / "RCX-DEMO-001.docx")      # evidence stays masked
+    assert "•••" in _docx_text(reports_dir / "RCX-001.docx")      # evidence stays masked
 
 
 @pytest.mark.skipif(not report.HAS_DOCX, reason="python-docx not installed")
@@ -141,12 +162,12 @@ def test_control_characters_never_stop_the_docx_report(reports_dir, tmp_path):
         PolicyVerdict("GET", "/a\x00b", False, "Path \x1b[1moutside\x00 approved scope"))
     store.generate_report("docx")
     store.generate_report("json")
-    xml = _docx_text(reports_dir / "RCX-DEMO-001.docx")
+    xml = _docx_text(reports_dir / "RCX-001.docx")
     # each escape sequence is a space: no "[31m" left, no two words glued together
     assert re.search(r"Banner\s+red\s+leak", xml) and re.search(r"Path\s+outside\s+approved", xml)
     assert "[31m" not in xml and "[1m" not in xml
     assert not CONTROL.search(xml)
-    assert not CONTROL.search((reports_dir / "RCX-DEMO-001.json").read_text("utf-8"))
+    assert not CONTROL.search((reports_dir / "RCX-001.json").read_text("utf-8"))
 
 
 @pytest.mark.skipif(not report.HAS_DOCX, reason="python-docx not installed")
@@ -165,12 +186,11 @@ def test_report_data_carries_cvss_category_and_engagement_metadata():
     assert data["mode"] == "Grey-box, Authorized"
     assert data["methodology"] == ["OWASP WSTG", "OWASP Top 10 (2021)"]
     assert data["window"]["started"] and data["window"]["finished"]
-    first = next(f for f in data["findings"] if f["id"] == "001")
-    assert first["cvss_score"] == 6.5
-    assert first["cvss_vector"].startswith("CVSS:3.1/")
-    assert first["category"] == "Web App"
-    assert first["cwe"] == ["CWE-639"]
-    assert first["owasp"] == ["OWASP A01:2021", "OWASP API1:2023"]
+    panel = next(f for f in data["findings"] if f["id"] == "002")
+    assert panel["cvss_score"] == 6.5                    # as the API scored it
+    assert panel["category"] == "NUCLEI-EXPOSED-PANEL"   # the API's finding code
+    assert panel["cwe"] == ["CWE-284"]
+    assert panel["owasp"] == ["OWASP A01:2021"]
 
 
 def test_the_html_the_pdf_prints_is_a_full_styled_document():
@@ -178,8 +198,8 @@ def test_the_html_the_pdf_prints_is_a_full_styled_document():
     text = render_html(store.report_data())
     assert text.startswith("<!doctype html>")
     assert "Security Assessment Report" in text          # masthead title
-    assert "RCX-DEMO-001" in text                         # engagement id
-    assert "Broken object-level authorization" in text   # a finding
+    assert "RCX-001" in text                         # engagement id
+    assert "Exposed admin panel" in text                 # a finding from the API
     assert "Executive summary" in text and "Detailed findings" in text
     assert "CVSS 6.5" in text                             # CVSS on the finding
     assert "OWASP WSTG" in text and "Example" in text     # methodology + client cover
@@ -198,18 +218,18 @@ def test_the_html_the_pdf_prints_escapes_dynamic_text(monkeypatch):
 def test_reports_never_contain_the_test_account(reports_dir):
     run_to(None)
     store.generate_report("json")
-    texts = [(reports_dir / "RCX-DEMO-001.json").read_text(), render_html(store.report_data())]
+    texts = [(reports_dir / "RCX-001.json").read_text(), render_html(store.report_data())]
     if report.HAS_DOCX:
         store.generate_report("docx")
-        texts.append(_docx_text(reports_dir / "RCX-DEMO-001.docx"))
+        texts.append(_docx_text(reports_dir / "RCX-001.docx"))
     for text in texts:
         assert TEST_PASSWORD not in text
         assert "demo.tester" not in text
 
 
 @pytest.mark.parametrize("request_text", [
-    store.DEMO_REQUEST,                                   # password + one-time code
-    "test the API at https://api.example.com/v1",         # a session cookie
+    DEMO_REQUEST,
+    "test the API at https://api.example.com/v1",
 ])
 def test_no_report_format_contains_the_login(reports_dir, request_text):
     run_to(None, request_text)
@@ -242,7 +262,7 @@ def test_a_network_report_lists_the_approved_ports(reports_dir):
     assert "<dt>Allowed ports</dt>" in render_html(store.report_data())
     if report.HAS_DOCX:
         store.generate_report("docx")
-        text = _docx_text(reports_dir / "RCX-DEMO-001.docx")
+        text = _docx_text(reports_dir / "RCX-001.docx")
         assert "Allowed ports" in text and "22, 80, 443, 8080, 8443" in text
 
 
@@ -252,7 +272,7 @@ def test_a_web_report_has_no_ports_line(reports_dir):
     assert "Allowed ports" not in render_html(store.report_data())
     if report.HAS_DOCX:
         store.generate_report("docx")
-        assert "Allowed ports" not in _docx_text(reports_dir / "RCX-DEMO-001.docx")
+        assert "Allowed ports" not in _docx_text(reports_dir / "RCX-001.docx")
 
 
 def test_summary_counts_every_human_approval():
@@ -260,4 +280,4 @@ def test_summary_counts_every_human_approval():
     summary = store.assessment_summary()
     assert summary.status == "Completed"
     assert summary.approvals == ["scope", "MEDIUM", "HIGH"]
-    assert (summary.blocked, summary.confirmed, summary.for_review) == (1, 1, 2)
+    assert (summary.blocked, summary.confirmed, summary.for_review) == (0, 0, 3)

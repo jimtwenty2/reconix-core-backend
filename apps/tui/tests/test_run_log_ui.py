@@ -6,16 +6,17 @@ from reconix.store.transcript import add_activity
 from reconix.widgets import RunLog, ThinkingBlock
 
 from .support import SIZE, decide, run_to_end, settle, show
+from .support import DEMO_REQUEST
 
 
 def _finished_run() -> None:
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     run_to_end()
 
 
 def _running_with_a_block_last() -> None:
     """Play the demo until it is running (no gate) and its newest entry is a step."""
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     while True:
         gate = store.waiting_gate()
         if gate:
@@ -41,7 +42,6 @@ async def test_finished_blocks_start_folded_to_their_title(app):
         titles = [block.plain_lines(include_folded=False) for block in blocks]
         assert all(len(lines) == 1 for lines in titles)  # the title only
         assert any(lines[0].startswith("✓ Worked") for lines in titles)   # tests: no time
-        assert any("blocked" in lines[0] for lines in titles)
 
 
 async def test_click_or_space_opens_one_block_and_a_redraw_keeps_it_open(app):

@@ -12,6 +12,8 @@ from reconix_ai.providers.base_url import BaseUrlError, check_base_url
         "http://[::1]:11434",
         "https://models.example.com",
         "https://llm.example.com/v1",  # where OpenAI-compatible servers answer
+        "https://llm.example.com/api/v1",  # a gateway that serves its API under /api
+        "https://llm.example.com/api/v1/",
         "http://127.0.0.1:8000/v1/",
     ],
 )
@@ -29,6 +31,10 @@ def test_allowed(url: str) -> None:
         "https://user:pass@models.example.com",
         "http://127.0.0.1:11434/admin",  # path tricks
         "https://llm.example.com/v1/admin",
+        "https://llm.example.com/api",  # only /api/v1 itself, nothing near it
+        "https://llm.example.com/api/v1/admin",
+        "https://llm.example.com/api/v2",
+        "https://llm.example.com/x/api/v1",
         "https://llm.example.com/v2",
         "https://llm.example.com/v\t1",  # a tab urlsplit() would drop
         "https://llm.example.com\n/v1",

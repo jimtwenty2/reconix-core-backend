@@ -57,11 +57,15 @@ def test_a_scope_without_ports_offers_only_tools():
     assert choices.tools
 
 
-def test_the_reply_is_recorded_and_locks_after_approval():
+def test_the_reply_is_recorded_and_changeable_until_the_plan_runs():
     run_to("scope", NETWORK)
     assert store.answer_scope_change("add port 3389") is not None
     assert store.list_chat()[-1].text == scope_ask.ONLY_YOU
     store.approve_scope()
+    # at the Plan step the scope can still change (a tick re-opens it for a fresh approval)
+    assert store.answer_scope_change("add port 3389") is not None
+    # once the plan runs it is locked
+    store.get_run().plan_started = True
     assert store.answer_scope_change("add port 3389") is None
     assert store.list_chat()[-1].text == scope_ask.LOCKED
 

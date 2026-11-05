@@ -9,7 +9,22 @@ from reconix.app import ReconixApp
 from reconix.screens import ApprovalScreen, HelpScreen, TemplateScreen
 from reconix.widgets import ChoiceMenu, StepChat
 
-from .support import SIZE, event_kinds, run_ui_to, screen_text, settle, start_demo
+from .support import SIZE, event_kinds, screen_text, settle, start_demo
+
+
+async def ui_to_approval(app, pilot, risk: str = "MEDIUM") -> str:
+    """Start the demo and pass gates until the first approval gate of `risk` (the fake API
+    holds its MEDIUM, then its HIGH step); returns that gate."""
+    from .support import pass_gate, run_ui_to, wait_for_run
+
+    await run_ui_to(app, pilot, "plan")
+    while True:
+        await pass_gate(app, pilot)
+        await wait_for_run(pilot)
+        gate = store.waiting_gate()
+        assert gate, "the run ended before that approval"
+        if gate.startswith("approval:") and store.get_approval(gate[9:]).risk == risk:
+            return gate
 
 
 def prompt_text(menu: ChoiceMenu, index: int) -> str:
@@ -42,7 +57,7 @@ async def test_type_something_saves_feedback_and_stays(app):
 
 async def test_typing_never_triggers_screen_shortcuts(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        await ui_to_approval(app, pilot)
         await pilot.press("5", "d", "y", "1")                    # typed, not run
         await settle(pilot)
         assert isinstance(app.screen, ApprovalScreen)
@@ -52,13 +67,13 @@ async def test_typing_never_triggers_screen_shortcuts(app):
 
 async def test_chat_about_this_opens_the_chat_in_the_step(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        await ui_to_approval(app, pilot)
         await pilot.press("6")                                   # Chat about this
         await settle(pilot)
         assert isinstance(app.screen, ApprovalScreen)            # stays on the step
         chat = app.screen.query_one(StepChat)
         assert chat.input.has_focus
-        assert "Baseline request (read-only)" in screen_text(chat)
+        assert "Check for known issues" in screen_text(chat)   # the API plan step's title
         assert "approval.chat" in event_kinds()
 
 
@@ -72,7 +87,7 @@ async def test_sent_message_has_a_background_bar(app):
 
 async def test_help_lists_the_keys_of_this_screen(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        await ui_to_approval(app, pilot)
         await pilot.press("question_mark")
         await settle(pilot)
         assert isinstance(app.screen, HelpScreen)

@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
-from ..llm import LLMError, catalog, client, crypto, db, guardrail, mock
+from ..llm import LLMError, client, crypto, db, guardrail
 from ..models import ActiveModel, ChatEntry
 from ..models.base import utc_now
 from .assessment import get_assessment, shown_line
@@ -55,6 +55,12 @@ class Draft:
     core: bool = False
 
 
+def couldnt_answer(reason: object) -> str:
+    """The one line shown when the Core API's AI couldn't answer (no doubled stop)."""
+    reason = str(reason).strip().rstrip(".")
+    return f"The AI couldn't answer: {reason}."
+
+
 def model_label(active: Optional[ActiveModel]) -> str:
     """How a model's line is labelled in the chat: its model id, folded, masked and cut to
     32 characters ("" without a model: the line is Reconix's own)."""
@@ -64,68 +70,43 @@ def model_label(active: Optional[ActiveModel]) -> str:
     return label[:32] or "model"
 
 
-def reply(text: str, active: ActiveModel,
+def reply(text: str, active: Optional[ActiveModel] = None,
           on_update: Optional[Callable[[], None]] = None) -> str:
-    """Call the active model, display its reply and persist the exchange. Raises LLMError.
-
-    With `on_update` the reply streams into its chat line (see the module notes)."""
-    if on_update is None or _is_mock(active):
-        checked, used_sources = _complete(text, active)
-        record_draft(Draft(checked, tuple(used_sources), active))
-        return checked
-    key, base = credentials(active)
-    messages, used_sources = messages_for(text)
-    entry = _streamed(active, messages, key, base, on_update)
-    record_draft(Draft(entry.text, tuple(used_sources), active), placeholder=entry)
-    return entry.text
+    """The Core API's answer to `text`, shown and kept there. Raises LLMError (a
+    CoreApiError) when the API can't answer."""
+    return core_reply(text, on_update)
 
 
 def build_draft(text: str, on_text: Optional[Callable[[str], None]] = None) -> Draft:
-    """Build the reply to `text` without recording anything (safe off the UI thread).
+    """Ask the Core API for the reply to `text`, recording nothing (safe off the UI thread).
 
-    Nothing is written to any assessment here, so a switch while the model is answering
-    cannot put the reply in another run. With `on_text`, a streaming model's checked text so
-    far is handed over as it grows (for the screen only). A model failure (or no active
-    model) comes back as `Draft.error`, with the built-in reply ready in `Draft.text`.
+    The API is the only chat: it calls the model with the scope and plan as context, masks
+    both lines and keeps the history. Nothing is written to any assessment here, so a switch
+    while it answers cannot put the reply in another run. When the API can't answer, the
+    draft carries the reason (`Draft.error`); no other reply is made up in its place.
     """
     from .. import core_api
     from . import providers
 
     active = providers.active_model()
-    if active is None:
-        return Draft(_builtin(text), error="no model is active")
-    notes: Tuple[str, ...] = ()
-    if core_api.enabled():
-        try:
-            answer, api_notes = core_api.chat_reply(text, get_assessment())
-        except LLMError as exc:
-            notes = (f"Core API unavailable ({exc}). Asking the model directly.",)
-        else:
-            return Draft(guardrail.check_response(answer), active=active,
-                         activity=tuple(api_notes), core=True)
     try:
-        checked, used_sources = _complete(text, active, on_text)
+        answer, api_notes = core_api.chat_reply(text, get_assessment())
     except LLMError as exc:
-        return Draft(_builtin(text), error=str(exc), notes=notes)
-    return Draft(checked, tuple(used_sources), active, notes=notes)
+        return Draft("", error=str(exc))
+    return Draft(guardrail.check_response(answer), active=active, activity=tuple(api_notes),
+                 core=True)
 
 
 def record_draft(draft: Draft, placeholder: Optional[ChatEntry] = None) -> None:
     """Add a built reply to the current assessment's chat (call it on the UI thread).
 
     `placeholder` is the "thinking…" line shown while it was built: it becomes the reply, or
-    goes when notes or the built-in reply take its place."""
+    goes when the API couldn't answer (one line says why)."""
     if placeholder is not None and placeholder in _PENDING:
         _PENDING.remove(placeholder)
-    if draft.notes or draft.error:
-        _drop(placeholder)
-        placeholder = None
-    for note in draft.notes:
-        add_chat("text", "reconix", note, tone="muted")
     if draft.error:
-        add_chat("text", "reconix",
-                 f"LLM unavailable ({draft.error}). Showing the built-in reply.", tone="muted")
-        add_chat("text", "reconix", draft.text, tone="muted")
+        _drop(placeholder)
+        add_chat("text", "reconix", couldnt_answer(draft.error), tone="muted")
         return
     if placeholder is not None and placeholder in get_assessment().chat:
         placeholder.text, placeholder.tone = draft.text, "default"
@@ -133,14 +114,8 @@ def record_draft(draft: Draft, placeholder: Optional[ChatEntry] = None) -> None:
     else:
         entry = add_chat("text", "reconix", draft.text)
     entry.author = model_label(draft.active)
-    if draft.core:
-        for note in draft.activity:
-            add_activity("AI", note)
-        return
-    persist(draft.active, draft.text, entry.seq)
-    if draft.sources:
-        # A muted note under the reply, so the operator sees which add-ons informed it.
-        add_chat("text", "reconix", "Knowledge: " + ", ".join(draft.sources), tone="muted")
+    for note in draft.activity:
+        add_activity("AI", note)
 
 
 def begin_reply() -> ChatEntry:
@@ -164,37 +139,6 @@ def drop_pending_replies() -> None:
     _PENDING.clear()
 
 
-def _is_mock(active: ActiveModel) -> bool:
-    entry = catalog.get(active.provider_id)
-    return entry is not None and entry.is_mock
-
-
-def _complete(text: str, active: ActiveModel,
-              on_text: Optional[Callable[[str], None]] = None) -> Tuple[str, List[str]]:
-    """Call the model (or the offline mock) and check the reply. Raises LLMError; no records."""
-    if _is_mock(active):
-        # The offline mock: a prepared answer filled with this assessment's own facts.
-        return guardrail.check_response(mock.reply(redact(text), mock_facts())), []
-    key, base = credentials(active)
-    messages, used_sources = messages_for(text)
-    if on_text is None:
-        raw = client.complete(active.provider_id, active.model, messages,
-                              api_key=key, api_base=base)
-    else:
-        raw = _stream(active, messages, key, base, on_text)
-    return guardrail.check_response(raw), used_sources
-
-
-def _builtin(text: str) -> str:
-    """The scripted reply shown when no model answered (the same one `run.py` falls back to)."""
-    from .replies import reply_after_run, reply_to, reply_while_running
-    from .run import get_run, is_finished
-
-    if not get_run().started:
-        return reply_to(text)
-    return reply_after_run(text) if is_finished() else reply_while_running(text)
-
-
 def core_reply(text: str, on_update: Optional[Callable[[], None]] = None) -> str:
     """Core API mode: the API answers (it calls the model, with the scope and plan as
     context, and keeps the history). Shown with "thinking…" until it comes back, then
@@ -209,7 +153,10 @@ def core_reply(text: str, on_update: Optional[Callable[[], None]] = None) -> str
     except Exception:
         _drop(entry)
         raise
+    from .providers import active_model
+
     entry.text, entry.tone = guardrail.check_response(answer), "default"
+    entry.author = model_label(active_model())
     for note in notes:
         add_activity("AI", note)
     if on_update is not None:
@@ -350,28 +297,6 @@ def _context() -> str:
         for d in decisions:
             lines.append(f"    {d.request_id}: {d.decision}")
     return "\n".join(lines)
-
-
-def mock_facts() -> dict:
-    """The facts the offline mock model fills its answers with (see `llm/mock.py`)."""
-    from .findings import list_findings
-    from .plan import plan_overview
-    from .progress import step_status
-    from .scope import get_scope
-
-    a = get_assessment()
-    scope = get_scope()
-    return {
-        "target": (scope.target_url if scope else "") or a.target or "",
-        "scope": _scope_line(scope) if scope else "",
-        "step": _step_sentence(step_status()) if a.run.started else "",
-        "plan": "; ".join(_plan_row(row) for row in plan_overview()),
-        "findings": [
-            {"id": f.fid, "severity": f.effective_severity, "title": f.title,
-             "impact": f.impact, "remediation": f.remediation, "status": status_word(f.status)}
-            for f in list_findings()
-        ],
-    }
 
 
 def status_word(status: str) -> str:

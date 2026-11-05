@@ -1,47 +1,13 @@
-/* Evaluator-run fixes in the AI Assistant: the mock answers a question about the decision and
-   about one plan step, a finished run has nothing left to decide, "explain finding 001" shows
-   that finding only, and a misspelt view name ("runlog") opens its view. */
+/* Evaluator-run fixes in the AI Assistant: "explain finding 001" shows that finding only, and a
+   misspelt view name ("runlog") opens its view. */
 import { describe, expect, it } from "vitest";
 
 import { parseView } from "@/components/dashboard/view-url";
 import { pickCards } from "@/lib/assistant/cards";
 import { readIntent } from "@/lib/assistant/intent";
-import { factsOf, intentOf, mockReply } from "@/lib/assistant/models/mock";
 import { assessmentView } from "@/lib/data/adapt";
 
 import { sampleAssessments } from "./fixtures";
-
-const PLAN = "1. Discover hosts; 2. Scan open ports (Nmap); 3a. Check TLS (MEDIUM, needs your approval)";
-
-describe("the mock's new answers (shared with the TUI)", () => {
-  it.each(["should I approve?", "can I reject it?", "is it safe to run the plan?", "what should I do?"])("%s is answered, not refused", (q) => {
-    expect(intentOf(q).id).toBe("decision");
-    expect(mockReply(q, { step: "The run waits for you." })).toMatch(/^That's your call/);
-  });
-
-  it("still refuses an order", () => {
-    expect(intentOf("approve that scope").id).toBe("action");
-    expect(intentOf("run step 1").id).toBe("action");
-  });
-
-  it("answers one plan step, not the whole plan", () => {
-    const answer = mockReply("what does step 2 do?", { plan: PLAN });
-    expect(answer).toMatch(/^Step 2: Scan open ports \(Nmap\)\./);
-    expect(answer).not.toContain("Discover hosts");
-    expect(mockReply("what is step 3A?", { plan: PLAN })).toMatch(/^Step 3a: Check TLS/);
-    expect(mockReply("what does step 9 do?", { plan: PLAN })).toContain("There is no step 9");
-    expect(mockReply("what does step 2 do?", {})).toContain("no plan yet");
-  });
-});
-
-describe("a run that waits for nothing", () => {
-  it("says nothing is left to decide once it ended", () => {
-    const run = sampleAssessments().find((a) => a.status === "Completed")!;
-    const step = factsOf(assessmentView(run)).step ?? "";
-    expect(step).toContain("nothing is left to decide");
-    expect(step).not.toContain("Decide anything");
-  });
-});
 
 describe("explain finding 001", () => {
   const samples = sampleAssessments();

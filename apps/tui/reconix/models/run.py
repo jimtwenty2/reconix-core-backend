@@ -55,6 +55,8 @@ class RunStep:
     pause: float = 0.6
     when: str = ""             # "" (always) | "login" | "code"
     tool: str = ""             # the tool `$tool` stands for in the text
+    literal: bool = False      # text from the Core API (tool output, the AI's words): shown
+                               # as it is, never filled in like a template line
 
 
 @dataclass
@@ -105,6 +107,7 @@ class RunState:
     started_at: Optional[datetime] = None    # when testing began (scope approved)
     finished_at: Optional[datetime] = None
     requests: int = 0
+    time_approved: bool = False          # you chose to continue past the scope's time limit
     authenticated: bool = False          # the target login was provided when a step needed it
     code_verified: bool = False          # the one-time code after it was accepted (never kept)
     progress: Dict[str, int] = field(default_factory=dict)

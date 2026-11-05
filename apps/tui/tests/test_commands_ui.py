@@ -7,7 +7,7 @@ from reconix.screens import (
 )
 from reconix.widgets import PromptBox
 
-from .support import SIZE, run_ui_to, screen_text, settle
+from .support import SIZE, pass_gate, run_ui_to, screen_text, settle, wait_for_run
 
 
 async def command(pilot, line: str) -> None:
@@ -32,10 +32,10 @@ async def test_summary_after_a_run_shows_the_findings_line(app):
         await command(pilot, "/summary")
         assert isinstance(app.screen, ChoiceScreen)
         text = screen_text(app.screen)
-        assert "RCX-DEMO-001" in text
+        assert "RCX-001" in text
         summary = store.assessment_summary()
         assert f"{summary.confirmed} confirmed" in text
-        assert store.findings_line().startswith("3 findings")
+        assert store.findings_line().startswith("2 findings")  # the fake API's run
 
 
 async def test_summary_before_any_run_does_not_crash(app):
@@ -118,7 +118,10 @@ async def test_report_command_opens_the_report(app):
 
 async def test_approval_command_opens_the_approval_gate(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        await run_ui_to(app, pilot, "plan")
+        await pass_gate(app, pilot)                      # Run plan: the API's steps play
+        await wait_for_run(pilot)
+        assert store.waiting_gate().startswith("approval:")
         app.goto("start")
         await settle(pilot)
         await command(pilot, "/approval")

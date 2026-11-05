@@ -4,7 +4,6 @@
 import "server-only";
 
 import type { ModelConfig } from "./config";
-import { isMockAddress } from "./models/mock";
 import { createEventParser, createThinkFilter } from "./stream";
 
 const TIMEOUT_MS = 120_000;
@@ -23,7 +22,6 @@ export type Turn = { role: "system" | "user" | "assistant"; content: string };
 
 /** The reply as a text stream. `onEnd` runs once when it ends, fails or is cancelled. */
 export async function streamReply(config: ModelConfig, turns: Turn[], signal: AbortSignal, onEnd: () => void = () => {}): Promise<ReadableStream<Uint8Array>> {
-  if (isMockAddress(config.baseUrl)) throw new ModelError("The mock model answers on this machine only.", 502); // never fetched
   const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "text/event-stream" };
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   let response: Response;

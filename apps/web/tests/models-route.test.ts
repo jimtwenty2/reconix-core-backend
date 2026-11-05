@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { MODELS_FAIL } from "@/lib/assistant/models/errors";
 import { chipState } from "@/components/assistant/model-picker-rules";
-import { CLOUD_FIXED, MOCK_FIXED, MOCK_LOCKED, MOCK_RESERVED, presetOf } from "@/lib/assistant/models/presets";
+import { CLOUD_FIXED, presetOf } from "@/lib/assistant/models/presets";
 import { NO_MODEL } from "@/lib/assistant/models/resolve";
 import { COOKIE, sessionValue } from "@/lib/auth/session";
 
@@ -204,13 +204,11 @@ describe("the providers", () => {
       ["groq", "required", "cloud"],
       ["ollama", "none", "local"],
       ["lmstudio", "none", "local"],
-      ["mock", "optional", "local"],
       ["custom", "optional", "custom"],
     ]);
     for (const p of presets) {
       if (p.kind === "cloud") expect(p.baseUrl).toMatch(/^https:\/\//);
-      if (p.kind === "local" && p.id !== "mock") expect(p.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
-      if (p.id === "mock") expect(p.baseUrl).toBe("http://127.0.0.1/reconix-mock/v1"); // never called
+      if (p.kind === "local") expect(p.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
     }
   });
   it("allow the cloud presets by default (no server switch), whatever LLM_ALLOW_REMOTE says", async () => {
@@ -273,24 +271,18 @@ describe("the providers", () => {
     expect((await patch(id, { preset: "openai", baseUrl: "https://api.openai.com/v1", apiKey: SECRET })).status).toBe(200);
     expect(seen).toHaveLength(0);
   });
-  it("keep the mock the mock: its preset can't change, nothing else becomes it or takes its address", async () => {
-    const MOCK = presetOf("mock").baseUrl;
-    const mock = { name: "Reconix mock (offline)", preset: "mock", baseUrl: MOCK, models: ["reconix-mock-1"] };
-    const added = await add(mock);
-    expect(added.status).toBe(201);
-    const id = (added.body.provider as { id: string }).id;
-    for (const preset of ["ollama", "custom", "openai"]) {
-      expect(await patch(id, { preset })).toEqual({ status: 400, body: { detail: MOCK_LOCKED } });
-    }
-    expect((await patch(id, { baseUrl: `${base}/v1` })).body.detail).toBe(MOCK_FIXED);
-    expect((await list()).body.providers).toEqual([expect.objectContaining({ id, preset: "mock", baseUrl: MOCK })]); // unchanged
-    expect((await patch(id, { models: ["reconix-mock-1", "reconix-mock-2"] })).status).toBe(200); // the rest still changes
-
-    const local = (await add(provider({ name: "Local", preset: "ollama" }))).body.provider as { id: string };
-    expect(await patch(local.id, { preset: "mock" })).toEqual({ status: 400, body: { detail: MOCK_LOCKED } });
-    expect(await patch(local.id, { preset: "mock", baseUrl: MOCK })).toEqual({ status: 400, body: { detail: MOCK_LOCKED } });
-    expect((await patch(local.id, { baseUrl: MOCK, removeKey: true })).body.detail).toBe(MOCK_RESERVED);
-    expect((await add({ ...mock, name: "Fake Ollama", preset: "ollama" })).body.detail).toBe(MOCK_RESERVED);
+  it("drop a provider saved under the removed offline mock, and the active model with it", async () => {
+    const mock = { id: ID, name: "Reconix mock (offline)", preset: "mock", baseUrl: "http://127.0.0.1/reconix-mock/v1", models: ["reconix-mock-1"] };
+    writeFileSync(
+      path.join(dir, "models.json"),
+      JSON.stringify({ format: "reconix.assistant.models/v1", providers: [mock], active: { providerId: ID, model: "reconix-mock-1" } }),
+      { mode: 0o600 },
+    );
+    const listed = await list();
+    expect(listed.status).toBe(200);
+    expect(listed.body.providers).toEqual([]);
+    expect(listed.body.active).toBeNull();
+    expect((await add({ ...mock, preset: "mock" })).status).toBe(400); // the preset is gone
     expect(seen).toHaveLength(0);
   });
   it("leave a cloud preset saved at another address before that rule working until its preset or address changes", async () => {

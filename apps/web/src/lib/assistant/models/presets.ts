@@ -17,8 +17,6 @@ export const PRESETS = [
   { id: "groq", label: "Groq", baseUrl: "https://api.groq.com/openai/v1", key: "required", kind: "cloud" },
   { id: "ollama", label: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", key: "none", kind: "local" },
   { id: "lmstudio", label: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1", key: "none", kind: "local" },
-  // Prepared answers on this machine (models/mock.ts): its address is never called.
-  { id: "mock", label: "Reconix mock (offline)", baseUrl: "http://127.0.0.1/reconix-mock/v1", key: "optional", kind: "local" },
   { id: "custom", label: "Custom", baseUrl: "", key: "optional", kind: "custom" },
 ] as const;
 
@@ -30,17 +28,6 @@ export const PRESET_IDS = PRESETS.map((p) => p.id) as [PresetId, ...PresetId[]];
 
 /** The preset `id` names (Custom for anything else). */
 export const presetOf = (id: string): Preset => PRESETS.find((p) => p.id === id) ?? PRESETS[PRESETS.length - 1];
-
-/** What the server says when the mock preset is sent with another address. */
-export const MOCK_FIXED = "The mock model's address is fixed; use Custom for another address.";
-
-/** What the server says when a saved provider is moved onto or off the mock preset (the mock
-    answers offline under its own name: another preset at its address would pass for a real
-    model). */
-export const MOCK_LOCKED = "The mock model's preset is fixed; add a new provider for another model.";
-
-/** What the server says when another preset is sent with the mock's reserved address. */
-export const MOCK_RESERVED = "That address is reserved for the mock model; use the Reconix mock (offline) preset.";
 
 /** What the server says when a cloud preset is sent with another address. */
 export const CLOUD_FIXED = "A cloud provider's address is fixed; use Custom for another address.";
@@ -54,14 +41,9 @@ const originOf = (url: string): string | null => {
   }
 };
 
-const isMockUrl = (baseUrl: string) => baseUrl.trim().replace(/\/+$/, "") === presetOf("mock").baseUrl;
-
-/** Why a provider at `baseUrl` may not carry `preset`'s name (null: it may): the mock only at
-    its own address and nothing else there, a cloud preset only at its own base URL's origin
-    (scheme, host and port), any other preset at any address. */
+/** Why a provider at `baseUrl` may not carry `preset`'s name (null: it may): a cloud preset
+    only at its own base URL's origin (scheme, host and port), any other preset at any address. */
 export function presetProblem(preset: Preset, baseUrl: string): string | null {
-  if (preset.id === "mock") return isMockUrl(baseUrl) ? null : MOCK_FIXED;
-  if (isMockUrl(baseUrl)) return MOCK_RESERVED;
   if (preset.kind !== "cloud") return null;
   const origin = originOf(baseUrl);
   return origin !== null && origin === originOf(preset.baseUrl) ? null : CLOUD_FIXED;
