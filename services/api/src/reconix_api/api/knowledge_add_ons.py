@@ -40,6 +40,11 @@ UPLOAD_FORM = {
                         "file": {"type": "string", "format": "binary"},
                         "interface": {"type": "string", "enum": ["web", "cli"]},
                         "name": {"type": "string", "maxLength": 255},
+                        "ingest_now": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "False: keep it waiting until a re-ingest.",
+                        },
                     },
                 }
             }

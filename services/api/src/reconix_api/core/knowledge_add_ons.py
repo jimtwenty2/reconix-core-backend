@@ -38,7 +38,6 @@ __all__ = [
     "list_all",
     "passages",
     "remove",
-    "reindex",
     "remove_all",
     "save",
     "split_passages",
@@ -74,6 +73,8 @@ class KnowledgeStore:
     # One upload at a time: the add-on limit holds, and only one file is read at once.
     adding: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
     reingest: ReingestJob = field(default_factory=ReingestJob, compare=False)
+    # Ids removed while a re-ingest runs ("*": all of them), so the job never brings one back
+    removed: set[str] = field(default_factory=set, compare=False)
 
 
 def get_knowledge_store(request: Request) -> KnowledgeStore:
@@ -103,14 +104,6 @@ async def ingest_public(store: KnowledgeStore) -> int:
     How many pieces were saved."""
     with api_errors():
         return await ingest.ingest(knowledge_data_dir(), client=store.client, embed=store.embed)
-
-
-async def reindex(store: KnowledgeStore, add_on: AddOn) -> None:
-    """Embed one add-on's saved passages again (its pieces are replaced in place)."""
-    with api_errors():
-        texts = await knowledge.add_on_passages(add_on.knowledge_add_on_id, store.client)
-        if texts:
-            await knowledge.save_add_on(add_on, texts, store.client, store.embed)
 
 
 async def remove(store: KnowledgeStore, knowledge_add_on_id: str) -> None:

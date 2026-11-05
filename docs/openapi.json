@@ -6699,6 +6699,11 @@
                     "format": "binary",
                     "type": "string"
                   },
+                  "ingest_now": {
+                    "default": true,
+                    "description": "False: keep it waiting until a re-ingest.",
+                    "type": "boolean"
+                  },
                   "interface": {
                     "enum": [
                       "web",

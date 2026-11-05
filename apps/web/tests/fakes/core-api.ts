@@ -144,7 +144,8 @@ export async function startFakeCore(): Promise<FakeCore> {
       return send(res, 201, row);
     }
     if (path === "/knowledge/reingest") {
-      const job = { step: "PUBLIC", public_pieces: 0, add_ons_done: 0, add_ons_total: 0, started_at: null, finished_at: null, error_code: null, error_message: null };
+      const scope = url.searchParams.get("scope") === "NEW" ? "NEW" : "ALL";
+      const job = { scope, step: "PUBLIC", public_pieces: 0, new_ingested: 0, add_ons_done: 0, add_ons_total: 0, started_at: null, finished_at: null, error_code: null, error_message: null };
       if (m === "GET") return send(res, 200, { ...job, status: fake.reingesting ? "RUNNING" : "IDLE", step: fake.reingesting ? "PUBLIC" : null });
       if (fake.reingesting) return refuse(res, 409, "REINGEST_RUNNING", "The knowledge is being re-ingested already.");
       fake.reingesting = true;

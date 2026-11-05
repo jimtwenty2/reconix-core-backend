@@ -109,7 +109,12 @@ def read_passages(mask: MaskSecrets, kind: str, data: bytes) -> tuple[list[str],
 async def list_add_ons(store: KnowledgeStore, settings: Settings) -> list[KnowledgeAddOnOut]:
     """Every add-on, ingested and waiting, oldest first."""
     ingested = [add_on_out(a) for a in await knowledge_add_ons.list_all(store)]
-    waiting = [add_on_out(a, status="PENDING") for a in knowledge_pending.list_all(settings)]
+    known = {str(a.knowledge_add_on_id) for a in ingested}  # a failed re-index can leave both
+    waiting = [
+        add_on_out(a, status="PENDING")
+        for a in knowledge_pending.list_all(settings)
+        if a.knowledge_add_on_id not in known
+    ]
     return sorted([*ingested, *waiting], key=lambda a: a.created_at)
 
 
@@ -170,10 +175,16 @@ async def remove(
     """A waiting add-on is simply forgotten. An unknown id answers 404 (one audit line),
     but its pieces are removed anyway: a save that failed half way can leave some behind
     that are searchable but not listed."""
+    store.removed.add(str(knowledge_add_on_id))  # a running re-ingest must not put it back
     waiting = knowledge_pending.load(settings, str(knowledge_add_on_id))
     if waiting is not None:
         knowledge_pending.remove(settings, str(knowledge_add_on_id))
         _audit(write_audit, "KNOWLEDGE_ADD_ON_REMOVED", operator, waiting[0], "PENDING")
+        return
+    if knowledge_pending.remove(settings, str(knowledge_add_on_id)):
+        # a waiting file that cannot be read any more (another key, or damaged): still removable
+        details = {"knowledge_add_on_id": str(knowledge_add_on_id), "ingest_status": "PENDING"}
+        audit(write_audit, "KNOWLEDGE_ADD_ON_REMOVED", operator, details=details)
         return
     add_on = await _find(store, knowledge_add_on_id)
     await knowledge_add_ons.remove(store, str(knowledge_add_on_id))
@@ -188,6 +199,7 @@ async def remove_all(
     store: KnowledgeStore, settings: Settings, write_audit: WriteAudit, operator: Operator
 ) -> int:
     """How many were removed, waiting ones included. The public knowledge stays."""
+    store.removed.add("*")  # a running re-ingest must not put any back
     removed_count = len(await knowledge_add_ons.list_all(store))
     await knowledge_add_ons.remove_all(store)
     removed_count += knowledge_pending.remove_all(settings)

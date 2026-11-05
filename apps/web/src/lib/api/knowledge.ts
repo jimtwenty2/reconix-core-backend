@@ -1,11 +1,11 @@
 /* The Security knowledge page on the Core API (server only): the knowledge add-ons the AI
    Assistant's agent searches (GET/POST/DELETE /knowledge-add-ons), and what each one talks
-   about (GET /knowledge-add-ons/{id}/references) for the graph. The passages themselves never
-   come here: only names and counts. */
+   about (GET /knowledge-add-ons/{id}/references) for the graph, its masked passages (as the API
+   masked them), the built-in knowledge about a reference, and the re-ingest job. */
 import "server-only";
 
 import type { KnowledgeItem } from "../knowledge/types";
-import { coreJson } from "./core";
+import { CoreError, coreJson } from "./core";
 import { asMain } from "./sessions";
 
 /** GET /knowledge-add-ons row (KnowledgeAddOnOut). */
@@ -60,7 +60,11 @@ export async function graphData(): Promise<KnowledgeGraphData> {
   const items = await listItems();
   const pairs = await Promise.all(
     items.map(async (item) => {
-      const out = await asMain((token) => coreJson<{ references: KnowledgeRef[] }>(`/knowledge-add-ons/${item.id}/references`, { token })).catch(() => ({ references: [] }));
+      const out = await asMain((token) => coreJson<{ references: KnowledgeRef[] }>(`/knowledge-add-ons/${item.id}/references`, { token })).catch((error: unknown) => {
+        // removed between the list and this call: no links; anything else (Qdrant down) fails loudly
+        if (error instanceof CoreError && error.status === 404) return { references: [] };
+        throw error;
+      });
       return [item.id, out.references] as const;
     }),
   );
