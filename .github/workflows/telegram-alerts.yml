@@ -1,0 +1,171 @@
+# Telegram alerts: one message for each push of commits to a branch (not tags, not branch
+# deletes), and one when a pull request is opened, reopened, ready for review, merged or closed.
+#
+# Setup (repo Settings → Secrets and variables → Actions):
+#   TELEGRAM_BOT_TOKEN   from @BotFather
+#   TELEGRAM_CHAT_ID     the group or channel id (add the bot to it first)
+#   TELEGRAM_THREAD_ID   optional: a topic inside the group
+# Without the secrets the job still passes and sends nothing.
+#
+# Each alert is a meme GIF from GIPHY with the message as its caption (one picked at random
+# from the list for that event, below). Telegram fetches the GIF by its link. If that fails,
+# the message is sent as plain text. To change a GIF, put another GIPHY media link in the list.
+name: Telegram alerts
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Send alert
+    # Push: not a branch delete. PR: never drafts.
+    if: >-
+      (github.event_name == 'push' && !github.event.deleted) ||
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # GitHub values go in through env, never into the script text, so a PR title or commit
+    # message cannot inject shell code. They are HTML-escaped before they enter the message.
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+      EVENT_NAME: ${{ github.event_name }}
+      REPO: ${{ github.repository }}
+      # Push
+      BRANCH: ${{ github.ref_name }}
+      PUSHER: ${{ github.event.pusher.name }}
+      FORCED: ${{ github.event.forced }}
+      CREATED: ${{ github.event.created }}
+      HEAD_MSG: ${{ github.event.head_commit.message }}
+      HEAD_AUTHOR: ${{ github.event.head_commit.author.name }}
+      # Pull request
+      PR_ACTION: ${{ github.event.action }}
+      PR_MERGED: ${{ github.event.pull_request.merged }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+      PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      BASE: ${{ github.event.pull_request.base.ref }}
+      HEAD: ${{ github.event.pull_request.head.ref }}
+      # Meme GIFs per event, space-separated GIPHY media links; one is picked at random.
+      GIF_PUSH: >-
+        https://media.giphy.com/media/Dh5q0sShxgp13DwrvG/giphy.gif
+        https://media.giphy.com/media/VwohN0ifJLAisUUgrz/giphy.gif
+      GIF_REVIEW: >-
+        https://media.giphy.com/media/TLcFhsL2ZLj7wdrb4E/giphy.gif
+      GIF_MERGED: >-
+        https://media.giphy.com/media/v0SW6n0MKtbM5emeID/giphy.gif
+        https://media.giphy.com/media/s0TZuoCUJ4OdsiqCCY/giphy.gif
+      GIF_CLOSED: >-
+        https://media.giphy.com/media/26uf5maM6LqeMxgv6/giphy.gif
+    steps:
+      - name: Send Telegram message
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Bash 5.2+ reads "&" in ${s//x/y} as the matched text; keep "&lt;" literal.
+          shopt -u patsub_replacement 2>/dev/null || true
+
+          if [ -z "${TELEGRAM_BOT_TOKEN}" ] || [ -z "${TELEGRAM_CHAT_ID}" ]; then
+            echo "::notice::TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set; no alert sent."
+            exit 0
+          fi
+
+          esc() { # HTML-escape for Telegram's parse_mode=HTML
+            local s=${1-}
+            s=${s//&/&amp;}; s=${s//</&lt;}; s=${s//>/&gt;}
+            printf '%s' "$s"
+          }
+          short() { # first line only, at most $2 characters
+            local line
+            line=${1-}
+            line=${line%%$'\n'*}
+            if [ "${#line}" -gt "$2" ]; then line="${line:0:$2}…"; fi
+            printf '%s' "$line"
+          }
+
+          # The time the alert is sent, in Phnom Penh time, e.g. "10:59 AM (Phnom Penh)".
+          now="$(TZ=Asia/Phnom_Penh date '+%-I:%M %p') (Phnom Penh)"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            gifs="$GIF_PUSH"
+            # Read the count from the event file: the full commit list can exceed an env var's size.
+            count=$(jq '.commits // [] | length' "$GITHUB_EVENT_PATH")
+            b=$(esc "$(short "$BRANCH" 80)")
+            if [ "$CREATED" = "true" ]; then
+              what="the branch $b has been created"
+            elif [ "$FORCED" = "true" ]; then
+              what="the branch $b has been force-pushed"
+            else
+              what="the branch $b has been updated"
+            fi
+            # The latest commit; when a push carries more, say how many.
+            commit=$(esc "$(short "$HEAD_MSG" 300)")
+            if [ "$count" -gt 1 ]; then commit="$commit (+$((count - 1)) more commits)"; fi
+            text=$(
+              printf 'Hello team, %s.\n\n' "$what"
+              printf 'Repository: %s\n' "$(esc "$REPO")"
+              printf 'Author: %s\n' "$(esc "$(short "${HEAD_AUTHOR:-$PUSHER}" 80)")"
+              printf 'Time: %s\n\n' "$now"
+              printf 'Commit Message:\n%s\n\n' "$commit"
+              printf "Note: Don't forget to pull your %s branch. Thank you!" "$b"
+            )
+          else
+            gifs="$GIF_REVIEW"
+            case "$PR_ACTION" in
+              opened) what="a new pull request has been opened"
+                note="Please review it when you can. Thank you!" ;;
+              reopened) what="a pull request has been reopened"
+                note="Please review it when you can. Thank you!" ;;
+              ready_for_review) what="a pull request is ready for review"
+                note="Please review it when you can. Thank you!" ;;
+              *)
+                if [ "$PR_MERGED" = "true" ]; then
+                  gifs="$GIF_MERGED"
+                  what="a pull request has been merged into $(esc "$(short "$BASE" 80)")"
+                  note="Don't forget to pull your $(esc "$(short "$BASE" 80)") branch. Thank you!"
+                else
+                  gifs="$GIF_CLOSED"
+                  what="a pull request has been closed without merging"
+                  note="No action needed. Thank you!"
+                fi
+                ;;
+            esac
+            text=$(
+              printf 'Hello team, %s.\n\n' "$what"
+              printf 'Repository: %s\n' "$(esc "$REPO")"
+              printf 'Author: %s\n' "$(esc "$PR_AUTHOR")"
+              printf 'Time: %s\n\n' "$now"
+              printf 'Pull Request: <a href="%s">#%s</a> %s\n' "$(esc "$PR_URL")" "$PR_NUMBER" "$(esc "$(short "$PR_TITLE" 200)")"
+              printf 'Branch: %s → %s\n\n' "$(esc "$(short "$HEAD" 80)")" "$(esc "$(short "$BASE" 80)")"
+              printf 'Note: %s' "$note"
+            )
+          fi
+
+          api="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
+          common=(--silent --show-error --fail-with-body --max-time 30)
+          # --form-string sends text as it is: a caption starting with @ or < is not a file.
+          form=(--form-string "chat_id=${TELEGRAM_CHAT_ID}" --form-string "parse_mode=HTML")
+          if [ -n "${TELEGRAM_THREAD_ID}" ]; then
+            form+=(--form-string "message_thread_id=${TELEGRAM_THREAD_ID}")
+          fi
+
+          # A random meme GIF from the event's list, with the message as its caption; plain text
+          # if Telegram cannot fetch the GIF. GitHub masks the token in the log.
+          read -r -a list <<<"$gifs"
+          if [ "${#list[@]}" -gt 0 ] && gif=${list[RANDOM % ${#list[@]}]} && curl "${common[@]}" "${form[@]}" --form-string "caption=${text}" \
+              --form-string "animation=${gif}" "${api}/sendAnimation" >/dev/null; then
+            exit 0
+          fi
+          echo "::notice::Sending the GIF failed; sending the message as text."
+          if ! curl "${common[@]}" "${form[@]}" --form-string "text=${text}" \
+              --form-string "link_preview_options={\"is_disabled\":true}" \
+              "${api}/sendMessage" >/dev/null; then
+            echo "::warning::Telegram alert failed to send."
+          fi
