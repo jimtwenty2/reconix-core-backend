@@ -38,9 +38,31 @@
       "Bash(cat .env*)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * +*)",
       "Bash(git push origin main*)",
       "Bash(git push origin Main*)",
-      "Bash(git push origin Develop*)"
+      "Bash(git push * Main*)",
+      "Bash(git push *:Main*)",
+      "Bash(git checkout Main*)",
+      "Bash(git checkout * Main*)",
+      "Bash(git switch Main*)",
+      "Bash(git switch * Main*)",
+      "Bash(git branch * Main*)",
+      "Bash(git update-ref refs/heads/Main*)",
+      "Bash(gh pr create * --base Main*)",
+      "Bash(gh pr create * -B Main*)",
+      "Bash(gh pr create --base Main*)",
+      "Bash(gh pr create -B Main*)",
+      "Bash(gh pr create *--base=Main*)",
+      "Bash(git -C * push * Main*)",
+      "Bash(git -C * push *:Main*)",
+      "Bash(git -C * push --force*)",
+      "Bash(git -C * push * --force*)",
+      "Bash(git -C * push -f*)",
+      "Bash(git -C * push * -f*)",
+      "Bash(git -C * push * +*)"
     ]
   },
   "hooks": {
@@ -58,6 +80,11 @@
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-main.sh",
+            "timeout": 10
+          },
           {
             "type": "command",
             "if": "Bash(git commit*)",

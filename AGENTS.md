@@ -276,9 +276,11 @@ Report results honestly. If a test fails or a step was skipped, say so in the PR
 
 ## 8. Git and pull requests
 
-- `Main` always works. Nobody pushes to `Main` or `Develop` directly; the settings deny it.
-- Open PRs against `Develop`. Every PR needs one review. There is no CI workflow: before you
-  open a PR, run lint and the tests of every package you touched yourself (section 6).
+- `Main` always works. Nobody changes `Main` directly: it moves only through a reviewed PR that a
+  person merges. Changes normally reach `Develop` through a PR too, but you (and Claude) may
+  also commit, push and merge on `Develop` directly; force-push is denied everywhere.
+  `.claude/settings.json` and `hooks/protect-main.sh` enforce this.
+- Open PRs against `Develop`. Every PR needs green CI and one review.
 - Branch name: `<name>/<task>` (for example `pojim/scope-check`), or `feat/`, `fix/`, `chore/` plus
   a short name.
 - Commit messages: conventional style with the part, for example
@@ -312,6 +314,7 @@ An overview of the folder is in [`.claude/README.md`](.claude/README.md).
 | Prove no secret leaks after a run | `run-leak-test` |
 | Tag a release | `cut-release` |
 | Any code change (house style) | `write-simple-code` |
+| How the parts connect; how API resources and ids link (before calling the API) | `reconix-architecture` |
 
 ### Subagents (read-only reviewers; they report and never edit)
 
@@ -328,7 +331,8 @@ An overview of the folder is in [`.claude/README.md`](.claude/README.md).
 | `hooks/protect-openapi.sh` | Before Write/Edit | Denies hand edits to `docs/openapi.json` |
 | `hooks/scan-staged-secrets.sh` | Before `git commit` | Denies a commit with a staged `.env` or secret (gitleaks, else a regex fallback) |
 | ruff post-edit hook | After Write/Edit of a `.py` file | Runs `ruff format` and `ruff check --fix` on that file |
-| `permissions.deny` | Always | No reading `.env`, keys or `secrets/`; no force-push; no direct push to `Main`/`Develop` |
+| `hooks/protect-main.sh` | Before any Bash command | Denies commit, merge, push, reset and the like while `Main` is checked out, and merging a PR whose base is `Main` |
+| `permissions.deny` | Always | No reading `.env`, keys or `secrets/`; no force-push; nothing that pushes to, switches to, renames or opens a PR against `Main` |
 
 If a hook denies an action, fix the cause. Never disable or bypass a hook to get past it.
 
