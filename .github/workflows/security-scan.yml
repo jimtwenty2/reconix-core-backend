@@ -221,7 +221,8 @@ jobs:
           {
             # "CVE-2024-1234 jinja2: short title" and "DS-0026 No HEALTHCHECK defined (Dockerfile)"
             jq -r '.Results[]? | .Vulnerabilities[]?
-              | .VulnerabilityID + " " + .PkgName + ": " + ((.Title // "")[0:70])' "$out/vuln.json"
+              | .PkgName as $p
+              | .VulnerabilityID + " " + $p + ": " + ((.Title // "") | ltrimstr($p + ": "))[0:70]' "$out/vuln.json"
             jq -r '.Results[]? | .Target as $t | .Misconfigurations[]? | select(.Status == "FAIL")
               | .ID + " " + .Title + " (" + $t + ")"' "$out/config.json"
           } 2>/dev/null | top | put_top
