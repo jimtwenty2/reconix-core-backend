@@ -21,23 +21,30 @@ writing Next.js code (this Next.js version differs from older ones: check
 - Never run real scanners (nmap, nuclei, nikto, sqlmap, …) from here: the `guard-bash` hook
   refuses them. Execution belongs to the backend, behind scope checks and human approval.
 
-## Data: static only (no API calls yet)
+## Data: real data from the Core API (no mock data)
 
-The apps don't call the Core API yet. All data is static: the TUI's in-memory store
-(`tui/reconix/store/`), the web's saved runs (`web/sample-data/`, `~/.reconix/assessments`) and
-JSON files in `sample-data/api/`.
+Decided 2026-11-05 (Sokpiseth; lead and TUI owner review in the PR): the apps show only real
+data. Everything comes from the local Core API (`services/api`, 127.0.0.1:8000), which runs
+the checks and approvals and calls Kali over MCP. The apps never call Kali or a tool
+themselves (rule S7), and there is no mock model, sample run or seed data in product code.
 
-- **Read the backend to learn the shape, never call it.** The contract is `docs/openapi.json`;
-  the models are in `services/api/src/reconix_api/schemas/`, the routes in `…/api/`, the enums in
-  `…/models/enums.py`. Never run the backend or send it a request.
-- **Make the data as JSON** in the exact response shape: one file per endpoint in
-  `sample-data/api/<resource>/<operation>.json` (the `make-static-data` skill). Every required
-  field, UPPERCASE ERD V3 enums, consistent ids, reserved domains and masked secrets only.
-- **Screens and views still go through their seam**: the TUI's store, the web's server-side
-  `lib/data/`. They never read the files directly.
-- **No API client code**: no `httpx`/`requests`, `RECONIX_API_URL` or `localhost:8000` in
-  `tui/reconix/` or `web/src/` (the `post-edit-check` hook refuses them). `backend-integrator`
-  and `wire-backend` are for later, only when the person asks to wire the API.
+- **One client per app.** The TUI calls the API only from `tui/reconix/core_api/` (stdlib
+  `urllib`, loopback only, the session token in memory). The web calls it only from
+  server-only code in `web/src/lib/api/`, so the token never reaches the browser. The
+  `post-edit-check` hook refuses API addresses anywhere else.
+- **The contract is `docs/openapi.json`.** Read it, never edit it. If the apps need a field the
+  API doesn't have, tell its owner (Vanneth); never work around it in the client.
+- **The API decides; the apps ask.** Show its 401, 409, 422 and 429 answers to the person.
+  Never retry around them, and never fall back to a local decision, a model call or made-up
+  data. Without the API the apps say so ("Core API not running: start it with
+  `./deploy/dev.sh`").
+- **Translate values in one place**: `core_api/adapt.py` (TUI), `web/src/lib/api/adapt.ts`
+  (web). UPPERCASE ERD V3 enums stay UPPERCASE; `NONE` and `UNKNOWN` severities are shown,
+  never dropped.
+- **Tests** use the fake API in `tui/tests/fakes/` (web: `web/tests/fakes/`), built in the
+  exact response shapes. That is test code only; product code never imports it.
+- **Still local** (no endpoint yet): test logins and the vault, local knowledge files, the
+  `accepted` triage status, severity override and note, retest, and the template list.
 
 ## TUI (`tui/`)
 
@@ -112,19 +119,19 @@ npm run lint && npx next typegen && npm run typecheck && npm test
 |---|---|
 | `tui-engineer` | TUI screens, widgets, bindings, TCSS |
 | `web-engineer` | Web views, components, routes, styles |
-| `backend-integrator` | Later only: moving a data source onto the Core API (when asked) |
+| `backend-integrator` | Moving a data source onto the Core API |
 | `qa-tester` | Pilot tests (TUI), vitest / Playwright (web) |
 | `security-reviewer` | Scope, approval gate, secrets, auth, anything risky (read-only) |
 | `code-reviewer` | Final review against these rules (read-only) |
 
-Skills: `make-static-data` (static JSON in the API's shape), `add-screen`, `add-widget`,
-`theme-tokens`, `write-tui-test`, `write-web-test`, `sync-generated`, and `wire-backend` (later
-only, when asked).
+Skills: `wire-backend` (move a data source onto the Core API), `make-static-data` (test
+fixtures in the API's exact shape, for `tests/fakes/` only), `add-screen`, `add-widget`,
+`theme-tokens`, `write-tui-test`, `write-web-test`, `sync-generated`.
 
 Guardrail hooks (`.claude/hooks/`): `stay-in-apps` (read the project, change `apps/` only, see Scope),
 `guard-paths` (no hand edits of generated files, no `.env` or key files), `guard-bash` (no real scanners, no push to `main`/`Develop`, no
 force push, no `--no-verify`, no reading key files), `scan-staged-secrets` (on `git commit`),
-`post-edit-check` (ruff + compile on Python edits, no Core API calls, a security-review
+`post-edit-check` (ruff + compile on Python edits, Core API calls only in the client, a security-review
 reminder on safety files).
 
 ## Git

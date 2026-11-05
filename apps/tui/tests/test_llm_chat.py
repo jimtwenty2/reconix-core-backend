@@ -1,304 +1,98 @@
-"""Flexible LLM: chat replies, mid-task model switching, history and guardrails."""
+"""Chat: every reply comes from the Core API (POST /sessions/{id}/chat), never a direct model.
+
+The fake API (tests/fakes/fake_api.py) stands in for services/api: `reply` is what its AI
+answers, `fail_on` makes a route fail. The app sends the masked line plus where its flow
+is, shows the checked reply labelled with the model you chose, and says plainly when the
+API can't answer. It makes no reply up in its place.
+"""
 
 import pytest
 
 from reconix import store
-from reconix.llm import LLMError, client, db, guardrail
-from reconix.store.snapshot import uid_for
-from reconix.store.transcript import add_chat
+from reconix.llm import client, guardrail
+from reconix.store import llm_chat
 
-from .support import TEST_PASSWORD, run_to
+from .support import TEST_PASSWORD, decide, play_until_gate, run_to
 
 
 @pytest.fixture
-def two_models(monkeypatch):
-    """Ollama and OpenAI both configured and REACHABLE; records every completion call."""
+def api_model(monkeypatch):
+    """OpenAI set, tested and active here, and approved for the Core API (/provider's OK)."""
     monkeypatch.setattr(client, "ping", lambda pid, model, **kw: (True, "reachable"))
-    store.set_provider("ollama", models=["llama3.1"])
     store.set_provider("openai", api_key="sk-openai-key-1234", models=["gpt-4o-mini", "gpt-4o"])
-    store.test_provider("ollama")
     store.test_provider("openai")
-
-    calls = []
-
-    def complete(pid, model, messages, **kw):
-        calls.append({"provider": pid, "model": model, "messages": messages})
-        return f"reply from {pid}/{model}"
-
-    monkeypatch.setattr(client, "complete", complete)
-    return calls
+    store.activate("openai", "gpt-4o-mini")
+    store.core_api_approve()
 
 
-def _last_reply() -> str:
-    return [c for c in store.list_chat() if c.speaker == "reconix"][-1].text
+def _replies() -> list:
+    return [c for c in store.list_chat() if c.speaker == "reconix"]
 
 
-# --- a model answers --------------------------------------------------------------
+def _sent(fake_api) -> list:
+    """What the app sent to the API's chat route, oldest first."""
+    return [
+        body["content"]
+        for body in fake_api.bodies("POST", "/sessions/")
+        if body and "content" in body and "(Reconix app:" in body["content"]
+    ]
 
-def test_chat_line_uses_active_model(two_models):
+
+def _to_high_gate() -> str:
+    run_to("plan")
+    decide("plan")
+    decide(play_until_gate())  # MEDIUM
+    return play_until_gate()  # HIGH
+
+
+# --- the API answers --------------------------------------------------------------
+
+
+def test_a_chat_line_goes_to_the_core_api_and_its_reply_shows(api_model, fake_api):
+    fake_api.reply = "Port 443 is in scope."
     run_to("scope")
-    store.activate("ollama", "llama3.1")
     store.say_to_assistant("what's the risk here?")
-    assert two_models[-1]["provider"] == "ollama"
-    assert _last_reply() == "reply from ollama/llama3.1"
+    assert any(p.endswith("/chat") for p in fake_api.paths())
+    assert _replies()[-1].text == "Port 443 is in scope."
 
 
-def test_switch_model_between_lines(two_models):
+def test_a_reply_is_labelled_with_the_model_you_chose(api_model, fake_api):
     run_to("scope")
-    store.activate("ollama", "llama3.1")
-    store.say_to_assistant("first question")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("second question")
-    assert two_models[-1]["provider"] == "openai"
-    assert two_models[-1]["model"] == "gpt-4o-mini"
+    llm_chat.record_draft(llm_chat.build_draft("hello"))   # the app's worker path
+    assert _replies()[-1].author == "gpt-4o-mini"
 
 
-def test_switch_provider_mid_task_preserves_run(two_models):
-    run_to("scope")                                    # a gate is waiting
-    gate_before = store.waiting_gate()
-    findings_before = [f.fid for f in store.list_findings()]
-    decisions_before = len(store.list_approval_decisions())
-
-    store.activate("ollama", "llama3.1")
-    store.say_to_assistant("talk to me on ollama")
-    store.activate("openai", "gpt-4o-mini")            # switch while the gate waits
-    store.say_to_assistant("now on openai")
-
-    assert store.waiting_gate() == gate_before
-    assert [f.fid for f in store.list_findings()] == findings_before
-    assert len(store.list_approval_decisions()) == decisions_before
-    assert store.get_run().started
-
-
-def test_history_carries_across_the_switch(two_models):
+def test_the_api_is_told_where_the_flow_is(api_model, fake_api):
     run_to("scope")
-    store.activate("ollama", "llama3.1")
-    store.say_to_assistant("remember apples")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("what did I say?")
-    sent = " ".join(m["content"] for m in two_models[-1]["messages"])
-    assert "remember apples" in sent                   # operator line to the old model
-    assert "reply from ollama/llama3.1" in sent        # the old model's reply
-
-
-def test_context_lists_findings_and_decisions(two_models):
-    run_to(None)                                       # run to the end: findings exist
-    store.activate("openai", "gpt-4o-mini")
-    store.say_operator_line("summarize")
-    store.llm_answer("summarize")
-    context = two_models[-1]["messages"][0]["content"]
-    assert store.list_findings()[0].fid in context
-    assert "findings" in context
-
-
-def test_history_saved_to_db(two_models):
-    run_to("scope")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("log this")
-    rows = db.list_chat_messages(uid_for(store.get_assessment()))
-    roles = [(r["role"], r["provider_id"], r["model"]) for r in rows]
-    assert ("user", None, None) in roles
-    assert ("assistant", "openai", "gpt-4o-mini") in roles
-
-
-# --- guardrails stay identical and strict -----------------------------------------
-
-def test_system_prompt_identical_across_models(two_models):
-    run_to("scope")
-    store.activate("ollama", "llama3.1")
-    store.say_to_assistant("a")
-    system_a = two_models[-1]["messages"][0]["content"]
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("b")
-    system_b = two_models[-1]["messages"][0]["content"]
-    assert system_a.startswith(guardrail.SYSTEM_PROMPT)
-    assert system_b.startswith(guardrail.SYSTEM_PROMPT)
-
-
-def test_secret_typed_in_chat_is_redacted(two_models):
-    run_to("scope")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant(f"here is my password={TEST_PASSWORD} ok?")
-    sent = " ".join(m["content"] for m in two_models[-1]["messages"])
-    assert TEST_PASSWORD not in sent                   # masked before it reaches the model
-
-
-def test_approval_still_needs_token_and_hash_after_switch(two_models):
-    run_to("approval:approval-002")                    # the HIGH-risk gate
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("should I approve?")        # the model cannot approve
-    request = store.get_approval("approval-002")
-    with pytest.raises(store.StoreValidationError):    # HIGH needs the single-use token
-        store.approve(request.request_id, command_hash=request.command_hash)
-
-
-# --- fallback keeps the demo working ----------------------------------------------
-
-def test_no_active_model_uses_builtin_reply():
-    run_to("scope")
-    store.say_to_assistant("hello there")
-    assert _last_reply()                               # a built-in reply was produced
-
-
-def test_llm_error_falls_back_with_a_note(two_models, monkeypatch):
-    from reconix.llm import LLMError
-
-    def boom(*a, **k):
-        raise LLMError("timed out")
-
-    monkeypatch.setattr(client, "complete", boom)
-    run_to("scope")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("are you there?")
-    replies = [c.text for c in store.list_chat() if c.speaker == "reconix"]
-    assert any("LLM unavailable" in r for r in replies)
-
-
-# --- before any target -------------------------------------------------------------
-
-def test_a_question_before_any_target_goes_to_the_active_model(two_models):
-    store.activate("openai", "gpt-4o-mini")
-    assert store.submit_prompt("what is an IDOR?") == "ask"
-    store.llm_answer("what is an IDOR?")
-    assert not store.get_run().started
-    assert _last_reply() == "reply from openai/gpt-4o-mini"
-
-
-def test_without_a_model_a_question_before_any_target_gets_the_builtin_reply():
-    assert store.submit_prompt("what is an IDOR?") == "answered"
-    assert _last_reply()
-
-
-def test_picking_a_model_without_the_harness_does_not_crash(two_models):
-    from reconix.store import agent_run
-
-    store.activate("openai", "gpt-4o-mini")
-    assert agent_run.switch_model() is False        # no agent: nothing to switch
-
-
-def test_the_history_sent_to_a_model_starts_with_a_user_turn(two_models):
-    add_chat("text", "reconix", "Welcome to Reconix.")     # the opening line
-    store.activate("openai", "gpt-4o-mini")
-    store.submit_prompt("hi")
-    store.llm_answer("hi")
-    store.submit_prompt("who are you")
-    store.llm_answer("who are you")
-    roles = [m["role"] for m in two_models[-1]["messages"]]
-    assert roles[:2] == ["system", "user"]
-    assert roles[-1] == "user"
-
-
-# --- a streamed reply ---------------------------------------------------------------
-
-def _stream_words(monkeypatch, words, fail_after=None):
-    """`client.stream` fed `words` one by one; records the chat line the screen would show."""
-    shown = []
-
-    def fake_stream(pid, model, messages, on_text, **kw):
-        text = ""
-        for i, word in enumerate(words):
-            if fail_after is not None and i == fail_after:
-                raise LLMError("timed out")
-            text += word
-            on_text(text)
-            shown.append(_last_reply())
-        return text
-
-    monkeypatch.setattr(client, "stream", fake_stream)
-    monkeypatch.setattr("reconix.store.llm_chat.STREAM_REDRAW", 0)
-    return shown
-
-
-def test_a_streamed_reply_grows_in_one_line(two_models, monkeypatch):
-    shown = _stream_words(monkeypatch, ["Reconix ", "tests ", "web ", "apps."])
-    store.activate("openai", "gpt-4o-mini")
-    redraws = []
-    store.submit_prompt("what do you do?")
-    store.llm_answer("what do you do?", on_update=lambda: redraws.append(1))
-    assert shown[:3] == ["Reconix", "Reconix tests", "Reconix tests web"]
-    assert _last_reply() == "Reconix tests web apps."
-    texts = [c.text for c in store.list_chat()]
-    assert texts.count("Reconix tests web apps.") == 1 and "thinking…" not in texts
-    assert redraws
-    saved = db.list_chat_messages(uid_for(store.get_assessment()))
-    assert saved[-1]["content"] == "Reconix tests web apps."
-
-
-def test_a_secret_in_a_streamed_reply_never_shows(two_models, monkeypatch):
-    secret = f"password={TEST_PASSWORD}"
-    shown = _stream_words(monkeypatch, ["Use ", secret[:9], secret[9:], " here."])
-    store.activate("openai", "gpt-4o-mini")
-    store.submit_prompt("hint?")
-    store.llm_answer("hint?", on_update=lambda: None)
-    assert all(TEST_PASSWORD[:4] not in line for line in shown + [_last_reply()])
-
-
-def test_a_stream_that_fails_leaves_the_builtin_reply(two_models, monkeypatch):
-    _stream_words(monkeypatch, ["Half ", "a ", "reply"], fail_after=2)
-    store.activate("openai", "gpt-4o-mini")
-    store.submit_prompt("hi")
-    store.llm_answer("hi", on_update=lambda: None)
-    replies = [c.text for c in store.list_chat() if c.speaker == "reconix"]
-    assert not any(r.startswith("Half") for r in replies)
-    assert any("LLM unavailable (timed out)" in r for r in replies)
-
-
-def test_the_client_streams_reply_text_and_skips_reasoning(monkeypatch):
-    from types import SimpleNamespace as NS
-
-    monkeypatch.undo()            # the real client.stream, not conftest's stand-in
-
-    def chunk(content):
-        return NS(choices=[NS(delta=NS(content=content, reasoning_content="hmm"))])
-
-    monkeypatch.setattr(client.litellm, "completion",
-                        lambda **kw: iter([chunk(None), chunk("Hel"), chunk("lo")]))
-    seen = []
-    assert client.stream("openai", "gpt-4o-mini", [], seen.append) == "Hello"
-    assert seen == ["", "Hel", "Hello"]
-    monkeypatch.setattr(client.litellm, "completion", lambda **kw: iter([chunk(None)]))
-    with pytest.raises(LLMError, match="empty"):
-        client.stream("openai", "gpt-4o-mini", [], seen.append)
-
-
-# --- what the model remembers --------------------------------------------------------
-
-def test_the_run_s_scripted_lines_never_crowd_out_your_questions(two_models):
-    run_to("scope")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("remember the codeword: PELICAN")
-    for i in range(60):                                   # a long run says a lot
-        add_chat("text", "reconix", f"scripted line {i}")
-    store.say_to_assistant("what was the codeword?")
-    sent = two_models[-1]["messages"]
-    turns = [m["content"] for m in sent if m["role"] in ("user", "assistant")]
-    assert "remember the codeword: PELICAN" in turns
-    assert not any(t.startswith("scripted line") for t in turns)
-
-
-def test_the_model_sees_the_scope_and_the_plan(two_models):
-    run_to("scope")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("which ports may you test?")
-    context = two_models[-1]["messages"][0]["content"]
-    scope = store.get_scope()
-    assert f"tools: {', '.join(scope.tools)}" in context
-    assert f"time limit: {scope.time_limit_minutes} min" in context
-    first = store.plan_overview()[0]
-    assert f"{first.num} {first.label}" in context
-    assert store.list_requests()[0].text in context
-
-
-def test_the_model_knows_the_step_and_that_nothing_has_run(two_models):
-    run_to("scope")
-    store.activate("openai", "gpt-4o-mini")
     store.say_to_assistant("what happens next?")
-    context = two_models[-1]["messages"][0]["content"]
-    assert "current step: Template · scope review" in context
-    assert "nothing is approved and nothing has run" in context
-    assert "Approve scope, Edit manifest or Reject in the menu" in context
-    prompt = guardrail.SYSTEM_PROMPT
-    assert "never ask the operator to confirm in chat" in prompt and "no Markdown" in prompt
+    sent = _sent(fake_api)[-1]
+    assert sent.startswith("what happens next?\n(Reconix app: step")
+    assert "Approve scope" in sent
+
+
+def test_a_secret_typed_in_chat_never_reaches_the_api(api_model, fake_api):
+    run_to("scope")
+    store.say_to_assistant(f"here is my password={TEST_PASSWORD} ok?")
+    assert all(TEST_PASSWORD not in line for line in _sent(fake_api))
+    assert all(TEST_PASSWORD not in c.text for c in store.list_chat())
+
+
+def test_switching_the_model_mid_run_keeps_the_run(api_model, fake_api):
+    run_to("scope")
+    gate = store.waiting_gate()
+    store.say_to_assistant("first question")
+    store.activate("openai", "gpt-4o")
+    store.core_api_approve()
+    store.say_to_assistant("second question")
+    assert store.waiting_gate() == gate and store.get_run().started
+    assert [p["model_name"] for p in fake_api.providers] == ["gpt-4o-mini", "gpt-4o"]
+
+
+def test_the_reply_is_checked_before_it_shows(api_model, fake_api):
+    fake_api.reply = "**Approved Scope:**\n## Plan\n1. __Host__ discovery"
+    run_to("scope")
+    store.say_to_assistant("show the plan")
+    assert _replies()[-1].text == "Approved Scope:\nPlan\n1. Host discovery"
 
 
 def test_markdown_in_a_reply_is_shown_as_plain_text():
@@ -306,10 +100,87 @@ def test_markdown_in_a_reply_is_shown_as_plain_text():
     assert reply == "Approved Scope:\nPlan\n1. Host discovery"
 
 
-def test_at_the_plan_the_model_knows_what_can_move(two_models):
-    run_to("plan")
-    store.activate("openai", "gpt-4o-mini")
-    store.say_to_assistant("can 3a run first?")
-    context = two_models[-1]["messages"][0]["content"]
-    assert "can never move to position 1 or before another phase" in context
-    assert "swapping the gated checks with each other" in context
+def test_the_session_token_never_shows(api_model, fake_api):
+    run_to("scope")
+    store.say_to_assistant("hello")
+    assert all("fake-session-token" not in c.text for c in store.list_chat())
+
+
+# --- when the API can't answer ----------------------------------------------------
+
+
+def test_an_api_error_is_said_plainly_and_nothing_is_made_up(api_model, fake_api):
+    run_to("scope")
+    fake_api.fail_on["POST /sessions/"] = (503, "MODEL_UNAVAILABLE", "the model is down")
+    before = len(_replies())
+    store.say_to_assistant("are you there?")
+    added = [c.text for c in _replies()[before:]]
+    assert added == ["The AI couldn't answer: the model is down."]
+
+
+def test_the_api_not_running_is_said_plainly(api_model, fake_api):
+    run_to("scope")
+    fake_api.down = True
+    store.say_to_assistant("are you there?")
+    assert _replies()[-1].text.startswith("The AI couldn't answer: the Core API is not running")
+
+
+def test_a_remote_model_waits_for_your_ok(monkeypatch, fake_api):
+    monkeypatch.setattr(client, "ping", lambda pid, model, **kw: (True, "reachable"))
+    store.set_provider("openai", api_key="sk-openai-key-1234", models=["gpt-4o-mini"])
+    store.test_provider("openai")
+    store.activate("openai", "gpt-4o-mini")  # not approved for the API yet
+    run_to("scope")
+    store.say_to_assistant("hello")
+    assert "needs your OK" in _replies()[-1].text
+    assert not any(p.endswith("/chat") for p in fake_api.paths())
+
+
+def test_without_a_local_model_the_api_uses_its_own(fake_api):
+    run_to("scope")
+    store.say_to_assistant("hello")
+    assert _replies()[-1].text == fake_api.reply
+
+
+# --- the reply off the UI thread --------------------------------------------------
+
+
+def test_a_draft_records_nothing_until_it_is_recorded(api_model, fake_api):
+    run_to("scope")
+    before = len(store.list_chat())
+    draft = llm_chat.build_draft("what now?")
+    assert draft.core and not draft.error and len(store.list_chat()) == before
+    llm_chat.record_draft(draft)
+    assert _replies()[-1].text == fake_api.reply
+
+
+def test_a_failed_draft_drops_its_thinking_line(api_model, fake_api):
+    run_to("scope")
+    fake_api.fail_on["POST /sessions/"] = (500, "INTERNAL", "boom")
+    placeholder = llm_chat.begin_reply()
+    llm_chat.record_draft(llm_chat.build_draft("what now?"), placeholder)
+    texts = [c.text for c in store.list_chat()]
+    assert llm_chat.THINKING not in texts and texts[-1] == "The AI couldn't answer: boom."
+
+
+# --- before any target ------------------------------------------------------------
+
+
+def test_a_question_before_any_target_goes_to_the_api(api_model, fake_api):
+    assert store.submit_prompt("what is an IDOR?") == "ask"
+    store.llm_answer("what is an IDOR?")
+    assert not store.get_run().started
+    assert _replies()[-1].text == fake_api.reply
+
+
+# --- the AI never decides ---------------------------------------------------------
+
+
+def test_approval_still_needs_token_and_hash_after_a_chat(api_model, fake_api):
+    gate = _to_high_gate()
+    store.say_to_assistant("should I approve?")  # the AI cannot approve
+    request = store.get_approval(gate.split(":", 1)[1])
+    assert request.risk == "HIGH"
+    with pytest.raises(store.StoreValidationError):  # HIGH needs the single-use token
+        store.approve(request.request_id, command_hash=request.command_hash)
+    assert store.waiting_gate() == gate

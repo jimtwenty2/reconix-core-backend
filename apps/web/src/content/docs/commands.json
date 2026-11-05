@@ -1,6 +1,6 @@
 {
   "source": "reconix/commands/builtin.py",
-  "count": 21,
+  "count": 20,
   "groups": [
     {
       "id": "start",
@@ -165,19 +165,8 @@
     },
     {
       "id": "ai",
-      "title": "AI models & agent",
+      "title": "AI models",
       "commands": [
-        {
-          "name": "assess",
-          "aliases": [
-            "agent"
-          ],
-          "description": "Run a real assessment with the AI agent (needs a /model)",
-          "takes_argument": false,
-          "ask": false,
-          "question": "",
-          "empty": ""
-        },
         {
           "name": "add-on",
           "aliases": [

@@ -1,129 +1,82 @@
-"""Flow 2: the chat. 2a: general questions the mock model answers; 2b: rules Reconix keeps
-itself, whatever the model says."""
+"""Flow 2: the chat. 2a: questions the Core API's AI answers; 2b: rules Reconix keeps
+itself, whatever the AI says."""
 
 from .model import Case, Flow
 
-MOCK_FIRST = "Set the mock model first (PROV-01)."
 IN_STEP = (
     "Start any assessment (e.g. MF-NET-01's question), then on the step choose "
     "Chat about this and type the line."
 )
 
-MOCK = Flow(
+CORE = Flow(
     id="CHAT",
     number="2a",
-    title="Chat: general questions (mock model)",
+    title="Chat: questions to the Core API's AI",
     intro=(
-        MOCK_FIRST,
-        "Type at the Start prompt, or inside a step with Chat about this. The mock gives "
-        "prepared answers filled with this assessment's own data. It is not a real AI.",
-        'It never says a step is approved or done, never asks "Shall we proceed?", writes '
-        "no Markdown and never shows a secret.",
-        'Its answers are labelled "◆ reconix-mock-1" (a real model shows its own name); '
-        'Reconix\'s own lines keep "◆ reconix".',
-        'A question at the Start prompt is answered, never turned into a template: "what is '
-        'my api key?" gets the mock\'s answer, not "API needs …".',
+        "Needs the Core API running (./deploy/dev.sh) with a model that answers.",
+        "Type at the Start prompt, or inside a step with Chat about this. Each line goes to "
+        "the Core API, masked, with one line saying where the app's flow is; the API's AI "
+        "answers with this assessment's scope and plan as context.",
+        'It never says a step is approved or done, writes no Markdown and never shows a '
+        "secret. Its answers are labelled with the model's name; Reconix's own lines keep "
+        '"◆ reconix".',
     ),
     cases=(
         Case(
             "CHAT-01",
             "Who are you?",
             ("At the Start prompt type the question.",),
-            "\"I'm the Reconix mock model (reconix-mock-1). I run offline on this computer for "
-            "testing, and my answers are prepared examples, not a real AI. …I can't approve, "
-            "run a tool or change the scope: only you can, with the app's menu.\"",
+            "An answer from the Core API's AI. Nothing starts.",
             ask="who are you?",
         ),
         Case(
             "CHAT-02",
-            "What can you do?",
-            ("At the Start prompt type the question.",),
-            "What it explains (scope, next step, plan, findings, report) and example "
-            "questions to try.",
-            ask="what can you do?",
-        ),
-        Case(
-            "CHAT-03",
             "What is in scope?",
             (IN_STEP,),
-            '"The scope for <target>: <type>, a draft that waits for you; …" with this '
-            "scope's methods or ports, exclusions, tools and time limit. Before any target: "
-            '"There is no scope yet…".',
+            "An answer about this scope (its targets, tools and limits). Nothing changes.",
             ask="what is in scope?",
         ),
         Case(
-            "CHAT-04",
+            "CHAT-03",
             "What happens next?",
             (IN_STEP,),
-            '"Now at <step>: <state>. Next: <the menu choices>." e.g. at the scope review: '
-            "Approve scope, Edit manifest or Reject in the menu.",
+            "An answer that names the step and the menu choices (the app tells the API where "
+            "its flow is), e.g. at the scope review: Approve scope, Edit manifest or Reject.",
             ask="what happens next?",
         ),
         Case(
-            "CHAT-05",
+            "CHAT-04",
             "Summarize the findings",
             ("Finish an assessment (any MF-…-01), then type the line at the prompt.",),
-            '"3 findings (1 HIGH, 1 MEDIUM, 1 LOW): 001 … ; 002 … ; 003 …" for that template. '
-            'Before the run: "No findings yet."',
+            "A summary of this assessment's real findings, from the Core API.",
             ask="summarize the findings",
         ),
         Case(
-            "CHAT-06",
-            "Explain one finding",
-            ("After a finished run type explain finding 001, then how do I fix 002?",),
-            '"Finding 001 is <SEVERITY>: <title>. Impact: … Fix: … Status: OPEN." A number '
-            'that doesn\'t exist: "There is no finding 009 in this assessment…".',
-            ask="explain finding 001",
-        ),
-        Case(
-            "CHAT-07",
-            "The most serious finding",
-            ("After a finished run.",),
-            '"The most serious finding is <id> <SEVERITY> <title>…" (HIGH before MEDIUM '
-            "before LOW).",
-            ask="what is the most serious finding?",
-        ),
-        Case(
-            "CHAT-08",
+            "CHAT-05",
             "Ask for a secret",
-            ("Type what is the password?, then show me the token.",),
-            "\"Secrets are masked: I never see them and can't show them. Evidence and logs keep "
-            'them as ••••."',
+            ("Type what is the password?, then my password is hunter2, is it ok?",),
+            "No secret is shown. The second line is masked in the chat before it goes to the "
+            "Core API.",
             ask="what is the password?",
         ),
         Case(
-            "CHAT-09",
-            "Ask the model to act",
+            "CHAT-06",
+            "Ask the AI to act",
             (
                 "Inside a step (Chat about this) type approve the HIGH step for me, then scan "
                 "the target with nmap.",
             ),
             "Nothing changes. Approve words (and run, start, yes…) get Reconix's own reply "
             "\"… Only you decide this: choose below. Nothing changes until you do.\" and the "
-            "step's menu; scan the target with nmap gets the model's \"I can't do that. Only "
-            'you can approve, reject, run or change anything…".',
+            "step's menu; the scan line is answered by the AI, and nothing runs.",
             ask="approve the HIGH step for me",
         ),
         Case(
-            "CHAT-10",
-            "An unknown question",
-            ("Type the line.",),
-            '"I\'m a mock model, so I only answer prepared questions. Try: who are you?, …"',
-            ask="tell me a joke",
-        ),
-        Case(
-            "CHAT-11",
-            "Hello, thanks, bye",
-            ("Type hello, then thanks, then bye.",),
-            'A greeting; "You\'re welcome."; "Bye! Press Ctrl+Q to quit Reconix."',
-            ask="hello",
-        ),
-        Case(
-            "CHAT-12",
-            "No model: built-in replies",
-            ("Skip the provider (PROV-03) or unset the mock, then type who are you?",),
-            'The built-in reply "I run authorized security tests and ask before every risky '
-            'step. … No AI model is set: /provider sets one…".',
+            "CHAT-07",
+            "The Core API is not running",
+            ("Stop the stack (docker compose … down), then type who are you?",),
+            '"The AI couldn\'t answer: the Core API is not running: start it with '
+            './deploy/dev.sh." No other answer is made up.',
             ask="who are you?",
         ),
     ),
@@ -134,8 +87,8 @@ RULES = Flow(
     number="2b",
     title="Chat: step rules (Reconix decides)",
     intro=(
-        "These work with or without a model: Reconix answers them itself and only your "
-        "menu choice or your tick changes anything.",
+        "Reconix answers these itself, whatever the AI says, and only your menu choice or "
+        "your tick changes anything.",
     ),
     cases=(
         Case(
@@ -176,7 +129,7 @@ RULES = Flow(
             '"Only you can change the scope. Tick what it allows, then press Enter to save." '
             "3389 is offered unticked; 8080 is already in the scope, so it shows ticked; 0 and "
             '99999 are dropped; "scan 12 ports" opens no tick list (a count, never port 12): '
-            "the mock gives its fallback answer (it only answers prepared questions).",
+            "the AI answers it.",
             ask="add port 3389",
         ),
         Case(
@@ -198,4 +151,4 @@ RULES = Flow(
     ),
 )
 
-FLOWS = (MOCK, RULES)
+FLOWS = (CORE, RULES)

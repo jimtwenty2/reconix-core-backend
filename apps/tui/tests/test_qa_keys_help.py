@@ -8,7 +8,7 @@ from reconix.screens.forms import ScopeEditForm
 from reconix.screens.help import GLOBAL_ROWS
 from reconix.widgets import ChoiceMenu, PromptBox
 
-from .support import SIZE, run_to, settle, show
+from .support import SIZE, decide, play_until_gate, run_to, settle, show
 
 
 def test_help_says_where_slash_and_question_mark_work():
@@ -49,7 +49,9 @@ async def test_slash_and_question_mark_stay_text_in_a_form_field(app):
 
 
 async def test_slash_and_question_mark_stay_text_on_type_something(app):
-    run_to("approval:approval-001")
+    run_to("plan")
+    decide("plan")
+    gate = play_until_gate()
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "approval")
         await settle(pilot, 8)  # let the menu arm
@@ -62,4 +64,4 @@ async def test_slash_and_question_mark_stay_text_on_type_something(app):
         await settle(pilot)
         assert isinstance(app.screen, ApprovalScreen)
         assert menu._draft == "/?"
-        assert store.waiting_gate() == "approval:approval-001"
+        assert store.waiting_gate() == gate

@@ -1,9 +1,12 @@
 """The HTTP calls to the local Core API (`services/api`), with the standard library only.
 
+Every piece of data the app shows comes from here: the API runs the checks and approvals
+and calls Kali; the app never calls a tool or makes data up (apps/CLAUDE.md "Data").
+
 The API listens on this computer only, so the address must be a loopback one
-(RECONIX_CORE_API, e.g. "http://127.0.0.1:8000"); anything else is refused before a call,
-because every call carries the session token. The token lives in memory only: never in a
-log, a snapshot, `~/.reconix-ai` or the chat.
+(RECONIX_CORE_API, default "http://127.0.0.1:8000"); anything else is refused before a
+call, because every call carries the session token. The token lives in memory only: never
+in a log, a snapshot, `~/.reconix` or the chat.
 """
 
 import ipaddress
@@ -17,6 +20,8 @@ from urllib.parse import urlsplit
 from ..llm import LLMError
 
 ENV_URL = "RECONIX_CORE_API"
+DEFAULT_URL = "http://127.0.0.1:8000"
+NOT_RUNNING = "the Core API is not running: start it with ./deploy/dev.sh"
 API_PREFIX = "/api/v1"
 # A plan or an answer from a thinking model can take minutes (the API waits for the model).
 TIMEOUT_SECONDS = 600
@@ -36,12 +41,10 @@ class CoreApiError(LLMError):
         self.details = details or {}
 
 
-def base_url() -> Optional[str]:
-    """The API's address, or None when Core API mode is off. Raises CoreApiError for an
+def base_url() -> str:
+    """The API's address (RECONIX_CORE_API, else the default). Raises CoreApiError for an
     address that isn't on this computer."""
-    url = os.environ.get(ENV_URL, "").strip().rstrip("/")
-    if not url:
-        return None
+    url = os.environ.get(ENV_URL, "").strip().rstrip("/") or DEFAULT_URL
     parts = urlsplit(url)
     host = parts.hostname or ""
     try:
@@ -56,16 +59,14 @@ def base_url() -> Optional[str]:
 
 
 def enabled() -> bool:
-    """Whether the app talks to the Core API (RECONIX_CORE_API is set)."""
-    return bool(os.environ.get(ENV_URL, "").strip())
+    """Always: the app has no other data source. (Kept for callers being moved over.)"""
+    return True
 
 
 def call(method: str, path: str, body: Any = None, token: str = "") -> Any:
     """One API call: the decoded JSON answer (None for 204). Raises CoreApiError with the
     API's own code and message, which are safe to show (the API masks them)."""
     url = base_url()
-    if url is None:
-        raise CoreApiError("OFF", "Core API mode is off.")
     data = None if body is None else json.dumps(body).encode()
     headers = {"Accept": "application/json"}
     if data is not None:
@@ -87,9 +88,7 @@ def _send(request: urllib.request.Request) -> Any:
     except urllib.error.HTTPError as exc:
         raise _api_error(exc.code, exc.read()) from None
     except (urllib.error.URLError, OSError):
-        raise CoreApiError(
-            "UNREACHABLE", "the Core API is not running (start it with reconix-api)"
-        ) from None
+        raise CoreApiError("UNREACHABLE", NOT_RUNNING) from None
     return json.loads(raw) if raw else None
 
 

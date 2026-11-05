@@ -23,7 +23,7 @@ from typing import List, NamedTuple, Optional, Sequence, Tuple
 
 from . import lists
 from .errors import StoreValidationError
-from .scope import scope_editable
+from .scope import scope_changeable
 from .templates import MODULES
 from .transcript import add_chat
 
@@ -83,7 +83,8 @@ class ScopeChoices(NamedTuple):
 
     ports: List[Tuple[int, bool]]
     tools: List[Tuple[str, bool]]
-    suggested: Tuple[int, ...] = ()
+    suggested: Tuple[int, ...] = ()           # ports the model's reply named (shown as such)
+    suggested_tools: Tuple[str, ...] = ()     # tools the AI suggested for the goal (unticked)
     focus: str = ""   # the row the list opens on ("port:3389", "tool:nmap"; "" = the first)
 
 
@@ -203,10 +204,19 @@ def _and(names: Sequence[str]) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
+def scope_tick_choices() -> Optional[ScopeChoices]:
+    """The scope tick list for the current scope with no new text (includes the AI's
+    suggested tools). None once the scope can no longer change."""
+    try:
+        return scope_choices("", "")
+    except StoreValidationError:
+        return None
+
+
 def scope_choices(text: str, reply: str = "") -> ScopeChoices:
     """The rows to tick for this scope; raises once the scope is approved. `reply`: the
     model's answer, whose ports are added unticked as suggestions."""
-    if not scope_editable():
+    if not scope_changeable():
         raise StoreValidationError(LOCKED)
     assessment = lists.current()
     scope = assessment.scope
@@ -220,11 +230,18 @@ def scope_choices(text: str, reply: str = "") -> ScopeChoices:
         candidates = sorted(set(known + typed + suggested))
         ports = [(port, port in scope.allowed_ports) for port in candidates]
     allowed = {tool.casefold() for tool in scope.tools}
-    names = list(scope.tools) + [
-        tool for tool in getattr(module, "TOOLS", []) if tool.casefold() not in allowed
-    ]
-    tools = [(tool, tool.casefold() in allowed) for tool in names]
-    return ScopeChoices(ports, tools, tuple(suggested), _focus(text, ports, tools, suggested))
+    # the template's tools, then the ones the AI suggested for the goal (store/scope_suggest)
+    ai_tools = [t for t in assessment.scope_suggest.tools] if assessment.scope_suggest else []
+    offered = list(scope.tools)
+    for tool in list(getattr(module, "TOOLS", [])) + ai_tools:
+        if tool.casefold() not in {o.casefold() for o in offered}:
+            offered.append(tool)
+    tools = [(tool, tool.casefold() in allowed) for tool in offered]
+    suggested_tools = tuple(t for t in ai_tools if t.casefold() not in allowed)
+    focus = _focus(text, ports, tools, suggested)
+    if not focus and suggested_tools:
+        focus = f"tool:{suggested_tools[0]}"
+    return ScopeChoices(ports, tools, tuple(suggested), suggested_tools, focus)
 
 
 def _focus(text: str, ports: Sequence[Tuple[int, bool]], tools: Sequence[Tuple[str, bool]],

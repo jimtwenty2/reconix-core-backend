@@ -1,6 +1,6 @@
 /* The model API keys the server holds itself (server only), so a question that repeats one is
    masked by its value (redact.ts `maskValues`) before it is saved, searched or sent: the shapes in
-   redact.ts miss a short key such as the evaluator's mock key. Read through store.ts `readSaved`
+   redact.ts miss a short or unusual key. Read through store.ts `readSaved`
    (opened in memory for this one masking, never returned to a route or logged). A key that can't
    be opened is skipped: what is saved for it is the sealed form, which shows nothing. The TUI's
    store/known_secrets.py does the same for its saved keys and the target login. */

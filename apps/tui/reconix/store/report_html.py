@@ -1,7 +1,6 @@
 """Render `report.report_data()` as a standalone, print-ready HTML document: the source the PDF
 report is printed from (report_pdf.py). It is not a report format of its own (the formats are
 PDF, JSON and DOCX), so it has no toolbar or print button.
-
 The headings, rows and sentences come from report_view.py, which the Word report reads too.
 Every dynamic value is HTML-escaped, so tool output, AI text or an operator's reason reads as
 text and can never inject markup. The document is self-contained (inline CSS, no network needed)
@@ -14,6 +13,10 @@ from typing import Any, Dict, List
 
 from . import report_view as view
 from ..wording import counted
+
+
+def _limit_text(minutes: int) -> str:
+    return f"{minutes} minutes" if minutes and minutes > 0 else "No limit"
 
 # The colored pill class of each severity, validation state and triage status.
 SEV_CLASS = {"CRITICAL": "crit", "HIGH": "high", "MEDIUM": "med", "LOW": "low"}
@@ -332,7 +335,7 @@ def _scope_block(data: Dict[str, Any]) -> str:
         f'<dt>Allowed methods</dt><dd><div class="chips">{methods}</div></dd>'
         f'<dt>Excluded paths</dt><dd><div class="chips">{excluded}</div></dd>'
         + ports_row +
-        f'<dt>Time limit</dt><dd>{esc(scope.get("time_limit_minutes", 0))} minutes</dd>'
+        f'<dt>Time limit</dt><dd>{_limit_text(scope.get("time_limit_minutes", 0))}</dd>'
         f'<dt>Tools</dt><dd><div class="chips">{tools}</div></dd>'
         '</dl>'
     )

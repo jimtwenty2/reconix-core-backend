@@ -7,17 +7,15 @@
 - A chat line goes to /sessions/{id}/chat, with one line saying where the app's flow is
   (the API doesn't see the app's steps); the API answers with the scope and plan as
   context and saves both lines.
-- A plan is asked for as a draft. The app runs its own plan, so the draft is discarded on
-  the API right away: nothing is ever sent to run from here.
+- The plan, the run and the findings are the API's own (store/ai_plan.py, store/live.py).
 """
 
-import json
 from typing import Dict, List, Optional, Tuple
 
 from ..models import Assessment
 from . import connect
 from .client import CoreApiError
-from .scope_map import plan_phases, scope_draft
+from .scope_map import scope_draft
 
 # The app's assessment (planned id) -> its scope on the API.
 _scopes: Dict[str, dict] = {}
@@ -73,7 +71,7 @@ def sync_scope(assessment: Assessment) -> Optional[str]:
     return entry["assessment_id"]
 
 
-def _use_active_model(approved: bool = False) -> List[str]:
+def use_active_model(approved: bool = False) -> List[str]:
     """Make the API use the app's active model; the activity lines to show."""
     from ..store.llm_chat import credentials
     from ..store.providers import active_model
@@ -87,12 +85,28 @@ def _use_active_model(approved: bool = False) -> List[str]:
 def approve_active_model() -> List[str]:
     """You said yes in /provider: the API may use the active model (off this computer).
     Raises CoreApiError."""
-    return _use_active_model(approved=True)
+    return use_active_model(approved=True)
 
+
+
+def ask_model(prompt: str) -> str:
+    """One structured ask to the API's model (no scope sync, no app-step line): used for the
+    scope suggestion. Returns the masked reply. Raises CoreApiError."""
+    from ..store.providers import active_model
+
+    if active_model() is not None:
+        use_active_model()
+    answered = connect.request(
+        "POST", f"/sessions/{connect.session_id()}/chat", {"content": prompt}
+    )
+    return answered["reply"]["content_masked"]
 
 def chat_reply(text: str, assessment: Assessment) -> Tuple[str, List[str]]:
-    """The API's answer to `text`, and notes for the activity log. Raises CoreApiError."""
-    notes = _use_active_model()
+    """The API's answer to `text`, and notes for the activity log. Raises CoreApiError.
+    With no model of your own (/provider), the API answers with its own (.env)."""
+    from ..store.providers import active_model
+
+    notes = use_active_model() if active_model() is not None else []
     try:
         sync_scope(assessment)
     except CoreApiError as exc:
@@ -112,19 +126,3 @@ def app_step_line() -> str:
     status = step_status()
     return (f"(Reconix app: step {status.step}: {status.state}. The operator moves on only "
             f"with the app's menu: {status.choices}.)")
-
-
-def plan_draft(assessment: Assessment) -> str:
-    """The API's plan as the app's `{"phases": [...]}` JSON. Raises CoreApiError."""
-    _use_active_model()
-    assessment_id = sync_scope(assessment)
-    if assessment_id is None:
-        raise CoreApiError("SCOPE_NOT_APPROVED", "approve the scope first")
-    drafted = connect.request("POST", f"/assessments/{assessment_id}/plan?draft=true")
-    if drafted.get("draft"):
-        run_id = drafted["agent_run"]["agent_run_id"]
-        try:
-            connect.request("POST", f"/agent-runs/{run_id}/discard")
-        except CoreApiError:
-            pass  # a new plan cancels an unsent draft anyway
-    return json.dumps(plan_phases(drafted.get("plan", []), assessment.scope))

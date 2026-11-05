@@ -9,13 +9,14 @@ from reconix.screens import ExecutionScreen
 from reconix.widgets import RunLog, Spinner, ThinkingBlock
 
 from .support import SIZE, decide, play_until_gate, settle, show
+from .support import DEMO_REQUEST
 
 STEP = re.compile(r"^\d\d:\d\d:\d\d UTC  (ai|policy|tool|you|system) +\S")
 
 
 def _testing_at_first_approval() -> str:
-    """Play the demo through the store until it waits at its first approval."""
-    store.start_run(store.DEMO_REQUEST)
+    """Play a run through the store (the fake API) until it waits at its first approval."""
+    store.start_run(DEMO_REQUEST)
     gate = play_until_gate()
     while gate and not gate.startswith("approval:"):
         decide(gate)
@@ -56,7 +57,8 @@ async def test_the_spinner_shows_while_running_and_hides_when_paused(app):
         await show(app, pilot, "execution")
         spinner = app.screen.query_one("#exec-spinner", Spinner)
         assert spinner.display
-        assert "Validate access controls…" in str(spinner.render())
+        shown = str(spinner.render())
+        assert any(f"{task.label}…" in shown for task in store.plan_tasks())  # the AI plan's
         assert "^C to stop" in str(spinner.render())
         play_until_gate()                                    # the HIGH approval
         app.refresh_view()
@@ -84,7 +86,9 @@ async def test_messages_carry_no_name_in_front(app):
         assert not any(m.startswith(("reconix", "you ")) for m in messages)
 
 
-async def test_scrolling_up_stops_following_until_end(app):
+async def test_scrolling_up_stops_following_until_end(app, fake_api):
+    many = "".join(f"{port}/tcp open  service-{port}\n" for port in range(1, 40))
+    fake_api.outputs.update(NMAP=many, NUCLEI=many, SQLMAP=many)   # a long run log
     _testing_running()
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "execution")
@@ -93,13 +97,15 @@ async def test_scrolling_up_stops_following_until_end(app):
         await settle(pilot)
         assert log.max_scroll_y > 0 and log.following
         log.focus()
+        await pilot.press("end")                           # at the newest line first
+        await settle(pilot)
+        await pilot.wait_for_animation()
         await pilot.press("pageup")
         await settle(pilot)
         await pilot.wait_for_animation()      # PageUp scrolls animated: let it land
         assert not log.following
         top = log.scroll_y
-        for _ in range(4):
-            store.advance()
+        play_until_gate()                                  # the API's next steps arrive
         app.refresh_view()
         await settle(pilot)
         assert log.scroll_y == top and log.unseen > 0          # it stayed where you read

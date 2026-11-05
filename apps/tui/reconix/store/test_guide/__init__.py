@@ -11,13 +11,11 @@ from . import cases_chat, cases_commands, cases_main, cases_setup, cases_web, re
 from .model import MARKS, Case, Flow, Result
 
 NOT_IN_STATIC = (
-    "HIGH asks you to type the target (the static TUI uses a second Yes / No confirmation)",
     "Approvals expire after 30 minutes and are single use (Core API)",
     "A scope max_risk blocks a higher risk with BLOCKED / HTTP 422 (Core API)",
     "A report needs a sign-off before it can be downloaded (Core API)",
-    "Severities NONE and UNKNOWN (the static TUI shows CRITICAL, HIGH, MEDIUM, LOW)",
     "Dash ranges such as 10.0.0.1-10.0.0.20 (use CIDR, e.g. 10.0.0.0/27)",
-    "The AI agent mode (/assess) and a real AI model (the mock gives prepared answers)",
+    "A source-code scope (the Core API needs the code uploaded first: the code-scan flow)",
 )
 
 _FLOWS: Tuple[Flow, ...] = (

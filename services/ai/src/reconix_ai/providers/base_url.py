@@ -4,7 +4,8 @@ A strict stand-in until the AI provider safety check (owner: Pojim) lands;
 swap check_base_url() for it then. Plain HTTP only to this computer or the
 compose service, HTTPS anywhere else, and nothing that could steer the request
 to another path: no user:password, no query, no fragment, and no path except
-"/v1", where OpenAI-compatible servers answer.
+the ones in ALLOWED_PATHS, where OpenAI-compatible servers answer ("/v1", or
+"/api/v1" behind a gateway that serves its API under /api).
 """
 
 import ipaddress
@@ -21,6 +22,10 @@ class BaseUrlError(ValueError):
     """The address is not allowed. The message never repeats the address."""
 
 
+# The only paths an address may have (a trailing "/" is ignored).
+ALLOWED_PATHS = ("", "/v1", "/api/v1")
+
+
 def check_base_url(url: str) -> None:
     """Raise BaseUrlError unless the model address is safe to call."""
     if any(char.isspace() or not char.isprintable() for char in url):
@@ -31,8 +36,10 @@ def check_base_url(url: str) -> None:
         raise BaseUrlError("The address must start with http:// or https://.")
     if parts.username is not None or parts.password is not None:
         raise BaseUrlError("The address must not contain a user name or password.")
-    if parts.path.rstrip("/") not in ("", "/v1") or parts.query or parts.fragment:
-        raise BaseUrlError("The address must not have a path (except /v1), query or fragment.")
+    if parts.path.rstrip("/") not in ALLOWED_PATHS or parts.query or parts.fragment:
+        raise BaseUrlError(
+            "The address must not have a path (except /v1 or /api/v1), query or fragment."
+        )
     host = (parts.hostname or "").rstrip(".")  # "metadata." is "metadata"
     if not host:
         raise BaseUrlError("The address has no host.")

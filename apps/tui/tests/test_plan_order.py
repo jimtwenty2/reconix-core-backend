@@ -5,7 +5,7 @@ import pytest
 from reconix import store
 from reconix.store import plan_order
 
-from .support import play_until_gate, run_to
+from .support import run_to
 
 NETWORK = "10.0.0.0/24"
 
@@ -21,15 +21,15 @@ def test_other_lines_are_not_reorders(text):
     assert not store.wants_plan_reorder(text)
 
 
-def test_the_gated_checks_swap_and_the_run_follows():
+def test_the_apis_plan_has_no_gated_checks_to_swap():
+    """The Core API holds a MEDIUM or HIGH step only when the run reaches it, so at the plan
+    there is nothing to reorder; the AI picks each next step itself."""
     run_to("plan", NETWORK)
-    first, second = [a.request_id for a in store.get_assessment().approvals]
-    store.reorder_gated([second, first])
-    assert [a.request_id for a in store.get_assessment().approvals] == [second, first]
-    rows = [r for r in store.plan_overview() if r.gate == "approve"]
-    assert rows[0].label == store.get_approval(second).action
-    store.run_plan()
-    assert play_until_gate() == f"approval:{second}"       # the run meets it first now
+    assert store.movable_checks() == []
+    assert "fewer than two gated checks" in plan_order.why_fixed()
+    assert not store.answer_plan_reorder()
+    with pytest.raises(store.StoreValidationError, match="can't change now"):
+        store.reorder_gated([])
 
 
 def test_the_order_is_fixed_before_the_plan_and_once_it_runs():
@@ -37,13 +37,6 @@ def test_the_order_is_fixed_before_the_plan_and_once_it_runs():
     assert "approve the scope" in plan_order.why_fixed()
     with pytest.raises(store.StoreValidationError):
         store.reorder_gated([])
-
-
-def test_a_bad_order_is_refused():
-    run_to("plan", NETWORK)
-    first, _ = [a.request_id for a in store.get_assessment().approvals]
-    with pytest.raises(store.StoreValidationError, match="each gated check once"):
-        store.reorder_gated([first, first])
 
 
 def test_once_the_plan_runs_nothing_moves():

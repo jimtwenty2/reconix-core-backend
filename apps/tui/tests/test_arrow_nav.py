@@ -19,10 +19,11 @@ from reconix.screens import (
 )
 from reconix.screens.help import HelpScreen
 from reconix.shell.navigation import PANEL_OPEN, gate_blocks, gate_hint
-from reconix.widgets import ChoiceMenu, PlanOrder, PromptBox, TickList
+from reconix.widgets import ChoiceMenu, PromptBox, TickList
 
 from .support import (
-    NETWORK, SIZE, run_to, run_ui_to, settle, start_demo, toasts, type_in_menu, wait_until,
+    NETWORK, SIZE, pass_gate, run_to, run_ui_to, settle, start_demo, toasts, type_in_menu,
+    wait_for_run, wait_until,
 )
 
 
@@ -40,17 +41,6 @@ async def test_arrows_keep_an_open_tick_list(app):
         assert app.screen.query(TickList)  # still open, nothing lost
         assert PANEL_OPEN in toasts(app)
         assert store.get_scope().allowed_ports == before  # and nothing changed
-
-
-async def test_arrows_keep_an_open_order_list(app):
-    async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "plan", request=NETWORK)
-        type_in_menu(app, "move 3b before 3a")
-        await wait_until(pilot, lambda: bool(app.screen.query(PlanOrder)), what="the order")
-        await pilot.press("left")
-        await settle(pilot)
-        assert isinstance(app.screen, PlanScreen)
-        assert app.screen.query(PlanOrder)
 
 
 async def test_arrows_still_move_the_cursor_in_the_chat_input(app):
@@ -133,20 +123,24 @@ async def test_leaving_the_scope_with_an_arrow_decides_nothing_and_says_how_back
 
 async def test_arrows_at_an_approval_decide_nothing(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        await run_ui_to(app, pilot, "plan")
+        await pass_gate(app, pilot)                  # Run plan: the API's MEDIUM step waits
+        await wait_for_run(pilot)
+        gate = store.waiting_gate()
+        request_id = gate.split(":", 1)[1]
         await settle(pilot)
         assert isinstance(app.screen, ApprovalScreen)
         await pilot.press("right")                   # → stays: the approval is decided first
         await settle(pilot)
         assert isinstance(app.screen, ApprovalScreen)
-        assert store.decision_for("approval-001") is None
-        assert gate_blocks("approval:approval-001") in toasts(app)
+        assert store.decision_for(request_id) is None
+        assert gate_blocks(gate) in toasts(app)
         await pilot.press("left")
         await settle(pilot)
         assert isinstance(app.screen, PlanScreen)
-        assert gate_hint("approval:approval-001") in toasts(app)
-        assert store.decision_for("approval-001") is None
-        assert store.waiting_gate() == "approval:approval-001"
+        assert gate_hint(gate) in toasts(app)
+        assert store.decision_for(request_id) is None
+        assert store.waiting_gate() == gate
 
 
 def test_each_gate_names_its_way_back():

@@ -190,7 +190,7 @@ describe("the docs search", () => {
     const commands = groupSearchIndex("commands");
     expect(searchDocs(commands, "/model")[0].anchor).toBe("model");
     expect(searchDocs(commands, "model")[0].anchor).toBe("model");
-    expect(searchDocs(commands, "/agent")[0].anchor).toBe("assess");
+    expect(searchDocs(commands, "/assess").map((h) => h.anchor)).not.toContain("assess");
     expect(searchDocs(commands, "/dashboard").map((h) => h.anchor)).toContain("web");
   });
 

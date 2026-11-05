@@ -37,6 +37,10 @@ def _context_line() -> Text:
     for entry in reversed(store.list_activity()):
         if entry.source == "POLICY" and entry.message.startswith("Skipped:"):
             return Text.assemble(("✕ ", theme.CRITICAL), (entry.message, theme.DIM))
+        if entry.source == "AI" and entry.message.startswith("Step "):
+            # The Core API's step that waits at this gate: it has not run yet.
+            return Text.assemble(("◌ ", theme.MEDIUM), (entry.message, theme.DIM),
+                                 (" · waits for you", theme.DIM))
         if entry.source == "AI" and entry.tone != "warn":
             return Text.assemble(("✓ ", theme.GREEN), (entry.message, theme.DIM))
     return Text.assemble(("✓ ", theme.GREEN), ("testing in progress", theme.DIM))
@@ -209,10 +213,24 @@ class ApprovalScreen(ReconixScreen):
         self.app.push_screen(dialog, lambda answer: self._confirmed(answer, token))
 
     def _confirmed(self, answer: Optional[str], token: str) -> None:
-        if answer == "yes":
-            self._approve(token)
-        else:
+        if answer != "yes":
             store.decline_confirmation(self._request.request_id)
+            return
+        if self._request.api_approval_id:
+            # The Core API needs the target typed in for a HIGH step (S5).
+            from .forms.typed_target import TypedTargetForm
+
+            request_id = self._request.request_id
+            self.app.open_dialog(TypedTargetForm(request_id, token),
+                                 lambda result: self._typed(result, request_id))
+            return
+        self._approve(token)
+
+    def _typed(self, result: Optional[str], request_id: str) -> None:
+        if result == "approved":
+            self.app.gate_decided("execution")
+        else:
+            store.decline_confirmation(request_id)
 
     def _approve(self, token: Optional[str]) -> None:
         req = self._request

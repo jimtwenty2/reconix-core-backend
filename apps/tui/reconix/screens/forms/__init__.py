@@ -3,12 +3,11 @@
 from .add_on import AddOnForm
 from .approval_edit import ApprovalEditForm
 from .base import FormField, FormScreen
-from .credential import CredentialForm
 from .login import LoginForm
 from .openapi_spec import OpenApiForm
 from .provider import ProviderForm
 from .scope_edit import ScopeEditForm
 from .test_note import TestNoteForm
 
-__all__ = ["AddOnForm", "ApprovalEditForm", "FormField", "FormScreen", "CredentialForm",
+__all__ = ["AddOnForm", "ApprovalEditForm", "FormField", "FormScreen",
            "LoginForm", "OpenApiForm", "ProviderForm", "ScopeEditForm", "TestNoteForm"]

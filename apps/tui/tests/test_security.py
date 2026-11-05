@@ -7,14 +7,27 @@ import zipfile
 import pytest
 
 from reconix import store
-from reconix.models import Secret
+from reconix.models import Secret, VaultEntry
 from reconix.models.scope import PolicyVerdict
 from reconix.store import lists, report
 from reconix.store.report_html import render_html
 
-from .support import ASK_REQUEST, TEST_PASSWORD, play_until_gate, run_to, run_to_end
+from .support import (
+    ASK_REQUEST, DEMO_REQUEST, TEST_PASSWORD, decide, draft_plan, play_until_gate, run_to,
+    run_to_end,
+)
 
-HIGH = "approval-002"
+
+def _to_approval(risk: str):
+    """Run until the Core API holds a step of `risk` for you; that request."""
+    run_to("plan")
+    decide("plan")
+    gate = play_until_gate()
+    while gate and store.get_approval(gate.split(":", 1)[1]).risk != risk:
+        decide(gate)
+        gate = play_until_gate()
+    assert gate
+    return store.get_approval(gate.split(":", 1)[1])
 
 
 # --- secrets -------------------------------------------------------------------------------
@@ -24,46 +37,48 @@ def test_a_secret_never_prints_itself():
     assert secret.reveal() == TEST_PASSWORD
 
 
-def test_the_stored_account_never_shows_the_password():
-    run_to(None)
-    account = lists.current().vault[-1]
+def test_a_stored_account_never_shows_the_password():
+    account = VaultEntry("password", Secret(TEST_PASSWORD), identity="tester",
+                         scope="staging.example.com")
     assert TEST_PASSWORD not in repr(account)
     assert TEST_PASSWORD not in repr(dataclasses.asdict(account))
 
 
 # --- approvals ------------------------------------------------------------------------------
-def test_a_request_changed_after_it_was_shown_is_refused():
-    run_to("approval:approval-001")
-    request = store.get_approval("approval-001")
-    shown_hash = request.command_hash
-    request.command = request.command.replace("10482", "99999")
-    with pytest.raises(store.StoreValidationError, match="changed"):
-        store.approve("approval-001", command_hash=shown_hash)
+def test_a_changed_copy_on_screen_changes_nothing_that_runs(fake_api):
+    """The app never sends a command: the API runs the action it checked, by its approval."""
+    request = _to_approval("MEDIUM")
+    request.command = "nuclei https://evil.example.net/"
+    request.target = "https://evil.example.net/"
+    store.approve(request.request_id, command_hash=request.command_hash)
+    play_until_gate()
+    ran = [a for a in fake_api.actions.values() if a["tool"] == "NUCLEI"]
+    assert ran and ran[0]["tool_runs"] and ran[0]["target"] == "https://staging.example.com/"
+    assert all("evil" not in str(body) for body in fake_api.bodies("POST", "/approvals/"))
+
+
+def test_a_mismatched_hash_is_refused():
+    request = _to_approval("MEDIUM")
+    with pytest.raises(store.StoreValidationError, match="different request"):
+        store.approve(request.request_id, command_hash="sha256:" + "0" * 64)
 
 
 def test_only_the_newest_confirmation_token_works():
-    run_to(f"approval:{HIGH}")
-    request = store.get_approval(HIGH)
-    first = store.request_confirmation(HIGH, request.command_hash)
-    second = store.request_confirmation(HIGH, request.command_hash)
+    request = _to_approval("HIGH")
+    rid = request.request_id
+    first = store.request_confirmation(rid, request.command_hash)
+    second = store.request_confirmation(rid, request.command_hash)
     with pytest.raises(store.StoreValidationError):
-        store.approve(HIGH, command_hash=request.command_hash, confirmation_token=first)
-    store.approve(HIGH, command_hash=request.command_hash, confirmation_token=second)
+        store.approve(rid, command_hash=request.command_hash, confirmation_token=first,
+                      typed_target=request.target)
+    store.approve(rid, command_hash=request.command_hash, confirmation_token=second,
+                  typed_target=request.target)
 
 
 def test_a_high_token_is_not_given_for_a_medium_action():
-    run_to("approval:approval-001")
-    request = store.get_approval("approval-001")
+    request = _to_approval("MEDIUM")
     with pytest.raises(store.StoreValidationError):
-        store.request_confirmation("approval-001", request.command_hash)
-
-
-def test_the_password_cant_be_given_at_the_code_step():
-    run_to("code")
-    before = list(lists.current().vault)
-    with pytest.raises(store.StoreValidationError, match="digits"):
-        store.provide_auth({"identity": "intruder", "secret": "other-password"})
-    assert lists.current().vault == before and not store.is_code_verified()
+        store.request_confirmation(request.request_id, request.command_hash)
 
 
 def test_a_template_is_chosen_once():
@@ -86,7 +101,7 @@ def test_reports_never_leave_the_reports_folder(reports_dir, bad_id):
 def test_json_report_is_valid_and_has_no_secret(reports_dir):
     run_to(None)
     store.generate_report("json")
-    data = json.loads((reports_dir / "RCX-DEMO-001.json").read_text())
+    data = json.loads((reports_dir / "RCX-001.json").read_text())
     assert TEST_PASSWORD not in json.dumps(data)
 
 
@@ -96,12 +111,13 @@ KEY_BODY = "MIIBOgIBAAJBAKs3cr3tKeyB0dyL1ne"
 def _secrets_everywhere_a_report_prints() -> None:
     """The test password in a blocked request, an approval's reason and operator and the scope's
     tools and excluded paths, and a private key stored one evidence entry per line."""
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     assert play_until_gate() == "scope"
     store.edit_scope(excluded_paths=["/admin", f"/backup?token={TEST_PASSWORD}"])
     # edit_scope refuses unknown tools; set them directly so the report's masking is still tested
     lists.current().scope.tools = ["Nuclei", f"api_key={TEST_PASSWORD}"]
     store.approve_scope()
+    draft_plan()
     run_to_end()
     current = lists.current()
     current.verdicts += [
@@ -122,10 +138,10 @@ def test_no_report_shows_a_secret_from_the_scope_the_policy_or_the_approvals(rep
     _secrets_everywhere_a_report_prints()
     texts = {"html (the PDF)": render_html(store.report_data())}
     store.generate_report("json")
-    texts["json"] = (reports_dir / "RCX-DEMO-001.json").read_text("utf-8")
+    texts["json"] = (reports_dir / "RCX-001.json").read_text("utf-8")
     if report.HAS_DOCX:
         store.generate_report("docx")
-        with zipfile.ZipFile(reports_dir / "RCX-DEMO-001.docx") as docx:
+        with zipfile.ZipFile(reports_dir / "RCX-001.docx") as docx:
             texts["docx"] = "".join(docx.read(n).decode("utf-8") for n in docx.namelist()
                                     if n.endswith((".xml", ".rels")))
     for name, text in texts.items():
@@ -136,7 +152,8 @@ def test_no_report_shows_a_secret_from_the_scope_the_policy_or_the_approvals(rep
     data = json.loads(texts["json"])
     assert data["scope"]["tools"] == ["Nuclei", "api_key=••••"]
     assert data["approvals"][0]["operator"] == "https://••••@sso.example.com"
-    assert data["findings"][0]["evidence"] == ["GET /backup/key.pem → 200",
+    keyed = [f for f in data["findings"] if "GET /backup/key.pem → 200" in f["evidence"]]
+    assert keyed[0]["evidence"] == ["GET /backup/key.pem → 200",
                                                "•••• (private key)"]
     if report.HAS_DOCX:
         assert "/backup?token=••••" in texts["docx"]
@@ -155,12 +172,12 @@ def test_the_saved_copy_masks_a_private_key_split_over_evidence_entries():
 @pytest.mark.parametrize("target", ["/admin%00", "/admin%00x", "/admin%09", "/admin%0a",
                                      "/public/..;/admin"])
 def test_encoded_control_chars_and_matrix_params_cannot_reach_an_excluded_path(target):
-    run_to("account")                                  # web_url scope, excluded /admin
+    run_to("plan")                                     # web_url scope, excluded /admin
     assert not store.check_request("GET", target).allowed
 
 
 def test_edit_scope_refuses_after_approval():
-    run_to("account")                                  # scope already approved by now
+    run_to("plan")                                     # scope already approved by now
     with pytest.raises(store.StoreValidationError):
         store.edit_scope(excluded_paths=[])
 

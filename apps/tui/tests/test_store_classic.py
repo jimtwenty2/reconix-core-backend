@@ -9,6 +9,18 @@ from reconix.store import snapshot
 from .support import decide, event_kinds, play_until_gate, run_to
 
 
+def to_approval(risk: str = "MEDIUM") -> str:
+    """Run until the Core API holds a step of `risk` for you; the gate's approval id."""
+    run_to("plan")
+    decide("plan")
+    gate = play_until_gate()
+    while gate and store.get_approval(gate.split(":", 1)[1]).risk != risk:
+        decide(gate)
+        gate = play_until_gate()
+    assert gate
+    return gate.split(":", 1)[1]
+
+
 # --- the plan gate ---------------------------------------------------------------------------
 def test_testing_waits_for_the_plan_to_run():
     run_to("plan")
@@ -17,8 +29,8 @@ def test_testing_waits_for_the_plan_to_run():
     assert store.phase_progress()["discovery"] == 0          # nothing tested yet
     store.run_plan()
     assert store.is_plan_started()
-    assert play_until_gate() == "account"
-    assert store.phase_progress()["discovery"] == 100
+    assert play_until_gate().startswith("approval:")        # the LOW step ran, MEDIUM waits
+    assert store.phase_progress()["discovery"] > 0
     assert "plan.run" in event_kinds()
 
 
@@ -37,8 +49,9 @@ def test_the_plan_runs_only_when_reconix_asks_and_only_once():
 
 # --- stopping and rejecting -----------------------------------------------------------------
 def test_stop_keeps_the_findings_so_far_and_plays_nothing_more():
-    run_to("approval:approval-001")
+    to_approval("MEDIUM")
     found = len(store.list_findings())
+    assert found == 1
     store.stop_run()
     assert store.is_finished() and not store.is_completed()
     assert store.advance() is None
@@ -71,29 +84,28 @@ def test_reject_scope_only_at_the_scope_gate():
 
 
 # --- the plan rows ------------------------------------------------------------------------------
-def test_plan_rows_name_phases_login_and_gated_actions():
+def test_plan_rows_name_the_phases_then_the_apis_gated_steps():
     assert store.plan_overview() == []                       # no template yet
     run_to("scope")
-    rows = store.plan_overview()
-    assert [r.num for r in rows] == ["1", "2", "2a", "3", "3a", "3b", "4", "5"]
-    assert [r.gate for r in rows] == ["auto", "auto", "login", "auto", "approve", "approve",
-                                      "auto", "auto"]
-    medium, high = rows[4], rows[5]
-    assert (medium.risk, high.risk) == ("MEDIUM", "HIGH")
-    assert medium.command.startswith("GET https://staging.example.com/api/orders/")
-    assert all(r.status == "pending" for r in rows)
+    rows = [r for r in store.plan_overview() if r.gate != "login"]
+    assert [r.num for r in rows] == ["1", "2", "3", "4", "5"]
+    assert all(r.gate == "auto" and r.status == "pending" for r in rows)
+    assert store.gated_count() == 0                          # the API holds none yet
+    for _ in range(3):                                       # scope, plan, then MEDIUM
+        decide(play_until_gate())
+    assert play_until_gate().startswith("approval:")         # HIGH waits
+    gated = [r for r in store.plan_overview() if r.gate == "approve"]
+    assert [(r.num, r.risk) for r in gated] == [("3a", "MEDIUM"), ("3b", "HIGH")]
+    assert gated[1].command.startswith("sqlmap --batch https://staging.example.com")
     assert store.gated_count() == 2
 
 
 def test_plan_rows_follow_the_run():
-    run_to("approval:approval-002")
+    approval_id = to_approval("HIGH")
     status = {r.num: r.status for r in store.plan_overview()}
-    assert status["1"] == status["2"] == "done"
-    assert status["2a"] == "done"                            # logged in
     assert status["3a"] == "done"                            # MEDIUM approved
     assert status["3b"] == "active"                          # waiting for you now
-    request = store.get_approval("approval-002")
-    store.reject(request.request_id)
+    store.reject(approval_id)
     assert {r.num: r.status for r in store.plan_overview()}["3b"] == "rejected"
 
 
@@ -104,19 +116,19 @@ def test_a_network_plan_has_no_login_row():
 
 # --- the findings view ---------------------------------------------------------------------------
 def test_filters_sorts_and_counts():
-    run_to(None)
+    run_to(None)                    # the fake API's nmap (LOW) and nuclei (MEDIUM) findings
     ids = lambda rows: [f.fid for f in rows]                 # noqa: E731
-    assert ids(store.find_findings()) == ["001", "002", "003"]
-    assert ids(store.find_findings("high_up")) == []       # the web demo has no HIGH finding
-    assert ids(store.find_findings("medium")) == ["001", "002"]
-    assert ids(store.find_findings("low")) == ["003"]
-    assert ids(store.find_findings("confirmed")) == ["001"]
-    assert ids(store.find_findings("needs_review")) == ["002", "003"]
-    assert ids(store.find_findings("all", "validation")) == ["001", "002", "003"]
+    assert ids(store.find_findings()) == ["002", "001"]      # worst first
+    assert ids(store.find_findings("high_up")) == []
+    assert ids(store.find_findings("medium")) == ["002"]
+    assert ids(store.find_findings("low")) == ["001"]
+    assert ids(store.find_findings("confirmed")) == []       # the API confirmed none
+    assert ids(store.find_findings("needs_review")) == ["002", "001"]
     assert [sid for sid, _ in store.FINDING_SORTS] == ["severity", "validation"]
     assert "info" not in dict(store.FINDING_FILTERS)
-    assert store.severity_counts() == {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 2, "LOW": 1}
-    assert store.filter_counts()["all"] == 3
+    assert store.severity_counts() == {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 1, "LOW": 1,
+                                       "NONE": 0, "UNKNOWN": 0}
+    assert store.filter_counts()["all"] == 2
     with pytest.raises(store.StoreValidationError):
         store.find_findings("nope")
     with pytest.raises(store.StoreValidationError):
@@ -126,16 +138,18 @@ def test_filters_sorts_and_counts():
             store.find_findings("all", removed)
 
 
-def test_triage_moves_findings_between_filters_and_override_counts():
+def test_triage_moves_findings_between_filters_and_override_counts(fake_api):
     run_to(None)
     with pytest.raises(store.StoreValidationError):
-        store.triage_finding("003", severity="INFO")          # there is no Info severity
-    store.triage_finding("003", status="false-positive", severity="MEDIUM")
-    assert [f.fid for f in store.find_findings("open")] == ["001", "002"]
-    assert [f.fid for f in store.find_findings("triaged")] == ["003"]
-    assert [f.fid for f in store.find_findings("medium")] == ["001", "002", "003"]  # override
+        store.triage_finding("001", severity="INFO")          # there is no Info severity
+    store.triage_finding("001", status="false-positive", severity="MEDIUM")
+    assert [f.fid for f in store.find_findings("open")] == ["002"]
+    assert [f.fid for f in store.find_findings("triaged")] == ["001"]
+    assert sorted(f.fid for f in store.find_findings("medium")) == ["001", "002"]  # override
     assert store.severity_counts()["LOW"] == 0
-    assert [f.fid for f in store.key_findings(limit=2)] == ["001", "002"]
+    assert sorted(f.fid for f in store.key_findings(limit=2)) == ["001", "002"]
+    finding_id = store.get_assessment().live.finding_ids["001"]
+    assert fake_api.findings[finding_id]["finding_status"] == "FALSE_POSITIVE"
 
 
 # --- the flow line -------------------------------------------------------------------------------
@@ -147,12 +161,6 @@ def test_step_states_follow_the_run():
     play_until_gate()
     assert store.step_states()["plan"] == "waiting"
     decide("plan")
-    play_until_gate()                                       # account
-    assert store.step_states()["execution"] == "waiting"
-    decide("account")
-    play_until_gate()                                       # the one-time code, on its own
-    assert store.step_states()["execution"] == "waiting"
-    decide("code")
     play_until_gate()                                       # MEDIUM approval
     assert store.step_states()["approval"] == "waiting"
     run_to_end()
@@ -174,14 +182,13 @@ def test_step_states_mark_where_a_run_stopped():
     store.reject_scope()
     assert store.step_states()["template"] == "stopped"
     store.new_assessment()
-    run_to("approval:approval-002")
+    to_approval("HIGH")
     store.stop_run()                                # stopped with an action undecided
     assert store.step_states()["execution"] == "stopped"
 
 
 def test_a_rejected_action_is_a_decision_and_the_run_completes():
-    run_to("approval:approval-002")
-    store.reject(store.get_approval("approval-002").request_id)
+    store.reject(to_approval("HIGH"))
     play_until_gate()
     states = store.step_states()
     assert states["approval"] == states["execution"] == "done"

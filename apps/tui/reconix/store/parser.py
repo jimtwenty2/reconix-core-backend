@@ -55,6 +55,11 @@ TOOL_NAMES = {
     "testssl": "testssl.sh", "testssl.sh": "testssl.sh", "sqlmap": "sqlmap",
     "gobuster": "gobuster", "ffuf": "ffuf", "httpx": "httpx", "wpscan": "wpscan",
     "nessus": "Nessus",
+    # discovery/scan tools the AI may suggest at the Scope step (store/scope_suggest)
+    "katana": "Katana", "rustscan": "rustscan", "onesixtyone": "onesixtyone",
+    "enum4linux": "enum4linux", "schemathesis": "schemathesis", "whatweb": "whatweb",
+    "trivy": "trivy", "grype": "grype", "syft": "syft",
+    "osv-scanner": "osv-scanner", "osv_scanner": "osv-scanner",
 }
 _TOOL_RE = re.compile(
     r"\b(" + "|".join(sorted((re.escape(name) for name in TOOL_NAMES), key=len, reverse=True))

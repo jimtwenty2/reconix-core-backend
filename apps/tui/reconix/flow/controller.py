@@ -20,6 +20,7 @@ class RunHost(Protocol):
     def open_gate(self, gate: str) -> None: ...
     def run_finished(self) -> None: ...
     def run_failed(self, message: str) -> None: ...
+    def run_idle(self) -> None: ...      # the script ran out: ask the Core API for more
     def set_timer(self, delay: float, callback) -> Timer: ...
 
 
@@ -49,6 +50,8 @@ class RunController:
         step = store.peek()
         if step is None:
             self._timer = None
+            if not store.is_finished():
+                self._host.run_idle()
             return
         delay = step.pause * self.SPEED
         if delay <= 0:
@@ -71,6 +74,8 @@ class RunController:
             if step is None:
                 if store.is_finished():
                     self._host.run_finished()
+                else:
+                    self._host.run_idle()
                 return
             if step.kind == "gate" and store.waiting_gate() == step.name:
                 self._host.open_gate(step.name)
@@ -79,6 +84,8 @@ class RunController:
             if upcoming is None:
                 if store.is_finished():
                     self._host.run_finished()
+                else:
+                    self._host.run_idle()
                 return
             delay = upcoming.pause * self.SPEED
             if delay > 0:

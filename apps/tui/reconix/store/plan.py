@@ -70,7 +70,6 @@ def plan_overview() -> List[PlanRow]:
     tasks: List[PlanTask] = plan_tasks()
     if not tasks:
         return []
-    needs_login = bool(login_kind())
     rows: List[PlanRow] = []
     for n, task in enumerate(tasks, start=1):
         detail = task.detail or PHASE_DETAIL.get(task.key, "")
@@ -81,8 +80,6 @@ def plan_overview() -> List[PlanRow]:
         if task.key == "validation" and status == "done" and validation_skipped():
             status = "skipped"            # every gated check was rejected: nothing validated
         rows.append(PlanRow(str(n), task.label, detail, "LOW", "auto", status))
-        if task.key == "scanning" and needs_login:
-            rows.append(_login_row(f"{n}a"))
         if task.key == "validation":
             rows.extend(_approval_rows(str(n)))
     return rows

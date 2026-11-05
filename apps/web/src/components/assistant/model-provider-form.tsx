@@ -229,9 +229,7 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
           <div id={ids.providerHint} className="flex flex-col gap-1">
             {!showsUrl(preset) && (
               <p className="ai-hint">
-                {preset.id === "mock"
-                  ? `${preset.label} answers here with prepared replies: nothing leaves this computer.`
-                  : `${preset.label} runs at ${host}: your questions, the assessment data they need and relevant /add-on knowledge passages are sent there.`}
+                {`${preset.label} runs at ${host}: your questions, the assessment data they need and relevant /add-on knowledge passages are sent there.`}
               </p>
             )}
             {saved && <p className="ai-hint">Saved as {providerName}: Add model adds the model to it.</p>}

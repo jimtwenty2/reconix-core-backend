@@ -27,6 +27,7 @@ class RunHostMixin:
         self._deferred_gate = ""      # a gate that arrived while a dialog was open
         self._login_open = False      # the login form is open (or about to open)
         self._save_warned = False     # warn about a failed save once, not on every step
+        self._time_prompt_open = False  # the Continue/Stop time-limit dialog is open
         self._api_spec_offered_for = None   # the assessment whose spec form we auto-opened
 
     # --- RunHost: what the controller calls -------------------------------------------------
@@ -48,9 +49,6 @@ class RunHostMixin:
             self._login_open = True
             self.open_dialog(LoginForm(), self._login_closed)
             return
-        if getattr(self, "agent_mode", False) and gate == "scope":
-            from ..store import agent_run
-            agent_run.widen_scope_tools()   # the agent may use many tools; show them all
         target = screen_for(gate)
         if target and self.current_flow != target:
             self.goto(target)
@@ -106,6 +104,50 @@ class RunHostMixin:
         self._login_open = False
         self._deferred_gate = ""
 
+    def run_idle(self) -> None:
+        """The script ran out before the end: ask the Core API for the run's next thing in a
+        worker (send the plan, send your decision, the next step, the analysis), record the
+        answer as steps on the UI thread, and play on. Nothing to ask: the run waits."""
+        if store.time_limit_pending():
+            self.ask_time_limit()
+            return
+        job = store.next_live_job()
+        if job is None:
+            return
+
+        def work() -> None:
+            try:
+                result = job.fetch()
+            except Exception as exc:  # noqa: BLE001 - shown as the API (or network) said it
+                self.from_worker(self._live_done, job.fail, exc)
+                return
+            self.from_worker(self._live_done, job.apply, result)
+
+        self.run_worker(work, thread=True, group="core-api", exit_on_error=False)
+
+    def from_worker(self, callback, *args) -> None:
+        """Hand a worker's result to the UI thread; dropped once the app is closing (you
+        quit while the Core API was still answering: there is no screen left to show it)."""
+        if self._closing_down():
+            return
+        try:
+            self.call_from_thread(self._if_open, callback, *args)
+        except RuntimeError:
+            pass  # the app stopped between the check and the call
+
+    def _closing_down(self) -> bool:
+        return (not self.is_running or self._exit or self._closing or self._closed
+                or not self.screen_stack)
+
+    def _if_open(self, callback, *args) -> None:
+        if not self._closing_down():          # checked again on the UI thread
+            callback(*args)
+
+    def _live_done(self, record, value) -> None:
+        record(value)
+        self.refresh_view()
+        self.controller.resume()
+
     def resume_run(self) -> None:
         """A decision was recorded: redraw and play on to the next gate or the end."""
         self.refresh_view()
@@ -138,6 +180,36 @@ class RunHostMixin:
         if isinstance(focused, Input) and focused.selected_text:
             raise SkipAction()
         self.confirm_stop()
+
+    def ask_time_limit(self) -> None:
+        """The scope's time limit was reached: ask Continue or Stop. Continue clears the limit
+        and plays on; Stop ends the run. Opened once until it is answered."""
+        if self._time_prompt_open or not store.time_limit_pending():
+            return
+        self._time_prompt_open = True
+
+        def answer(choice) -> None:
+            self._time_prompt_open = False
+            try:
+                if choice == "continue":
+                    store.approve_more_time()
+                    self.resume_run()
+                    return
+                store.stop_for_time()
+            except store.StoreValidationError as exc:
+                self._warn(exc)
+            self.refresh_view()
+
+        self.open_dialog(ChoiceScreen(
+            "◆ TIME LIMIT REACHED", "The scope's time limit is up. Continue testing?",
+            [
+                Choice("continue", "Continue (no more limit)",
+                       "Keep testing; Reconix won't ask about time again this run."),
+                Choice("stop", "Stop now", "Nothing else runs; findings so far are kept.",
+                       "danger"),
+            ],
+            chip="Time limit", danger=True,
+        ), answer)
 
     def confirm_stop(self) -> None:
         """Ask "Stop this assessment?"; "Stop now" stops it through the store (`stop_run`).

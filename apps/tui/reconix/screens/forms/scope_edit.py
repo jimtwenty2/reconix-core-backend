@@ -44,7 +44,8 @@ class ScopeEditForm(FormScreen):
             fields.append(FormField("ports", "Allowed ports", _csv(scope.allowed_ports)))
         fields += [
             FormField("tools", "Tools", _csv(scope.tools)),
-            FormField("time-limit", "Time limit (minutes)", str(scope.time_limit_minutes)),
+            FormField("time-limit", "Time limit (minutes, 0 = no limit)",
+                      str(scope.time_limit_minutes)),
         ]
         return fields
 

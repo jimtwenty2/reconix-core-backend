@@ -1,8 +1,9 @@
 """The app's scope manifest in the Core API's shape (a ScopeDraft), and back for plans.
 
-Only what the API knows is sent. The API takes 5 tools (NMAP, NUCLEI, ZAP, SEMGREP,
-GITLEAKS); a scope tool it doesn't know (testssl.sh) stays the app's own and is left out.
-A source-code scope has no API target type yet, so it can't be sent at all.
+Only what the API knows is sent. A scope tool is named as the Kali catalog names it
+(testssl.sh -> TESTSSL, OWASP ZAP -> ZAP, Postman -> NEWMAN); the API refuses a tool that
+isn't in the catalog, and that refusal is shown as it came. A source-code scope needs its
+code uploaded to the API first (the code-scan flow), so it can't be sent from here yet.
 """
 
 import ipaddress
@@ -11,31 +12,39 @@ from typing import Dict, List, Optional
 from ..models import ScopeManifest
 from .client import CoreApiError
 
-# The app's tool names (any case) -> the API's ToolName.
+# The app's tool names whose Kali catalog name differs (any other: upper case, "_" for
+# spaces and dashes, e.g. "nmap" -> "NMAP", "osv-scanner" -> "OSV_SCANNER").
 API_TOOLS = {
-    "nmap": "NMAP",
-    "nuclei": "NUCLEI",
-    "zap": "ZAP",
     "owasp zap": "ZAP",
-    "semgrep": "SEMGREP",
-    "gitleaks": "GITLEAKS",
+    "zap api scan": "ZAP",
+    "testssl.sh": "TESTSSL",
+    "postman": "NEWMAN",
+    "httpx": "HTTPX_PROBE",
 }
 API_METHODS = {"GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"}
 # The app's plan phases <- the API plan step's phase.
 PHASE_KEYS = {"discovery": "discovery", "scan": "scanning", "validation": "validation"}
-# The app's approval gates decide MEDIUM and HIGH steps itself; the API's own check stops
-# anything above MEDIUM.
-MAX_RISK = "MEDIUM"
+# The highest risk a step may have. MEDIUM and HIGH steps always wait for your approval
+# (HIGH with the target typed in), so the AI can propose them but never run them alone.
+MAX_RISK = "HIGH"
 
 
 def api_tools(scope: ScopeManifest) -> Dict[str, str]:
     """The scope's tools the API knows: API name -> the app's own name."""
     tools: Dict[str, str] = {}
     for name in scope.tools:
-        api_name = API_TOOLS.get(name.strip().casefold())
+        api_name = api_tool(name)
         if api_name and api_name not in tools:
             tools[api_name] = name
     return tools
+
+
+def api_tool(name: str) -> str:
+    """The Kali catalog name for one of the app's tool names ("" for an empty one)."""
+    key = name.strip().casefold()
+    if key in API_TOOLS:
+        return API_TOOLS[key]
+    return "".join(c if c.isalnum() else "_" for c in key).upper()
 
 
 def scope_draft(scope: ScopeManifest) -> dict:
@@ -47,16 +56,14 @@ def scope_draft(scope: ScopeManifest) -> dict:
     tools = list(api_tools(scope))
     if not tools:
         raise CoreApiError(
-            "NO_API_TOOLS",
-            "none of the scope's tools is one the Core API "
-            "runs (nmap, nuclei, zap, semgrep, gitleaks)",
+            "NO_API_TOOLS", "the scope names no tool",
         )
     draft = {
         "max_risk": MAX_RISK,
         "allowed_tools": tools,
         "allowed_actions": _actions(scope.allowed_actions),
         "allowed_methods": [m.upper() for m in scope.allowed_methods if m.upper() in API_METHODS],
-        "limitations": f"Time limit {scope.time_limit_minutes} min (kept by reconix-ai).",
+        "limitations": f"Time limit {scope.time_limit_minutes} min (kept by the Reconix app).",
         "targets": _targets(scope),
     }
     if scope.kind == "network":

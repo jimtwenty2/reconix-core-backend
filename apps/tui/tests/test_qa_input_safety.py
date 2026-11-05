@@ -14,7 +14,8 @@ from reconix.store.parser import parse_request
 from reconix.store.redact import MASK
 from reconix.store.targets import check_target, validate_target
 
-from .support import SIZE, run_to, run_ui_to, settle, toasts, type_request
+from .support import SIZE, run_to, settle, toasts, type_request
+from .support import DEMO_REQUEST
 
 BRACKETED = [
     "http://x]x[",
@@ -95,7 +96,7 @@ def test_a_credential_in_a_line_without_a_target_is_masked():
 
 
 def test_a_credential_in_a_chat_line_during_the_run_is_masked():
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     answer = store.say_operator_line("the token=abc123def works")
     assert "abc123def" not in answer  # what a model would be sent
     assert "abc123def" not in "\n".join(_recorded_texts())
@@ -240,31 +241,6 @@ def test_feedback_is_masked_in_the_list_and_the_audit_line():
     details = [event.detail for event in store.list_events()]
     assert f"a token={MASK}" in details
     assert not any("SUPERSECRET1" in detail for detail in details)
-
-
-# --- R4: the command bar at the target login --------------------------------------------------
-@pytest.mark.parametrize("line", ["/S3cretPass", "/new something", "/plan", "/stop now"])
-async def test_the_command_bar_at_the_target_login_runs_and_keeps_nothing(app, line):
-    async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "account")
-        assessments, history = len(store.list_assessments()), store.list_history()
-        screen = app.screen
-        assert app.run_command_line(line) is False
-        await settle(pilot)
-        assert app.screen is screen and store.waiting_gate() == "account"
-        assert len(store.list_assessments()) == assessments
-        assert store.list_history() == history                     # nothing kept
-        shown = toasts(app)
-        assert any("target login" in t for t in shown)
-        assert not any(line.split()[0][1:] in t for t in shown if "Unknown" in t)
-
-
-async def test_stop_and_help_still_work_at_the_target_login(app):
-    async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "account")
-        assert app.run_command_line("/help") is True
-        await settle(pilot)
-        assert store.waiting_gate() == "account"   # nothing decided
 
 
 # --- R5: error messages repeat typed text masked ---------------------------------------------

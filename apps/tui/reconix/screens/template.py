@@ -193,8 +193,12 @@ class TemplateScreen(ReconixScreen):
             return
         for menu_id in ("template-menu", "scope-menu"):
             self.focus_menu(menu_id, top=True)
+        if self.state() == "review" and self.app.SUGGEST_SCOPE_ON_REVIEW:
+            self.app.suggest_scope()   # the AI reads the goal and suggests tools (once)
 
     def refresh_live(self) -> None:
+        if self.state() == "review" and self.app.SUGGEST_SCOPE_ON_REVIEW:
+            self.app.suggest_scope()   # guarded: launches the AI read of the goal once
         manifests = self.query("#manifest")
         if manifests:
             manifests.first(ScopeManifestView).show(store.get_scope())   # after an edit

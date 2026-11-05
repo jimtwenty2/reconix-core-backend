@@ -33,6 +33,12 @@ def _goto(name: str) -> Callable[["ReconixApp", Optional[str]], None]:
     return run
 
 
+def _open_plan(app: "ReconixApp", arg: Optional[str]) -> None:
+    """The plan screen; with no plan from the AI yet, it asks the Core API for one again."""
+    app.goto("plan")
+    app.draft_plan_again()
+
+
 def _open_finding(app: "ReconixApp", fid: Optional[str]) -> None:
     for finding in store.list_findings():
         if finding.fid.lower() == (fid or "").lower():
@@ -49,7 +55,7 @@ COMMANDS = (
             lambda app, tid: app.open_template(tid), choices=_template_choices,
             question="Which kind of target?", aliases=("templates",), ask=False,
             arg="OPTIONAL", arg_name="template"),
-    Command("plan", "Review and run the test plan", _goto("plan")),
+    Command("plan", "Review and run the test plan", _open_plan),
     Command("approval", "Open the approval gate", _goto("approval")),
     Command("status", "Live execution (after the plan runs)", _goto("execution"),
             aliases=("execution",)),
@@ -69,9 +75,6 @@ COMMANDS = (
             lambda app, arg: app.open_assessments(), aliases=("list",)),
     Command("audit", "Activity log and audit trail", lambda app, arg: app.show_audit(),
             aliases=("activity", "log")),
-    Command("assess", "Run a real assessment with the AI agent (needs a /model)",
-            lambda app, target: app.start_agent_assessment(target), aliases=("agent",),
-            arg="REQUIRED", arg_name="target"),
     Command("add-on", "Add reference files for the AI (knowledge add-ons)",
             lambda app, path: app.add_on_command(path), aliases=("addon",), ask=False,
             arg="OPTIONAL", arg_name="file"),

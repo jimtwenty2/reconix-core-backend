@@ -282,31 +282,6 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
     ),
     errors: [],
   },
-  assess: {
-    purpose: "Runs a real assessment of a target with the AI agent, through the same scope gate.",
-    when: "When a model is active and the backend harness is installed, to let the agent plan and run tools against an authorized target.",
-    syntax: "/assess <target>",   // needs the harness (Python 3.10+) and a /model
-    example: "/assess http://target.example.com",
-    behaviour: (
-      <>
-        The run and its scope are built like the scripted flow and the Template screen opens; the scope lists the
-        agent&apos;s whole tool set. Approving the scope hands the assessment to the agent, which runs on the Execution
-        screen: its plan as task rows, its tool calls in the live output, its findings as <Mono>AI-NNN</Mono> findings.
-        It asks for decisions and logins through dialogs; a chat line continues it; <Mono>/model</Mono> switches its model
-        mid-run. A running assessment&apos;s playback pauses and it stays listed under <Mono>/assessments</Mono>. See{" "}
-        <DocRef>The AI agent</DocRef>.
-      </>
-    ),
-    errors: [
-      { message: "The harness backend isn't installed (pip install -e backend).", meaning: "Install the harness from the repository root." },
-      { message: "Pick a model first with /model.", meaning: "No active model." },
-      { message: "Give a target, e.g. /assess http://host", meaning: "No argument." },
-      { message: "That doesn't look like a scan target (URL, host or repo).", meaning: "The argument names no target." },
-      { message: "No LLM model is active. Use /model to pick one.", meaning: "The model was removed while the agent was running." },
-      { message: "The assessment is running — you can chat once it finishes.", meaning: "A chat line while a turn runs; wait." },
-      { message: "Agent error: <the Python error>", meaning: "The harness failed; the run is marked finished and the terminal keeps working." },
-    ],
-  },
   "add-on": {
     purpose:
       "Adds a reference document the AI may quote from: its text is read once, redacted and kept on this computer.",
@@ -454,7 +429,6 @@ const ARGUMENT: Record<string, string> = {
   template: "an optional template id (suggested, never asked for)",
   finding: "a finding id; asked with a menu when left out",
   export: "a format id; asked with a menu when left out",
-  assess: "a target, typed (required)",
   "add-on": "an optional file path, typed",
   provider: "an optional verb and provider id, typed",
   model: "an optional provider/model, typed",

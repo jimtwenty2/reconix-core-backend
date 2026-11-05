@@ -3,8 +3,9 @@
 The TUI keeps working in memory; after every change the dashboard calls `autosave()`,
 which writes the current assessment's `snapshot()` to `DATA_DIR/<uid>.json` when (and
 only when) its content changed. Writes are atomic (temp file + `os.replace`), the folder
-is private to the user (0700) and each file is 0600. `RECONIX_SAVE=0` turns saving off;
-`RECONIX_DATA_DIR` moves the folder. A failed write never stops the run, and a folder that
+is private to the user (0700) and each file is 0600. Saving is off by default
+(`RECONIX_SAVE=1` turns it on); `RECONIX_DATA_DIR` moves the folder. A failed write never
+stops the run, and a folder that
 isn't a private directory of this user is refused rather than written into. `close_session()`
 (called when the app quits) marks every saved assessment of this session as closed.
 """
@@ -24,7 +25,9 @@ from . import lists
 from .snapshot import snapshot, uid_for
 
 DATA_DIR = Path(os.environ.get("RECONIX_DATA_DIR") or "~/.reconix/assessments").expanduser()
-ENABLED = os.environ.get("RECONIX_SAVE", "1").strip().lower() not in {"0", "false", "no", "off"}
+# Off by default: the real data lives on the Core API now, and the TUI never reads these
+# snapshots back (only the not-yet-wired web did). Set RECONIX_SAVE=1 to write them.
+ENABLED = os.environ.get("RECONIX_SAVE", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 # Where `web/scripts/serve.mjs` drops its sign-in link so the TUI can open the dashboard.
 WEB_URL_FILE = Path(os.environ.get("RECONIX_WEB_URL_FILE") or "~/.reconix/web.url").expanduser()

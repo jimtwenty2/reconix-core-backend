@@ -16,9 +16,7 @@ _VERBS = {"set", "update", "test", "unset"}
 
 
 def _setup_hint(view) -> str:
-    """What the set-up form asks for this provider (the mock has no address and no model)."""
-    if view.kind == "mock":
-        return "An optional API key; offline, no address or model to set"
+    """What the set-up form asks for this provider."""
     parts = []
     if view.shows_key_field:
         parts.append("API key" + ("" if view.needs_key else " (optional)"))
@@ -36,45 +34,30 @@ class LlmMixin:
 
     # At start, while no model is active, ask which provider to use (tests switch it off).
     ASK_PROVIDER_ON_START = True
+    # At the scope step, the AI reads the operator's goal and suggests tools (off in tests).
+    SUGGEST_SCOPE_ON_REVIEW = True
 
     # --- start-up: "Set an AI provider?" ------------------------------------------------------
     def ask_provider_on_start(self) -> None:
-        """Offer the offline mock, a real provider or no model, until a model is active."""
+        """Offer to set a model of your own, until one is active. Without one, the Core API
+        uses its own model (RECONIX_MODEL_* in .env)."""
         if not self.ASK_PROVIDER_ON_START or store.active_model() is not None:
             return
         choices = [
-            Choice("mock", "Use the mock model (offline)",
-                   "Prepared answers on this computer, for testing: reconix-mock-1, no network",
-                   recommended=True),
             Choice("provider", "Set a provider…",
                    "OpenAI, Anthropic, DeepSeek, Ollama or a custom endpoint (/provider)"),
-            Choice("skip", "Skip (built-in replies only)",
-                   "No model for now. Reconix asks again at the next start.", separated=True),
+            Choice("skip", "Use the Core API's model",
+                   "The model set in .env (RECONIX_MODEL_*). /provider changes it later.",
+                   recommended=True, separated=True),
         ]
         self.open_dialog(
-            ChoiceScreen("◆ SET AN AI PROVIDER", "Set an AI provider?", choices,
+            ChoiceScreen("◆ SET AN AI PROVIDER", "Which AI model should Reconix use?", choices,
                          chip="Provider"),
             self._start_provider_chosen)
 
     def _start_provider_chosen(self, choice: Optional[str]) -> None:
-        if choice == "mock":
-            self.open_dialog(ProviderForm("mock"), self._mock_saved)
-        elif choice == "provider":
+        if choice == "provider":
             self.open_provider_menu()
-
-    def _mock_saved(self, result: Optional[str]) -> None:
-        """The mock's form closed: when saved, test it and make it the active model."""
-        if result != "saved":
-            self.refresh_view()
-            return
-        try:
-            store.test_provider("mock")      # the form saved it: test, then make it active
-            active = store.activate("mock", store.get_provider("mock").models[0])
-        except store.StoreValidationError as exc:
-            self._warn(exc)
-            return
-        self.refresh_view()
-        self.notify(f"Active model: {active.label} · {active.model}", markup=False)
 
     # --- /provider ----------------------------------------------------------------------------
     def provider_command(self, arg: Optional[str]) -> None:
@@ -197,9 +180,9 @@ class LlmMixin:
         try:
             view = store.test_provider(provider_id)
         except store.StoreValidationError as exc:
-            self.call_from_thread(self._warn, exc)
+            self.from_worker(self._warn, exc)
             return
-        self.call_from_thread(self._test_done, view)
+        self.from_worker(self._test_done, view)
 
     def _test_done(self, view) -> None:
         """Say how the test went. A reachable provider becomes the active model when none is
@@ -286,8 +269,6 @@ class LlmMixin:
         except store.StoreValidationError as exc:
             self._warn(exc)
             return
-        from ..store import agent_run
-        agent_run.switch_model()        # repoint a live agent, keeping its history
         self.refresh_view()
         self.notify(f"Active model: {active.label} · {active.model}", markup=False)
         if store.core_api_needs_ok():
@@ -333,9 +314,9 @@ class LlmMixin:
         try:
             store.core_api_approve()
         except LLMError as exc:
-            self.call_from_thread(self.notify, f"Core API: {exc}", severity="warning",
+            self.from_worker(self.notify, f"Core API: {exc}", severity="warning",
                                   markup=False)
             return
-        self.call_from_thread(self.notify, "The Core API may use this model now.",
+        self.from_worker(self.notify, "The Core API may use this model now.",
                               markup=False)
-        self.call_from_thread(self.refresh_view)
+        self.from_worker(self.refresh_view)

@@ -7,7 +7,7 @@ whether a request may run; it shows the verdict recorded here.
 from datetime import timedelta
 from typing import List, Optional
 
-from ..models import GATE_SCOPE, PolicyVerdict, ScopeManifest
+from ..models import GATE_SCOPE, LiveRun, PolicyVerdict, ScopeManifest
 from ..models.base import utc_now
 from . import lists
 from .activity import log_event
@@ -36,23 +36,66 @@ def is_scope_approved() -> bool:
 
 
 def approve_scope() -> ScopeManifest:
-    """Approve the drafted scope. Testing cannot start before this."""
+    """Approve the drafted scope, here and on the Core API. Testing cannot start before this.
+
+    Your approval here is the person's decision the API asks for: the scope is sent, then
+    submitted and approved there, and the API's assessment is the one the run uses. If
+    the API refuses (a tool it doesn't know, a target it can't take, it isn't running), the
+    scope stays a draft and its reason is shown.
+    """
+    from ..core_api import sync
+    from ..core_api.client import CoreApiError
+
     run = lists.current().run
     if run.waiting_gate != GATE_SCOPE:
         raise StoreValidationError("The scope can only be approved when Reconix asks for it.")
     scope = get_scope()
     if scope.status == "APPROVED":
         raise StoreValidationError("The scope is already approved.")
-    from .templates import align_to_scope   # templates import the policy, so not at the top
-
-    scope.status = "APPROVED"
     assessment = lists.current()
-    align_to_scope(assessment)
+    scope.status = "APPROVED"
+    try:
+        api_assessment = sync.sync_scope(assessment)
+    except CoreApiError as exc:
+        scope.status = "DRAFT"
+        log_event("scope.refused", f"{exc.code}: {exc}")
+        raise StoreValidationError(f"The Core API did not approve the scope: {exc}.") from None
+    assessment.live.assessment_id = api_assessment or ""
     assessment.assessment_id = assessment.planned_id
     run.started_at = utc_now()
     add_activity("USER", "Scope approved", tone="ok")
-    add_activity("SYS", f"Assessment {assessment.assessment_id} created")
+    add_activity("SYS", f"Assessment {assessment.assessment_id} created on the Core API")
     log_event("scope.approved", assessment.assessment_id)
+    return scope
+
+
+def reopen_scope() -> ScopeManifest:
+    """Re-open an approved scope so you can change it (from the Plan step). The Core API
+    locks an approved scope, so this discards the API assessment and its drafted plan and
+    starts fresh: the scope goes back to DRAFT at the Scope gate, and approving it again
+    creates a new assessment on the API. Only before the plan has run (nothing has run yet).
+    """
+    from ..core_api import connect
+
+    assessment = lists.current()
+    run = assessment.run
+    scope = get_scope()
+    if scope is None or scope.status != "APPROVED":
+        raise StoreValidationError("There is no approved scope to re-open.")
+    if run.plan_started:
+        raise StoreValidationError("The plan is already running; the scope can't change now.")
+    scope.status = "DRAFT"
+    assessment.assessment_id = ""
+    assessment.live = LiveRun()           # drop the old API assessment and its plan draft
+    assessment.plan_author = ""
+    assessment.plan_drafting = False
+    run.waiting_gate = GATE_SCOPE
+    run.plan_started = False
+    run.started_at = None
+    run.time_approved = False
+    connect.reset()                       # the next approval opens a fresh API session
+    add_activity("USER", "Scope re-opened to change it", tone="warn")
+    log_event("scope.reopened", assessment.label)
     return scope
 
 
@@ -79,6 +122,15 @@ def scope_editable() -> bool:
     scope = get_scope()
     return scope is not None and scope.status != "APPROVED" \
         and lists.current().run.waiting_gate == GATE_SCOPE
+
+
+def scope_changeable() -> bool:
+    """You may still change the scope: before the plan has run. At the Scope step you edit
+    the draft; at the Plan step a change re-opens the approved scope for a fresh approval."""
+    scope = get_scope()
+    run = lists.current().run
+    return (scope is not None and not run.plan_started and not run.stopped
+            and not run.completed)
 
 
 def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=None,
@@ -137,9 +189,9 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
             minutes = int(time_limit_minutes)
         except (TypeError, ValueError):
             raise StoreValidationError("The time limit is a number of minutes.") from None
-        if not 1 <= minutes <= MAX_TIME_LIMIT:
+        if not 0 <= minutes <= MAX_TIME_LIMIT:
             raise StoreValidationError(
-                f"Keep the time limit between 1 and {MAX_TIME_LIMIT} minutes.")
+                f"Keep the time limit between 0 (no limit) and {MAX_TIME_LIMIT} minutes.")
         changes["time_limit_minutes"] = minutes
 
     if tools is not None:
@@ -161,12 +213,19 @@ def edit_scope(*, allowed_methods=None, excluded_paths=None, time_limit_minutes=
 
 
 def time_limit_reached() -> bool:
-    """True once testing has run longer than the scope's time limit."""
+    """True once testing has run longer than the scope's time limit. A limit of 0 means no
+    limit, so this is never True then."""
     scope = get_scope()
     started = lists.current().run.started_at
-    if scope is None or started is None:
+    if scope is None or started is None or scope.time_limit_minutes <= 0:
         return False
     return utc_now() - started > timedelta(minutes=scope.time_limit_minutes)
+
+
+def time_limit_pending() -> bool:
+    """The time limit is reached and you have not yet chosen to continue past it. While this
+    is True the run pauses and Execution offers Continue or Stop."""
+    return time_limit_reached() and not lists.current().run.time_approved
 
 
 def _decide(method: str, target: str) -> str:
@@ -178,7 +237,7 @@ def _decide(method: str, target: str) -> str:
     scope = get_scope()
     if scope is None or scope.status != "APPROVED":
         return "Scope not approved"
-    if time_limit_reached():
+    if time_limit_pending():
         return "Time limit reached"
     return request_reason(scope, method, target)
 

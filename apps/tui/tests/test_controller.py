@@ -8,6 +8,7 @@ from reconix.screens import ChoiceScreen, StartScreen, TemplateScreen
 from reconix.widgets import PromptBox
 
 from .support import ASK_REQUEST, SIZE, settle, wait_until
+from .support import DEMO_REQUEST
 
 
 class FakeHost:
@@ -49,7 +50,7 @@ def test_steps_wait_for_their_timers_and_stop_at_the_gate(monkeypatch):
     monkeypatch.setattr(RunController, "SPEED", 1.0)
     host = FakeHost()
     controller = RunController(host)
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     controller.resume()
     assert controller.busy and not host.gates
     while host.timers:
@@ -63,7 +64,7 @@ def test_a_store_error_stops_playback_without_crashing(monkeypatch):
         raise store.StoreValidationError("backend said no")
     monkeypatch.setattr(store, "advance", broken)
     host = FakeHost()
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     RunController(host).resume()
     assert host.failures == ["backend said no"]
 

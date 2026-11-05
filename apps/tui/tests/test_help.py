@@ -5,7 +5,22 @@ from reconix.app import ReconixApp
 from reconix.screens import ApprovalScreen, HelpScreen
 from reconix.screens.help import GLOBAL_ROWS
 
-from .support import SIZE, run_ui_to, settle
+from .support import SIZE, settle
+
+
+async def ui_to_approval(app, pilot, risk: str = "MEDIUM") -> str:
+    """Start the demo and pass gates until the first approval gate of `risk` (the fake API
+    holds its MEDIUM, then its HIGH step); returns that gate."""
+    from .support import pass_gate, run_ui_to, wait_for_run
+
+    await run_ui_to(app, pilot, "plan")
+    while True:
+        await pass_gate(app, pilot)
+        await wait_for_run(pilot)
+        gate = store.waiting_gate()
+        assert gate, "the run ended before that approval"
+        if gate.startswith("approval:") and store.get_approval(gate[9:]).risk == risk:
+            return gate
 
 
 def test_everywhere_rows_match_the_app_bindings(app):
@@ -27,7 +42,7 @@ def test_everywhere_rows_match_the_app_bindings(app):
 
 async def test_keys_pressed_under_help_never_reach_the_gate(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        gate = await ui_to_approval(app, pilot)
         await pilot.press("question_mark")
         await settle(pilot)
         assert isinstance(app.screen, HelpScreen)
@@ -35,9 +50,9 @@ async def test_keys_pressed_under_help_never_reach_the_gate(app):
         await pilot.press("enter", "1", "2", "3", "8")
         await settle(pilot)
         assert isinstance(app.screen, HelpScreen)
-        assert store.waiting_gate() == "approval:approval-001"
+        assert store.waiting_gate() == gate
 
         await pilot.press("escape")
         await settle(pilot)
         assert isinstance(app.screen, ApprovalScreen)
-        assert store.waiting_gate() == "approval:approval-001"
+        assert store.waiting_gate() == gate

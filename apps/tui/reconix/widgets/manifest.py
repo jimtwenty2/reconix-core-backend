@@ -26,7 +26,8 @@ def manifest_text(scope: ScopeManifest) -> Text:
         text.append("\n\nTools it will use: ", style=f"bold {theme.TEXT}")
         text.append(", ".join(summary.tools), style=theme.MUTED)
     text.append("\nTime limit: ", style=f"bold {theme.TEXT}")
-    text.append(f"{scope.time_limit_minutes} min", style=theme.MUTED)
+    limit = f"{scope.time_limit_minutes} min" if scope.time_limit_minutes > 0 else "no limit"
+    text.append(limit, style=theme.MUTED)
     spec = store.get_api_spec() if scope.kind == "api" else None
     if spec is not None:
         text.append("\n\nAPI spec  ", style=f"bold {theme.TEXT}")

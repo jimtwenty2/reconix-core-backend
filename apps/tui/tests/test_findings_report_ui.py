@@ -11,7 +11,10 @@ from reconix.screens import (
     ChoiceScreen, FindingDetailScreen, FindingsListScreen, ReportScreen,
 )
 
-from .support import SIZE, add_finding, run_to, run_ui_to, screen_text, settle, show
+from .support import (
+    DEMO_REQUEST, SIZE, add_finding, decide, play_until_gate, run_to, run_ui_to, screen_text,
+    settle, show,
+)
 
 def row_ids(app) -> list:
     table = app.screen.query_one("#findings-table", DataTable)
@@ -27,7 +30,7 @@ async def test_findings_appear_as_the_run_reveals_them(app):
         run_to(None)
         app.refresh_view()
         await settle(pilot)
-        assert row_ids(app) == ["001", "002", "003"]
+        assert row_ids(app) == ["002", "001"]                  # the API's: MEDIUM, then LOW
 
 
 async def test_filter_and_sort(app):
@@ -39,12 +42,12 @@ async def test_filter_and_sort(app):
         assert isinstance(app.screen, ChoiceScreen)
         await pilot.press("down", "down", "enter")                     # Medium
         await settle(pilot)
-        assert row_ids(app) == ["001", "002"]
+        assert row_ids(app) == ["002"]
         app.findings_filter = "all"
         await pilot.press("s")                                         # severity → validation
         await settle(pilot)
         assert app.findings_sort == "validation"
-        assert row_ids(app) == ["001", "002", "003"]
+        assert sorted(row_ids(app)) == ["001", "002"]
         await pilot.press("s")                                         # and back
         await settle(pilot)
         assert app.findings_sort == "severity"
@@ -58,40 +61,58 @@ async def test_the_findings_screen_has_no_import_key_or_hint(app):
         assert "import" not in screen_text(app.screen).lower()
 
 
-async def test_triage_from_the_list_and_the_detail(app):
+async def test_triage_from_the_list_and_the_detail(app, fake_api):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        await pilot.press("down", "t")                                 # 002
+        fid = row_ids(app)[1]                                          # the second row
+        api_row = fake_api.findings[store.get_assessment().live.finding_ids[fid]]
+        await pilot.press("down", "t")
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
         await pilot.press("4")                                         # False positive
         await settle(pilot)
-        assert store.get_finding("002").status == "false-positive"
+        assert store.get_finding(fid).status == "false-positive"
+        assert api_row["finding_status"] == "FALSE_POSITIVE"           # the API has it
         assert isinstance(app.screen, FindingsListScreen)
-        await pilot.press("enter")                                     # open 002
+        await pilot.press("enter")                                     # open it
         await settle(pilot)
         assert isinstance(app.screen, FindingDetailScreen)
-        assert app.selected_finding == "002"
+        assert app.selected_finding == fid
         await pilot.press("t")
         await settle(pilot)
         await pilot.press("2")                                         # Fixed
         await settle(pilot)
-        assert store.get_finding("002").status == "fixed"
+        assert store.get_finding(fid).status == "fixed"
+        assert api_row["finding_status"] == "FIXED"
         assert isinstance(app.screen, FindingDetailScreen)
+
+
+async def test_triage_the_api_refuses_keeps_the_finding_as_it_was(app, fake_api):
+    run_to(None)
+    fake_api.fail_on["PATCH /findings/"] = (409, "CONFLICT", "the finding changed")
+    async with app.run_test(size=SIZE) as pilot:
+        await show(app, pilot, "findings")
+        fid = row_ids(app)[0]
+        await pilot.press("t")
+        await settle(pilot)
+        await pilot.press("4")                                         # False positive
+        await settle(pilot)
+        assert store.get_finding(fid).status == "open"
 
 
 async def test_detail_steps_through_the_list_order(app):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
-        app.open_finding("001")
+        first, second = [f.fid for f in store.find_findings("all", app.findings_sort)]
+        app.open_finding(first)
         await settle(pilot)
         await pilot.press("right_square_bracket")
         await settle(pilot)
-        assert app.selected_finding == "002"
+        assert app.selected_finding == second
         await pilot.press("left_square_bracket", "left_square_bracket")
         await settle(pilot)
-        assert app.selected_finding == "001"                           # no wrap-around
+        assert app.selected_finding == first                           # no wrap-around
         await pilot.press("left")
         await settle(pilot)
         assert isinstance(app.screen, FindingsListScreen)
@@ -105,7 +126,11 @@ async def test_detail_without_a_finding_says_so(app):
 
 # --- the report ----------------------------------------------------------------------------
 async def test_exports_wait_for_a_completed_assessment(app):
-    run_to("approval:approval-001")
+    store.start_run(DEMO_REQUEST)
+    gate = play_until_gate()
+    while not gate.startswith("approval:"):                            # the first approval
+        decide(gate)
+        gate = play_until_gate()
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "report")
         assert all(app.screen.query_one(f"#{fid}", Button).disabled
@@ -131,7 +156,7 @@ async def test_export_json_then_open_it(app, opened):
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
         path = store.get_run().report_path
-        assert path.endswith("RCX-DEMO-001.json")
+        assert path.endswith("RCX-001.json")
         await pilot.press("enter")                                     # Open it
         await settle(pilot)
         assert opened == [path]
@@ -171,7 +196,7 @@ async def test_docx_export_with_control_characters_keeps_the_app_running(app, tm
         await settle(pilot)
         assert app.is_running
         assert isinstance(app.screen, ChoiceScreen)                    # ✓ REPORT SAVED
-        assert store.get_run().report_path.endswith("RCX-DEMO-001.docx")
+        assert store.get_run().report_path.endswith("RCX-001.docx")
 
 
 @pytest.mark.skipif(not report.HAS_DOCX, reason="python-docx not installed")

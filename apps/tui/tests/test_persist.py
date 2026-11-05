@@ -8,6 +8,7 @@ from reconix import store
 from reconix.store import lists, persist, snapshot
 
 from .support import SIZE, TEST_PASSWORD, decide, play_until_gate, run_to, run_ui_to
+from .support import DEMO_REQUEST
 
 OTP_CODE = "741852"
 
@@ -50,15 +51,15 @@ def test_a_finished_run_has_findings_decisions_verdicts_and_plan():
     assert len(data["findings"]) == len(store.list_findings()) > 0
     assert [f["severity"] for f in data["findings"]] == [f.severity for f in store.list_findings()]
     assert {d["decision"] for d in data["decisions"]} == {"APPROVED"}
-    assert any(not v["allowed"] for v in data["verdicts"])
-    assert [t["status"] for t in data["plan"]][:4] == ["done"] * 4
-    assert data["login"] == {"kind": "password+otp", "provided": True}
+    assert [d["request_id"] for d in data["decisions"]] == [
+        a.request_id for a in store.get_assessment().approvals]          # the API's ids
+    assert [t["status"] for t in data["plan"]][3] == "done"             # the API's analysis
     seqs = [row["seq"] for row in data["timeline"]]
     assert seqs == sorted(seqs) and len(seqs) > 10
 
 
 def test_a_pending_high_approval_is_named():
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     while True:
         gate = play_until_gate()
         if gate.startswith("approval:") and store.get_approval(gate.split(":")[1]).risk == "HIGH":
@@ -66,35 +67,33 @@ def test_a_pending_high_approval_is_named():
         decide(gate)
     store.autosave()
     data = load(saved_files()[0])
-    assert data["waiting_for"] == "HIGH approval for Cross-account read check"
+    assert data["waiting_for"] == "HIGH approval for Confirm the login weakness"
 
 
 def test_no_secret_reaches_the_saved_file():
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     tokens = []
     while True:
         gate = play_until_gate()
         if gate is None:
             break
-        if gate == "account":
-            store.provide_auth({"identity": "demo.tester", "secret": TEST_PASSWORD})
-        elif gate == "code":
-            store.provide_auth({"code": OTP_CODE})
-        elif gate.startswith("approval:"):
+        if gate.startswith("approval:"):
             request = store.get_approval(gate.split(":", 1)[1])
             if request.risk == "HIGH":
                 token = store.request_confirmation(request.request_id, request.command_hash)
                 tokens.append(token)
                 store.approve(request.request_id, command_hash=request.command_hash,
-                              confirmation_token=token)
+                              confirmation_token=token, typed_target=request.target)
             else:
                 store.approve(request.request_id, command_hash=request.command_hash)
         else:
             decide(gate)
         store.autosave()
     text = saved_files()[0].read_text(encoding="utf-8")
-    for secret in (TEST_PASSWORD, OTP_CODE, "demo.tester", *tokens):
+    assert tokens
+    for secret in (TEST_PASSWORD, *tokens):
         assert secret not in text
+    assert "fake-session-token" not in text           # the Core API session stays in memory
 
 
 def test_unchanged_content_is_not_rewritten():
@@ -134,7 +133,7 @@ def test_each_assessment_gets_its_own_file():
     store.autosave()
     files = saved_files()
     assert len(files) == 2
-    assert {load(p)["label"] for p in files} == {"RCX-DEMO-001", "RCX-DEMO-002"}
+    assert {load(p)["label"] for p in files} == {"RCX-001", "RCX-002"}
 
 
 def test_saving_can_be_turned_off(monkeypatch):
@@ -162,7 +161,7 @@ async def test_the_app_saves_as_the_run_moves(app):
 
 def test_a_decided_gate_is_not_reported_as_waiting():
     """approve() leaves `waiting_gate` set until the next step plays; the copy must not."""
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     while True:
         gate = play_until_gate()
         if gate.startswith("approval:"):
@@ -185,7 +184,7 @@ def test_leaving_an_assessment_saves_it_first():
     run_to("scope")
     lists.current().run.requests = 999            # a change no redraw has saved yet
     store.new_assessment()
-    first = [p for p in saved_files() if "RCX-DEMO-001" in p.name][0]
+    first = [p for p in saved_files() if "RCX-001" in p.name][0]
     assert load(first)["run"]["requests"] == 999
 
 
