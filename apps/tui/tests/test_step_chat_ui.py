@@ -1,25 +1,68 @@
 """The chat inside a step: "Type something." and "Chat about this" at Scope, Plan, Approval.
 
 The step's menu hides while you chat and comes back on Esc. A line asking to change the
-scope opens a tick list (you tick; no model is asked); anything else is answered by the
-active model, or by the built-in reply at once.
+scope opens a tick list (you tick; the AI never changes it); anything else is answered by
+the Core API's AI (the fake API in tests).
 """
 
 import pytest
 from textual.widgets import SelectionList
 
 from reconix import store
-from reconix.llm import client
+from reconix.core_api import client as api_client
 from reconix.widgets import (
-    ChatBar, ChoiceMenu, FlowProgress, PlanOrder, PlanPanel, Question, ScopePanel, StepChat,
+    ChatBar, ChoiceMenu, FlowProgress, PlanPanel, Question, ScopePanel, StepChat,
     TickList, UserMessage,
 )
 
 from .support import (
-    NETWORK, SIZE, TEST_PASSWORD, ask_in_chat, chat_about_this, chat_menu, chat_menu_ready,
-    chat_text, fake_model, run_to, run_ui_to, screen_text, settle, step_menu, type_in_menu,
+    wait_for_run,
+    NETWORK, SIZE, ask_in_chat, chat_about_this, chat_menu, chat_menu_ready,
+    chat_text, run_ui_to, screen_text, settle, step_menu, type_in_menu, type_request,
     wait_until,
 )
+
+
+@pytest.fixture
+def model_active(reachable):
+    """A configured, tested and active model, approved for the Core API (/provider's OK)."""
+    store.set_provider("openai", api_key="sk-x-1234", models=["gpt-4o-mini"])
+    store.test_provider("openai")
+    store.activate("openai", "gpt-4o-mini")
+    store.core_api_approve()
+
+
+def fake_model(monkeypatch, reply=None) -> list:
+    """The Core API's chat (the fake API) answers "model answer N", or `reply`; returns what
+    each chat call got, as [{"role": "user", "content": <line sent>}]."""
+    fake = api_client._send.__self__
+    original = fake.answer
+    calls: list = []
+
+    def answer(method, path, body, full):
+        if method == "POST" and path.endswith("/chat"):
+            calls.append([{"role": "user", "content": body["content"]}])
+            text = reply if reply is not None else f"model answer {len(calls)}"
+            return {"reply": {"content_masked": text}}
+        return original(method, path, body, full)
+
+    monkeypatch.setattr(fake, "answer", answer)
+    return calls
+
+
+async def ui_to_approval(app, pilot, risk: str = "MEDIUM") -> str:
+    """Start the demo and pass gates until the first approval gate of `risk` (the fake API
+    holds its MEDIUM, then its HIGH step); returns that gate."""
+    from .support import pass_gate, run_ui_to, wait_for_run
+
+    await run_ui_to(app, pilot, "plan")
+    while True:
+        await pass_gate(app, pilot)
+        await wait_for_run(pilot)
+        gate = store.waiting_gate()
+        assert gate, "the run ended before that approval"
+        if gate.startswith("approval:") and store.get_approval(gate[9:]).risk == risk:
+            return gate
 
 
 def _question_shown(app) -> bool:
@@ -88,13 +131,13 @@ async def test_chat_about_this_at_the_plan_prints_the_plan(app):
         chat_about_this(app)
         await wait_until(pilot, lambda: bool(app.screen.query(PlanPanel)), what="the card")
         text = screen_text(app.screen.query_one(PlanPanel))
-        assert "Host discovery" in text and "nmap, testssl.sh" in text
+        assert "Find open ports" in text and "nmap" in text   # the API plan's steps
         assert not app.screen.query_one("#plan-list").display
 
 
 async def test_chat_about_this_at_an_approval_prints_the_action(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        await ui_to_approval(app, pilot)
         chat_about_this(app)
         await wait_until(pilot, lambda: "Approval ·" in chat_text(app), what="the approval")
         assert "risk" in chat_text(app)
@@ -139,13 +182,25 @@ async def test_esc_on_the_tick_list_changes_nothing(app):
         assert "No change to the scope" in chat_text(app)
 
 
-async def test_the_approved_scope_cannot_change_from_the_chat(app):
+async def test_a_scope_change_from_the_plan_step_reopens_the_scope(app, model_active,
+                                                                 monkeypatch):
+    fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "plan", request=NETWORK)
+        assert store.is_scope_approved()
         type_in_menu(app, "add port 3389")
-        await wait_until(pilot, lambda: "locked" in chat_text(app), what="the reply")
-        assert not app.screen.query(TickList)
-        assert 3389 not in store.get_scope().allowed_ports
+        await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
+        rows = app.screen.query_one(SelectionList)
+        assert "port:3389" not in rows.selected          # the AI's suggestion is unticked
+        rows.select("port:3389")                         # you tick it
+        rows.focus()
+        await pilot.press("enter")
+        await wait_until(pilot, lambda: not store.is_scope_approved(),
+                         what="the scope re-opened")
+        # the scope re-opened to a draft with your port, back on the Scope step to approve
+        assert store.get_scope().status == "DRAFT"
+        assert 3389 in store.get_scope().allowed_ports
+        assert store.waiting_gate() == "scope"
 
 
 async def test_typed_markup_shows_literally(app):
@@ -153,16 +208,6 @@ async def test_typed_markup_shows_literally(app):
         await run_ui_to(app, pilot, "scope")
         type_in_menu(app, "is [bold]this[/bold] ok?")
         await wait_until(pilot, lambda: "[bold]this[/bold]" in chat_text(app), what="echo")
-
-
-def test_a_line_typed_at_the_login_is_refused(model_active, monkeypatch):
-    """The chat records the line with `say_operator_line`, which refuses at the login, so
-    the model is never called (a password typed there never goes out)."""
-    calls = fake_model(monkeypatch)
-    run_to("account")
-    with pytest.raises(store.StoreValidationError, match="login"):
-        store.say_operator_line(f"About execution: password is {TEST_PASSWORD}")
-    assert calls == []
 
 
 async def test_the_question_box_is_pinned_at_the_bottom(app):
@@ -185,7 +230,7 @@ async def test_a_model_claiming_it_changed_the_scope_is_corrected(app, model_act
     from reconix.llm import guardrail
     from reconix.store import scope_ask
 
-    monkeypatch.setattr(client, "complete", lambda *a, **k: "Port 3389 has been added.")
+    fake_model(monkeypatch, "Port 3389 has been added.")
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
@@ -321,6 +366,7 @@ async def test_yes_at_the_plan_shows_the_plan_menu_and_run_plan_runs(app, model_
         assert not store.is_plan_started()
         app.screen.post_message(ChoiceMenu.Chosen(chat_menu(app), "run"))
         await wait_until(pilot, store.is_plan_started, what="the plan to run")
+        await wait_for_run(pilot)   # let the switch to Execution and the plan's send settle
 
 
 async def test_a_question_about_the_decision_is_answered_then_the_menu(app, model_active,
@@ -339,14 +385,14 @@ async def test_approve_in_chat_keeps_the_high_double_check(app):
     from reconix.screens.choice import ChoiceScreen
 
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-002")
+        gate = await ui_to_approval(app, pilot, "HIGH")
         await wait_until(pilot, lambda: isinstance(app.screen, ApprovalScreen), what="approval")
         type_in_menu(app, "approve")
         await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
         app.screen.post_message(ChoiceMenu.Chosen(chat_menu(app), "approve"))
         await wait_until(pilot, lambda: isinstance(app.screen, ChoiceScreen),
                          what="the double check")
-        assert store.decision_for("approval-002") is None   # nothing approved yet
+        assert store.decision_for(gate[9:]) is None   # nothing approved yet
 
 
 async def test_a_new_menu_replaces_the_one_shown_before(app):
@@ -386,7 +432,7 @@ async def test_the_plan_shows_your_request_not_the_chat_line(app):
 async def test_ports_the_model_names_are_offered_unticked(app, model_active, monkeypatch):
     reply = ("To scan 12 ports, add port 4000 along with 21 (FTP), 23 (Telnet) and "
              "3306 (MySQL).")
-    monkeypatch.setattr(client, "complete", lambda *a, **k: reply)
+    fake_model(monkeypatch, reply)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
@@ -415,53 +461,14 @@ async def test_give_the_plan_shows_the_plan_card_and_the_menu(app, model_active,
         assert _chat_choices(app)[0] == "Run plan"
 
 
-async def test_a_reorder_is_discussed_then_you_order_it(app, model_active, monkeypatch):
-    calls = fake_model(monkeypatch)
-    async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "plan", request=NETWORK)
-        first, second = [a.request_id for a in store.get_assessment().approvals]
-        type_in_menu(app, "can we change the 3a and 3b to first 1")
-        await wait_until(pilot, lambda: bool(app.screen.query(PlanOrder)), what="the order")
-        assert len(calls) == 1 and "model answer 1" in chat_text(app)   # discussed first
-        assert "Only you can change the order" in chat_text(app)
-        assert [a.request_id for a in store.get_assessment().approvals] == [first, second]
-        await pilot.press("shift+up")                       # a fixed phase: refused
-        assert "fixed" in chat_text(app)
-        await pilot.press("shift+down")                     # 3a below 3b
-        await pilot.press("enter")
-        await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
-        assert [a.request_id for a in store.get_assessment().approvals] == [second, first]
-        card = app.screen.query_one(StepChat).query(PlanPanel).last()
-        text = screen_text(card)
-        assert text.index(store.get_approval(second).action) < \
-            text.index(store.get_approval(first).action)
-        assert _chat_choices(app)[0] == "Run plan"
-        assert not store.is_plan_started()
-
-
-async def test_esc_on_the_order_list_changes_nothing(app):
-    async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "plan", request=NETWORK)
-        order = [a.request_id for a in store.get_assessment().approvals]
-        type_in_menu(app, "move 3b before 3a")
-        await wait_until(pilot, lambda: bool(app.screen.query(PlanOrder)), what="the order")
-        await pilot.press("shift+down", "escape")
-        await settle(pilot)
-        assert [a.request_id for a in store.get_assessment().approvals] == order
-        assert "No change to the plan" in chat_text(app)
-
-
 # --- a second change in the same chat: a fresh list, never a duplicate id -------------------
 def _mounted(app, kind) -> list:
     return [w for w in app.screen.query(kind) if w.is_mounted]
 
 
-@pytest.mark.parametrize("mock", [True, False], ids=["mock", "no-model"])
-async def test_a_second_scope_change_shows_a_fresh_tick_list(app, mock):
-    """RULE-04: Reconix answers alone (mock or no model), so the new list is mounted while
-    the old one is still leaving; it must not clash with it."""
-    if mock:
-        store.use_mock()
+async def test_a_second_scope_change_shows_a_fresh_tick_list(app):
+    """RULE-04: a second scope change mounts a new tick list while the old one is still
+    leaving; it must not clash with it."""
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
@@ -483,17 +490,43 @@ async def test_a_second_scope_change_shows_a_fresh_tick_list(app, mock):
         assert not _mounted(app, TickList)
 
 
-@pytest.mark.parametrize("mock", [True, False], ids=["mock", "no-model"])
-async def test_a_second_reorder_shows_a_fresh_order_list(app, mock):
-    if mock:
-        store.use_mock()
+async def test_a_plan_change_from_the_plan_step_redrafts_the_plan(app, model_active,
+                                                                  monkeypatch):
+    fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "plan", request=NETWORK)
-        before = store.plan_overview()
-        type_in_menu(app, "move 3b before 3a")
-        await wait_until(pilot, lambda: bool(app.screen.query(PlanOrder)), what="the order")
-        await ask_in_chat(app, pilot, "move 3b before 3a please")
-        await wait_until(pilot, lambda: len(_mounted(app, PlanOrder)) == 1, what="one list")
+        author_before = store.plan_author()
+        type_in_menu(app, "add a login brute-force step")
+        # the AI answers, then Reconix re-drafts the plan and shows the new plan card
+        await wait_until(pilot, lambda: "re-drafted plan" in chat_text(app).lower()
+                         or "re-drafting" in chat_text(app).lower(), what="the re-draft note")
+        await wait_until(pilot, lambda: bool(app.screen.query_one(StepChat).query(PlanPanel)),
+                         what="the new plan card")
+        assert store.is_scope_approved()          # the scope did not change
+        assert not store.is_plan_started()        # nothing ran
+        assert store.plan_author() == author_before  # still an AI draft
+
+
+
+async def test_the_ai_suggests_tools_at_the_scope_step(app, model_active, fake_api,
+                                                       monkeypatch):
+    from reconix.app import ReconixApp
+
+    monkeypatch.setattr(ReconixApp, "SUGGEST_SCOPE_ON_REVIEW", True)
+    fake_api.reply = ("To list the site's paths, crawl it with katana and brute-force "
+                      "directories with ffuf.")
+    async with app.run_test(size=SIZE) as pilot:
+        await type_request(pilot, "i want to list all paths on http://shop.example.com")
+        # the Template screen auto-asks the AI; it opens the step chat with a tick list
+        await wait_until(pilot, lambda: bool(app.screen.query(SelectionList)),
+                         what="the suggestion tick list")
+        rows = app.screen.query_one(SelectionList)
+        values = {opt.value for opt in rows.options}
+        assert "tool:Katana" in values and "tool:ffuf" in values
+        assert "tool:Katana" not in rows.selected          # suggested, unticked
+        assert "Katana" not in store.get_scope().tools      # scope unchanged until you tick
+        rows.select("tool:Katana")
+        rows.focus()
+        await pilot.press("enter")
         await settle(pilot)
-        assert chat_text(app).count("Only you can change the order") == 2
-        assert store.plan_overview() == before              # nothing moved by typing
+        assert "Katana" in store.get_scope().tools          # your tick added it

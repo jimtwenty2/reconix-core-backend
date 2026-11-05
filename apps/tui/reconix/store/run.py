@@ -42,13 +42,13 @@ from .confirm_check import checks_finding, elsewhere_note
 from .errors import StoreValidationError
 from .findings import finding_exists, findings_line, list_findings
 from .parser import parse_request
-from .replies import reply_after_run, reply_to, reply_while_running, template_hint
+from .replies import reply_to, template_hint
 from .scope import (
     blocked_count,
     check_request,
     get_scope,
     is_scope_approved,
-    time_limit_reached,
+    time_limit_pending,
 )
 from .scope_view import join_and
 from .targets import as_network, check_target
@@ -108,7 +108,6 @@ def submit_prompt(text: str) -> str:
     `llm_answer` off the UI thread. A malformed target (10.0.0.300) raises, so the operator
     can fix it. During a run the line goes to the assistant.
     """
-    from .providers import active_model
 
     if get_run().started:
         say_to_assistant(text)
@@ -121,8 +120,8 @@ def submit_prompt(text: str) -> str:
         # A line that names a kind of test but no target ("scan my network") gets Reconix's
         # own template hint first, with or without a model: it says what to type next.
         # (a question never gets a template hint)
-        if active_model() is not None and not template_hint(line):
-            return "ask"  # the app asks the model (llm_answer) in a worker
+        if not template_hint(line):
+            return "ask"  # the app asks the Core API's AI (llm_answer) in a worker
         add_chat("text", "reconix", reply_to(line), tone="muted")
         return "answered"
     _start(text, parsed, picked=False)
@@ -142,7 +141,13 @@ def start_run(text: str, template_id: Optional[str] = None) -> None:
         raise StoreValidationError("An assessment is already running. Type /new to start over.")
     text = clean_request(text)
     if template_id is not None:
-        _start(text, check_target(template_id, text), picked=True)
+        from dataclasses import replace
+
+        from .parser import extract_ports, extract_tools
+
+        found = check_target(template_id, text)
+        found = replace(found, ports=extract_ports(text), tools=extract_tools(text))
+        _start(text, found, picked=True)
         return
     parsed = parse_request(text)
     if parsed is None:
@@ -201,42 +206,17 @@ def say_operator_line(text: str) -> str:
 
 
 def llm_answer(text: str, on_update: Optional[Callable[[], None]] = None) -> None:
-    """Add Reconix's reply: the active model when one is set, else the built-in reply.
-
-    With `on_update` the model's reply streams in (`llm_chat.reply`).
-
-    Blocks on the network: the app builds model replies off the UI thread with
-    `llm_chat.build_draft` instead (see `shell/actions.py`); this form serves the built-in
-    reply. Any model failure falls back to the scripted reply so the offline demo keeps working.
-    """
-    from . import llm_chat, providers
-    from .. import core_api
+    """Add the AI's reply to `text`, from the Core API (it calls the model and keeps the
+    history). Blocks on the network: the app builds replies off the UI thread with
+    `llm_chat.build_draft` instead (see `shell/actions.py`). When the API can't answer, one
+    line says why; no reply is made up in its place."""
     from ..llm import LLMError
+    from . import llm_chat
 
-    active = providers.active_model()
-    if core_api.enabled() and active is not None:
-        try:
-            llm_chat.core_reply(text, on_update)
-            return
-        except LLMError as exc:
-            add_chat("text", "reconix",
-                     f"Core API unavailable ({exc}). Asking the model directly.", tone="muted")
-    if active is not None:
-        try:
-            llm_chat.reply(text, active, on_update)
-            return
-        except LLMError as exc:
-            add_chat(
-                "text",
-                "reconix",
-                f"LLM unavailable ({exc}). Showing the built-in reply.",
-                tone="muted",
-            )
-    if not get_run().started:
-        builtin = reply_to  # a question before any target
-    else:
-        builtin = reply_after_run if is_finished() else reply_while_running
-    add_chat("text", "reconix", builtin(text), tone="muted")
+    try:
+        llm_chat.core_reply(text, on_update)
+    except LLMError as exc:
+        add_chat("text", "reconix", llm_chat.couldnt_answer(exc), tone="muted")
 
 
 def say_to_assistant(text: str) -> None:
@@ -295,7 +275,10 @@ def run_plan() -> None:
         raise StoreValidationError("The plan is already running.")
     if get_assessment().plan_drafting:
         raise StoreValidationError("The AI is still drafting the plan. It runs once the "
-                                   "draft is in (a few seconds).")
+                                   "draft is in.")
+    if not get_assessment().live.agent_run_id:
+        raise StoreValidationError("There is no plan from the AI yet. Draft it again with "
+                                   "/plan once the Core API and its model answer.")
     run.plan_started = True
     add_activity("USER", "Plan approved · testing starts", tone="ok")
     log_event("plan.run", get_assessment().label)
@@ -303,6 +286,26 @@ def run_plan() -> None:
 
 def is_plan_started() -> bool:
     return get_run().plan_started
+
+
+def approve_more_time() -> None:
+    """Continue past the scope's time limit (you chose Continue): the rest of the run has no
+    limit, so it is not asked again."""
+    run = get_run()
+    if not time_limit_pending():
+        raise StoreValidationError("There is no time-limit prompt right now.")
+    run.time_approved = True
+    get_scope().time_limit_minutes = 0
+    add_activity("USER", "Continue past the time limit", tone="warn")
+    log_event("time.extended", get_assessment().label)
+
+
+def stop_for_time() -> None:
+    """End the run at the time-limit prompt (you chose Stop)."""
+    if not time_limit_pending():
+        raise StoreValidationError("There is no time-limit prompt right now.")
+    add_activity("USER", "Stop at the time limit", tone="block")
+    _stop("you stopped at the time limit", "Stopped at the time limit. Nothing else will run.")
 
 
 def reject_scope() -> None:
@@ -364,9 +367,8 @@ def advance() -> Optional[RunStep]:
     step = lists.current().script[index]
     run = get_run()
     run.cursor = index  # past the steps this run doesn't need
-    if time_limit_reached():
-        _stop("the scope's time limit was reached", "Time limit reached. Testing stopped.")
-        return None
+    if time_limit_pending():
+        return None  # the run pauses; Execution offers Continue or Stop (run_host asks you)
     if step.kind == "gate":
         state = gate_state(step.name)
         if state == "pending":
@@ -392,6 +394,8 @@ def _skip_rejected(index: int, request: ApprovalRequest) -> None:
     "Validation completed" lines and the finding's evidence. The candidate finding the
     validation was meant to confirm stays UNCONFIRMED, with no evidence from it.
     """
+    if request.api_approval_id:
+        return  # the Core API skips it; what comes next is the API's next step
     script = lists.current().script
     end = index + 1
     while end < len(script) and not _ends_action_block(script[end]):
@@ -497,12 +501,14 @@ def _login_need() -> str:
 def _apply(step: RunStep) -> None:
     run = get_run()
     kind = step.kind
+    # A literal step came from the Core API (tool output, the AI's words): shown as it is.
+    text = step.text if step.literal else _fill(step.text, step.tool)
     if kind == "say":
-        add_chat(step.entry, step.speaker, _fill(step.text, step.tool), step.tone)
+        add_chat(step.entry, step.speaker, text, step.tone)
     elif kind == "card":
-        add_chat("card", step.speaker, _fill(step.text, step.tool), rows=step.rows)
+        add_chat("card", step.speaker, text, rows=step.rows)
     elif kind == "log":
-        add_activity(step.source, _fill(step.text, step.tool), step.tone)
+        add_activity(step.source, text, step.tone)
     elif kind == "phase":
         run.phase = step.name
     elif kind == "parse":
@@ -570,6 +576,8 @@ def _policy_blocks_gate(gate: str) -> bool:
     if not gate.startswith(GATE_APPROVAL_PREFIX):
         return False
     request = get_approval(gate[len(GATE_APPROVAL_PREFIX) :])
+    if request.api_approval_id:
+        return False  # the Core API checked this action (S1) and checks it again (S2)
     verdict = check_request(request.method, request.path)
     if verdict.allowed:
         return False

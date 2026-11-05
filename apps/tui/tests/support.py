@@ -16,6 +16,8 @@ TEST_PASSWORD = "s3cret-Pa55-for-tests"   # must never appear anywhere it is sho
 # A bare hostname could be a site, an API or a network host, so the run asks for the
 # template. The demo request (a URL) and IPv4/repo/path targets pick theirs themselves.
 ASK_REQUEST = "Assess staging.example.com"
+# A request the tests start runs with (reserved names only; the fake API answers it).
+DEMO_REQUEST = "Assess https://staging.example.com for web security issues."
 
 NETWORK = "10.0.0.0/24"   # a network scope: the scope's tick list shows ports and tools
 
@@ -30,11 +32,42 @@ def event_kinds() -> List[str]:
 
 
 # --- the run, straight through the store ---------------------------------------------------
+def drive_live() -> bool:
+    """Make the run's next Core API call (the fake API in tests) the way the app's worker
+    does, but inline. False when there is nothing to ask."""
+    job = store.next_live_job()
+    if job is None:
+        return False
+    try:
+        result = job.fetch()
+    except Exception as exc:  # noqa: BLE001 - recorded like the app records it
+        job.fail(exc)
+    else:
+        job.apply(result)
+    return True
+
+
+def draft_plan() -> None:
+    """Draft the plan on the (fake) Core API, as the app does after the scope is approved."""
+    request = store.plan_draft_request()
+    if request is None:
+        return
+    try:
+        out = store.fetch_plan_draft(request)
+    except Exception as exc:  # noqa: BLE001
+        store.plan_draft_failed(request, str(exc))
+    else:
+        store.apply_plan_draft(request, out)
+
+
 def play_until_gate() -> Optional[str]:
-    """Advance the store's run until it waits at a gate (returns it) or ends (None)."""
+    """Advance the store's run until it waits at a gate (returns it) or ends (None). When
+    the script runs out, the run's next Core API call is made, as the app makes it."""
     while True:
         step = store.advance()
         if step is None:
+            if drive_live():
+                continue
             return None
         if step.kind == "gate" and store.waiting_gate() == step.name:
             return step.name
@@ -55,6 +88,7 @@ def decide(gate: str) -> None:
         store.select_template(store.get_assessment().template_id)
     elif gate == "scope":
         store.approve_scope()
+        draft_plan()
     elif gate == "plan":
         store.run_plan()
     elif gate in ("account", "code"):
@@ -64,14 +98,14 @@ def decide(gate: str) -> None:
         if request.risk == "HIGH":
             token = store.request_confirmation(request.request_id, request.command_hash)
             store.approve(request.request_id, command_hash=request.command_hash,
-                          confirmation_token=token)
+                          confirmation_token=token, typed_target=request.target)
         else:
             store.approve(request.request_id, command_hash=request.command_hash)
     else:
         raise ValueError(gate)
 
 
-def run_to(target: Optional[str], request: str = store.DEMO_REQUEST) -> None:
+def run_to(target: Optional[str], request: str = DEMO_REQUEST) -> None:
     """Start a run and decide every gate until `target` is waiting (None: to the end).
 
     The demo request skips the template gate (its URL picks Web URL); pass
@@ -148,7 +182,7 @@ async def choose_by_keys(pilot, choice_id: str) -> None:
 
 async def start_demo(pilot) -> None:
     """Type the demo request at the Start prompt; the run stops at the scope."""
-    await type_request(pilot, store.DEMO_REQUEST)
+    await type_request(pilot, DEMO_REQUEST)
 
 
 async def type_request(pilot, text: str) -> None:
@@ -189,10 +223,16 @@ async def pass_gate(app, pilot) -> str:
     elif isinstance(screen, ApprovalScreen):
         request = store.get_approval(gate.split(":", 1)[1])
         if request.risk == "HIGH":
+            from reconix.screens.forms.typed_target import TypedTargetForm
+
             await pilot.press("1")                               # Approve & run
             await settle(pilot)
             assert isinstance(app.screen, ChoiceScreen)
             await pilot.press("down", "enter")                   # Yes (No is the default)
+            await settle(pilot)
+            assert isinstance(app.screen, TypedTargetForm)
+            app.screen.query_one("#target", Input).value = request.target
+            app.screen.query_one("#submit").press()
         else:
             await pilot.press("1")
     else:
@@ -204,16 +244,35 @@ async def pass_gate(app, pilot) -> str:
 async def run_ui_to(app, pilot, target: Optional[str], request: Optional[str] = None) -> None:
     """Start a run and pass gates with the keyboard until `target` is waiting.
 
-    No `request`: Enter on the empty Start prompt runs the demo. Otherwise `request` is typed
-    into the Start prompt and submitted.
+    No `request`: the demo request is typed. Otherwise `request` is typed into the Start
+    prompt and submitted.
     """
     if request is None:
         await start_demo(pilot)
     else:
         await type_request(pilot, request)
-    while store.waiting_gate() and store.waiting_gate() != target and not store.is_finished():
+    tries: dict = {}
+    while True:
+        await wait_for_run(pilot)
+        gate = store.waiting_gate()
+        if not gate or gate == target or store.is_finished():
+            break
+        tries[gate] = tries.get(gate, 0) + 1
+        if tries[gate] > 3:   # the API keeps refusing it (e.g. a source scope): stop, don't loop
+            raise AssertionError(f"the run stays at {gate!r}: {toasts(app)[-1:]}")
         await pass_gate(app, pilot)
     assert store.waiting_gate() == (target or "") or (target is None and store.is_finished())
+
+
+async def wait_for_run(pilot, timeout: float = 10.0) -> None:
+    """Let the app's Core API workers finish: the plan draft, or the run's next call, until
+    the run waits at a gate, ends, or stopped on a failed call."""
+    def settled() -> bool:
+        run = store.get_assessment()
+        busy = run.live.busy or run.plan_drafting
+        return not busy and (bool(store.waiting_gate()) or store.is_finished()
+                             or bool(store.live_failed()))
+    await wait_until(pilot, settled, timeout)
 
 
 # --- a finding that did not come from the scripted run ---------------------------------------
@@ -237,17 +296,12 @@ def toasts(app) -> List[str]:
 
 
 def fake_model(monkeypatch) -> list:
-    """Chat calls answer "model answer N" (a plan draft keeps the template's plan); returns
-    the list of messages each chat call got."""
+    """Chat calls answer "model answer N"; returns the list of messages each call got."""
     from reconix.llm import client
 
     calls: list = []
 
     def complete(pid, model, messages, **kw):
-        from reconix.store import ai_plan  # reconix-ai: a plan draft keeps the template's plan
-
-        if messages[0]["content"] == ai_plan.PLAN_PROMPT:
-            return "{}"
         calls.append(messages)
         return f"model answer {len(calls)}"
 

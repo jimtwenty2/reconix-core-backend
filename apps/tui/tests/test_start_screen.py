@@ -1,10 +1,12 @@
 """The Start screen: the logo until the first line, then the conversation and its spinner."""
 
+import pytest
+
 from reconix import store
 from reconix.screens import StartScreen, TemplateScreen
 from reconix.widgets import ActivityStatus, PromptBox
 
-from .support import ASK_REQUEST, SIZE, play_until_gate, settle, show
+from .support import ASK_REQUEST, DEMO_REQUEST, SIZE, play_until_gate, settle, show, wait_until
 
 
 def _reconix_lines() -> list:
@@ -18,7 +20,7 @@ def _play_until_replies(count: int) -> None:
     assert not store.waiting_gate()
 
 
-async def test_the_logo_shows_until_the_first_line(app):
+async def test_the_logo_shows_until_the_first_line(app, local_model):
     async with app.run_test(size=SIZE) as pilot:
         await settle(pilot)
         assert app.screen.query("#logo") and app.screen.query("#quickstart")
@@ -28,7 +30,9 @@ async def test_the_logo_shows_until_the_first_line(app):
         assert isinstance(app.screen, StartScreen)
         assert not app.screen.query("#logo") and not app.screen.query("#quickstart")
         assert "› hello" in str(app.screen.query_one(".user-msg").render())
-        assert "Hi!" in str(app.screen.query_one("#start-reply").render())
+        await wait_until(pilot, lambda: "The API's answer." in str(
+            app.screen.query_one("#start-reply").render()), what="the Core API's answer")
+        await settle(pilot)
         assert not app.screen.query_one("#start-activity").display     # answered, not working
 
 
@@ -43,13 +47,13 @@ async def test_a_new_assessment_brings_the_logo_back(app):
 
 
 async def test_working_shows_the_request_on_top_and_one_spinner_line(app):
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     _play_until_replies(2)
     first, current = _reconix_lines()
     async with app.run_test(size=SIZE) as pilot:
         await settle(pilot)
         assert not app.screen.query("#logo")
-        assert store.DEMO_REQUEST in str(app.screen.query_one(".user-msg").render())
+        assert DEMO_REQUEST in str(app.screen.query_one(".user-msg").render())
         status = app.screen.query_one("#start-activity", ActivityStatus)
         assert status.display and not app.screen.query_one("#start-reply").display
         shown = str(status.render())
@@ -58,7 +62,7 @@ async def test_working_shows_the_request_on_top_and_one_spinner_line(app):
 
 
 async def test_ctrl_o_lists_the_finished_steps_and_hides_them_again(app):
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     _play_until_replies(2)
     first, current = _reconix_lines()
     async with app.run_test(size=SIZE) as pilot:
@@ -85,3 +89,11 @@ async def test_the_template_screen_spinner_keeps_the_expanded_choice(app):
         assert all(line in shown for line in lines)
         if len(lines) > 1:
             assert "ctrl+o to collapse" in shown
+
+
+@pytest.fixture
+def local_model(reachable):
+    """A model on this computer, active here: the Core API uses it at once (no approval)."""
+    store.set_provider("ollama", base_url="http://127.0.0.1:11434", models=["llama3.2"])
+    store.test_provider("ollama")
+    store.activate("ollama", "llama3.2")

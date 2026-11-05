@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 
 from reconix import store
+from reconix.models.base import utc_now
 from reconix.store import lists
 
 from .support import decide, play_until_gate, run_to
@@ -24,7 +25,7 @@ MALFORMED_OR_FOREIGN = [
 
 @pytest.fixture
 def approved_scope():
-    run_to("account")
+    run_to("plan")          # the scope is approved (on the Core API too); nothing ran yet
 
 
 @pytest.mark.parametrize("target", BLOCKED_ADMIN)
@@ -44,39 +45,24 @@ def test_in_scope_targets_are_allowed(approved_scope, target):
     assert store.check_request("GET", target).allowed
 
 
-def test_requests_stop_once_the_time_limit_has_passed(approved_scope):
+def test_requests_pause_once_the_time_limit_has_passed(approved_scope):
+    store.get_scope().time_limit_minutes = 30        # a limit was set on this scope
     lists.current().run.started_at -= timedelta(minutes=31)
     verdict = store.check_request("GET", "/products")
     assert (verdict.allowed, verdict.reason) == (False, "Time limit reached")
+    store.approve_more_time()                        # you chose to continue
+    assert store.check_request("GET", "/products").allowed
 
 
-def test_the_run_stops_when_the_time_limit_has_passed(approved_scope):
-    decide("account")
+def test_the_run_pauses_when_the_time_limit_has_passed(approved_scope):
+    store.get_scope().time_limit_minutes = 30
+    decide("plan")
     lists.current().run.started_at -= timedelta(hours=1)
-    assert store.advance() is None
+    assert store.advance() is None                   # the run pauses, it does not stop
+    assert store.time_limit_pending() and not store.get_run().stopped
+    store.stop_for_time()                            # you chose Stop
     assert store.display_phase() == "stopped"
     assert "time limit" in store.get_run().stopped
-
-
-def test_an_approval_outside_the_scope_never_reaches_a_human():
-    run_to("account")
-    lists.current().approvals[0].path = "/admin/orders"      # the AI proposes an excluded path
-    decide("account")
-    assert play_until_gate() == "code"
-    decide("code")
-    assert play_until_gate() is None
-    assert store.display_phase() == "stopped"
-    assert store.decision_for("approval-001") is None
-    assert store.blocked_count() == 2
-
-
-def test_approve_rechecks_the_policy():
-    run_to("approval:approval-001")
-    request = store.get_approval("approval-001")
-    lists.current().scope.allowed_methods.remove("GET")       # the scope tightened meanwhile
-    with pytest.raises(store.StoreValidationError, match="Blocked by policy"):
-        store.approve("approval-001", command_hash=request.command_hash)
-    assert not store.is_approved("approval-001")
 
 
 # --- network targets: one parse, exclusions by meaning -----------------------------------------
@@ -117,18 +103,33 @@ def test_a_network_exclusion_must_be_readable(entry):
 
 
 # --- source targets: the path that runs must stay in the repository ----------------------------
+def _source_scope_approved_here():
+    """A source scope, approved in the store only: the Core API can't take one yet (code is
+    uploaded through the code-scan flow), but the policy engine still judges its paths."""
+    store.start_run("review repo https://git.example.com/acme/app.git")
+    assert play_until_gate() == "scope"                # the repo picked Source Code
+    lists.current().scope.status = "APPROVED"
+    lists.current().run.started_at = utc_now()
+
+
+def test_a_source_scope_is_refused_by_the_core_api_for_now():
+    store.start_run("review repo https://git.example.com/acme/app.git")
+    assert play_until_gate() == "scope"
+    with pytest.raises(store.StoreValidationError, match="source-code scope"):
+        store.approve_scope()
+    assert store.get_scope().status == "DRAFT"
+
+
 @pytest.mark.parametrize("target", [
     "../../etc/passwd", "app/../../x", "app\\..\\..\\x", "~/.ssh/id_rsa",
     "https://evil.example.net/x", "C:/Windows/win.ini",
 ])
 def test_a_source_path_that_leaves_the_repository_is_blocked(target):
-    store.start_run("review repo https://git.example.com/acme/app.git")
-    decide(play_until_gate())                        # scope (the repo picked Source Code)
+    _source_scope_approved_here()
     verdict = store.check_request("read", target)
     assert not verdict.allowed and verdict.reason == "Path leaves the repository"
 
 
 def test_a_source_file_name_with_dots_is_fine():
-    store.start_run("review repo https://git.example.com/acme/app.git")
-    decide(play_until_gate())
+    _source_scope_approved_here()
     assert store.check_request("read", "app/..hidden/x.py").allowed

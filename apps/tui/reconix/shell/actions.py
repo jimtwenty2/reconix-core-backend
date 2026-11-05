@@ -12,7 +12,6 @@ from ..flow import screen_for
 from ..models import ChatEntry, Choice
 from ..screens.choice import ChoiceScreen
 from ..screens.forms import ApprovalEditForm, OpenApiForm, ScopeEditForm
-from ..store import agent_run
 
 
 class ActionsMixin:
@@ -42,23 +41,10 @@ class ActionsMixin:
         an empty line reopens what the run waits for. After the run has finished
         (completed or stopped) every line is still a chat turn about that same assessment,
         with its history and context; an empty line opens Findings (or Report when there are
-        none). A new assessment starts only with /new, /assess <target> or /template.
+        none). A new assessment starts only with /new or /template.
         """
         text = text.strip()
         run = store.get_run()
-        # With a model active, the harness agent handles the prompt. A target enters the
-        # Template frame (structured assessment); plain natural language is a chat turn with
-        # the agent; follow-up lines during a run continue the same agent (history kept).
-        if text and agent_run.available():
-            if self.agent_mode and run.started:
-                self._send_to_agent(text)
-                return True
-            if not run.started:
-                if agent_run.looks_like_target(text):
-                    return self.enter_agent_mode(text)
-                self.agent_mode = False  # plain chat: no run to complete
-                self._send_to_agent(text)
-                return True
         if run.started:
             if not text:
                 if store.is_finished():
@@ -73,18 +59,11 @@ class ActionsMixin:
                 return False
             self._remember(text)
             self.refresh_view()  # the operator line shows at once
-            if store.active_model() is not None:
-                # ponytail: a toast stands in for a Spinner; the LLM call blocks, so the
-                # reply is built off the UI thread while the RunController keeps playing.
-                self.notify("Thinking…", timeout=2)
-                self._ask_model(answer)
-            else:
-                store.llm_answer(answer)  # built-in reply, instant / offline
-                self.refresh_view()
+            # The Core API's AI answers off the UI thread while the run keeps playing.
+            self._ask_model(answer)
             return True
         if not text:
             return False  # nothing typed: no run starts, nothing changes
-        self.agent_mode = False  # scripted path from here on
         try:
             result = store.submit_prompt(text)
         except (store.StoreValidationError, ValueError) as exc:
@@ -116,10 +95,10 @@ class ActionsMixin:
         writes), then record it on the UI thread."""
         draft = store.build_draft(
             text,
-            on_text=lambda so_far: self.call_from_thread(
+            on_text=lambda so_far: self.from_worker(
                 self._preview_reply, placeholder, so_far, gen),
         )
-        self.call_from_thread(self._record_llm_reply, draft, gen, placeholder)
+        self.from_worker(self._record_llm_reply, draft, gen, placeholder)
 
     def _preview_reply(self, placeholder: ChatEntry, text: str, gen: int) -> None:
         """A streamed reply grew: show it in its line, only on the run it was asked in."""
@@ -148,12 +127,10 @@ class ActionsMixin:
     def leave_assessment(self) -> None:
         """About to leave the current assessment (a switch or /new).
 
-        Drops what is still in flight on the run being left: a running agent turn, a model
-        reply being built (and its unfinished "thinking…" line), and any open HIGH-risk
-        confirmation token — so coming back to a HIGH gate always needs the confirmation
-        step again.
+        Drops what is still in flight on the run being left: a model reply being built (and
+        its unfinished "thinking…" line), and any open HIGH-risk confirmation token, so coming
+        back to a HIGH gate always needs the confirmation step again.
         """
-        self.cancel_agent()  # stop a running agent turn on the run we leave
         self._llm_gen += 1  # a late model reply is dropped, not misfiled
         store.drop_pending_replies()
         self._void_confirmations()
@@ -180,7 +157,6 @@ class ActionsMixin:
             self.leave_assessment()
             store.new_assessment()
             self.notify("Started a new assessment. The previous one is under /assessments.")
-        self.agent_mode = False  # /template is the scripted flow
         self.template_pick = template_id if not store.get_run().started else None
         self.goto("template")
 
@@ -211,16 +187,55 @@ class ActionsMixin:
         except store.StoreValidationError as exc:
             self._warn(exc)
             return
-        if getattr(self, "agent_mode", False):
-            self.begin_agent_execution()  # hand off to the harness agent
-        else:
-            self._draft_plan()
-            self.resume_run()
+        self._draft_plan()
+        self.resume_run()
 
-    def _draft_plan(self) -> None:
-        """With a model active, it drafts the plan's phases in a worker; Run plan waits."""
+    def draft_plan_again(self) -> None:
+        """/plan after the AI couldn't draft the plan: ask the Core API once more."""
+        if not store.get_assessment().live.agent_run_id and not store.is_plan_started():
+            self._draft_plan()
+            self.refresh_view()
+
+    def redraft_plan(self, on_done=None) -> None:
+        """Re-draft the plan on the Core API (a plan-change request in the step chat): the
+        latest chat guidance is already with the API, so a fresh draft reflects it."""
+        self._draft_plan(on_done)
+
+    def suggest_scope(self) -> None:
+        """At the Scope step, the AI reads the operator's goal and suggests tools (a worker);
+        when it returns, the suggestions show in the step chat as unticked rows to approve."""
+        request = store.scope_suggest_request()
+        if request is None:
+            return
+
+        def work() -> None:
+            from ..llm import LLMError
+            try:
+                reply = store.fetch_scope_suggest(request)
+            except LLMError as exc:
+                self.from_worker(store.scope_suggest_failed, request, str(exc))
+                self.from_worker(self.refresh_view)
+            else:
+                self.from_worker(self._scope_suggested, request, reply)
+
+        self.run_worker(work, thread=True, group="llm", exit_on_error=False)
+
+    def _scope_suggested(self, request, reply) -> None:
+        used = store.apply_scope_suggest(request, reply)
+        self.refresh_view()
+        from ..screens.base import ReconixScreen
+
+        screen = self.screen
+        if used and isinstance(screen, ReconixScreen) and screen.flow_name == "template":
+            self.run_worker(screen.show_scope_suggestions(), exclusive=False)
+
+    def _draft_plan(self, on_done=None) -> None:
+        """The AI drafts the plan on the Core API in a worker; Run plan waits for it.
+        `on_done` (if given) runs on the UI thread when the draft has landed."""
         request = store.plan_draft_request()
         if request is None:
+            if on_done is not None:
+                on_done()
             return
 
         def work() -> None:
@@ -228,10 +243,12 @@ class ActionsMixin:
             try:
                 raw = store.fetch_plan_draft(request)
             except LLMError as exc:
-                self.call_from_thread(store.plan_draft_failed, request, str(exc))
+                self.from_worker(store.plan_draft_failed, request, str(exc))
             else:
-                self.call_from_thread(store.apply_plan_draft, request, raw)
-            self.call_from_thread(self.refresh_view)
+                self.from_worker(store.apply_plan_draft, request, raw)
+            self.from_worker(self.refresh_view)
+            if on_done is not None:
+                self.from_worker(on_done)
 
         self.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
@@ -316,7 +333,6 @@ class ActionsMixin:
         except store.StoreValidationError as exc:
             self._warn(exc)
             return
-        self.cancel_agent(mark_stopped=False)  # an agent turn stops too (already marked)
         self.controller.stop()
         self.refresh_view()
 
@@ -325,8 +341,6 @@ class ActionsMixin:
         """Start over on a fresh assessment (earlier ones stay listed); optionally on `target`."""
         self.leave_assessment()  # nothing in flight may write into the new run
         created = store.new_assessment()  # False: the current one is still empty; keep it
-        self.agent_mode = False
-        self.agent_request = ""
         self.selected_finding = ""
         self.findings_filter = "all"
         self.goto("start")
@@ -346,7 +360,6 @@ class ActionsMixin:
         except store.StoreValidationError as exc:
             self._warn(exc)
             return
-        self.agent_mode = False
         self.selected_finding = ""
         self.goto(self.resume_screen_name())
         gate = store.waiting_gate()

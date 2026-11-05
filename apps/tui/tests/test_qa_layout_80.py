@@ -9,14 +9,23 @@ from textual.widgets import Button, Input, Static
 
 from reconix import store
 from reconix.app import ReconixApp
-from reconix.llm.catalog import MOCK_ID
 from reconix.screens import ChoiceScreen
 from reconix.screens.forms.add_on import AddOnForm
 from reconix.screens.forms.provider import ProviderForm
 
-from .support import pass_gate, run_to, settle, start_demo
+from .support import decide, pass_gate, play_until_gate, run_to, settle, start_demo
+
+PROVIDER = "openai"   # a provider whose form starts at its API key field
+FAKE_KEY = "sk-1234"  # noqa: S105 - a fake
 
 SMALL = (80, 24)
+
+
+def _active_model() -> None:
+    """A real provider as the active model (a fake key; reachability is faked)."""
+    store.set_provider(PROVIDER, api_key=FAKE_KEY, models=["gpt-4o-mini"])
+    store.test_provider(PROVIDER)
+    store.activate(PROVIDER, "gpt-4o-mini")
 
 
 def _on_screen(widget) -> bool:
@@ -36,10 +45,10 @@ def _lines(widget) -> int:
 
 
 # --- 1. PROV-02: the focused field is in view ---------------------------------------------------
-async def test_the_mock_provider_key_field_is_in_view_at_80x24():
+async def test_the_provider_key_field_is_in_view_at_80x24():
     app = ReconixApp()
     async with app.run_test(size=SMALL) as pilot:
-        app.push_screen(ProviderForm(MOCK_ID))
+        app.push_screen(ProviderForm(PROVIDER))
         await settle(pilot, 8)
         form = app.screen
         key = form.query_one("#api_key", Input)
@@ -91,7 +100,7 @@ async def test_a_short_dialog_keeps_its_natural_height():
 
 # --- 3. form footers fit on one line; no empty gap -------------------------------------------
 async def test_every_form_footer_fits_on_one_line_at_80x24():
-    for make in (lambda: ProviderForm(MOCK_ID), AddOnForm):
+    for make in (lambda: ProviderForm(PROVIDER), AddOnForm):
         app = ReconixApp()
         async with app.run_test(size=SMALL) as pilot:
             app.push_screen(make())
@@ -102,7 +111,7 @@ async def test_every_form_footer_fits_on_one_line_at_80x24():
 async def test_the_provider_form_has_no_empty_gap_above_its_buttons():
     app = ReconixApp()
     async with app.run_test(size=(120, 36)) as pilot:
-        app.push_screen(ProviderForm(MOCK_ID))
+        app.push_screen(ProviderForm(PROVIDER))
         await settle(pilot, 8)
         form = app.screen
         key = form.query_one("#api_key", Input)
@@ -110,31 +119,7 @@ async def test_the_provider_form_has_no_empty_gap_above_its_buttons():
         assert submit.region.y - key.region.bottom <= 2  # margin + one error row at most
 
 
-# --- (b) a form with fields below the fold says so ---------------------------------------------
-async def test_the_login_form_says_more_fields_wait_below_the_fold():
-    from reconix.screens.forms import LoginForm
-
-    from .support import run_ui_to
-
-    app = ReconixApp()
-    async with app.run_test(size=SMALL) as pilot:
-        await run_ui_to(app, pilot, "account")
-        await settle(pilot, 8)
-        form = app.screen
-        assert isinstance(form, LoginForm)
-        body = form.query_one(".form-body")
-        more = form.query_one("#form-more", Static)
-        if body.max_scroll_y > 0:                        # the password is below the fold
-            assert more.display and _on_screen(more)
-            assert "more fields" in str(more.render())
-            form.query_one("#secret", Input).focus()     # Tab / Enter moves there
-            await settle(pilot, 8)
-            assert _inside(form.query_one("#secret", Input), body)
-            assert not more.display                      # nothing left below
-        else:
-            assert not more.display
-
-
+# --- (b) a form says when more fields wait below the fold -------------------------------------
 async def test_no_more_fields_hint_when_everything_fits():
     app = ReconixApp()
     async with app.run_test(size=(140, 45)) as pilot:
@@ -200,11 +185,10 @@ def test_a_long_plan_row_continues_under_its_own_column():
 
 
 # --- 7: the session bar keeps the id whole and uses its width --------------------------------
-async def test_the_session_bar_keeps_the_id_and_the_target_at_80_columns():
-    from reconix.store.providers import use_mock
+async def test_the_session_bar_keeps_the_id_and_the_target_at_80_columns(reachable):
     from reconix.widgets import SessionBar
 
-    use_mock()
+    _active_model()
     run_to("scope")
     app = ReconixApp()
     async with app.run_test(size=SMALL) as pilot:
@@ -212,16 +196,15 @@ async def test_the_session_bar_keeps_the_id_and_the_target_at_80_columns():
         line = str(app.screen.query_one(SessionBar).render())
         label = store.get_assessment().label
         assert f"{label} · stagin" in line                 # the id whole, then the target
-        assert "Scope pending" in line and "reconix-mock-1" in line
+        assert "Scope pending" in line and "gpt-4o-mini" in line
         bar = app.screen.query_one(SessionBar)
         assert len(line.rstrip()) == bar.content_region.width   # the whole width is used
 
 
-async def test_the_session_bar_shows_everything_on_a_wide_terminal():
-    from reconix.store.providers import use_mock
+async def test_the_session_bar_shows_everything_on_a_wide_terminal(reachable):
     from reconix.widgets import SessionBar
 
-    use_mock()
+    _active_model()
     run_to("scope")
     app = ReconixApp()
     async with app.run_test(size=(160, 40)) as pilot:
@@ -229,7 +212,7 @@ async def test_the_session_bar_shows_everything_on_a_wide_terminal():
         line = str(app.screen.query_one(SessionBar).render())
         assert "staging.example.com" in line
         assert "Scope pending approval" in line
-        assert "Reconix mock (offline) · reconix-mock-1" in line
+        assert "OpenAI · gpt-4o-mini" in line
 
 
 # --- 8: the flow line marks Findings done once the run completed ------------------------------
@@ -239,5 +222,7 @@ def test_findings_are_settled_once_the_run_completed():
 
 
 def test_findings_are_not_settled_while_the_run_plays():
-    run_to("approval:approval-001")
+    run_to("plan")
+    decide("plan")
+    assert play_until_gate().startswith("approval:")
     assert "findings" not in store.step_states()

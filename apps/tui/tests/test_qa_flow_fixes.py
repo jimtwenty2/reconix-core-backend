@@ -13,12 +13,13 @@ from .support import (
     NETWORK,
     SIZE,
     chat_menu,
+    pass_gate,
     chat_text,
     run_ui_to,
-    screen_text,
     settle,
     step_menu,
     type_in_menu,
+    wait_for_run,
     wait_until,
 )
 
@@ -57,19 +58,13 @@ async def test_edit_manifest_from_the_chat_menu_then_esc_focuses_the_step_menu(a
         assert store.waiting_gate() == "scope"
 
 
-async def test_edit_steps_from_the_chat_menu_then_esc_focuses_the_plan_menu(app):
-    async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "plan", request=NETWORK)
-        depth = len(app.screen_stack)
-        type_in_menu(app, "yes")
-        await _choose_in_chat(app, pilot, "edit")
-        await _esc_dialog(app, pilot, depth)
-        assert _focus_is_the_step_menu(app)
-
-
 async def test_view_details_from_the_chat_menu_then_esc_focuses_the_approval_menu(app):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "approval:approval-001")
+        await run_ui_to(app, pilot, "plan")
+        await pass_gate(app, pilot)                  # Run plan: the API's first steps play
+        await wait_for_run(pilot)
+        assert store.waiting_gate().startswith("approval:")
+        await settle(pilot)
         depth = len(app.screen_stack)
         type_in_menu(app, "yes")
         await _choose_in_chat(app, pilot, "details")
@@ -161,20 +156,18 @@ def test_a_port_range_a_host_and_another_tool_are_refused_with_a_reason():
     assert (after.allowed_ports, after.tools) == (before.allowed_ports, before.tools)
 
 
-async def test_a_host_change_in_the_chat_shows_no_tick_list(app):
-    store.use_mock()
+async def test_a_host_change_in_the_chat_shows_no_tick_list(app, model_active):
+    store.core_api_approve()  # your OK in /provider: the API may use the remote model
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         type_in_menu(app, "add 10.0.0.99 to the scope")
         await wait_until(pilot, lambda: "Hosts can't change" in chat_text(app), what="reply")
         await settle(pilot)
         assert not app.screen.query(TickList)
-        assert "mock model" not in chat_text(app)
 
 
 # --- F4: a question at Start is answered, never turned into a template hint ---------------
-def test_a_question_with_a_keyword_goes_to_the_mock_not_the_template():
-    store.use_mock()
+def test_a_question_with_a_keyword_goes_to_the_ai_not_the_template():
     assert store.submit_prompt("what is my api key?") == "ask"
     assert store.submit_prompt("how does the api template work") == "ask"
     assert not store.get_run().started
@@ -182,10 +175,10 @@ def test_a_question_with_a_keyword_goes_to_the_mock_not_the_template():
     assert "API needs" in store.list_chat()[-1].text
 
 
-def test_without_a_model_a_question_gets_no_template_hint():
-    assert store.submit_prompt("what is my api key?") == "answered"
-    reply = store.list_chat()[-1].text
-    assert "API needs" not in reply and "can't answer questions" in reply
+def test_without_a_local_model_a_question_still_goes_to_the_core_api():
+    # No /provider model: the Core API answers with its own model; no template hint.
+    assert store.submit_prompt("what is my api key?") == "ask"
+    assert all("API needs" not in entry.text for entry in store.list_chat())
     assert not store.get_run().started
 
 
@@ -201,38 +194,6 @@ def test_a_question_with_a_target_still_starts_the_run():
 
 
 # --- F5: a check moved to another host can't confirm the finding --------------------------
-MGMT = "Check 10.0.0.0/24 for exposed management consoles"
-
-
-def _play_with_edit(value: str = "") -> None:
-    from .support import decide, play_until_gate
-
-    store.start_run(MGMT)
-    while True:
-        gate = play_until_gate()
-        if gate is None:
-            return
-        if value and gate == "approval:approval-002":
-            store.edit_approval("approval-002", value)
-        decide(gate)
-
-
-def test_the_high_check_on_the_finding_s_own_host_confirms_it():
-    _play_with_edit()
-    assert store.get_finding("001").validation == "CONFIRMED"
-
-
-def test_a_high_check_moved_to_another_host_leaves_the_finding_unconfirmed():
-    _play_with_edit("10.0.0.7:8443")
-    finding = store.get_finding("001")
-    assert finding.path.startswith("10.0.0.1:8443")
-    assert finding.validation == "UNCONFIRMED"
-    assert finding.evidence == [
-        "Not collected: the check ran on 10.0.0.7:8443, not on this finding's own host and "
-        "port, so it can't confirm it."
-    ]
-
-
 def test_a_check_moved_to_another_port_or_path_doesn_t_confirm():
     from reconix.models import ApprovalRequest, Finding
     from reconix.store.confirm_check import checks_finding
@@ -255,11 +216,10 @@ def test_a_check_moved_to_another_port_or_path_doesn_t_confirm():
 
 # --- the model's lines carry the model's name; Reconix's own keep "◆ reconix" ------------
 async def test_a_model_reply_in_the_step_chat_is_labelled_with_the_model(
-    app, model_active, monkeypatch
+    app, model_active, fake_api
 ):
-    from .support import fake_model
-
-    fake_model(monkeypatch)
+    store.core_api_approve()  # your OK in /provider: the API may use the remote model
+    fake_api.reply = "model answer 1"
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         type_in_menu(app, "why these ports?")
@@ -272,52 +232,17 @@ async def test_a_model_reply_in_the_step_chat_is_labelled_with_the_model(
         assert "◆ reconix  Only you can change the scope" in chat_text(app)
 
 
-async def test_the_mock_s_answer_at_start_is_labelled_with_its_name(app):
-    from reconix.screens.start import _answer
-
-    store.use_mock()
-    async with app.run_test(size=SIZE) as pilot:
-        box = app.screen.query_one(PromptBox)
-        box.input.value = "who are you?"
-        box.input.focus()
-        await pilot.press("enter")
-        await wait_until(pilot, lambda: len(store.last_exchange()[1]) > 0, what="the answer")
-        await settle(pilot)
-        label = _answer(store.last_exchange()[1]).plain
-        assert label.startswith("◆ reconix-mock-1  ")
-
-
-def test_the_saved_copy_keeps_its_shape():
+def test_the_saved_copy_keeps_its_shape(model_active):
     from reconix.store.snapshot import snapshot
 
-    store.use_mock()
+    store.core_api_approve()
     store.submit_prompt("scan 10.0.0.0/24")
     store.llm_answer("what is in scope?")
     entry = store.list_chat()[-1]
-    assert entry.author == "reconix-mock-1" and entry.speaker == "reconix"
+    assert entry.speaker == "reconix" and entry.text == "The API's answer."
     saved = snapshot(store.get_assessment())
     rows = [row for row in saved["timeline"] if row["type"] == "chat"]
     assert rows[-1]["who"] == "reconix" and "author" not in rows[-1]
-
-
-# --- chat (b): at the target login the step chat takes what the command bar takes ---------
-async def test_help_and_stop_typed_in_the_step_at_the_login_run(app):
-    from reconix.screens import ExecutionScreen, HelpScreen
-
-    from .support import toasts
-
-    async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "account")
-        step = next(s for s in app.screen_stack if isinstance(s, ExecutionScreen))
-        step.post_message(ChoiceMenu.Typed(ChoiceMenu(), "/help"))
-        await wait_until(pilot, lambda: isinstance(app.screen, HelpScreen), what="help")
-        await pilot.press("escape")
-        await settle(pilot)
-        depth = len(app.screen_stack)
-        step.post_message(ChoiceMenu.Typed(ChoiceMenu(), "/stop"))
-        await wait_until(pilot, lambda: len(app.screen_stack) > depth, what="Stop this?")
-        assert "Stop" in screen_text(app.screen)              # it asks first, as the bar does
-        assert not any("target login" in t for t in toasts(app))
 
 
 # --- chat (c): "The scope as it stands now:" is recorded like any reply --------------------

@@ -15,6 +15,33 @@ from reconix.store.findings_view import FINDING_FILTERS, FINDING_SORTS
 
 from .support import SIZE, TEST_PASSWORD, add_finding, run_to, screen_text, settle, show
 
+def _api_finding(code: str, title: str, path: str, severity: str, cwe: str, owasp: str) -> dict:
+    from .fakes.fake_api import finding_row
+
+    row = finding_row(code, title, path, severity, "NMAP", evidence=f"{path}: seen in the scan")
+    row.update(
+        cwe_ids=[cwe], owasp_id=[owasp],
+        description=f"{title}: the scan saw it on {path}, answering without any sign-in.",
+        impact="An attacker could learn about the service and plan a targeted attack on it.",
+        remediation="Restrict it to the admin network or turn it off where it isn't needed.",
+    )
+    return row
+
+
+@pytest.fixture(autouse=True)
+def three_findings(fake_api):
+    """The API's run gives three findings, in this order: two MEDIUM, then one LOW (so the
+    list, sorted by severity, reads 001, 002, 003)."""
+    fake_api.findings_for = {"NMAP": [
+        _api_finding("NMAP-ADMIN", "Exposed admin panel", "/admin", "MEDIUM", "CWE-284",
+                     "OWASP A01:2021"),
+        _api_finding("NMAP-OLD-TLS", "Deprecated TLS offered", "/login", "MEDIUM", "CWE-327",
+                     "OWASP A02:2021"),
+        _api_finding("NMAP-BANNER", "Server banner shows its version", "/", "LOW", "CWE-200",
+                     "OWASP A05:2021"),
+    ]}
+
+
 # A secret shaped so `redact` recognizes it in every field: a bare word would (correctly) not be
 # masked, so each field carries the test password inside a key/scheme/URL the masker knows.
 SECRET = TEST_PASSWORD

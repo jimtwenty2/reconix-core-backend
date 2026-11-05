@@ -6,52 +6,51 @@ Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CAS
 
 ## 0 Set provider (first screen)
 
-While no AI provider is set, Reconix asks first: "Set an AI provider?".
-Use the mock model (offline) gives prepared answers on this computer: no key, no network. Set a provider… opens /provider. Skip starts with built-in replies only.
+Reconix needs the Core API running (./deploy/dev.sh). Every plan, step, finding and chat answer comes from it; the AI it uses is the one in .env (RECONIX_MODEL_*), unless you set your own with /provider.
+While no model of your own is set, Reconix asks first: "Which AI model should Reconix use?". Use the Core API's model keeps the one in .env; Set a provider… opens /provider.
 Start Reconix with the run-eval script (README-<your OS>.md §2). To see the first screen again: quit (Ctrl+Q), then start it with --reset (Windows: -Reset). That only clears ~/.reconix-eval, never your own ~/.reconix; export your /tests results first.
 
-#### PROV-01 · Use the mock model without a key
+#### PROV-01 · Use the Core API's model
 
 1. Start Reconix fresh (run-eval with --reset).
-2. "Set an AI provider?" → Use the mock model (offline) (press Enter).
-3. The Reconix mock (offline) form opens: leave API key empty → Save provider.
+2. "Which AI model should Reconix use?" → Use the Core API's model (press Enter).
+3. Type: who are you?
 
-**Expected:** A note says "Active model: Reconix mock (offline) · reconix-mock-1". The top bar shows llm: Reconix mock (offline) · reconix-mock-1 ● (on an 80-column terminal the short form llm: reconix-mock-1 ●) and the Start screen is ready.
+**Expected:** The Start screen is ready. The answer comes from the Core API's AI; nothing starts.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
-#### PROV-02 · A fake key is masked
+#### PROV-02 · A key is masked
 
 1. Quit, start Reconix fresh (run-eval with --reset).
-2. Use the mock model → API key: sk-mock-0000-1234 → Save provider.
-3. Type /provider and look at Reconix mock (offline).
+2. Set a provider… → Custom OpenAI-compatible → API key sk-test-0000-1234 → Save provider.
+3. Type /provider and look at Custom OpenAI-compatible.
 
 **Expected:** Only sk-…1234 is shown: in the provider list, the form and anywhere else. The full key never shows.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
-#### PROV-03 · Skip, and the question comes back
+#### PROV-03 · The question comes back
 
 1. Quit, start Reconix fresh (run-eval with --reset).
-2. Choose Skip (built-in replies only).
-3. Type: who are you?
-4. Quit (Ctrl+Q) and start Reconix again (run-eval, without --reset).
+2. Choose Use the Core API's model.
+3. Quit (Ctrl+Q) and start Reconix again (run-eval, without --reset).
 
-**Expected:** The top bar shows llm: off. The answer is the built-in one and ends with "No AI model is set: /provider sets one…". At the next start Reconix asks again.
+**Expected:** At the next start Reconix asks again: no model of your own is set.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
 #### PROV-04 · No question once a model is set
 
-1. With the mock set (PROV-01), quit and start Reconix again (without --reset).
+1. With a provider set and active, quit and start Reconix again (without --reset).
 
-**Expected:** No question: the Start screen opens at once and the top bar shows the mock.
+**Expected:** No question: the Start screen opens at once and the top bar shows the model.
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 
-#### PROV-05 · Unset the mock
+#### PROV-05 · Unset the provider
 
-1. /provider → Reconix mock (offline) → Unset → Yes, remove it.
+1. /provider → your provider → Unset → Yes, remove it.
 2. Quit and start Reconix again (without --reset).
 
 **Expected:** The top bar shows llm: off, and at the next start Reconix asks again.

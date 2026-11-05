@@ -87,6 +87,8 @@ SEVERITY = {
     "HIGH": HIGH,
     "MEDIUM": MEDIUM,
     "LOW": LOW,
+    "NONE": INFO,       # informational (an open port): the Core API's NONE
+    "UNKNOWN": MUTED,   # a result the tool couldn't rate
 }
 
 # Risk of a gated action (plan rows, approval panel)
@@ -141,6 +143,7 @@ SOURCE = {"SYS": TEXT, "AI": CYAN, "USER": VIOLET, "TOOL": TEAL, "POLICY": MEDIU
 
 SEVERITY_CHIP = {
     "CRITICAL": "red", "HIGH": "red", "MEDIUM": "amber", "LOW": "cyan",
+    "NONE": "muted", "UNKNOWN": "muted",
 }
 RISK_CHIP = {"LOW": "green", "MEDIUM": "amber", "HIGH": "red"}
 

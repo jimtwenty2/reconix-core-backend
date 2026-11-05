@@ -12,7 +12,9 @@ from ..models import Finding
 from . import lists
 from .errors import StoreValidationError
 
-SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+# The Core API's SeverityStatus, worst first. NONE is an informational result (an open
+# port), UNKNOWN one the tool couldn't rate: both are shown, never dropped.
+SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN")
 
 # The triage lifecycle an analyst can move a finding through.
 TRIAGE_STATUS = ("open", "fixed", "accepted", "false-positive")
@@ -74,8 +76,12 @@ def triage_finding(fid: str, *, status: str = None, severity: str = None,
     severity override, with an optional justification.
 
     Deterministic and analyst-driven — this is never the LLM's decision. Returns the Finding.
-    When the backend lands, keep this name and signature and have it POST the decision.
+    open, false-positive and fixed are the Core API's finding_status: it gets the decision
+    first and its answer is final. accepted, the severity override and the note have no
+    API field yet, so they stay on this computer.
     """
+    from ..core_api import adapt, run_api
+    from ..core_api.client import CoreApiError
     from .activity import log_event
     from .transcript import add_activity
 
@@ -83,6 +89,13 @@ def triage_finding(fid: str, *, status: str = None, severity: str = None,
     if status is not None:
         if status not in TRIAGE_STATUS:
             raise StoreValidationError(f"Unknown triage status {status}.")
+        finding_id = lists.current().live.finding_ids.get(fid)
+        if finding_id and status in adapt.TRIAGE_TO_API:
+            try:
+                run_api.triage(finding_id, adapt.TRIAGE_TO_API[status])
+            except CoreApiError as exc:
+                raise StoreValidationError(f"The Core API kept the finding as it was: {exc}.") \
+                    from None
         finding.status = status
     if severity is not None:
         if severity not in SEVERITY_ORDER:
@@ -103,8 +116,8 @@ def ingest_external(findings, prefix: str = "AI") -> int:
     """Add externally-produced findings to the current assessment, deduped and revealed.
 
     Each is given a `<prefix>-NNN` id and shown at once; duplicates (same severity/title/path)
-    are skipped. Used by the AI agent (`AI-`). Only the four severities exist; any other
-    severity is skipped.
+    are skipped. Used by the AI agent (`AI-`). A severity outside the API's six is
+    skipped.
     """
     assessment = lists.current()
     findings = [f for f in findings if f.severity in SEVERITY_ORDER]

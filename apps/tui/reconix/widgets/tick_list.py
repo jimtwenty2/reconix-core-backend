@@ -52,6 +52,7 @@ class TickList(Vertical):
         ports: Sequence[Tuple[int, bool]],
         tools: Sequence[Tuple[str, bool]],
         suggested: Sequence[int] = (),
+        suggested_tools: Sequence[str] = (),
         *,
         focus: str = "",
         id: Optional[str] = None,
@@ -62,6 +63,7 @@ class TickList(Vertical):
         self._ports = list(ports)
         self._tools = list(tools)
         self._suggested = set(suggested)
+        self._suggested_tools = {s.casefold() for s in suggested_tools}
         self._focus = focus  # the row to open on ("port:3389"; "" = the first)
 
     def compose(self) -> ComposeResult:
@@ -71,12 +73,19 @@ class TickList(Vertical):
             Selection(self._port_label(port), f"port:{port}", ticked)
             for port, ticked in self._ports
         ] + [
-            Selection(Text(f"tool  {tool}"), f"tool:{tool}", ticked) for tool, ticked in self._tools
+            Selection(self._tool_label(tool), f"tool:{tool}", ticked)
+            for tool, ticked in self._tools
         ]
         yield _Ticks(*rows, id="tick-rows")
         yield Static(
             Text("Space tick · Enter save · Esc cancel", style=theme.DIM), classes="menu-hint"
         )
+
+    def _tool_label(self, tool: str) -> Text:
+        label = Text(f"tool  {tool}")
+        if tool.casefold() in self._suggested_tools:
+            label.append("   suggested by the AI · tick to add", style=theme.DIM)
+        return label
 
     def _port_label(self, port: int) -> Text:
         label = Text(f"port  {port:<6}")

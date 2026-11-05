@@ -276,8 +276,29 @@ def check_target(template_id: str, text: str) -> ParsedTarget:
         raise StoreValidationError(needs(template_id))
     found = finder(clean_request(text))
     if found is None:
+        found = _single_label(template_id, clean_request(text))
+    if found is None:
         raise StoreValidationError(needs(template_id))
     return found
+
+
+def _single_label(template_id: str, text: str) -> Optional[ParsedTarget]:
+    """A one-word host name (a lab service such as "juice-shop"), taken only when you picked
+    the template and typed it first. Free text never reads a lone word as a target."""
+    words = text.split()
+    first = _clean(words[0]) if words else ""
+    if not first or not _HOSTNAME.match(first) or not any(c.isalpha() for c in first):
+        return None
+    # The whole line is the name ("metasploitable"), or the name looks like one (a dash or a
+    # digit: "juice-shop port 3000"), so "my servers" or "the usual one" are not hosts.
+    if len(words) > 1 and not any(c == "-" or c.isdigit() for c in first):
+        return None
+    if template_id == "network":
+        value = host_value(first)
+        return ParsedTarget("network", value, value, "network host", "network", True)
+    if template_id in ("web_url", "api"):
+        return url_target(f"http://{host_value(first)}", template_id)
+    return None
 
 
 # --- one typed value, for the Start prompt's feedback ----------------------------------------

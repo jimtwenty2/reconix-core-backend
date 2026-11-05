@@ -118,26 +118,31 @@ async def test_tests_command_opens_the_checklist_and_marks_a_case(app, results_d
 
 
 # --- the guide's main flow, as the evaluator types it ---------------------------------------
-@pytest.mark.parametrize(
-    "case_id, blocked, first_finding",
-    [
-        ("MF-WEB-01", "GET /admin", "Broken object-level authorization"),
-        ("MF-API-01", "GET /internal/metrics", "Broken object-level authorization"),
-        ("MF-NET-01", "Host outside approved scope", "Management console exposed"),
-        ("MF-SRC-01", "read .git/config", "Hardcoded database password"),
-    ],
-)
-async def test_each_templates_first_case_runs_to_the_end(app, case_id, blocked, first_finding):
+@pytest.mark.parametrize("case_id", ["MF-WEB-01", "MF-API-01", "MF-NET-01"])
+async def test_each_templates_first_case_runs_to_the_end(app, case_id, fake_api):
+    """The guide's first line per template runs on the Core API (the fake API here): every
+    step, approval and finding comes from it."""
     case = test_guide.find_case(case_id)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, None, case.ask)
         await settle(pilot)
     assert store.is_finished() and not store.get_run().stopped
-    findings = store.list_findings()
-    assert len(findings) == 3 and findings[0].title == first_finding
+    assert fake_api.tool_runs() == ["NMAP", "NUCLEI", "SQLMAP"]
+    titles = [f.title for f in store.list_findings()]
+    assert titles == ["Exposed admin panel", "Open port 3000/tcp (http)"]   # worst first
     chat = " ".join(entry.text for entry in store.list_chat())
-    assert f"Blocked: {blocked}" in chat or blocked in chat
     assert TEST_PASSWORD not in chat
+
+
+def test_the_source_case_is_refused_by_the_core_api_for_now():
+    """A source-code scope needs its code uploaded to the API first (the code-scan flow)."""
+    from .support import play_until_gate
+
+    store.submit_prompt(test_guide.find_case("MF-SRC-01").ask)
+    assert play_until_gate() == "scope"
+    with pytest.raises(store.StoreValidationError, match="source-code scope"):
+        store.approve_scope()
+    assert store.get_scope().status == "DRAFT"
 
 
 def test_bare_hostname_waits_for_the_template():
@@ -178,9 +183,11 @@ def test_a_dash_range_in_a_sentence_is_never_cut_to_its_first_address():
 
 
 def test_a_stopped_assessment_has_no_report_yet():
-    from .support import run_to
+    from .support import decide, play_until_gate, run_to
 
-    run_to("approval:approval-002", test_guide.find_case("MF-WEB-05").ask)
+    run_to("plan", test_guide.find_case("MF-WEB-05").ask)
+    decide("plan")
+    assert play_until_gate().startswith("approval:")   # the fake API's MEDIUM step waits
     store.stop_run()                     # (a Reject no longer stops the run: QA-003)
     assert store.get_run().stopped
     with pytest.raises(

@@ -438,29 +438,15 @@ class ReconixScreen(Screen):
             chat.add_reply(store.view_reply(view))  # recorded: the last exchange has it
             self._show_decision(chat, card)
             return
-        reorder = not scope_change and store.wants_plan_reorder(text) and self.allows_reorder()
-        if not scope_change and not reorder and store.wants_decision(text):
+        plan_change = (not scope_change and self.flow_name == "plan"
+                       and store.wants_plan_change(text))
+        if not scope_change and not plan_change and store.wants_decision(text):
             store.decision_reply()  # only you decide: no model is asked
             entry = store.last_exchange()[1][-1]
             chat.add_reply(entry.text, entry.tone)
             self._show_decision(chat)
             return
-        about_decision = not (scope_change or reorder) and store.asks_about_decision(text)
-        # The offline mock has no answer of its own to a scope change or a reorder (it would
-        # only say "I can't do that…" right before Reconix's own line): Reconix answers alone.
-        mock_skips = (scope_change or reorder) and store.active_is_mock()
-        if store.active_model() is None or mock_skips:
-            if scope_change:
-                self._scope_reply(chat, text)  # no model: Reconix's reply, then the ticks
-            elif reorder:
-                self._reorder_reply(chat)  # no model: Reconix's reply, then the order
-            else:
-                store.llm_answer(line)  # the built-in reply: no network, at once
-                entry = store.last_exchange()[1][-1]
-                chat.add_reply(entry.text, entry.tone)
-                if about_decision:
-                    self._show_decision(chat)
-            return
+        about_decision = not (scope_change or plan_change) and store.asks_about_decision(text)
         reply = chat.add_reply(THINKING, tone="muted")
         gen = self.app.llm_generation()  # the assessment this question was asked in
 
@@ -480,11 +466,11 @@ class ReconixScreen(Screen):
             store.record_draft(draft)
             show()
             if scope_change and chat.is_mounted:
-                # The model's ports are offered as rows, never ticked.
+                # The model's ports/tools are offered as rows, never ticked.
                 model_reply = "\n".join(e.text for e in store.last_exchange()[1])
                 self._scope_reply(chat, text, model_reply)  # whatever it said, you change it
-            elif reorder and chat.is_mounted:
-                self._reorder_reply(chat)  # it discussed the move; you order it
+            elif plan_change and chat.is_mounted:
+                self._redraft_plan(chat)  # it discussed it; the AI re-drafts, you review
             elif about_decision and chat.is_mounted:
                 self._show_decision(chat)  # the model explains; you decide here
 
@@ -497,23 +483,68 @@ class ReconixScreen(Screen):
 
         self.app.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
+    async def show_scope_suggestions(self) -> None:
+        """Open the step chat and show the AI's reading of the goal and a tick list of the
+        tools it suggests (unticked). Only the operator's tick changes the scope."""
+        suggest = store.get_assessment().scope_suggest
+        if suggest is None:
+            return
+        chat = await self.open_step_chat()
+        if suggest.reading:
+            chat.add_reply(suggest.reading)
+        choices = store.scope_tick_choices()
+        if choices is not None and (choices.suggested_tools or choices.ports):
+            chat.add_reply("Tick the tools to add for your goal, then press Enter. Or press "
+                           "Esc and approve the scope as it is.", tone="muted")
+            chat.add(
+                TickList(choices.ports, choices.tools, choices.suggested,
+                         choices.suggested_tools, focus=choices.focus)
+            )
+        chat.scroll_to_end()
+
     def _scope_reply(self, chat: StepChat, text: str, model_reply: str = "") -> None:
-        """Reconix's own line ("Only you can change the scope…", or locked), then your
-        tick list (nothing new ticked; ports the model named are added unticked).
-        Recorded, so the model's history has it too."""
+        """Reconix's own line ("Only you can change the scope…"), then your tick list
+        (nothing new ticked; the ports/tools the model named are added unticked). Recorded,
+        so the model's history has it too. At the Plan step the scope is already approved;
+        ticking re-opens it for a fresh approval (store.reopen_scope, in on_tick_list_saved)."""
         choices = store.answer_scope_change(text, model_reply)
         entry = store.last_exchange()[1][-1]
         chat.add_reply(entry.text, entry.tone)
         if choices is not None:
+            if store.is_scope_approved():
+                chat.add_reply("Tick what to add; the scope re-opens for you to approve again.",
+                               tone="muted")
             chat.add(
-                TickList(choices.ports, choices.tools, choices.suggested, focus=choices.focus)
+                TickList(choices.ports, choices.tools, choices.suggested,
+                         choices.suggested_tools, focus=choices.focus)
             )
 
+    def _redraft_plan(self, chat: StepChat) -> None:
+        """A plan-change request at the Plan step: the AI re-drafts the plan with what you
+        said as guidance; the new plan card and menu follow when it is ready."""
+        chat.add_reply("Re-drafting the plan with your guidance…", tone="muted")
+        self.app.redraft_plan(lambda: self._plan_redrafted(chat))
+
+    def _plan_redrafted(self, chat: StepChat) -> None:
+        if not chat.is_mounted:
+            return
+        self.refresh_view()
+        card = plan_card()
+        if card is not None:
+            chat.add_reply("Here is the re-drafted plan. Run it, or ask for another change.",
+                           tone="ok")
+        self._show_decision(chat, card)
+
     def on_tick_list_saved(self, event: TickList.Saved) -> None:
-        """Your ticks become the scope (the store validates them); the chat stays open."""
+        """Your ticks become the scope (the store validates them); the chat stays open.
+        From the Plan step the scope is approved, so it is re-opened first; you then review
+        and approve the changed scope on the Scope step, and the AI re-drafts the plan."""
         event.stop()
-        network = store.get_scope().kind == "network"
+        approved = store.is_scope_approved()
         try:
+            if approved:
+                store.reopen_scope()
+            network = store.get_scope().kind == "network"
             store.edit_scope(allowed_ports=event.ports if network else None, tools=event.tools)
         except store.StoreValidationError as exc:
             self.notify_error(str(exc))
@@ -522,6 +553,12 @@ class ReconixScreen(Screen):
         chat = self.query_one(StepChat)
         entry = store.last_exchange()[1][-1]
         chat.add_reply(entry.text, entry.tone)
+        if approved:
+            chat.add_reply("Scope changed. Review and approve it again; then I re-draft the "
+                           "plan.", tone="warn")
+            self.refresh_view()
+            self.app.goto("template")      # the Scope step, to approve the changed scope
+            return
         self.refresh_view()
         self._show_decision(chat, scope_card())  # the new scope, as a card, and its menu
 

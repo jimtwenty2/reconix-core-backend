@@ -14,7 +14,6 @@ from ..models import (
 )
 from . import lists
 from .approvals import get_approval, list_approval_decisions
-from .plan_order import ORDER_RULE
 
 
 def step_states() -> Dict[str, str]:
@@ -109,11 +108,14 @@ def step_status() -> StepStatus:
         if getattr(assessment, "plan_drafting", False):
             return StepStatus("Plan", "the scope is approved; the model is drafting the plan; "
                               "nothing has run", "wait for the draft, then Run plan")
-        return StepStatus("Plan", "the scope is approved and locked; the plan waits for you "
-                          "to run it; nothing has run yet",
-                          "Run plan, Edit steps or Cancel in the menu (Run plan starts "
-                          "testing; MEDIUM and HIGH steps still wait for approval). Order: "
-                          f"{ORDER_RULE}", pending=True)
+        return StepStatus("Plan", "the scope is approved; the plan is the AI's draft and "
+                          "waits for you to run it; nothing has run yet",
+                          "Run plan or Cancel in the menu (Run plan starts testing; MEDIUM "
+                          "and HIGH steps still wait for your approval). In the chat the "
+                          "operator can ask you to re-draft the plan, or to add a tool/port/"
+                          "path, which re-opens the scope for them to approve again. You "
+                          "cannot change the plan or scope yourself and there is no "
+                          "'edit steps' action", pending=True)
     if gate.startswith(GATE_APPROVAL_PREFIX):
         request = get_approval(gate[len(GATE_APPROVAL_PREFIX):])
         return StepStatus("Approval", f"the plan is running and paused at {request.action} "

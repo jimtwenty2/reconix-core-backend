@@ -112,7 +112,7 @@ async def test_a_bad_edit_shows_the_store_error_and_changes_nothing(app):
         await settle(pilot)
         assert isinstance(app.screen, ScopeEditForm)
         assert "time limit" in str(app.screen.query_one("#form-error", Static).render())
-        assert store.get_scope().time_limit_minutes == 30
+        assert store.get_scope().time_limit_minutes == 0
 
 
 async def test_reject_stops_it_and_stays_on_the_assessment(app):
@@ -147,16 +147,6 @@ async def test_template_past_the_scope_starts_a_new_assessment(app):
         assert app.screen.state() == "pick"
         assert len(store.list_assessments()) == 2
         assert store.list_assessments()[0].status == "Awaiting input"
-
-
-async def test_template_at_the_target_login_is_refused(app):
-    """At the login only /stop, /new, /help and /quit run: the line may be the password."""
-    run_to("account")
-    async with app.run_test(size=SIZE) as pilot:
-        assert app.run_command_line("/template") is False
-        await settle(pilot)
-        assert not isinstance(app.screen, TemplateScreen)
-        assert len(store.list_assessments()) == 1
 
 
 async def test_template_during_the_scope_review_shows_it(app):

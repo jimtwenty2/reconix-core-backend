@@ -55,21 +55,21 @@ FLOW = Flow(
         Case(
             "CMD-06",
             "Provider list with a masked key",
-            ("With the mock set with a fake key (PROV-02) type /provider.",),
-            "Reconix mock (offline) [configured] · Reachable · sk-…1234 · reconix-mock-1. The "
-            "full key never shows.",
+            ("With a provider set with a fake key (PROV-02) type /provider.",),
+            "Custom OpenAI-compatible [configured] · sk-…1234 · the model. The full key never "
+            "shows.",
         ),
         Case(
             "CMD-07",
-            "Test the mock",
-            ("Type /provider test mock.",),
-            '"Reconix mock (offline): REACHABLE — reconix-mock-1 (offline)".',
+            "Test a provider",
+            ("Type /provider test openai_compatible.",),
+            "REACHABLE or UNREACHABLE with the reason; the key never shows.",
         ),
         Case(
             "CMD-08",
             "Pick the model",
             ("Type /model.",),
-            "Reconix mock (offline) · reconix-mock-1 is marked ACTIVE.",
+            "The active provider · model is marked ACTIVE.",
         ),
         Case(
             "CMD-09",
@@ -81,21 +81,13 @@ FLOW = Flow(
                 "Afterwards /provider → Custom OpenAI-compatible → Unset → Yes, remove it.",
             ),
             "Only sk-…1234 is shown. The test says UNREACHABLE — connection refused; nothing "
-            "leaves this computer and the mock stays the active model.",
+            "leaves this computer.",
         ),
         Case(
             "CMD-10",
             "Add a knowledge file",
             ("Type /add-on and give a local .md or .txt file (e.g. ../../README.md).",),
             "The file is added to the knowledge list; /add-on lists it.",
-        ),
-        Case(
-            "CMD-11",
-            "Agent mode needs a real model",
-            ("Type /assess 10.0.0.0/24.",),
-            '"Agent mode needs a real AI model and the backend harness; the static version '
-            'has neither. Nothing runs." Nothing runs.',
-            note="Not testable in the static version.",
         ),
         Case(
             "CMD-12",

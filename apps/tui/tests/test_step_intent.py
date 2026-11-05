@@ -5,7 +5,7 @@ import pytest
 
 from reconix import store
 
-from .support import run_to
+from .support import decide, play_until_gate, run_to
 
 NETWORK = "10.0.0.0/24"
 
@@ -66,11 +66,12 @@ def test_at_the_plan_the_reply_says_nothing_has_run():
 
 
 def test_at_an_approval_the_reply_names_the_action():
-    run_to("approval:approval-001")
-    request = store.get_approval("approval-001")
+    run_to("plan")
+    decide("plan")
+    request = store.get_approval(play_until_gate().split(":", 1)[1])
     status = store.step_status()
     assert status.step == "Approval" and request.action in status.state
-    assert store.decision_for("approval-001") is None
+    assert store.decision_for(request.request_id) is None
 
 
 def test_with_nothing_to_decide_the_reply_says_so():

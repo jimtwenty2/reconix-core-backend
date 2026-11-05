@@ -3,6 +3,7 @@
 import pytest
 
 from reconix import store
+from reconix.models.base import utc_now
 from reconix.store import lists
 from reconix.store.parser import parse_request
 
@@ -54,16 +55,23 @@ def run_full(request: str):
         decide(gate)
 
 
-@pytest.mark.parametrize("template_id", ["web_url", "network", "api", "source"])
-def test_each_template_runs_and_blocks_its_out_of_scope_probe(template_id):
+@pytest.mark.parametrize("template_id", ["web_url", "network", "api"])
+def test_each_template_runs_on_the_core_api(template_id, fake_api):
     run_full(REQUESTS[template_id])
     assert lists.current().template_id == template_id
     assert store.is_completed()
     counts = store.counters()
-    assert counts["approvals"] == 2
-    assert counts["findings"] == 3
-    assert counts["blocked"] == 1
+    assert counts["approvals"] == 2                     # the API's MEDIUM and HIGH steps
+    assert counts["findings"] == 2                      # what its Kali output gave
+    assert fake_api.tool_runs() == ["NMAP", "NUCLEI", "SQLMAP"]
     assert store.get_scope().kind == template_id
+
+
+def test_a_source_scope_waits_for_the_code_scan_flow():
+    store.start_run(REQUESTS["source"])
+    assert play_until_gate() == "scope"
+    with pytest.raises(store.StoreValidationError, match="source-code scope"):
+        store.approve_scope()
 
 
 def test_network_blocks_other_hosts_and_ports_but_allows_in_range():
@@ -76,7 +84,9 @@ def test_network_blocks_other_hosts_and_ports_but_allows_in_range():
 
 def test_source_blocks_excluded_paths_but_allows_the_tree():
     store.start_run(REQUESTS["source"])
-    decide(play_until_gate())            # scope (the repo picked Source Code itself)
+    assert play_until_gate() == "scope"  # the repo picked Source Code itself
+    lists.current().scope.status = "APPROVED"     # (in the store only: see the test above)
+    lists.current().run.started_at = utc_now()
     assert store.check_request("read", "app/main.py").allowed
     assert not store.check_request("read", ".git/config").allowed
     assert not store.check_request("read", "secrets/key.pem").allowed

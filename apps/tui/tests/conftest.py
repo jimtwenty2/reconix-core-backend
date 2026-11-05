@@ -22,6 +22,22 @@ if _BACKEND.is_dir() and str(_BACKEND) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
+def fake_api(monkeypatch):
+    """Every call to the Core API lands on the fake API (tests/fakes/fake_api.py): the app's
+    real client code runs, nothing reaches the network. Tests shape the run through it."""
+    from reconix.core_api import client, connect
+
+    from .fakes.fake_api import FakeApi
+
+    fake = FakeApi()
+    monkeypatch.setenv(client.ENV_URL, client.DEFAULT_URL)
+    monkeypatch.setattr(client, "_send", fake.send)
+    connect.reset()
+    yield fake
+    connect.reset()
+
+
+@pytest.fixture(autouse=True)
 def fresh_store():
     """The store lists are process-wide, so reset them around every test."""
     store.reset()
@@ -35,24 +51,20 @@ def instant_ui(monkeypatch, tmp_path):
     saved assessments and the web link live in temp."""
     monkeypatch.setattr(RunController, "SPEED", 0)
     monkeypatch.setattr(ReconixApp, "ASK_PROVIDER_ON_START", False)   # tests opt in
+    monkeypatch.setattr(ReconixApp, "SUGGEST_SCOPE_ON_REVIEW", False)  # tests opt in
     monkeypatch.setattr(ChoiceMenu, "ARM_DELAY", 0)
     monkeypatch.setattr(report, "REPORTS_DIR", tmp_path / "reports")
     monkeypatch.setattr(persist, "DATA_DIR", tmp_path / "assessments")
     monkeypatch.setattr(persist, "WEB_URL_FILE", tmp_path / "web.url")
+    monkeypatch.setattr(persist, "ENABLED", True)   # tests save to the tmp dir above
     monkeypatch.setattr(persist, "_written", {})
 
 
 @pytest.fixture(autouse=True)
 def llm_paths(monkeypatch, tmp_path):
-    """Keep the LLM/harness databases and key file in temp, never in ~/.reconix."""
-    from reconix.store import agent_run
-
+    """Keep the LLM database and key file in temp, never in ~/.reconix."""
     monkeypatch.setattr(llm_config, "DB_PATH", tmp_path / "llm.db")
     monkeypatch.setattr(llm_config, "KEY_FILE", tmp_path / "llm.key")
-    monkeypatch.setenv("HARNESS_DB_PATH", str(tmp_path / "harness.db"))
-    agent_run.reset()
-    yield
-    agent_run.reset()
 
 
 @pytest.fixture(autouse=True)

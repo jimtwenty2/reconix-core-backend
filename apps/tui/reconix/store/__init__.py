@@ -47,13 +47,17 @@ from .ai_plan import (
     apply_plan_draft, fetch_plan_draft, plan_author, plan_draft_failed, plan_draft_request,
     plan_drafting,
 )
+from .live import Job as LiveJob
+from .live import failed_reason as live_failed
+from .live import next_job as next_live_job
+from .live import retry as retry_live
 from .plan import gated_count, plan_overview, rejected_checks, validation_skipped
 from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
 from .plan_order import movable as movable_checks
 from .providers import (
-    activate, active_is_mock, active_llm_settings, active_model, active_remote_label,
+    activate, active_llm_settings, active_model, active_remote_label,
     core_api_approve, core_api_needs_ok, get_provider, list_providers, set_provider,
-    test_provider, unset_provider, use_mock,
+    test_provider, unset_provider,
 )
 from .progress import StepStatus, step_states, step_status
 from .report import (
@@ -65,17 +69,25 @@ from .run import (
     advance, counters, display_phase, elapsed, gate_state, get_run, is_completed, is_finished,
     is_plan_started, llm_answer, login_refusal, new_assessment, peek, phase_progress,
     pipeline_stage, plan_tasks, reject_scope, run_plan, say_operator_line, say_to_assistant,
-    start_run, stop_run, submit_prompt, time_limit, waiting_gate,
+    approve_more_time, start_run, stop_for_time, stop_run, submit_prompt, time_limit,
+    waiting_gate,
 )
 from .scope import (
     approve_scope, blocked_count, check_request, edit_scope, get_scope, is_scope_approved,
-    list_verdicts, scope_editable,
+    list_verdicts, reopen_scope, scope_changeable, scope_editable, time_limit_pending,
 )
-from .scope_ask import ScopeChoices, answer_scope_change, wants_scope_change
+from .scope_ask import (
+    ScopeChoices, answer_scope_change, scope_tick_choices, wants_scope_change,
+)
+from .scope_suggest import (
+    apply_scope_suggest, fetch_scope_suggest, scope_suggest_failed, scope_suggest_request,
+    scope_suggesting, suggested_tools,
+)
 from .scope_view import describe_scope
-from .seed import DEMO_REQUEST, load_demo_data
+from .seed import load_demo_data
 from .step_intent import (
-    asks_about_decision, decision_reply, view_reply, wants_decision, wants_view,
+    asks_about_decision, decision_reply, view_reply, wants_decision, wants_plan_change,
+    wants_view,
 )
 from .step_text import approval_text, plan_text, scope_text, template_text
 from .targets import (
@@ -95,7 +107,7 @@ load_demo_data()
 reset = load_demo_data   # tests: restore the demo rows between runs
 
 __all__ = [
-    "StoreValidationError", "reset", "DEMO_REQUEST", "MAX_REQUEST_LENGTH",
+    "StoreValidationError", "reset", "MAX_REQUEST_LENGTH",
     # assessment and requests
     "get_assessment", "assessment_label", "list_requests", "add_request", "recorded_line",
     "list_assessments", "switch_assessment", "assessment_status", "AssessmentCard",
@@ -106,11 +118,14 @@ __all__ = [
     "TargetCheck", "looks_like_target", "validate_target", "DASH_RANGE_UNSUPPORTED",
     "llm_answer", "new_assessment",
     "advance", "peek", "gate_state", "stop_run",
-    "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",
+    "waiting_gate", "get_run", "display_phase", "time_limit_pending",
+    "approve_more_time", "stop_for_time", "is_completed", "is_finished", "counters",
     "phase_progress", "plan_tasks", "plan_overview", "gated_count", "step_states",
-    # the plan's phases drafted by the active model (store/ai_plan.py)
+    # the plan, drafted by the AI on the Core API (store/ai_plan.py)
     "plan_draft_request", "fetch_plan_draft", "apply_plan_draft", "plan_draft_failed",
     "plan_drafting", "plan_author",
+    # the run on the Core API (store/live.py): its next call, made in a worker
+    "LiveJob", "next_live_job", "live_failed", "retry_live",
     "rejected_checks", "validation_skipped",
     "pipeline_stage", "elapsed", "time_limit",
     # gates
@@ -120,7 +135,10 @@ __all__ = [
     "list_verdicts", "blocked_count", "scope_editable",
     # the chat inside a step ("Chat about this"): its content as text, scope change asks
     "scope_text", "plan_text", "approval_text", "template_text",
-    "wants_scope_change", "answer_scope_change", "ScopeChoices",
+    "wants_scope_change", "answer_scope_change", "ScopeChoices", "reopen_scope",
+    "scope_tick_choices", "scope_suggest_request", "fetch_scope_suggest",
+    "apply_scope_suggest", "scope_suggest_failed", "scope_suggesting", "suggested_tools",
+    "scope_changeable", "wants_plan_change",
     "wants_decision", "asks_about_decision", "wants_view", "decision_reply", "view_reply",
     "wants_plan_reorder", "answer_plan_reorder", "reorder_gated", "movable_checks",
     "step_status", "StepStatus",
@@ -151,7 +169,6 @@ __all__ = [
     "core_api_approve", "core_api_needs_ok",
     "Draft", "build_draft", "record_draft", "begin_reply", "preview_reply",
     "drop_pending_replies",
-    "active_is_mock", "use_mock",
     # the saved copy the web dashboard reads
     "autosave", "close_session", "web_dashboard_url",
     # the API template's OpenAPI spec

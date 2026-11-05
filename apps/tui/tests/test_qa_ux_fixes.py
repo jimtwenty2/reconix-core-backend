@@ -8,7 +8,24 @@ from reconix.screens import ChoiceScreen, FindingsListScreen
 from reconix.screens.report import ReportScreen
 from reconix.widgets.chrome import SessionBar
 
-from .support import run_to, settle, show
+from .support import DEMO_REQUEST, decide, play_until_gate, run_to, settle, show
+
+FAKE_KEY = "sk-1234"  # noqa: S105 - a fake
+
+
+def _to_first_approval(request: str = DEMO_REQUEST) -> None:
+    """Run until the API's first MEDIUM step waits for you."""
+    run_to("plan", request=request)
+    decide("plan")
+    assert play_until_gate().startswith("approval:")
+
+
+def _active_model() -> None:
+    """A real provider as the active model (a fake key; the reachable fixture fakes the ping)."""
+    store.set_provider("openai", api_key=FAKE_KEY, models=["gpt-4o-mini"])
+    store.test_provider("openai")
+    store.activate("openai", "gpt-4o-mini")
+    store.core_api_approve()  # your OK in /provider: the API may use this remote model
 
 LONG_TARGET = (
     "Assess https://a-very-long-subdomain-name.staging.shop.example.com/api/v2/orders for issues"
@@ -21,7 +38,7 @@ def _messages(app) -> str:
 
 # --- QA-004: an export key that can't run says why; a running export says it is busy ----------
 async def test_an_export_key_before_the_end_says_why(app):
-    run_to("approval:approval-001")
+    _to_first_approval()
     async with app.run_test(size=(80, 24)) as pilot:
         await show(app, pilot, "report")
         await pilot.press("j")
@@ -75,20 +92,20 @@ def _bar(app) -> str:
     return str(bar.render())
 
 
-async def test_the_top_bar_keeps_the_model_and_phase_at_80_columns(app):
-    store.use_mock()
-    run_to("approval:approval-001", request=LONG_TARGET)
+async def test_the_top_bar_keeps_the_model_and_phase_at_80_columns(app, reachable):
+    _active_model()
+    _to_first_approval(LONG_TARGET)
     async with app.run_test(size=(80, 24)) as pilot:
         await settle(pilot)
         text = _bar(app)
-        assert "reconix-mock-1" in text and "●" in text
+        assert "gpt-4o-mini" in text and "●" in text
         assert "Awaiting" in text  # the run's phase
         assert len(text) <= 80
         assert "…" in text  # the long target gave way
 
 
-async def test_the_top_bar_shows_the_full_model_line_when_wide(app):
-    store.use_mock()
+async def test_the_top_bar_shows_the_full_model_line_when_wide(app, reachable):
+    _active_model()
     async with app.run_test(size=(160, 30)) as pilot:
         await settle(pilot)
         active = store.active_model()
@@ -96,14 +113,14 @@ async def test_the_top_bar_shows_the_full_model_line_when_wide(app):
 
 
 # --- QA-002: /provider opens on the ACTIVE provider -------------------------------------------
-async def test_provider_menu_opens_on_the_active_provider_in_view(app):
-    store.use_mock()
+async def test_provider_menu_opens_on_the_active_provider_in_view(app, reachable):
+    _active_model()
     async with app.run_test(size=(80, 24)) as pilot:
         app.run_command_line("/provider")
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
         menu = app.screen.query_one("#dialog-menu")
-        assert menu.highlighted_id == "mock"
+        assert menu.highlighted_id == "openai"
         row = menu.highlighted
         assert menu.scroll_offset.y <= row  # the row is not above
         assert (

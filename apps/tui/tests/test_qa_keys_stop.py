@@ -6,7 +6,17 @@ from reconix import store
 from reconix.screens import ChoiceScreen, HelpScreen
 from reconix.widgets import PromptBox
 
-from .support import SIZE, run_to, screen_text, settle, show
+from .support import SIZE, decide, play_until_gate, run_to, screen_text, settle, show
+
+
+def _run_to(gate: str) -> None:
+    """Run to `gate`; "approval" is the run's first approval gate (the API's MEDIUM step)."""
+    if gate != "approval":
+        run_to(gate)
+        return
+    run_to("plan")
+    decide("plan")
+    assert play_until_gate().startswith("approval:")
 
 
 async def _stop_through_the_dialog(app, pilot) -> None:
@@ -23,13 +33,13 @@ async def _stop_through_the_dialog(app, pilot) -> None:
     [
         ("scope", "template"),  # scope review
         ("plan", "plan"),  # plan review
-        ("approval:approval-001", "approval"),  # MEDIUM approval
-        ("approval:approval-001", "start"),  # back on the Start prompt (focused)
-        ("approval:approval-001", "findings"),  # a parked run seen from Findings
+        ("approval", "approval"),  # MEDIUM approval
+        ("approval", "start"),  # back on the Start prompt (focused)
+        ("approval", "findings"),  # a parked run seen from Findings
     ],
 )
 async def test_ctrl_c_asks_then_stops_on_every_flow_screen(app, gate, screen):
-    run_to(gate)
+    _run_to(gate)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, screen)
         await _stop_through_the_dialog(app, pilot)

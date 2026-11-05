@@ -30,7 +30,11 @@ def known_tool(name: str) -> str:
     known = {canonical.lower(): canonical for canonical in TOOL_NAMES.values()}
     known.update(TOOL_NAMES)
     known.update((tool.lower(), tool) for tool in TEMPLATE_TOOLS)
-    return known.get(name.strip().lower(), "")
+    hit = known.get(name.strip().lower(), "")
+    if hit:
+        return hit
+    from .kali_catalog import catalog_name   # any real Kali MCP tool is a valid scope tool
+    return catalog_name(name)
 
 
 def tool_login(tool: str) -> str:

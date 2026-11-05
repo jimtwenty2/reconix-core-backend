@@ -127,6 +127,8 @@ class ThinkingBlock(Vertical):
         return self.query_one(ThinkingTitle)
 
     def _draw(self) -> None:
+        if not self.query(".thinking-body"):
+            return  # composed children not mounted yet; on_mount draws
         item = self._item
         if item.state == "running":
             self._spin.resume()

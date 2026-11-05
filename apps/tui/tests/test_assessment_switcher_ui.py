@@ -18,7 +18,10 @@ from reconix import store
 from reconix.screens import ApprovalScreen, ChoiceScreen, StartScreen
 from reconix.widgets import ChoiceMenu
 
-from .support import SIZE, decide, play_until_gate, run_to, run_to_end, screen_text, settle
+from .support import (
+    SIZE, decide, play_until_gate, run_to, run_to_end, screen_text, settle, wait_for_run,
+)
+from .support import DEMO_REQUEST
 
 SECRET = "s3cret-Pa55-from-the-chat"
 
@@ -76,10 +79,11 @@ def high_gate() -> str:
 
 # --- spec: switching resumes the run where it stands --------------------------------------
 async def test_switching_resumes_the_run_where_it_stands(app):
-    store.start_run(store.DEMO_REQUEST)
-    for _ in range(4):                          # scope, plan, account, code
-        decide(play_until_gate())
-    store.advance()                             # past the code gate: running, between gates
+    store.start_run(DEMO_REQUEST)
+    decide(play_until_gate())                   # scope (the plan is drafted on the API)
+    decide(play_until_gate())                   # Run plan
+    while store.advance() is not None:          # its start lines; next: a Core API call
+        pass
     assert store.waiting_gate() == "" and not store.is_finished()
     played = [entry.message for entry in store.list_activity()]
     store.new_assessment()
@@ -87,8 +91,9 @@ async def test_switching_resumes_the_run_where_it_stands(app):
     async with app.run_test(size=SIZE) as pilot:
         await settle(pilot)
         app.switch_assessment(0)
+        await wait_for_run(pilot)               # the run asks the API for its first step
+        assert store.waiting_gate().startswith("approval:")
         await settle(pilot)
-        assert store.waiting_gate() == "approval:approval-001"
         assert isinstance(app.screen, ApprovalScreen)
         messages = [entry.message for entry in store.list_activity()]
         assert messages[:len(played)] == played      # nothing replayed and nothing skipped
@@ -96,7 +101,7 @@ async def test_switching_resumes_the_run_where_it_stands(app):
 
 
 async def test_a_run_left_behind_plays_nothing_in_the_background(app):
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     for _ in range(4):
         decide(play_until_gate())
     store.advance()
@@ -175,9 +180,9 @@ async def test_the_summary_shows_the_fields_of_the_run(app):
         assert row(body, "target") == "staging.example.com"
         assert row(body, "status") == "Completed"
         assert row(body, "template") == "Web URL"
-        assert row(body, "findings") == "1 confirmed · 2 for review"
+        assert row(body, "findings") == "0 confirmed · 2 for review"   # the fake API's run
         assert row(body, "human approvals") == "3 (scope, MEDIUM, HIGH)"
-        assert row(body, "blocked actions") == "1 (out of scope)"
+        assert row(body, "blocked actions").startswith("0")
         assert row(body, "report").startswith("not exported yet")
 
         path = store.generate_report("json")
@@ -329,57 +334,6 @@ async def test_a_late_model_reply_never_lands_in_another_run(app, model_active, 
         assert all("three findings" not in entry.text for entry in store.list_chat())
 
 
-async def test_a_switch_mid_stream_records_nothing_in_either_run(app, model_active,
-                                                                   monkeypatch):
-    """reconix-ai streams replies: a switch while the model is still writing keeps the half
-    reply out of the run on screen, takes the run's own "thinking…" line back out, and
-    saves nothing to the model's history of either run."""
-    from reconix.llm import client, db
-    from reconix.store import llm_chat
-    from reconix.store.snapshot import uid_for
-
-    monkeypatch.setattr(llm_chat, "STREAM_REDRAW", 0)
-    half_shown, finish = threading.Event(), threading.Event()
-
-    def slow_stream(pid, model, messages, on_text, **kw):
-        on_text("The first run has three ")
-        half_shown.set()
-        finish.wait(5)
-        on_text("The first run has three findings so far. ")
-        return "The first run has three findings so far."
-
-    monkeypatch.setattr(client, "stream", slow_stream)
-    run_to("scope")
-    store.new_assessment()
-    store.start_run("scan 10.0.0.0/24 for open ports")
-    store.switch_assessment(0)
-    first_uid = uid_for(store.get_assessment())
-
-    async with app.run_test(size=SIZE) as pilot:
-        await settle(pilot)
-        app.agent_mode = False                       # the scripted chat path, not the agent
-        assert app.submit_request("what did you find so far?")
-        for _ in range(20):
-            await settle(pilot)
-            if half_shown.is_set() and any(
-                    "three" in entry.text for entry in store.list_chat()):
-                break
-        assert any("three" in entry.text for entry in store.list_chat())  # it streamed
-        app.switch_assessment(1)                     # the operator moves on, mid-stream
-        await settle(pilot)
-        second_uid = uid_for(store.get_assessment())
-        finish.set()
-        for _ in range(12):
-            await settle(pilot)
-        assert all("three" not in entry.text for entry in store.list_chat())
-        store.switch_assessment(0)
-        texts = [entry.text for entry in store.list_chat()]
-        assert all("three" not in text and text != llm_chat.THINKING for text in texts)
-    for uid in (first_uid, second_uid):
-        assert all("three" not in row["content"] for row in db.list_chat_messages(uid))
-
-
-# --- gap 6: the list getters return copies ------------------------------------------------
 def test_the_list_getters_return_copies():
     run_to(None)
     finding = store.list_findings()[0]

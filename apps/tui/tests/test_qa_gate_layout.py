@@ -146,39 +146,16 @@ async def test_a_tall_terminal_needs_no_hint():
 
 def test_a_rejected_action_is_never_shown_with_a_green_tick():
     from reconix.screens.approval import _context_line
-    from tests.support import run_to
+    from tests.support import DEMO_REQUEST, decide, play_until_gate
 
-    run_to("approval:approval-001")
-    store.reject("approval-001")
-    from tests.support import play_until_gate
-    assert play_until_gate() == "approval:approval-002"
+    store.start_run(DEMO_REQUEST)
+    gate = play_until_gate()
+    while not gate.startswith("approval:"):
+        decide(gate)
+        gate = play_until_gate()
+    store.reject(gate.split(":", 1)[1])                    # MEDIUM: "Check for known issues"
+    assert play_until_gate().startswith("approval:")       # HIGH asks next
     line = _context_line()
-    assert line.plain.startswith("✕ Skipped: Baseline request")
-
-
-def test_the_candidate_is_confirmed_only_after_its_validation_runs():
-    from tests.support import decide, play_until_gate, run_to
-
-    run_to("approval:approval-001")
-    assert store.get_finding("001").validation == "UNCONFIRMED"   # revealed as a candidate
-    decide("approval:approval-001")
-    assert play_until_gate() == "approval:approval-002"
-    assert store.get_finding("001").validation == "UNCONFIRMED"
-    decide("approval:approval-002")
-    assert play_until_gate() is None
-    assert store.get_finding("001").validation == "CONFIRMED"
-
-
-@pytest.mark.parametrize("rejected", ["approval-001", "approval-002"])
-def test_rejecting_either_check_leaves_the_candidate_unconfirmed(rejected):
-    from tests.support import decide, play_until_gate, run_to
-
-    run_to("approval:approval-001")
-    for gate in ("approval:approval-001", "approval:approval-002"):
-        if gate.endswith(rejected):
-            store.reject(rejected)
-        else:
-            decide(gate)
-        play_until_gate()
-    assert store.is_completed()
-    assert store.get_finding("001").validation == "UNCONFIRMED"
+    assert "Check for known issues" not in line.plain          # never ✓ for what you rejected
+    skipped = [e.message for e in store.list_activity() if e.source == "POLICY"]
+    assert any(m.startswith("Skipped: you rejected this step") for m in skipped)

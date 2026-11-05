@@ -15,6 +15,7 @@ from reconix import store
 from reconix.models import ActivityEntry, ChatEntry, Entry, MessageItem, ThinkingItem
 
 from .support import decide, play_until_gate
+from .support import DEMO_REQUEST
 
 VECTORS = json.loads(
     (Path(__file__).parents[2] / "web" / "tests" / "thinking-vectors.json").read_text("utf-8")
@@ -71,7 +72,7 @@ def test_an_unknown_run_state_is_refused():
 
 
 def test_a_demo_run_reads_as_messages_with_folded_work():
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     gate = play_until_gate()
     while gate:
         decide(gate)
@@ -83,7 +84,6 @@ def test_a_demo_run_reads_as_messages_with_folded_work():
     assert all(b.state == "done" for b in blocks)
     assert sum(len(b.steps) for b in blocks) + len(messages) == len(store.stream())
     assert any(b.verb == "Worked" for b in blocks)
-    assert sum(b.blocked for b in blocks) >= 1  # the out-of-scope probe
 
 
 def test_a_running_block_counts_its_time_up_to_now():

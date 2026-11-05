@@ -19,6 +19,7 @@ from .support import (
     NETWORK,
     SIZE,
     TEST_PASSWORD,
+    decide,
     play_until_gate,
     run_to,
     run_to_end,
@@ -27,10 +28,25 @@ from .support import (
     show,
     wait_until,
 )
+from .support import DEMO_REQUEST
 
 SMALL = (80, 24)
-HIGH = "approval-002"
-MEDIUM = "approval-001"
+FAKE_KEY = "sk-1234"  # noqa: S105 - a fake
+
+
+def _to_gate(risk: str, request: str = DEMO_REQUEST) -> str:
+    """Run until the API's step of `risk` (MEDIUM or HIGH) waits for you; its request id.
+    The fake API plans a LOW, a MEDIUM and a HIGH step, in that order; MEDIUM is approved
+    on the way to HIGH."""
+    run_to("plan", request=request)
+    decide("plan")
+    while True:
+        gate = play_until_gate()
+        assert gate and gate.startswith("approval:")
+        request_id = gate.split(":", 1)[1]
+        if store.get_approval(request_id).risk == risk:
+            return request_id
+        decide(gate)
 
 
 def _bar(app) -> str:
@@ -46,19 +62,19 @@ async def test_report_with_no_assessment_marks_nothing_done(app):
 
 
 async def test_findings_are_not_done_while_the_run_waits(app):
-    run_to(f"approval:{HIGH}")
+    _to_gate("HIGH")
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "report")
         assert "✓ Findings" not in _bar(app) and "○ Findings" in _bar(app)
 
 
 # --- 2: HIGH actions have a human name everywhere ----------------------------------------------
-@pytest.mark.parametrize("request_text", [store.DEMO_REQUEST, f"Scan {NETWORK} for services"])
+@pytest.mark.parametrize("request_text", [DEMO_REQUEST, f"Scan {NETWORK} for services"])
 def test_gated_actions_have_human_names(request_text):
-    run_to(f"approval:{HIGH}", request=request_text)
+    high = _to_gate("HIGH", request_text)
     for request in store.get_assessment().approvals:
         assert "_" not in request.action and " " in request.action
-    store.reject(HIGH)
+    store.reject(high)
     run_to_end()
     activity = " ".join(entry.message for entry in store.list_activity())
     assert "_validation" not in activity and "_probe" not in activity
@@ -84,10 +100,10 @@ def test_a_long_label_gets_its_own_line_in_the_card(width):
 
 # --- 4: a step whose every gated check was rejected is skipped, not done ------------------------
 def _reject_both() -> None:
-    run_to(f"approval:{MEDIUM}")
-    store.reject(MEDIUM)
-    assert play_until_gate() == f"approval:{HIGH}"
-    store.reject(HIGH)
+    store.reject(_to_gate("MEDIUM"))
+    gate = play_until_gate()
+    assert gate and store.get_approval(gate.split(":", 1)[1]).risk == "HIGH"
+    store.reject(gate.split(":", 1)[1])
     run_to_end()
 
 
@@ -102,8 +118,7 @@ def test_rejecting_every_check_marks_the_validation_skipped():
 
 
 def test_one_rejected_check_of_two_says_so():
-    run_to(f"approval:{HIGH}")
-    store.reject(HIGH)
+    store.reject(_to_gate("HIGH"))
     run_to_end()
     task = next(t for t in store.plan_tasks() if t.key == "validation")
     line = task_line(task, "complete").plain
@@ -158,8 +173,7 @@ async def test_execution_counters_fit_at_80_columns(app):
 
 @pytest.mark.parametrize("size,whole", [(SMALL, False), (SIZE, True)])
 async def test_the_high_confirmation_hash_fits_one_line(app, size, whole):
-    run_to(f"approval:{HIGH}")
-    digest = store.get_approval(HIGH).command_hash
+    digest = store.get_approval(_to_gate("HIGH")).command_hash
     async with app.run_test(size=size) as pilot:
         await show(app, pilot, "approval")
         app.screen.action_approve()
@@ -180,7 +194,7 @@ def test_clock_labels_utc():
 
 
 async def test_the_audit_dialog_labels_its_times(app):
-    run_to(f"approval:{HIGH}")
+    _to_gate("HIGH")
     async with app.run_test(size=SIZE) as pilot:
         app.show_audit()
         await settle(pilot)
@@ -190,26 +204,27 @@ async def test_the_audit_dialog_labels_its_times(app):
 # --- 8: /provider -------------------------------------------------------------------------------
 async def test_disabled_provider_choices_say_why(app):
     async with app.run_test(size=SIZE) as pilot:
-        app.open_provider_submenu("mock")
+        app.open_provider_submenu("openai")
         await settle(pilot)
         menu = app.screen.query_one("#dialog-menu", ChoiceMenu)
         prompts = [str(menu.get_option_at_index(i).prompt) for i in range(menu.option_count)]
         assert not any("not in demo" in p for p in prompts)
         assert "set up first" in prompts[1] and "set up first" in prompts[2]
-        assert "base URL" not in prompts[0]  # the mock has no address
 
 
-async def test_a_tested_provider_becomes_active_when_none_is(app):
-    store.set_provider("mock", api_key="sk-1234")
+async def test_a_tested_provider_becomes_active_when_none_is(app, reachable):
+    store.set_provider("openai", api_key=FAKE_KEY, models=["gpt-4o-mini"])
     assert store.active_model() is None
     async with app.run_test(size=SIZE) as pilot:
-        app.test_provider_async("mock")
+        app.test_provider_async("openai")
         await wait_until(pilot, lambda: store.active_model() is not None, what="active")
-        assert store.active_model().provider_id == "mock"
+        assert store.active_model().provider_id == "openai"
 
 
-async def test_the_provider_list_shows_its_first_row_when_it_fits(app):
-    store.use_mock()  # the last row is the active one
+async def test_the_provider_list_shows_its_first_row_when_it_fits(app, reachable):
+    store.set_provider("openai", api_key=FAKE_KEY, models=["gpt-4o-mini"])
+    store.test_provider("openai")
+    store.activate("openai", "gpt-4o-mini")  # a row below the first is the active one
     async with app.run_test(size=(120, 36)) as pilot:
         app.open_provider_menu()
         await settle(pilot, 6)
@@ -234,12 +249,12 @@ def test_a_report_never_replaces_another_sessions_file():
     run_to(None)
     folder = report.REPORTS_DIR
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "RCX-DEMO-001.json").write_text("an earlier session's report")
+    (folder / "RCX-001.json").write_text("an earlier session's report")
     first = store.generate_report("json")
-    assert first.endswith("RCX-DEMO-001-2.json")
-    assert (folder / "RCX-DEMO-001.json").read_text() == "an earlier session's report"
+    assert first.endswith("RCX-001-2.json")
+    assert (folder / "RCX-001.json").read_text() == "an earlier session's report"
     assert store.generate_report("json") == first  # a re-export overwrites its own file
-    assert TEST_PASSWORD not in (folder / "RCX-DEMO-001-2.json").read_text()
+    assert TEST_PASSWORD not in (folder / "RCX-001-2.json").read_text()
 
 
 def test_report_status_reads_false_positive():
@@ -254,7 +269,7 @@ def test_the_length_message_says_at_most():
 
 # --- 13: a stopped run's findings ---------------------------------------------------------------
 async def test_a_stopped_run_with_no_findings_says_testing_stopped(app):
-    store.start_run(store.DEMO_REQUEST)
+    store.start_run(DEMO_REQUEST)
     store.stop_run()
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
@@ -264,7 +279,7 @@ async def test_a_stopped_run_with_no_findings_says_testing_stopped(app):
 
 
 async def test_the_execution_screen_still_opens(app):
-    run_to(f"approval:{HIGH}")
+    _to_gate("HIGH")
     async with app.run_test(size=SMALL) as pilot:
         await show(app, pilot, "execution")
         assert isinstance(app.screen, ExecutionScreen)

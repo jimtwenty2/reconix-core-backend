@@ -15,8 +15,9 @@ from .api_spec import ApiSpec
 from .approval import ApprovalDecision, ApprovalRequest, Confirmation
 from .base import utc_now
 from .finding import Finding
+from .live import LiveRun
 from .run import PlanTask, RunState, RunStep
-from .scope import PolicyVerdict, ScopeManifest
+from .scope import PolicyVerdict, ScopeManifest, ScopeSuggest
 from .transcript import ActivityEntry, ChatEntry
 from .vault import VaultEntry
 
@@ -62,6 +63,8 @@ class Assessment:
     login_2fa: bool = False         # the target asks for a one-time code after the password
     plan_author: str = ""           # "" (the template's plan) or the model that drafted it
     plan_drafting: bool = False     # a model is drafting the plan; Run plan waits for it
+    scope_suggest: Optional[ScopeSuggest] = None  # the AI's reading/suggestions for the goal
+    scope_suggesting: bool = False  # the AI is evaluating the goal; suggestions on the way
     approvals: List[ApprovalRequest] = field(default_factory=list)
     decisions: List[ApprovalDecision] = field(default_factory=list)
     confirmations: List[Confirmation] = field(default_factory=list)
@@ -71,6 +74,7 @@ class Assessment:
     chat: List[ChatEntry] = field(default_factory=list)
     activity: List[ActivityEntry] = field(default_factory=list)
     requests: List[UserRequest] = field(default_factory=list)
+    live: LiveRun = field(default_factory=LiveRun)   # the run on the Core API
 
     @property
     def label(self) -> str:

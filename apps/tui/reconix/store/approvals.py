@@ -79,6 +79,8 @@ def _check_hash(request: ApprovalRequest, command_hash: str) -> None:
     """The operator saw this exact request, and it hasn't changed since."""
     if not secrets.compare_digest(command_hash, request.command_hash):
         raise StoreValidationError("This approval is for a different request.")
+    if request.api_approval_id:
+        return  # the Core API hashes the action itself and compares it before it runs (S5)
     if command_digest(request.command) != request.command_hash:
         raise StoreValidationError("The request changed after it was shown. Review it again.")
 
@@ -179,6 +181,7 @@ def _consume_token(request_id: str, token: Optional[str]) -> None:
 # --- decisions -----------------------------------------------------------------------------
 def approve(
     request_id: str, *, command_hash: str, confirmation_token: Optional[str] = None,
+    typed_target: str = "",
 ) -> ApprovalDecision:
     """Record an approval, or raise StoreValidationError if any check fails.
 
@@ -190,15 +193,23 @@ def approve(
     """
     request = _pending(request_id)
     _check_hash(request, command_hash)
-    # The policy engine decides before the human decision is recorded.
-    verdict = check_request(request.method, request.path)
-    if not verdict.allowed:
-        raise StoreValidationError(f"Blocked by policy: {verdict.reason}.")
+    typed_target = (typed_target or "").strip()
+    if request.api_approval_id:
+        # The Core API ran check() on this action and runs it again before the tool (S2);
+        # for HIGH it compares the target you typed with the action's own (S5).
+        if request.risk == "HIGH" and not typed_target:
+            raise StoreValidationError("Type the target to approve a HIGH-risk step.")
+    else:
+        # The policy engine decides before the human decision is recorded.
+        verdict = check_request(request.method, request.path)
+        if not verdict.allowed:
+            raise StoreValidationError(f"Blocked by policy: {verdict.reason}.")
     if request.risk == "HIGH":
         _consume_token(request_id, confirmation_token)
     decision = ApprovalDecision(
         request_id=request_id, decision="APPROVED", operator=current_operator(),
-        command_hash=request.command_hash,
+        command_hash=request.command_hash, typed_target=typed_target,
+        sent=not request.api_approval_id,
     )
     lists.current().decisions.append(decision)
     detail = " (double-checked)" if request.risk == "HIGH" else ""
@@ -213,7 +224,7 @@ def reject(request_id: str) -> ApprovalDecision:
     decline_confirmation(request_id)
     decision = ApprovalDecision(
         request_id=request_id, decision="REJECTED", operator=current_operator(),
-        command_hash=request.command_hash,
+        command_hash=request.command_hash, sent=not request.api_approval_id,
     )
     lists.current().decisions.append(decision)
     add_activity("USER", f"Rejected: {request.action}", tone="block")
