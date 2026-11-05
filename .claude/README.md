@@ -34,6 +34,7 @@ description, so the description must say **what** the skill covers and **when** 
 | `run-leak-test` | After changing masking, parsers, evidence, reports or AI providers |
 | `cut-release` | Tagging `vX.Y.Z` |
 | `write-simple-code` | Every code change (house style) |
+| `reconix-architecture` | Explaining how the parts connect, or before calling the Core API (reference only, no steps) |
 
 ## Subagents
 
@@ -51,6 +52,7 @@ fix; they never edit code.
 | Event | Hook | Effect |
 |---|---|---|
 | PreToolUse `Write\|Edit` | `hooks/protect-openapi.sh` | Denies hand edits to `docs/openapi.json` |
+| PreToolUse `Bash` | `hooks/protect-main.sh` | Denies commit, merge, push, reset and the like while `Main` is checked out, and merging a PR whose base is `Main` |
 | PreToolUse `Bash(git commit*)` | `hooks/scan-staged-secrets.sh` | Denies a commit that stages `.env` or a secret (gitleaks if installed, else a regex fallback that skips `deploy/lab/` and test fixtures) |
 | PostToolUse `Write\|Edit` | inline ruff command | Runs `ruff format` and `ruff check --fix` on the edited `.py` file |
 
@@ -61,8 +63,10 @@ Hooks need `jq` on the `PATH`. The secret scan is stronger with `gitleaks` insta
 - **Allowed without a prompt:** uv sync/lock, pytest, ruff, alembic, the sample-data builder,
   read-only `docker compose` (ps, logs, config), npm lint/test/build, Playwright, read-only git and
   `gh pr` commands.
-- **Denied:** reading `.env`, `*.pem`, `*.key` and `secrets/`; force-push; pushing straight to
-  `Main` or `Develop`.
+- **Denied:** reading `.env`, `*.pem`, `*.key` and `secrets/`; force-push; pushing to, switching
+  to, renaming or opening a PR against `Main`. Commit, push and merge on `Develop` are allowed.
+  `hooks/protect-main.sh` also blocks changes while `Main` is checked out and merging a PR into
+  `Main`.
 
 ## Changing this folder
 
