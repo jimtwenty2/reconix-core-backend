@@ -219,9 +219,11 @@ jobs:
             "$out/config.json" 2>/dev/null || echo 0)
           echo "note=${vulns} HIGH/CRITICAL vulnerabilities, ${misconf} misconfigurations" >> "$GITHUB_OUTPUT"
           {
-            jq -r '.Results[]? | .Vulnerabilities[]? | .VulnerabilityID + " " + .PkgName' "$out/vuln.json"
+            # "CVE-2024-1234 jinja2: short title" and "DS-0026 No HEALTHCHECK defined (Dockerfile)"
+            jq -r '.Results[]? | .Vulnerabilities[]?
+              | .VulnerabilityID + " " + .PkgName + ": " + ((.Title // "")[0:70])' "$out/vuln.json"
             jq -r '.Results[]? | .Target as $t | .Misconfigurations[]? | select(.Status == "FAIL")
-              | .ID + " " + $t' "$out/config.json"
+              | .ID + " " + .Title + " (" + $t + ")"' "$out/config.json"
           } 2>/dev/null | top | put_top
           # Misconfigurations are report only: they do not fail the job, but the summary flags them.
           if [ "$code" -eq 0 ] && [ "$misconf" -gt 0 ]; then
