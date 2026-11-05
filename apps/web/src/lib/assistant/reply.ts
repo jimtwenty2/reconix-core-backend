@@ -12,7 +12,6 @@ import type { ModelConfig } from "./config";
 import type { Conversation, ReplyState, UserMessage } from "./history-schema";
 import { markStreaming, saveReply } from "./history-store";
 import { ModelError, streamReply, type Turn } from "./llm";
-import { isMockAddress, type MockFacts, mockReply, mockStream } from "./models/mock";
 import { type Card, encodeFrame, type Frame } from "./protocol";
 
 export interface ReplyInput {
@@ -22,12 +21,11 @@ export interface ReplyInput {
   asked: UserMessage;
   cards: Card[];
   knowledge?: string[]; // the /add-on files whose passages went to the model (their names)
-  facts?: MockFacts; // the chosen run's data, for the offline mock model (models/mock.ts)
   signal: AbortSignal; // the request's: aborted when the page stops or leaves
   release: () => void; // the rate slot
 }
 
-export function replyStream({ config, turns, conversation, asked, cards, knowledge = [], facts, signal, release }: ReplyInput): ReadableStream<Uint8Array> {
+export function replyStream({ config, turns, conversation, asked, cards, knowledge = [], signal, release }: ReplyInput): ReadableStream<Uint8Array> {
   const used = knowledge.length ? { knowledge } : {};
   const encoder = new TextEncoder();
   const abort = new AbortController();
@@ -53,8 +51,7 @@ export function replyStream({ config, turns, conversation, asked, cards, knowled
     let state: ReplyState = "done";
     let detail: string | undefined;
     try {
-      // the offline mock answers here from the saved data: nothing is sent anywhere
-      const body = isMockAddress(config.baseUrl) ? mockStream(mockReply(asked.content, facts)) : await streamReply(config, turns, abort.signal);
+      const body = await streamReply(config, turns, abort.signal);
       const reader = body.getReader();
       const decoder = new TextDecoder();
       for (;;) {
