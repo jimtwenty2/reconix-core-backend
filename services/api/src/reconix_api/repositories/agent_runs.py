@@ -74,6 +74,40 @@ def running_code_scan(db: Db, assessment_id: UUID) -> AgentRun | None:
     return db.scalar(query.limit(1))
 
 
+def latest_completed_code_scan(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """The newest COMPLETED CODE_SCAN run of this assessment: what a rescan compares with."""
+    query = select(AgentRun).where(
+        AgentRun.assessment_id == assessment_id,
+        AgentRun.plan["task"].astext == "CODE_SCAN",
+        AgentRun.agent_runs_status == AgentRunStatus.COMPLETED,
+    )
+    return db.scalar(query.order_by(AgentRun.started_at.desc()).limit(1))
+
+
+def code_scan_reviews(db: Db, assessment_id: UUID) -> list[dict]:
+    """plan.reviews of every CODE_SCAN run of this assessment that has some, newest first.
+    Only that key is read: a plan also holds every file's hash."""
+    query = (
+        select(AgentRun.plan["reviews"])
+        .where(
+            AgentRun.assessment_id == assessment_id,
+            AgentRun.plan["task"].astext == "CODE_SCAN",
+            AgentRun.plan.has_key("reviews"),
+        )
+        .order_by(AgentRun.started_at.desc())
+    )
+    return [reviews for reviews in db.scalars(query) if isinstance(reviews, dict)]
+
+
+def running_code_scans(db: Db) -> list[AgentRun]:
+    """Every CODE_SCAN run still marked RUNNING, of any assessment."""
+    query = select(AgentRun).where(
+        AgentRun.plan["task"].astext == "CODE_SCAN",
+        AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
+    )
+    return list(db.scalars(query))
+
+
 def running_chat(db: Db, session_id: UUID) -> AgentRun | None:
     """A CHAT run of this session still asking the agent."""
     query = select(AgentRun).where(

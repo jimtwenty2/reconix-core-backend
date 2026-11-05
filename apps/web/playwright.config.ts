@@ -20,6 +20,10 @@ export const KNOWLEDGE_DIR = path.join(tmpdir(), `reconix-e2e-knowledge-${PORT}`
 export const KNOWLEDGE_KEY_FILE = path.join(tmpdir(), `reconix-e2e-knowledge-${PORT}.key`);
 
 const DESKTOP = { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } };
+/* The axe pass at a common laptop size with the OS's own motion setting. Always reducing motion
+   hid three serious WCAG 2.2 AA violations from this suite (QA-LOCAL-WEB-REPORT, QAL-002), so the
+   axe tests of e2e/a11y.spec.ts run a second time here: 1366x768, motion left alone. */
+export const AXE_MOTION = "axe-motion";
 
 export default defineConfig({
   testDir: "e2e",
@@ -52,6 +56,13 @@ export default defineConfig({
       workers: 1,
       dependencies: ["parallel"],
       use: { ...DESKTOP, reducedMotion: "reduce" },
+    },
+    {
+      name: AXE_MOTION,
+      testMatch: /\/a11y\.spec\.ts$/,
+      grep: /axe/, // its axe tests only: the keyboard ones set their own size and motion
+      fullyParallel: true,
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1366, height: 768 } },
     },
     { name: "serial-motion", testMatch: /\/motion\.spec\.ts$/, dependencies: ["serial-assistant"], use: DESKTOP },
   ],

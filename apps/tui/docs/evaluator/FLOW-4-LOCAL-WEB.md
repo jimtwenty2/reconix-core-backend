@@ -6,14 +6,15 @@ Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CAS
 
 ## 4a Local web from the TUI
 
-Needs Node.js 20+ and npm. /web starts the web on 127.0.0.1:3100 (the first time it runs npm install, which takes a few minutes) and opens it with a sign-in link.
+Needs Node.js 20+ and npm. /web starts the web on 127.0.0.1:3100 by default (RECONIX_WEB_PORT to change it, which matters whenever 3100 is taken; the first time it runs npm install, which takes a few minutes) and opens it with a sign-in link.
 
 #### WEB-01 · Open the web
 
 1. Finish one assessment (any MF-…-01).
 2. Type /web.
+3. Type /web a second time.
 
-**Expected:** The browser opens http://127.0.0.1:3100 and signs you in from the link.
+**Expected:** The browser opens http://127.0.0.1:3100 (the port RECONIX_WEB_PORT sets) and signs you in from the link. On the first /web the dashboard's own launcher opens the browser; a later /web opens it from the TUI, which says "Opening the web dashboard in your browser…".
 
 Result: ☐ Pass ☐ Fail ☐ Skip
 

@@ -1,6 +1,9 @@
 """The endpoints from the API sheet: sessions, scope manifests, assessments, approvals,
 findings and evidence, through the API and a database."""
 
+import threading
+
+from reconix_api.core.config import get_settings
 from reconix_api.services import sessions as sessions_service
 from tests.integration.test_action_flow import active_assessment
 from tests.integration.test_findings_flow import run_nmap
@@ -138,6 +141,70 @@ def test_only_an_active_assessment_can_be_completed(db_client):
     assert response.json()["code"] == "ASSESSMENT_NOT_ACTIVE"
 
 
+def test_completing_with_another_status_names_only_the_value(db_client):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    response = db_client.patch(
+        f"/assessments/{assessment_id}", json={"assessment_status": "ACTIVE"}, headers=headers
+    )
+    assert response.status_code == 422
+    assert response.json()["details"]["fields"][0]["message"] == "Input should be 'COMPLETED'"
+
+
+# Text checks
+
+
+def test_text_with_a_nul_byte_is_rejected_not_a_server_error(db_client):
+    headers = open_session(db_client)
+    session_id = session_id_of(db_client, headers)
+    assessment_id = active_assessment(db_client, headers)
+    nul = "Juice\x00Shop"
+    action = {"tool": "NMAP", "target": "172.20.0.5", "arguments": [nul]}
+    responses = [
+        db_client.patch(f"/assessments/{assessment_id}", json={"name": nul}, headers=headers),
+        db_client.post(f"/sessions/{session_id}/messages", json={"content": nul}, headers=headers),
+        db_client.get("/findings", params={"q": nul}, headers=headers),
+        db_client.post(f"/assessments/{assessment_id}/actions", json=action, headers=headers),
+    ]
+    assert [r.status_code for r in responses] == [422, 422, 422, 422]
+    assert {r.json()["code"] for r in responses} == {"VALIDATION_ERROR"}
+
+
+def test_blank_text_is_rejected(db_client):
+    headers = open_session(db_client)
+    session_id = session_id_of(db_client, headers)
+    scope = db_client.post(scopes_path(db_client, headers), json=DRAFT, headers=headers).json()
+    submit = {"name": "   ", "type": "web_url"}
+    responses = [
+        db_client.post(f"/sessions/{session_id}/messages", json={"content": "  "}, headers=headers),
+        db_client.post(
+            f"/scope-manifests/{scope['manifest_id']}/submit", json=submit, headers=headers
+        ),
+    ]
+    assessment_id = active_assessment(db_client, open_session(db_client))
+    responses.append(
+        db_client.patch(f"/assessments/{assessment_id}", json={"type": " "}, headers=headers)
+    )
+    assert [r.status_code for r in responses] == [422, 422, 422]
+
+
+def test_the_stream_of_an_unknown_assessment_answers_404(db_client, db_app):
+    settings = db_app.dependency_overrides[get_settings]()
+    quick = settings.model_copy(update={"stream_heartbeat_seconds": 0.05})
+    db_app.dependency_overrides[get_settings] = lambda: quick
+    headers = open_session(db_client)
+    session_id = session_id_of(db_client, headers)
+    # Without the check the stream stays open; closing the session ends it so the test cannot hang.
+    closer = threading.Timer(
+        2, lambda: db_client.post(f"/sessions/{session_id}/close", headers=headers)
+    )
+    closer.start()
+    response = db_client.get("/stream", params={"assessment_id": MISSING}, headers=headers)
+    closer.cancel()
+    assert response.status_code == 404
+    assert response.json()["code"] == "ASSESSMENT_NOT_FOUND"
+
+
 # Approvals
 
 
@@ -206,3 +273,61 @@ def test_unknown_finding_and_evidence_are_404(db_client):
     assert db_client.get(f"/evidence/{MISSING}", headers=headers).json()["code"] == (
         "EVIDENCE_NOT_FOUND"
     )
+
+
+def test_blank_provider_names_and_keys_are_rejected(db_client):
+    headers = open_session(db_client)
+    ollama = {"provider_type": "OLLAMA", "display_name": "Local", "model_name": "llama3.1:8b"}
+    openai = {"provider_type": "OPENAI", "display_name": "Cloud", "model_name": "gpt-4o"}
+    blank_name = db_client.post(
+        "/llm-providers", json={**ollama, "display_name": "  "}, headers=headers
+    )
+    blank_key = db_client.post(
+        "/llm-providers", json={**openai, "api_key": " " * 16}, headers=headers
+    )
+    provider = db_client.post("/llm-providers", json=ollama, headers=headers).json()
+    renamed = db_client.patch(
+        f"/llm-providers/{provider['llm_provider_id']}", json={"display_name": " "}, headers=headers
+    )
+    assert [r.status_code for r in (blank_name, blank_key, renamed)] == [422, 422, 422]
+
+
+def test_action_arguments_and_target_have_limits(db_client):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    path = f"/assessments/{assessment_id}/actions"
+    nmap = {"tool": "NMAP", "target": "172.20.0.5"}
+    responses = [
+        db_client.post(path, json={**nmap, "arguments": ["x" * 2049]}, headers=headers),
+        db_client.post(path, json={**nmap, "arguments": [""]}, headers=headers),
+        db_client.post(path, json={**nmap, "target": "   "}, headers=headers),
+    ]
+    assert [r.status_code for r in responses] == [422, 422, 422]
+    assert {r.json()["code"] for r in responses} == {"VALIDATION_ERROR"}
+
+
+def test_the_client_names_the_operator(db_client, db_app):
+    # The client runs on the person's computer; in Docker the API's own OS names are the
+    # container's, so the name the client sends wins.
+    opened = db_client.post("/sessions", json={"interface": "cli", "operator": " vanneth@laptop\n"})
+    assert opened.status_code == 201, opened.json()
+    headers = {"Authorization": f"Bearer {opened.json()['token']}"}
+    assert db_client.get("/operator", headers=headers).json()["actor"] == "vanneth@laptop"
+    opened_event = [
+        e for e in db_app.state.parts["audit"].events if e.event_type == "SESSION_OPENED"
+    ][-1]
+    assert opened_event.details["operator_from"] == "client"
+
+
+def test_without_a_sent_name_the_server_names_the_operator(db_client):
+    for body in ({"interface": "cli"}, {"interface": "cli", "operator": "   "}):
+        token = db_client.post("/sessions", json=body).json()["token"]
+        actor = db_client.get("/operator", headers={"Authorization": f"Bearer {token}"}).json()[
+            "actor"
+        ]
+        assert actor == sessions_service.local_actor()
+
+
+def test_an_operator_name_over_100_characters_is_refused(db_client):
+    response = db_client.post("/sessions", json={"interface": "cli", "operator": "x" * 101})
+    assert response.status_code == 422

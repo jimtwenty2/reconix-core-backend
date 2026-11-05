@@ -99,6 +99,10 @@ def test_an_old_word_file_says_what_to_do():
 
 def test_the_display_name_has_no_folders_and_one_line():
     assert display_name("../../etc/my\n  notes.md") == "my notes.md"
+
+
+def test_the_display_name_has_no_control_characters():
+    assert display_name("a\x00b\x1b[31mred\x7f.md") == "ab[31mred.md"
     assert display_name("C:\\work\\plan.pdf") == "plan.pdf"
     assert display_name("   ") == "untitled"
     assert len(display_name("x" * 500 + ".md")) == MAX_NAME

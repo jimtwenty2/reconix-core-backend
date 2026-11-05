@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from reconix_ai.harness.catalog import is_known_tool
 from reconix_api.core.code_files import check_code_path
@@ -22,7 +22,19 @@ def _check_tools(tools: list[str] | None) -> list[str] | None:
     for tool in tools:
         if not is_known_tool(tool):
             raise ValueError(f"tool {tool!r} is not in the Kali catalog (tool_specs.json)")
-    return upper_tools(tools)
+    return _unique(upper_tools(tools))
+
+
+def _unique(items: list | None) -> list | None:
+    """Drops repeats and keeps the first order: ["NMAP", "NMAP"] -> ["NMAP"]."""
+    return None if items is None else list(dict.fromkeys(items))
+
+
+def _unique_targets(targets: list["ScopeTargetIn"] | None) -> list["ScopeTargetIn"] | None:
+    if targets is None:
+        return None
+    seen = {(t.type, t.value, t.excluded): t for t in reversed(targets)}
+    return list(reversed(seen.values()))
 
 
 DOMAIN = re.compile(r"^(\*\.)?([a-z0-9-]+\.)*[a-z0-9-]+$", re.IGNORECASE)
@@ -40,7 +52,8 @@ class ScopeTargetIn(BaseModel):
         if self.type == "ip":
             ipaddress.ip_address(self.value)
         elif self.type == "cidr":
-            ipaddress.ip_network(self.value, strict=False)
+            if ipaddress.ip_network(self.value, strict=False).prefixlen == 0:
+                raise ValueError("a cidr target cannot be /0: that is every address")
         elif self.type == "url":
             check_url(self.value)
         elif self.type == "domain" and not DOMAIN.match(self.value):
@@ -76,8 +89,9 @@ class ScopeDraft(BaseModel):
     allowed_methods: list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] = (
         Field(default_factory=list)
     )
-    starts_at: datetime | None = None
-    ends_at: datetime | None = None
+    # A window time must carry its timezone (Z or +07:00), so the two can be compared.
+    starts_at: AwareDatetime | None = None
+    ends_at: AwareDatetime | None = None
     limitations: str | None = Field(default=None, max_length=4000)
     targets: list[ScopeTargetIn] = Field(min_length=1, max_length=200)
 
@@ -92,6 +106,16 @@ class ScopeDraft(BaseModel):
     def tools_in_catalog(cls, tools: list[str] | None) -> list[str] | None:
         return _check_tools(tools)
 
+    @field_validator("allowed_ports", "allowed_actions", "allowed_methods")
+    @classmethod
+    def no_repeats(cls, items: list | None) -> list | None:
+        return _unique(items)
+
+    @field_validator("targets")
+    @classmethod
+    def no_repeated_targets(cls, targets: list[ScopeTargetIn] | None) -> list[ScopeTargetIn] | None:
+        return _unique_targets(targets)
+
 
 class ScopeUpdate(BaseModel):
     """A partial edit of a draft: only the fields sent change. Sending targets replaces them all."""
@@ -103,8 +127,9 @@ class ScopeUpdate(BaseModel):
     allowed_methods: (
         list[Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]] | None
     ) = None
-    starts_at: datetime | None = None
-    ends_at: datetime | None = None
+    # A window time must carry its timezone (Z or +07:00), so the two can be compared.
+    starts_at: AwareDatetime | None = None
+    ends_at: AwareDatetime | None = None
     limitations: str | None = Field(default=None, max_length=4000)
     targets: list[ScopeTargetIn] | None = Field(default=None, max_length=200)
 
@@ -113,9 +138,21 @@ class ScopeUpdate(BaseModel):
     def tools_in_catalog(cls, tools: list[str] | None) -> list[str] | None:
         return _check_tools(tools)
 
+    @field_validator("allowed_ports", "allowed_actions", "allowed_methods")
+    @classmethod
+    def no_repeats(cls, items: list | None) -> list | None:
+        return _unique(items)
+
+    @field_validator("targets")
+    @classmethod
+    def no_repeated_targets(cls, targets: list[ScopeTargetIn] | None) -> list[ScopeTargetIn] | None:
+        return _unique_targets(targets)
+
 
 class ScopeSubmit(BaseModel):
     """Submitting creates the DRAFT assessment, so it carries the assessment's name and type."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)  # so "   " fails min_length
 
     name: str = Field(min_length=1, max_length=200)
     type: str = Field(min_length=1, max_length=60)  # e.g. web_url, network
@@ -156,9 +193,11 @@ class AssessmentOut(BaseModel):
 class AssessmentUpdate(BaseModel):
     """Rename, or finish an ACTIVE assessment. Cancelling is DELETE."""
 
+    model_config = ConfigDict(str_strip_whitespace=True)  # so "   " fails min_length
+
     name: str | None = Field(default=None, min_length=1, max_length=200)
     type: str | None = Field(default=None, min_length=1, max_length=60)
-    assessment_status: Literal[AssessmentStatus.COMPLETED] | None = None
+    assessment_status: Literal["COMPLETED"] | None = None
 
 
 class ScopeSubmitted(BaseModel):

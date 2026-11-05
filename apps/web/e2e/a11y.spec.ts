@@ -11,12 +11,12 @@ import { type Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
-import { axe, show } from "./axe";
+import { axe, AXE_MOTION_OR_REDUCED, show } from "./axe";
 import { newest } from "./support";
 
 const RUN = newest().uid;
 test.describe("axe", () => {
-  test.use({ reducedMotion: "reduce" }); // everything on screen at once, nothing mid-animation
+  test.use(AXE_MOTION_OR_REDUCED);
 
   const PAGES: [string, string][] = [
     ["overview", "/"],
@@ -52,7 +52,7 @@ const boxLabel = (page: Page) => page.locator("label").filter({ has: page.getByR
 const frameHeading = (page: Page) => page.frameLocator('iframe[title="Combined report preview"]').getByRole("heading", { name: "Combined security assessment report" });
 
 test.describe("axe, more states", () => {
-  test.use({ reducedMotion: "reduce" });
+  test.use(AXE_MOTION_OR_REDUCED);
 
   test("the docs index has no violations", async ({ page }) => {
     await page.goto("/docs");

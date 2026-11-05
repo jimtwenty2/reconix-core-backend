@@ -63,6 +63,51 @@ async def test_it_says_when_another_dashboard_holds_the_port(app, web_launches, 
         assert app._web_process is None and not app._web_starting
 
 
+async def test_another_next_dev_in_the_log_shows_the_same_busy_message(app, web_launches,
+                                                                        monkeypatch, tmp_path):
+    """Next.js prints "Ready", binds the port and only then aborts over another next dev's
+    lock (QAL-001). serve.mjs exits PORTS_BUSY only for its own pre-flight port check, so here
+    it just passes Next's code through; busy_in_log reads Next's own line in the log, which is
+    the only path to the documented busy message for this failure."""
+    log = tmp_path / "web.log"
+    log.write_text("older start: nothing wrong here\n", encoding="utf-8")
+    before = log.stat().st_size
+
+    class Aborted:                                         # serve.mjs couldn't start Next.js
+        pid = -1
+
+        def poll(self):
+            return 1
+
+    def start(data_dir, url_file):                         # what the launcher logs, then dies
+        with log.open("a", encoding="utf-8") as out:
+            out.write("\u2a2f Another next dev server is already running.\n")
+        return Aborted()
+
+    monkeypatch.setattr(web_shell, "POLL_EVERY", 0.01)
+    monkeypatch.setattr(web_server, "LOG_FILE", log)
+    monkeypatch.setattr(web_server, "start", start)
+    assert web_server.log_size() == before                 # this start is read on its own
+    async with app.run_test(size=SIZE) as pilot:
+        app.run_command_line("/web")
+        await app.workers.wait_for_complete()
+        await settle(pilot)
+        assert "Another web dashboard already uses its port" in _notes(app)
+        assert "stopped while starting" not in _notes(app)
+        assert app._web_process is None and not app._web_starting
+
+
+def test_only_this_start_counts_as_busy(monkeypatch, tmp_path):
+    """An older start's failure in the same log is not read as this one's."""
+    log = tmp_path / "web.log"
+    monkeypatch.setattr(web_server, "LOG_FILE", log)
+    assert web_server.log_size() == 0 and not web_server.busy_in_log()
+    log.write_text("\u2a2f Another next dev server is already running.\n",
+                   encoding="utf-8")
+    assert web_server.busy_in_log(0)
+    assert not web_server.busy_in_log(web_server.log_size())
+
+
 async def test_the_first_time_it_installs_the_packages_first(app, web_launches, monkeypatch):
     monkeypatch.setattr(web_server, "needs_install", lambda: True)
     async with app.run_test(size=SIZE) as pilot:

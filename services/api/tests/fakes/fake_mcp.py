@@ -2,8 +2,13 @@
 
 Like the real one, it refuses a job token it did not expect or has already seen.
 With `secret` set it checks the signature and expiry instead, as the Kali side does.
+An output can be a function of the job, so it can depend on the target (a code scan's
+copy folder holds only some files). tools_info answers with `versions`, the lines the
+real Kali image gives for the code scan tools.
 """
 
+import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 from reconix_api.core.interfaces import ToolJob, ToolName, ToolResult, ToolRunStatus
@@ -23,6 +28,16 @@ NMAP_XML = """<?xml version="1.0"?>
 """
 
 
+# What the real tools_info gave for the code scan tools (Step 0 probe), cut to their lines.
+KALI_VERSIONS = {
+    "apt": "gitleaks\t8.26.0-1+b1\ntrivy\t0.66.0-0kali1\nsyft\t1.51.0+ds-0kali1\nzsh\t5.9-8\n",
+    "scanners": "semgrep==1.183.0\n",
+    "grype": "Application:         grype\nVersion:             0.120.1\n",
+    "osv-scanner": "osv-scanner version: 2.7.0\nosv-scalibr version: 0.5.3\n",
+    "sonarqube": "sonarqube 24.12.0.100206\nsonar-scanner 8.1.0.6389\nopenjdk 17\n",
+}
+
+
 class FakeMcp:
     def __init__(self) -> None:
         self.issued_tokens: set[str] = set()
@@ -30,7 +45,9 @@ class FakeMcp:
         self.jobs: list[ToolJob] = []
         self.down = False  # set True to simulate the container being unreachable
         self.secret: str | None = None
-        self.outputs: dict[str, str] = {}  # set by a test: the raw output per tool
+        # set by a test: the raw output per tool, or a function of the job giving it
+        self.outputs: dict[str, str | Callable[[ToolJob], str]] = {}
+        self.versions = dict(KALI_VERSIONS)  # tools_info's versions; change one to upgrade
         self.stderr = ""  # set by a test: what the tool writes to stderr
 
     def expect_token(self, token: str) -> None:
@@ -46,7 +63,10 @@ class FakeMcp:
         self.jobs.append(job)
 
         if job.tool in self.outputs:
-            output = self.outputs[job.tool]
+            canned = self.outputs[job.tool]
+            output = canned if isinstance(canned, str) else canned(job)
+        elif job.tool == "tools_info":
+            output = json.dumps({"tools": [], "tool_count": 0, "versions": self.versions})
         elif job.tool == ToolName.NMAP:
             output = NMAP_XML.format(target=job.target)
         else:

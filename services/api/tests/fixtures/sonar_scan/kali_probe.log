@@ -1,0 +1,109 @@
+06:23:38.000 INFO  Scanner configuration file: /opt/sonar-scanner/conf/sonar-scanner.properties
+06:23:38.003 INFO  Project root configuration file: NONE
+06:23:38.024 INFO  SonarScanner CLI 8.1.0.6389
+06:23:38.028 INFO  Linux 7.0.12-linuxkit amd64
+06:23:40.986 INFO  Communicating with SonarQube Community Build 24.12.0.100206
+06:23:40.987 INFO  JRE provisioning: os[linux], arch[x86_64]
+06:23:42.861 INFO  Starting SonarScanner Engine...
+06:23:42.862 INFO  Java 17.0.11 Eclipse Adoptium (64-bit)
+06:23:45.871 INFO  Load global settings
+06:23:45.991 INFO  Load global settings (done) | time=118ms
+06:23:45.995 INFO  Server id: 147B411E-AaGlNpZtHDEDyxFAQY9L
+06:23:46.003 INFO  Loading required plugins
+06:23:46.003 INFO  Load plugins index
+06:23:46.066 INFO  Load plugins index (done) | time=62ms
+06:23:46.066 INFO  Load/download plugins
+06:23:46.311 INFO  Load/download plugins (done) | time=245ms
+06:23:46.523 INFO  Process project properties
+06:23:46.529 INFO  Process project properties (done) | time=6ms
+06:23:46.536 INFO  Project key: probe
+06:23:46.536 INFO  Base dir: /workspace/code/11111111-1111-4111-8111-111111111111
+06:23:46.537 INFO  Working dir: /tmp/sonar-scanner-work/probe
+06:23:46.543 INFO  Load project settings for component key: 'probe'
+06:23:46.580 INFO  Load quality profiles
+06:23:47.217 INFO  Load quality profiles (done) | time=636ms
+06:23:47.272 WARN  SCM provider autodetection failed. Please use "sonar.scm.provider" to define SCM of your project, or disable the SCM Sensor in the project settings.
+06:23:47.276 INFO  Load active rules
+06:23:53.510 INFO  Load active rules (done) | time=6234ms
+06:23:53.514 INFO  Load analysis cache
+06:23:53.522 INFO  Load analysis cache (404) | time=8ms
+06:23:53.576 INFO  Preprocessing files...
+06:23:53.602 INFO  2 languages detected in 6 preprocessed files
+06:23:53.604 INFO  Loading plugins for detected languages
+06:23:53.605 INFO  Load/download plugins
+06:23:53.678 INFO  Load/download plugins (done) | time=73ms
+06:23:53.764 INFO  Load project repositories
+06:23:53.776 INFO  Load project repositories (done) | time=12ms
+06:23:53.789 INFO  Indexing files...
+06:23:53.789 INFO  Project configuration:
+06:23:53.801 INFO  6 files indexed
+06:23:53.803 INFO  Quality profile for json: Sonar way
+06:23:53.803 INFO  Quality profile for py: Sonar way
+06:23:53.804 INFO  ------------- Run sensors on module probe
+06:23:53.842 INFO  Load metrics repository
+06:23:53.869 INFO  Load metrics repository (done) | time=26ms
+06:23:54.252 INFO  Sensor JaCoCo XML Report Importer [jacoco]
+06:23:54.253 INFO  'sonar.coverage.jacoco.xmlReportPaths' is not defined. Using default locations: target/site/jacoco/jacoco.xml,target/site/jacoco-it/jacoco.xml,build/reports/jacoco/test/jacocoTestReport.xml
+06:23:54.254 INFO  No report imported, no coverage information will be imported by JaCoCo XML Report Importer
+06:23:54.254 INFO  Sensor JaCoCo XML Report Importer [jacoco] (done) | time=2ms
+06:23:54.254 INFO  Sensor IaC CloudFormation Sensor [iac]
+06:23:54.278 INFO  0 source files to be analyzed
+06:23:54.282 INFO  0/0 source files have been analyzed
+06:23:54.282 INFO  Sensor IaC CloudFormation Sensor [iac] (done) | time=29ms
+06:23:54.283 INFO  Sensor IaC AzureResourceManager Sensor [iac]
+06:23:54.342 INFO  0 source files to be analyzed
+06:23:54.342 INFO  0/0 source files have been analyzed
+06:23:54.343 INFO  Sensor IaC AzureResourceManager Sensor [iac] (done) | time=59ms
+06:23:54.343 INFO  Sensor Java Config Sensor [iac]
+06:23:54.352 INFO  0 source files to be analyzed
+06:23:54.352 INFO  0/0 source files have been analyzed
+06:23:54.353 INFO  Sensor Java Config Sensor [iac] (done) | time=10ms
+06:23:54.353 INFO  Sensor Python Sensor [python]
+06:23:54.361 WARN  Your code is analyzed as compatible with all Python 3 versions by default. You can get a more precise analysis by setting the exact Python version in your configuration via the parameter "sonar.python.version"
+06:23:54.373 INFO  Starting global symbols computation
+06:23:54.374 INFO  4 source files to be analyzed
+06:23:54.705 INFO  4/4 source files have been analyzed
+06:23:54.734 INFO  Starting rules execution
+06:23:54.734 INFO  4 source files to be analyzed
+06:23:55.258 INFO  4/4 source files have been analyzed
+06:23:55.258 INFO  The Python analyzer was able to leverage cached data from previous analyses for 0 out of 4 files. These files were not parsed.
+06:23:55.258 INFO  Sensor Python Sensor [python] (done) | time=905ms
+06:23:55.259 INFO  Sensor Cobertura Sensor for Python coverage [python]
+06:23:55.260 INFO  Sensor Cobertura Sensor for Python coverage [python] (done) | time=3ms
+06:23:55.260 INFO  Sensor PythonXUnitSensor [python]
+06:23:55.261 INFO  Sensor PythonXUnitSensor [python] (done) | time=1ms
+06:23:55.262 INFO  Sensor IaC Docker Sensor [iac]
+06:23:55.294 INFO  0 source files to be analyzed
+06:23:55.295 INFO  0/0 source files have been analyzed
+06:23:55.295 INFO  Sensor IaC Docker Sensor [iac] (done) | time=33ms
+06:23:55.295 INFO  Sensor TextAndSecretsSensor [text]
+06:23:55.295 INFO  Available processors: 8
+06:23:55.295 INFO  Using 8 threads for analysis.
+06:23:55.575 INFO  The property "sonar.tests" is not set. To improve the analysis accuracy, we categorize a file as a test file if any of the following is true:
+  * The filename starts with "test"
+  * The filename contains "test." or "tests."
+  * Any directory in the file path is named: "doc", "docs", "test" or "tests"
+  * Any directory in the file path has a name ending in "test" or "tests"
+
+06:23:55.611 INFO  Using git CLI to retrieve untracked files
+06:23:55.613 WARN  Analyzing only language associated files, make sure to run the analysis inside a git repository to make use of inclusions specified via "sonar.text.inclusions"
+06:23:55.620 INFO  5 source files to be analyzed
+06:23:55.636 INFO  5/5 source files have been analyzed
+06:23:55.637 INFO  Sensor TextAndSecretsSensor [text] (done) | time=342ms
+06:23:55.641 INFO  ------------- Run sensors on project
+06:23:55.752 INFO  Sensor Zero Coverage Sensor
+06:23:55.757 INFO  Sensor Zero Coverage Sensor (done) | time=6ms
+06:23:55.758 INFO  SCM Publisher No SCM system was detected. You can use the 'sonar.scm.provider' property to explicitly specify it.
+06:23:55.760 INFO  CPD Executor 1 file had no CPD blocks
+06:23:55.761 INFO  CPD Executor Calculating CPD for 3 files
+06:23:55.771 INFO  CPD Executor CPD calculation finished (done) | time=11ms
+06:23:55.844 INFO  Analysis report generated in 68ms, dir size=220.7 kB
+06:23:55.858 INFO  Analysis report compressed in 13ms, zip size=30.0 kB
+06:23:56.654 INFO  Analysis report uploaded in 795ms
+06:23:56.655 INFO  ANALYSIS SUCCESSFUL, you can find the results at: http://localhost:9000/dashboard?id=probe
+06:23:56.656 INFO  Note that you will be able to access the updated dashboard once the server has processed the submitted analysis report
+06:23:56.656 INFO  More about the report processing at http://localhost:9000/api/ce/task?id=2c152d7d-f622-43f7-ab18-d4f4fc09a826
+06:23:56.665 INFO  Analysis total time: 10.307 s
+06:23:56.665 INFO  SonarScanner Engine completed successfully
+06:23:56.684 INFO  EXECUTION SUCCESS
+06:23:56.699 INFO  Total time: 18.688s

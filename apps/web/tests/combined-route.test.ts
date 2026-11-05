@@ -9,7 +9,7 @@ import { COMBINE_MAX, combinedFileName, combinedHref } from "@/lib/report/combin
 import { parseCombinedQuery } from "@/lib/report/combined/query";
 import { chromeBinary } from "@/lib/report/pdf";
 
-import { sampleNames } from "./fixtures";
+import { sampleAssessments, sampleNames } from "./fixtures";
 import { unzip } from "./unzip";
 
 const TOKEN = "route-test-token-0123456789";
@@ -37,7 +37,7 @@ const detail = async (res: Response) => ((await res.json()) as { detail: string 
 
 describe("the query", () => {
   it("accepts 1 to 5 distinct uids, a format and flags", () => {
-    const ok = parseCombinedQuery(new URLSearchParams({ uids: uids.slice(0, 2).join(","), format: "pdf", evidence: "1", low: "true" }));
+    const ok = parseCombinedQuery(new URLSearchParams({ uids: uids.slice(0, 2).join(","), format: "pdf", evidence: "1", low: "true", appendix: "0" }));
     expect(ok).toEqual({ ok: true, query: { uids: uids.slice(0, 2), format: "pdf", options: { evidence: true, low: true, appendix: false } } });
     expect(parseCombinedQuery(new URLSearchParams({ uids: uids[0] }))).toMatchObject({ ok: true, query: { format: "preview" } });
     expect(parseCombinedQuery(new URLSearchParams({ uids: uids[0], format: "docx" }))).toMatchObject({ ok: true, query: { format: "docx" } });
@@ -56,13 +56,33 @@ describe("the query", () => {
     if (!out.ok) expect(out.error).toContain(why);
   });
 
+  /* A hand-built or bookmarked link used to silently drop masked evidence and every LOW finding,
+     because the route's flags defaulted to off while the UI always sent them on (QAL-010). */
+  it("has every option on when the query leaves it out, and off only on an explicit =0", () => {
+    const options = (query: Record<string, string>) => {
+      const out = parseCombinedQuery(new URLSearchParams({ uids: uids[0], ...query }));
+      return out.ok ? out.query.options : out.error;
+    };
+    expect(options({})).toEqual({ evidence: true, low: true, appendix: true });
+    expect(options({ format: "pdf" })).toEqual({ evidence: true, low: true, appendix: true });
+    for (const key of ["evidence", "low", "appendix"]) {
+      expect(options({ [key]: "0" })).toEqual({ evidence: true, low: true, appendix: true, [key]: false });
+      expect(options({ [key]: "false" })).toEqual({ evidence: true, low: true, appendix: true, [key]: false });
+      expect(options({ [key]: "" })).toEqual({ evidence: true, low: true, appendix: true, [key]: false });
+      expect(options({ [key]: "1" })).toEqual({ evidence: true, low: true, appendix: true });
+    }
+    expect(options({ evidence: "0", low: "0", appendix: "0" })).toEqual({ evidence: false, low: false, appendix: false });
+  });
+
   it("refuses an unknown format or flag value", () => {
     for (const gone of ["html", "csv", "sarif", "json"]) expect(parseCombinedQuery(new URLSearchParams({ uids: uids[0], format: gone })).ok).toBe(false);
     expect(parseCombinedQuery(new URLSearchParams({ uids: uids[0], evidence: "yes" })).ok).toBe(false);
   });
 
-  it("builds the route's link and an ASCII file name", () => {
-    expect(combinedHref(["u1", "u2"], "preview", { evidence: true, low: false, appendix: true })).toBe("/api/reports/combined?uids=u1%2Cu2&format=preview&evidence=1&appendix=1");
+  /* Every option is spelled out: the route's default is on, so an unticked one left out of the
+     link would come back on (QAL-010). */
+  it("builds the route's link with every option on or off, and an ASCII file name", () => {
+    expect(combinedHref(["u1", "u2"], "preview", { evidence: true, low: false, appendix: true })).toBe("/api/reports/combined?uids=u1%2Cu2&format=preview&evidence=1&low=0&appendix=1");
     expect(combinedFileName(3, "pdf", new Date("2026-10-20T23:59:00Z"))).toBe("combined-3-runs-2026-10-20.pdf");
     expect(combinedFileName(3, "docx", new Date("2026-10-20T23:59:00Z"))).toBe("combined-3-runs-2026-10-20.docx");
   });
@@ -111,6 +131,28 @@ describe("GET /api/reports/combined", () => {
     expect(html).not.toContain("<script");
   });
 
+  /* A link with no flags holds the whole report; only an explicit =0 leaves a part out. The old
+     defaults dropped masked evidence and every LOW finding from any hand-built link (QAL-010). */
+  it("holds the masked evidence and the LOW findings when the link names no option, and drops them on =0", async () => {
+    // a masked line with nothing for the renderer to escape, so it is compared as it is written
+    const plain = (e: string) => e.includes("•") && !/["'<>&]/.test(e);
+    const run = sampleAssessments().find((a) => a.findings.some((f) => f.severity === "LOW") && a.findings.some((f) => f.evidence.some(plain)))!;
+    const low = run.findings.find((f) => f.severity === "LOW")!.title;
+    const masked = run.findings.flatMap((f) => f.evidence).find(plain)!;
+
+    const whole = await (await get(`uids=${run.uid}&format=preview`)).text();
+    expect(whole).toContain(low);
+    expect(whole).toContain(masked);
+    expect(whole).not.toMatch(/left out by the report/); // nothing says a part is missing
+
+    const trimmed = await (await get(`uids=${run.uid}&format=preview&evidence=0&low=0&appendix=0`)).text();
+    expect(trimmed).not.toContain(low);
+    expect(trimmed).not.toContain(masked);
+    expect(trimmed).toContain("Evidence lines were left out by the report");
+    expect(trimmed).toContain("LOW findings were left out by the report");
+    expect(trimmed).toContain("The appendix was left out by the report");
+  });
+
   it("serves the Word document as a download, with every run in it", async () => {
     const res = await get(`uids=${uids[0]},${uids[1]}&format=docx&evidence=1&low=1&appendix=1`);
     expect(res.status).toBe(200);
@@ -132,7 +174,7 @@ describe("GET /api/reports/combined", () => {
     const body = (await res.json()) as { detail: string; docx: string; html?: string };
     expect(body.detail).toContain("RECONIX_CHROME");
     expect(body.detail).not.toContain("HTML");
-    expect(body.docx).toBe(combinedHref([uids[0], uids[1]], "docx", { evidence: false, low: true, appendix: false }));
+    expect(body.docx).toBe(combinedHref([uids[0], uids[1]], "docx", { evidence: true, low: true, appendix: true }));
     expect(body.html).toBeUndefined();
   });
 

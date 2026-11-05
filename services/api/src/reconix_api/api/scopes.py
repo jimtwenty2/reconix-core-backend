@@ -49,6 +49,9 @@ def create_scope(
 def list_scopes(session_id: UUID, db: Db, _: CurrentOperator) -> list[ScopeOut]:
     """Lists every scope version in the session, oldest first.
 
+    Business Rules:
+    - Returns 404 SESSION_NOT_FOUND if no session has this id.
+
     Security:
     - Requires a valid session token.
     """

@@ -30,7 +30,8 @@ def covered_assessments(db: Db, report_id: UUID) -> list[UUID]:
 
 
 def get(db: Db, report_id: UUID, lock: bool = False) -> Report | None:
-    return db.get(Report, report_id, with_for_update=lock)
+    # A locked read also reloads the row, so its status is the one saved now.
+    return db.get(Report, report_id, with_for_update=lock, populate_existing=lock)
 
 
 def list_by_assessment(db: Db, assessment_id: UUID) -> list[Report]:
@@ -52,12 +53,17 @@ def next_version(db: Db, assessment_id: UUID) -> int:
 
 
 def generating_before(db: Db, assessment_id: UUID, cutoff: datetime) -> list[Report]:
-    query = select(Report).where(
-        Report.assessment_id == assessment_id,
-        Report.report_status == ReportStatus.GENERATING,
-        Report.created_at < cutoff,
+    """Locked, so a report its own request is finishing right now is not cut off too."""
+    query = (
+        select(Report)
+        .where(
+            Report.assessment_id == assessment_id,
+            Report.report_status == ReportStatus.GENERATING,
+            Report.created_at < cutoff,
+        )
+        .with_for_update()
     )
-    return list(db.scalars(query))
+    return list(db.scalars(query.execution_options(populate_existing=True)))
 
 
 def review_for(db: Db, report_id: UUID) -> Approval | None:

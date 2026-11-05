@@ -22,6 +22,7 @@ from reconix_api.models.enums import ApprovalStatus, AssessmentStatus, ManifestS
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import scopes as scope_repo
+from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.scopes import (
     AssessmentOut,
     ScopeDraft,
@@ -96,6 +97,8 @@ def patch_draft(
 
 
 def list_session_scopes(db: Db, session_id: UUID) -> list[ScopeOut]:
+    if session_repo.get(db, session_id) is None:
+        raise ApiError(404, "SESSION_NOT_FOUND", "No session with this id.")
     return [read_scope(db, row.manifest_id) for row in scope_repo.list_by_session(db, session_id)]
 
 
@@ -218,30 +221,54 @@ def next_engagement_code(latest: str | None, year: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def approve_scope(db: Db, write_audit: WriteAudit, operator: Operator, approval: Approval) -> None:
+# The reason of a scope the server approved on its own: only a session's own code folder.
+CODE_SESSION_FOLDER = "CODE_SESSION_FOLDER"
+
+
+def approve_scope(
+    db: Db,
+    write_audit: WriteAudit,
+    operator: Operator,
+    approval: Approval,
+    reason: str | None = None,
+) -> None:
+    """reason is set when the server approves on its own, e.g. CODE_SESSION_FOLDER. It is
+    kept on the approval too: actions.send_action reads it."""
     manifest = _get_manifest(db, approval.manifest_id, lock=True)
     targets = scope_repo.list_targets(db, manifest.manifest_id)
     if snapshot_hash(scope_snapshot(manifest, targets)) != approval.subject_hash:
         raise ApiError(409, "SCOPE_CHANGED", "The scope changed after it was submitted.")
-    assessment = assessment_repo.get(db, manifest.assessment_id)
+    assessment = assessment_repo.get_for_update(db, manifest.assessment_id)
+    if assessment.assessment_status != AssessmentStatus.DRAFT:
+        # Cancelled (or already started): approving must never bring it back to ACTIVE.
+        approval.approval_status = ApprovalStatus.EXPIRED
+        db.commit()
+        audit(
+            write_audit,
+            "APPROVAL_REFUSED",
+            operator,
+            assessment.assessment_id,
+            {"approval_id": str(approval.approval_id), "reason": "ASSESSMENT_NOT_DRAFT"},
+        )
+        raise ApiError(
+            409, "ASSESSMENT_NOT_DRAFT", "This assessment was cancelled or has already started."
+        )
 
     now = datetime.now(UTC)
     approval.approval_status = ApprovalStatus.APPROVED
     approval.decided_by = operator.actor
     approval.decided_at = now
     approval.consumed_at = now  # a scope approval is used the moment it is given
+    approval.reason = reason
     manifest.manifests_status = ManifestStatus.APPROVED
     manifest.decided_by = operator.actor
     manifest.decided_at = now
     assessment.assessment_status = AssessmentStatus.ACTIVE
     db.commit()
-    audit(
-        write_audit,
-        "SCOPE_APPROVED",
-        operator,
-        assessment.assessment_id,
-        {"manifest_id": str(manifest.manifest_id), "approval_id": str(approval.approval_id)},
-    )
+    details = {"manifest_id": str(manifest.manifest_id), "approval_id": str(approval.approval_id)}
+    if reason:
+        details["reason"] = reason
+    audit(write_audit, "SCOPE_APPROVED", operator, assessment.assessment_id, details)
 
 
 def reject_scope(

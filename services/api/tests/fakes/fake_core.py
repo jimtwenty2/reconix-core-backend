@@ -27,6 +27,11 @@ FAKE_RISK = {
     ToolName.NMAP: RiskLevel.LOW,
     ToolName.SEMGREP: RiskLevel.LOW,
     ToolName.GITLEAKS: RiskLevel.LOW,
+    ToolName.TRIVY: RiskLevel.LOW,
+    ToolName.GRYPE: RiskLevel.LOW,
+    ToolName.OSV_SCANNER: RiskLevel.LOW,
+    ToolName.SYFT: RiskLevel.LOW,
+    ToolName.SONAR_SCAN: RiskLevel.LOW,
     ToolName.NUCLEI: RiskLevel.MEDIUM,
     ToolName.ZAP: RiskLevel.HIGH,
 }

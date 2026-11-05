@@ -63,6 +63,11 @@ class ToolName(StrEnum):
     ZAP = "ZAP"
     SEMGREP = "SEMGREP"
     GITLEAKS = "GITLEAKS"
+    TRIVY = "TRIVY"
+    GRYPE = "GRYPE"
+    OSV_SCANNER = "OSV_SCANNER"
+    SYFT = "SYFT"
+    SONAR_SCAN = "SONAR_SCAN"
 
 
 class ToolRunStatus(StrEnum):
@@ -164,6 +169,15 @@ class RecentRun(BaseModel):
     started_at: datetime
 
 
+class LoopLimitSettings(BaseModel):
+    """The loop check's limits, once a `configuration` approval changed them."""
+
+    max_same_command: int
+    same_command_window_minutes: int
+    max_actions_per_minute: int
+    max_runs_per_assessment: int
+
+
 class CheckContext(BaseModel):
     """Everything the checks need. The API builds it from the database."""
 
@@ -173,6 +187,7 @@ class CheckContext(BaseModel):
     recent_runs: list[RecentRun] = Field(default_factory=list)  # at least the last 10 minutes
     runs_in_assessment: int = 0
     input_text: str | None = None  # the chat text that led to this action, if any
+    loop_limits: LoopLimitSettings | None = None  # None: the plan's limits (3, 10, 20, 200)
 
 
 class CheckResult(BaseModel):

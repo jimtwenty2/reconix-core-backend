@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
+from reconix_api.core.errors import ApiError
 from reconix_api.core.knowledge_add_ons import CurrentKnowledgeStore
 from reconix_api.core.security import CurrentOperator
 from reconix_api.schemas.knowledge_add_ons import KnowledgeHitOut, KnowledgeSource
@@ -27,6 +28,7 @@ async def search_knowledge(
     - An exact CVE, CWE, ATT&CK, or OWASP id comes first.
     - Repeat ?source= to search only those sources.
     - `limit` sets how many passages to return (1 to 20, default 5).
+    - Returns 422 VALIDATION_ERROR if q is blank.
 
     Operational Considerations:
     - Requires Qdrant and the embedding model; returns 503 without them.
@@ -34,4 +36,7 @@ async def search_knowledge(
     Security:
     - Requires a valid session token.
     """
+    if not q.strip():
+        fields = [{"field": "query.q", "message": "must not be blank"}]
+        raise ApiError(422, "VALIDATION_ERROR", "The request is not valid.", {"fields": fields})
     return await knowledge_add_ons.search(store, q, source or [], limit)

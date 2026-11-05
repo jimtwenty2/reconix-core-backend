@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import os
 import tarfile
 import tempfile
 from pathlib import Path
@@ -11,9 +12,17 @@ import pytest
 
 from reconix_api.core.code_files import (
     CodeFileError,
+    all_copy_name,
+    canonical_paths,
     check_code_path,
     check_rel_path,
     container_path,
+    excluded_inside,
+    is_excluded,
+    link_files,
+    pack_folder,
+    remove_excluded,
+    scan_files,
     stored_files,
     sync,
     unpack,
@@ -252,3 +261,201 @@ def test_unpack_reads_a_file_opened_for_writing_too(tmp_path):
         spooled.write(tar_gz({"a.py": b"a"}).getvalue())
         spooled.seek(0)
         assert unpack(spooled, tmp_path / "code", 100) == (1, 1)
+
+
+def test_excluded_inside_keeps_only_paths_in_this_code_folder():
+    target = "/workspace/code/abc"
+    excluded = [
+        f"{target}/node_modules",
+        f"{target}/src/secrets",
+        f"{target}/.git",
+        "/workspace/code/abcd/x",  # another folder that starts the same
+        "/workspace/code/other/node_modules",
+        "10.0.0.1",
+        target,  # the whole folder: start_scan refuses that on its own
+    ]
+    assert excluded_inside(excluded, target) == [".git", "node_modules", "src/secrets"]
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("node_modules/x/index.js", True),
+        ("node_modules", True),
+        ("src/secrets/key.pem", True),
+        ("node_modules_backup/a.js", False),
+        ("src/app.js", False),
+        ("src/secrets.js", False),
+    ],
+)
+def test_is_excluded_matches_whole_names(path, expected):
+    assert is_excluded(path, ["node_modules", "src/secrets"]) is expected
+
+
+def test_remove_excluded_deletes_only_skipped_files(tmp_path):
+    for path in ("node_modules/a/index.js", "src/app.js", "src/secrets/key.pem"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_bytes(b"x")
+
+    assert remove_excluded(tmp_path, ["node_modules", "src/secrets"]) == 2
+
+    assert set(stored_files(tmp_path)) == {"src/app.js"}
+    assert not (tmp_path / "node_modules").exists()
+
+
+def test_sync_skips_excluded_files_and_drops_stored_ones(tmp_path):
+    (tmp_path / "vendor").mkdir()
+    (tmp_path / "vendor/lib.js").write_bytes(b"old")
+    wanted = {"src/app.js": sha(b"a"), "vendor/lib.js": sha(b"v"), "vendor/x.js": sha(b"x")}
+
+    assert sync(tmp_path, wanted, ["vendor"]) == ["src/app.js"]
+    assert not (tmp_path / "vendor").exists()
+
+
+def test_unpack_does_not_store_excluded_files(tmp_path):
+    folder = tmp_path / "code"
+    archive = tar_gz({"src/app.js": b"a", "node_modules/big.js": b"b" * 50})
+
+    assert unpack(archive, folder, 1000, ["node_modules"]) == (1, 1)
+    assert set(stored_files(folder)) == {"src/app.js"}
+
+
+def write(root: Path, files: dict[str, bytes]) -> None:
+    for name, data in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(data)
+
+
+def packed(src: Path, private: list[Path] | None = None, max_bytes: int = 10_000) -> list[str]:
+    with (
+        pack_folder(src, max_bytes, private or []) as archive,
+        tarfile.open(fileobj=archive, mode="r:gz") as tar,
+    ):
+        members = tar.getmembers()
+    assert all(member.isfile() for member in members)
+    return sorted(member.name for member in members)
+
+
+def test_pack_keeps_only_regular_files_outside_the_skip_folders(tmp_path):
+    src = tmp_path / "repo"
+    write(src, {"app.py": b"x", "src/a.js": b"y", ".env": b"k", "docs/build.md": b"z"})
+    write(src, {".git/config": b"g", "node_modules/m/i.js": b"m", "web/dist/b.js": b"d"})
+    write(src, {"py/__pycache__/a.pyc": b"c", ".venv/lib.py": b"v", ".vscode/s.json": b"s"})
+    (src / "link.py").symlink_to(src / "app.py")
+    (src / "out").symlink_to(tmp_path)  # a link to a folder outside is not followed
+    os.mkfifo(src / "pipe")
+    os.link(src / "app.py", src / "hard.py")  # a hard link is packed as a plain file
+    assert packed(src) == [".env", "app.py", "docs/build.md", "hard.py", "src/a.js"]
+
+
+def test_pack_leaves_out_private_folders_and_refuses_a_folder_inside_one(tmp_path):
+    src = tmp_path / "repo"
+    write(src, {"app.py": b"x", "data/code/s/secret.py": b"s", "data/other.txt": b"o"})
+    private = [src / "data" / "code"]
+    assert packed(src, private) == ["app.py", "data/other.txt"]
+    with pytest.raises(CodeFileError, match="own data"):
+        pack_folder(src / "data" / "code" / "s", 10_000, private)
+
+
+def test_pack_stops_at_the_size_and_file_limits(tmp_path, monkeypatch):
+    write(tmp_path, {"a.py": b"x" * 600, "b.py": b"y" * 600})
+    with pytest.raises(CodeFileError, match="size limit"):
+        pack_folder(tmp_path, 1000, [])
+    monkeypatch.setattr("reconix_api.core.code_files.MAX_FILES", 1)
+    with pytest.raises(CodeFileError, match="more than 1 files"):
+        pack_folder(tmp_path, 10_000, [])
+
+
+def test_a_packed_folder_unpacks_with_the_upload_rules(tmp_path):
+    src = tmp_path / "repo"
+    write(src, {"app.py": b"x", ".semgrepignore": b"*", "lib/x.py": b"y"})
+    folder = tmp_path / "code" / str(SESSION)
+    with pack_folder(src, 10_000, []) as archive:
+        assert unpack(archive, folder, 10_000) == (2, 2)
+    assert sorted(stored_files(folder)) == ["app.py", "lib/x.py"]  # scanner settings dropped
+
+
+# ---------------------------------------------------------------------------
+# A code scan's copy folder
+# ---------------------------------------------------------------------------
+
+
+def test_scan_files_are_under_the_paths_and_never_a_scan_copy(tmp_path):
+    for path in ("src/app.py", "src/lib/util.py", "srcx/other.py", "README.md"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("x")
+    (tmp_path / "_reconix_scan_1a2b3c4d" / "all").mkdir(parents=True)
+    (tmp_path / "_reconix_scan_1a2b3c4d" / "all" / "app.py").write_text("x")
+
+    assert sorted(scan_files(tmp_path, [])) == [
+        "README.md",
+        "src/app.py",
+        "src/lib/util.py",
+        "srcx/other.py",
+    ]
+    assert sorted(scan_files(tmp_path, ["src", "README.md"])) == [
+        "README.md",
+        "src/app.py",
+        "src/lib/util.py",
+    ]
+
+
+def test_link_files_links_each_file_and_adds_an_empty_semgrepignore(tmp_path):
+    source = tmp_path / "code" / "tests" / "test_app.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("SECRET_KEY = 'x'\n")
+
+    link_files(tmp_path / "copy", {"tests/test_app.py": source})
+
+    copy = tmp_path / "copy" / "tests" / "test_app.py"
+    assert copy.read_text() == "SECRET_KEY = 'x'\n"
+    assert os.stat(copy).st_ino == os.stat(source).st_ino  # a hard link, not a copy
+    assert (tmp_path / "copy" / ".semgrepignore").read_bytes() == b""
+
+
+def test_link_files_copies_when_a_link_is_refused(tmp_path, monkeypatch):
+    source = tmp_path / "app.py"
+    source.write_text("x")
+
+    def refuse(*_):
+        raise OSError("cross-device link")
+
+    monkeypatch.setattr(os, "link", refuse)
+    link_files(tmp_path / "copy", {"app.py": source})
+
+    assert (tmp_path / "copy" / "app.py").read_text() == "x"
+
+
+ALL = all_copy_name(SESSION)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            '"path":"/workspace/code/abc-1/_reconix_scan_1a2b3c4d/changed/src/app.py"',
+            '"path":"/workspace/code/abc-1/src/app.py"',
+        ),
+        (
+            f'"ArtifactName": "/workspace/code/abc-1/_reconix_scan_1a2b3c4d/{ALL}",',
+            '"ArtifactName": "/workspace/code/abc-1",',
+        ),
+        (f"/workspace/code/abc-1/_reconix_scan_1a2b3c4d/{ALL}", "/workspace/code/abc-1"),
+        # Not a scan copy: a user folder that only looks like one stays as it is.
+        (
+            f"/workspace/code/abc-1/_reconix_scan_1a2b3c4d/{ALL}x/a.py",
+            f"/workspace/code/abc-1/_reconix_scan_1a2b3c4d/{ALL}x/a.py",
+        ),
+        (f"/workspace/code/abc-1/src/_reconix_scan_1a2b3c4d/{ALL}/a.py", None),
+        (f"/srv/_reconix_scan_1a2b3c4d/{ALL}/a.py", None),
+        ("/workspace/code/abc-1/_reconix_scan_1a2b3c4d/all/a.py", None),
+    ],
+)
+def test_canonical_paths_drop_only_the_copy_folder(text, expected):
+    assert canonical_paths(text) == (expected or text)
+
+
+def test_every_session_has_its_own_all_copy_name():
+    # sonar_scan names the SonarQube project after this folder.
+    assert ALL == "reconix-11111111222233334444555555555555"
+    assert all_copy_name(UUID(int=1)) != ALL

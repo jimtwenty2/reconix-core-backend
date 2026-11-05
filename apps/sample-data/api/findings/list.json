@@ -1,0 +1,163 @@
+[
+  {
+    "finding_id": "f0000000-0000-4000-8000-000000000004",
+    "code": "RCX-004",
+    "title": "Open port 3000 (Node.js Express)",
+    "target": "192.0.2.10:3000",
+    "description": "Port 3000 is open and serves the Juice Shop app with Node.js Express.",
+    "severity_status": "NONE",
+    "cvss_score": null,
+    "cwe_ids": [],
+    "owasp_id": [],
+    "cve_ids": [],
+    "impact": null,
+    "remediation": null,
+    "validation_status": "UNCONFIRMED",
+    "finding_status": "OPEN",
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "created_at": "2026-11-02T09:06:41Z",
+    "assessment_id": "a0000000-0000-4000-8000-000000000001",
+    "source_tool_run_ids": [
+      "e0000000-0000-4000-8000-000000000001"
+    ],
+    "tools": [
+      "NMAP"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "f1000000-0000-4000-8000-000000000003",
+        "kind": "nmap_port",
+        "content": "3000/tcp open http Node.js Express framework",
+        "location": "192.0.2.10:3000",
+        "created_at": "2026-11-02T09:06:41Z",
+        "tool_run_id": "e0000000-0000-4000-8000-000000000001"
+      }
+    ],
+    "latest_validation": null
+  },
+  {
+    "finding_id": "f0000000-0000-4000-8000-000000000001",
+    "code": "RCX-001",
+    "title": "SQL injection in product search",
+    "target": "http://juice-shop.example:3000/rest/products/search?q=",
+    "description": "The q parameter is put into a SQL query without escaping; a single quote returns a database error.",
+    "severity_status": "HIGH",
+    "cvss_score": "8.6",
+    "cwe_ids": [
+      "CWE-89"
+    ],
+    "owasp_id": [
+      "A03:2021"
+    ],
+    "cve_ids": [],
+    "impact": "An attacker can read any table, including user accounts and password hashes.",
+    "remediation": "Use parameterised queries for the product search.",
+    "validation_status": "CONFIRMED",
+    "finding_status": "OPEN",
+    "reviewed_by": "demo-tester",
+    "reviewed_at": "2026-11-02T09:25:00Z",
+    "created_at": "2026-11-02T09:18:31Z",
+    "assessment_id": "a0000000-0000-4000-8000-000000000001",
+    "source_tool_run_ids": [
+      "e0000000-0000-4000-8000-000000000002"
+    ],
+    "tools": [
+      "NUCLEI"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "f1000000-0000-4000-8000-000000000001",
+        "kind": "http_response",
+        "content": "HTTP/1.1 500 Internal Server Error\n{\"error\": \"SQLITE_ERROR: unrecognized token: \\\"'\\\"\"}",
+        "location": "http://juice-shop.example:3000/rest/products/search?q='",
+        "created_at": "2026-11-02T09:18:31Z",
+        "tool_run_id": "e0000000-0000-4000-8000-000000000002"
+      }
+    ],
+    "latest_validation": {
+      "validation_run_id": "f2000000-0000-4000-8000-000000000001",
+      "method": "manual_review",
+      "validation_status": "CONFIRMED",
+      "reason": "The database error appears with a single quote and goes away when it is escaped.",
+      "reviewed_by": "demo-tester",
+      "reviewed_at": "2026-11-02T09:25:00Z",
+      "created_at": "2026-11-02T09:25:00Z",
+      "finding_id": "f0000000-0000-4000-8000-000000000001",
+      "tool_run_id": null
+    }
+  },
+  {
+    "finding_id": "f0000000-0000-4000-8000-000000000002",
+    "code": "RCX-002",
+    "title": "Reflected XSS in search",
+    "target": "http://juice-shop.example:3000/#/search?q=",
+    "description": "The search term is written back into the page without encoding.",
+    "severity_status": "MEDIUM",
+    "cvss_score": "6.1",
+    "cwe_ids": [
+      "CWE-79"
+    ],
+    "owasp_id": [
+      "A03:2021"
+    ],
+    "cve_ids": [],
+    "impact": "A crafted link can run script in a signed-in user's browser.",
+    "remediation": "Encode the search term before writing it into the page.",
+    "validation_status": "UNCONFIRMED",
+    "finding_status": "OPEN",
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "created_at": "2026-11-02T09:18:31Z",
+    "assessment_id": "a0000000-0000-4000-8000-000000000001",
+    "source_tool_run_ids": [
+      "e0000000-0000-4000-8000-000000000002"
+    ],
+    "tools": [
+      "NUCLEI"
+    ],
+    "evidence": [
+      {
+        "evidence_id": "f1000000-0000-4000-8000-000000000002",
+        "kind": "http_response",
+        "content": "HTTP/1.1 200 OK\n...<span>Results for <script>alert(1)</script></span>...",
+        "location": "http://juice-shop.example:3000/#/search?q=<script>",
+        "created_at": "2026-11-02T09:18:31Z",
+        "tool_run_id": "e0000000-0000-4000-8000-000000000002"
+      }
+    ],
+    "latest_validation": null
+  },
+  {
+    "finding_id": "f0000000-0000-4000-8000-000000000003",
+    "code": "RCX-003",
+    "title": "Missing security headers",
+    "target": "http://juice-shop.example:3000/",
+    "description": "The site sends no Content-Security-Policy or Strict-Transport-Security header.",
+    "severity_status": "LOW",
+    "cvss_score": "3.1",
+    "cwe_ids": [
+      "CWE-693"
+    ],
+    "owasp_id": [
+      "A05:2021"
+    ],
+    "cve_ids": [],
+    "impact": "The browser has fewer defences against injected script and downgrade attacks.",
+    "remediation": "Add Content-Security-Policy and Strict-Transport-Security headers.",
+    "validation_status": "UNCONFIRMED",
+    "finding_status": "OPEN",
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "created_at": "2026-11-02T09:18:31Z",
+    "assessment_id": "a0000000-0000-4000-8000-000000000001",
+    "source_tool_run_ids": [
+      "e0000000-0000-4000-8000-000000000002"
+    ],
+    "tools": [
+      "NUCLEI"
+    ],
+    "evidence": [],
+    "latest_validation": null
+  }
+]

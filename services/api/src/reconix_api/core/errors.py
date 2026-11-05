@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 from starlette.exceptions import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,12 @@ async def _validation_error(_: Request, error: RequestValidationError) -> JSONRe
     return error_response(422, "VALIDATION_ERROR", "The request is not valid.", {"fields": fields})
 
 
+async def _data_error(_: Request, error: DataError) -> JSONResponse:
+    # The database refused a value the schemas let through, e.g. a NUL byte in text.
+    logger.info("The database refused a value: %s", type(error.orig).__name__)
+    return error_response(422, "VALIDATION_ERROR", "The request has a value that cannot be saved.")
+
+
 async def _unexpected_error(_: Request, error: Exception) -> JSONResponse:
     logger.exception("Unexpected error", exc_info=error)
     return error_response(500, "INTERNAL_ERROR", "Something went wrong on the server.")
@@ -68,4 +75,5 @@ def add_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ApiError, _api_error)
     app.add_exception_handler(HTTPException, _http_error)
     app.add_exception_handler(RequestValidationError, _validation_error)
+    app.add_exception_handler(DataError, _data_error)
     app.add_exception_handler(Exception, _unexpected_error)

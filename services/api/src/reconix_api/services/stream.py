@@ -6,10 +6,19 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.orm import Session as Db
+
+from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import GetOperator
 from reconix_api.core.live_events import Listener
+from reconix_api.repositories import assessments as assessment_repo
 
 PING = ": ping\n\n"  # an SSE comment: keeps the connection open, clients ignore it
+
+
+def check_assessment(db: Db, assessment_id: UUID) -> None:
+    if assessment_repo.get(db, assessment_id) is None:
+        raise ApiError(404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.")
 
 
 async def frames(

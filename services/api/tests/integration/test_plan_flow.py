@@ -249,6 +249,21 @@ def test_an_unexpected_error_never_leaves_a_run_running(db_client, db_app):
     assert run["agent_runs_status"] == "FAILED"
 
 
+def test_a_step_the_api_cannot_accept_fails_the_run_cleanly(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    db_app.state.parts["agent"].suggest = Action(
+        tool=ToolName.NUCLEI, target="http://juice-shop:3000/", arguments=[""]
+    )
+
+    response = plan(db_client, headers, assessment_id)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_STEP"
+    [run] = runs(db_client, headers)
+    assert run["agent_runs_status"] == "FAILED"
+
+
 def test_a_step_blocked_at_approval_frees_the_plan(db_client, db_app, session_factory):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)

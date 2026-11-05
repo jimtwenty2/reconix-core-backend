@@ -148,6 +148,10 @@
 
 /* A toggletip trigger (hint.tsx): looks like the text or badge it wraps, focusable. */
 .dash-hint { position: relative; z-index: 2; border-radius: 6px; text-align: left; cursor: help; }
+/* A note that explains itself is a button, so its target is at least 24 px tall (WCAG 2.2 AA
+   target size, QAL-002). The text keeps its size: the leading carries the height, which also
+   leaves `truncate` working on the one that truncates. */
+.dash-hint.dash-stat-note { min-height: 24px; line-height: 24px; }
 .dash-hint:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
 /* Tooltip (chart-tooltip.tsx): fixed to the viewport, above the mark (below near the top). */
@@ -456,6 +460,17 @@
 
 /* ---- Viewer views (Assessments / Findings / Reports) ---- */
 .dash-view { padding: 20px 16px 28px 8px; }
+
+/* The address named a run this folder doesn't hold (page.tsx): one line above the open view,
+   which is then the all-runs one. Its margins line up with a view's own padding. */
+.dash-missing-run {
+  margin: 16px 16px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
 
 /* ---- Report: the Overview's look in a view: the header, the summary strip, then panels two
    to a row (≥1024 wide; one column below), wide ones across the row. Assessments shares the

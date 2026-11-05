@@ -25,6 +25,7 @@ from reconix_api.core.db import get_db, get_session_factory
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.main import create_app
 from reconix_api.models import Base
+from reconix_api.services import code_review
 from reconix_api.services.scopes import make_get_approved_scope
 from tests.fakes import build_fake_interfaces, fake_mask_secrets
 
@@ -61,9 +62,11 @@ def session_factory(engine):
 
 
 @pytest.fixture
-def db_app(session_factory):
-    """The app with the real get_operator, get_approved_scope and database; fakes for the rest."""
+def db_app(session_factory, monkeypatch, tmp_path_factory):
+    """The app with the real get_operator, get_approved_scope and database; fakes for the rest,
+    including the code review's model (never a real model call)."""
     fake_interfaces, parts = build_fake_interfaces()
+    monkeypatch.setattr(code_review, "complete", parts["review_model"].complete)
     tokens = SessionTokens()
     interfaces = dataclasses.replace(
         fake_interfaces,
@@ -77,7 +80,10 @@ def db_app(session_factory):
         finding_memory=parts["memory"].update,
     )
     settings = Settings(
-        database_url=TEST_DATABASE_URL, job_token_secret=JOB_TOKEN_SECRET, fernet_key=FERNET_KEY
+        database_url=TEST_DATABASE_URL,
+        job_token_secret=JOB_TOKEN_SECRET,
+        provider_encryption_key=FERNET_KEY,
+        vault_dir=str(tmp_path_factory.mktemp("vault")),  # never the repo's data/vault
     )
     parts["mcp"].secret = JOB_TOKEN_SECRET  # checks tokens the way the Kali side does
 

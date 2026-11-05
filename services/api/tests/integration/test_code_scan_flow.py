@@ -16,7 +16,9 @@ from uuid import UUID
 
 import pytest
 
+from reconix_ai.providers import ProviderError
 from reconix_api.core.interfaces import ToolName
+from reconix_api.services import code_review
 
 APP_JS = b"const express = require('express');\nconst out = eval(req.query.code);\n"
 CONFIG_JS = b"module.exports = { key: 'not-a-real-key' };\n"
@@ -73,11 +75,16 @@ def send_code(client, headers, session_id, files: dict[str, bytes]) -> dict:
     return synced.json()
 
 
-def code_assessment(client, headers, target: str) -> str:
+def code_assessment(client, headers, target: str, excluded: tuple[str, ...] = ()) -> str:
+    """An ACTIVE assessment whose scope is the code folder, minus the excluded folders
+    (relative to it, e.g. "node_modules")."""
     draft = {
         "max_risk": "LOW",
         "allowed_tools": ["SEMGREP", "GITLEAKS"],
-        "targets": [{"type": "path", "value": target}],
+        "targets": [
+            {"type": "path", "value": target},
+            *({"type": "path", "value": f"{target}/{path}", "excluded": True} for path in excluded),
+        ],
     }
     session_id = client.get("/operator", headers=headers).json()["session_id"]
     scope = client.post(f"/sessions/{session_id}/scope-manifests", json=draft, headers=headers)
@@ -158,7 +165,8 @@ def slow_tools(db_app, seconds: float) -> None:
     fast = db_app.state.parts["mcp"].call_tool
 
     async def slow(job):
-        await asyncio.sleep(seconds)
+        if job.tool != "tools_info":
+            await asyncio.sleep(seconds)
         return await fast(job)
 
     db_app.state.interfaces = dataclasses.replace(db_app.state.interfaces, call_tool=slow)
@@ -291,13 +299,16 @@ def test_scan_runs_both_tools_and_returns_editor_ready_findings(client, db_app, 
 
     assert scan["agent_runs_status"] == "COMPLETED"
     assert (scan["stage"], scan["progress"], scan["error"]) == ("DONE", 100, None)
-    assert scan["counts"]["HIGH"] == 1
-    assert scan["counts"]["UNKNOWN"] == 1  # gitleaks gives no severity
+    assert scan["counts"]["HIGH"] == 2  # semgrep ERROR, and every gitleaks leak
+    assert scan["counts"]["UNKNOWN"] == 0
     jobs = db_app.state.parts["mcp"].jobs
+    copy = f"_reconix_scan_{scan['agent_run_id'][:8]}"  # this run's own copy of the code
     assert [(job.tool, job.target) for job in jobs] == [
-        (ToolName.SEMGREP, f"/workspace/code/{session_id}"),
-        (ToolName.GITLEAKS, f"/workspace/code/{session_id}"),
+        ("tools_info", ""),
+        (ToolName.SEMGREP, f"/workspace/code/{session_id}/{copy}/changed"),
+        (ToolName.GITLEAKS, f"/workspace/code/{session_id}/{copy}/changed"),
     ]
+    assert not (code_dir / session_id / copy).exists()
 
     found = client.get(f"/code-scans/{scan['agent_run_id']}/findings", headers=headers).json()
     by_path = {finding["path"]: finding for finding in found}
@@ -317,17 +328,118 @@ def test_scan_runs_both_tools_and_returns_editor_ready_findings(client, db_app, 
     assert events[-1] == "AGENT_RUN_COMPLETED"
 
 
-def test_scan_with_analysis_links_the_analyze_run(client, db_app):
-    headers, _, assessment_id = ready_to_scan(client, db_app)
+def findings_of(client, headers, scan: dict, query: str = "") -> dict[str, dict]:
+    url = f"/code-scans/{scan['agent_run_id']}/findings{query}"
+    return {finding["path"]: finding for finding in client.get(url, headers=headers).json()}
 
-    started = start(client, headers, assessment_id, analyze=True)
-    scan = wait_for_end(client, headers, started.json()["agent_run_id"])
+
+def test_each_finding_gets_an_ai_verdict(client, db_app):
+    headers, _, assessment_id = ready_to_scan(client, db_app)
+    model = db_app.state.parts["review_model"]
+    model.answers = [  # one finding each; the order of the two calls does not matter
+        {"verdict": "likely_real", "explanation": "Real.", "fix_recommendation": "Fix."}
+    ] * 2
+
+    scan = wait_for_end(
+        client, headers, start(client, headers, assessment_id, True).json()["agent_run_id"]
+    )
 
     assert scan["agent_runs_status"] == "COMPLETED"
     assert scan["notes"] == []
-    analysis = client.get(f"/agent-runs/{scan['analysis_run_id']}", headers=headers).json()
-    assert analysis["plan"]["task"] == "ANALYZE"
-    assert len(analysis["plan"]["analysis"]) == 2
+    found = findings_of(client, headers, scan)
+    assert {f["verdict"] for f in found.values()} == {"LIKELY_TRUE_POSITIVE"}
+    assert found["src/app.js"]["explanation"] == "Real."
+    assert found["src/app.js"]["fix_recommendation"] == "Fix."
+    assert len(model.prompts) == 2
+    sent = model.sent_text()
+    assert "const out = eval(req.query.code);" in sent
+    assert "    1 | [MASKED]" in sent  # the gitleaks line of config.js
+    assert "not-a-real-key" not in sent
+
+
+def test_a_rescan_reuses_the_reviews_and_a_person_decides_false_positives(client, db_app):
+    headers, session_id, assessment_id = ready_to_scan(client, db_app)
+    model = db_app.state.parts["review_model"]
+    first = wait_for_end(
+        client, headers, start(client, headers, assessment_id, True).json()["agent_run_id"]
+    )
+    assert len(model.prompts) == 2
+
+    # Nothing changed: no tool runs and no review is asked again.
+    second = wait_for_end(
+        client, headers, start(client, headers, assessment_id, True).json()["agent_run_id"]
+    )
+
+    assert len(model.prompts) == 2
+    found = findings_of(client, headers, second)
+    assert {f["verdict"] for f in found.values()} == {"LIKELY_TRUE_POSITIVE"}
+    assert found == findings_of(client, headers, first)
+    leak = found["config.js"]
+    reviewed = client.patch(
+        f"/findings/{leak['finding_id']}",
+        json={"finding_status": "FALSE_POSITIVE"},
+        headers=headers,
+    )
+    assert reviewed.status_code == 200, reviewed.json()
+    assert findings_of(client, headers, second)["config.js"]["verdict"] == "LIKELY_FALSE_POSITIVE"
+    shown = findings_of(client, headers, second, "?include_false_positives=false")
+    assert list(shown) == ["src/app.js"]
+
+
+def test_the_ai_alone_never_hides_a_leak_or_a_high_finding(client, db_app):
+    """Text in the scanned code can talk the AI into "false positive"; a person cannot be."""
+    headers, _, assessment_id = ready_to_scan(client, db_app)
+    model = db_app.state.parts["review_model"]
+    model.answers = [
+        {"verdict": "likely_false_positive", "explanation": "Fine.", "fix_recommendation": "-"}
+    ] * 2
+
+    scan = wait_for_end(
+        client, headers, start(client, headers, assessment_id, True).json()["agent_run_id"]
+    )
+
+    assert {f["verdict"] for f in findings_of(client, headers, scan).values()} == {
+        "LIKELY_FALSE_POSITIVE"
+    }
+    shown = findings_of(client, headers, scan, "?include_false_positives=false")
+    assert sorted(shown) == ["config.js", "src/app.js"]  # a leak and a HIGH semgrep finding
+
+
+def test_a_failed_review_is_unverified_and_asked_again_next_scan(client, db_app):
+    headers, session_id, assessment_id = ready_to_scan(client, db_app)
+    model = db_app.state.parts["review_model"]
+    model.answers = [ProviderError("MODEL_UNAVAILABLE", "down")]  # the other one is not tried
+
+    first = wait_for_end(
+        client, headers, start(client, headers, assessment_id, True).json()["agent_run_id"]
+    )
+
+    assert first["agent_runs_status"] == "COMPLETED"
+    assert first["notes"] == ["ANALYZE MODEL_UNAVAILABLE"]
+    found = findings_of(client, headers, first)
+    assert {f["verdict"] for f in found.values()} == {"UNVERIFIED"}
+    assert found["src/app.js"]["explanation"] == code_review.FAILED["explanation"]
+    asked = len(model.prompts)
+    assert asked == 1
+    second = wait_for_end(
+        client, headers, start(client, headers, assessment_id, True).json()["agent_run_id"]
+    )
+    assert len(model.prompts) == asked + 2  # carried over, but never reviewed: reviewed now
+    assert {f["verdict"] for f in findings_of(client, headers, second).values()} == {
+        "LIKELY_TRUE_POSITIVE"
+    }
+
+
+def test_a_scan_without_analyze_asks_no_model(client, db_app):
+    headers, _, assessment_id = ready_to_scan(client, db_app)
+
+    scan = wait_for_end(
+        client, headers, start(client, headers, assessment_id).json()["agent_run_id"]
+    )
+
+    assert db_app.state.parts["review_model"].prompts == []
+    assert {f["verdict"] for f in findings_of(client, headers, scan).values()} == {"UNVERIFIED"}
+    assert {f["explanation"] for f in findings_of(client, headers, scan).values()} == {None}
 
 
 def test_a_rescan_lists_only_what_it_found_again(client, db_app):
@@ -335,16 +447,23 @@ def test_a_rescan_lists_only_what_it_found_again(client, db_app):
     first = wait_for_end(
         client, headers, start(client, headers, assessment_id).json()["agent_run_id"]
     )
-    db_app.state.parts["mcp"].outputs[ToolName.GITLEAKS] = "[]"  # the key was removed
+    mcp = db_app.state.parts["mcp"]
+    semgrep_output = mcp.outputs[ToolName.SEMGREP]
+    # The key was removed. Only config.js changed: semgrep and gitleaks read only it.
+    send_code(client, headers, session_id, {**CODE, "config.js": b"module.exports = {};\n"})
+    mcp.outputs[ToolName.SEMGREP] = lambda job: (
+        semgrep_output if "/reconix-" in job.target else json.dumps({"results": []})
+    )
+    mcp.outputs[ToolName.GITLEAKS] = "[]"
 
     second = wait_for_end(
         client, headers, start(client, headers, assessment_id).json()["agent_run_id"]
     )
 
     found = client.get(f"/code-scans/{second['agent_run_id']}/findings", headers=headers).json()
-    assert [finding["path"] for finding in found] == ["src/app.js"]
-    assert first["counts"]["UNKNOWN"] == 1
-    assert second["counts"]["UNKNOWN"] == 0
+    assert [finding["path"] for finding in found] == ["src/app.js"]  # kept: app.js unchanged
+    assert first["counts"]["HIGH"] == 2
+    assert second["counts"]["HIGH"] == 1
 
 
 def test_scan_needs_code_first(client):
@@ -367,7 +486,7 @@ def test_scan_fails_when_no_tool_finishes(client, db_app):
 
     assert scan["agent_runs_status"] == "FAILED"
     assert scan["error"] == "TOOLS_FAILED"
-    assert scan["notes"] == ["SEMGREP FAILED", "GITLEAKS FAILED"]
+    assert scan["notes"] == ["TOOLS_INFO FAILED", "SEMGREP FAILED", "GITLEAKS FAILED"]
 
 
 def test_cancel_stops_the_scan_before_its_next_tool(client, db_app):
@@ -382,7 +501,7 @@ def test_cancel_stops_the_scan_before_its_next_tool(client, db_app):
 
     scan = client.get(f"/code-scans/{scan_id}", headers=headers).json()
     assert scan["agent_runs_status"] == "CANCELLED"
-    assert [job.tool for job in db_app.state.parts["mcp"].jobs] == [ToolName.SEMGREP]
+    assert [job.tool for job in db_app.state.parts["mcp"].jobs] == ["tools_info", ToolName.SEMGREP]
     again = client.post(f"/code-scans/{scan_id}/cancel", headers=headers)
     assert again.status_code == 409
     assert again.json()["code"] == "SCAN_ENDED"
@@ -423,19 +542,64 @@ def test_closing_the_session_cancels_its_running_scan(client, db_app):
     other_headers, _ = vscode_session(client)  # the closed session's token no longer works
     scan = client.get(f"/code-scans/{scan_id}", headers=other_headers).json()
     assert scan["agent_runs_status"] == "CANCELLED"
-    assert [job.tool for job in db_app.state.parts["mcp"].jobs] == [ToolName.SEMGREP]
+    assert [job.tool for job in db_app.state.parts["mcp"].jobs] == ["tools_info", ToolName.SEMGREP]
     assert event_types(db_app).count("AGENT_RUN_CANCELLED") == 1
 
 
-def test_a_scope_that_excludes_a_code_folder_cannot_be_scanned(client, db_app):
+TUI_EXCLUDED = (".git", "node_modules", "vendor", "secrets")  # the TUI's source template
+WITH_EXCLUDED = {
+    **CODE,
+    "node_modules/express/index.js": b"module.exports = {};\n",
+    "secrets/prod.key": b"not-a-real-key\n",
+    "vendor/lib.js": b"var x = 1;\n",
+}
+
+
+def test_excluded_folders_are_removed_before_the_scan(client, db_app, code_dir):
+    headers, session_id = vscode_session(client)
+    target = send_code(client, headers, session_id, WITH_EXCLUDED)["target"]  # before the scope
+    tool_outputs(db_app, target)
+    assessment_id = code_assessment(client, headers, target, TUI_EXCLUDED)
+
+    started = start(client, headers, assessment_id)
+    assert started.status_code == 202, started.json()
+    scan = wait_for_end(client, headers, started.json()["agent_run_id"])
+
+    assert scan["agent_runs_status"] == "COMPLETED"
+    stored = sorted(
+        p.relative_to(code_dir / session_id).as_posix()
+        for p in (code_dir / session_id).rglob("*")
+        if p.is_file()
+    )
+    assert stored == ["config.js", "src/app.js"]
+    started_events = [
+        e for e in db_app.state.parts["audit"].events if e.event_type == "CODE_SCAN_STARTED"
+    ]
+    assert started_events[0].details["excluded_files_removed"] == "3"
+
+
+def test_after_approval_excluded_files_are_never_asked_for_or_stored(client, db_app, code_dir):
+    headers, session_id = vscode_session(client)
+    target = f"/workspace/code/{session_id}"
+    code_assessment(client, headers, target, TUI_EXCLUDED)
+
+    synced = send_code(client, headers, session_id, WITH_EXCLUDED)
+    sneaked = upload(client, headers, session_id, tar_gz({"vendor/extra.js": b"x"}))
+
+    assert synced["missing"] == ["config.js", "src/app.js"]
+    assert sneaked.status_code == 200
+    assert sneaked.json()["files"] == 0
+    assert not (code_dir / session_id / "vendor").exists()
+
+
+def test_a_scope_that_excludes_the_whole_code_cannot_be_scanned(client, db_app):
     headers, session_id = vscode_session(client)
     target = send_code(client, headers, session_id, CODE)["target"]
     draft = {
-        "max_risk": "LOW",
-        "allowed_tools": ["SEMGREP", "GITLEAKS"],
+        "allowed_tools": ["SEMGREP"],
         "targets": [
             {"type": "path", "value": target},
-            {"type": "path", "value": f"{target}/config", "excluded": True},
+            {"type": "path", "value": target, "excluded": True},
         ],
     }
     scope = client.post(f"/sessions/{session_id}/scope-manifests", json=draft, headers=headers)
@@ -449,5 +613,5 @@ def test_a_scope_that_excludes_a_code_folder_cannot_be_scanned(client, db_app):
     response = start(client, headers, submitted["assessment"]["assessment_id"])
 
     assert response.status_code == 422
-    assert response.json()["code"] == "EXCLUDED_PATH_NOT_SUPPORTED"
+    assert response.json()["code"] == "CODE_EXCLUDED"
     assert db_app.state.parts["mcp"].jobs == []
