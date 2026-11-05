@@ -340,6 +340,25 @@ def active_remote_label() -> Optional[str]:
     return entry.label if entry else active["provider_id"]
 
 
+def core_api_needs_ok() -> bool:
+    """Core API mode is on and the active model runs off this computer, so the Core API may
+    use it only after you say yes (asked in /provider when you choose the model)."""
+    from .. import core_api
+
+    return core_api.enabled() and active_remote_label() is not None
+
+
+def core_api_approve() -> None:
+    """You said yes in /provider: the Core API may send its prompts to the active model.
+
+    Blocks on the network (a worker runs it). Raises LLMError (a CoreApiError)."""
+    from .. import core_api
+
+    for note in core_api.approve_active_model():
+        add_activity("AI", note, tone="ok")
+    log_event("core_api.provider.approved")
+
+
 def _current_assessment():
     from .assessment import get_assessment
     return get_assessment()

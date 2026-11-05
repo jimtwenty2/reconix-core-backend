@@ -9,7 +9,7 @@ from typing import Optional
 
 from .. import store
 from ..flow import screen_for
-from ..models import Choice
+from ..models import ChatEntry, Choice
 from ..screens.choice import ChoiceScreen
 from ..screens.forms import ApprovalEditForm, OpenApiForm, ScopeEditForm
 from ..store import agent_run
@@ -36,8 +36,9 @@ class ActionsMixin:
     def submit_request(self, text: str) -> bool:
         """A line typed at the Start prompt. True when it was accepted (the prompt clears).
 
-        Before a run, a target starts the run, anything else gets a short answer and an
-        empty line does nothing (returns False). During a run the line goes to the assistant;
+        Before a run, a target starts the run, anything else gets a short answer (the
+        active model's, when one is set) and an empty line does nothing (returns False).
+        During a run the line goes to the assistant;
         an empty line reopens what the run waits for. After the run has finished
         (completed or stopped) every line is still a chat turn about that same assessment,
         with its history and context; an empty line opens Findings (or Report when there are
@@ -76,13 +77,7 @@ class ActionsMixin:
                 # ponytail: a toast stands in for a Spinner; the LLM call blocks, so the
                 # reply is built off the UI thread while the RunController keeps playing.
                 self.notify("Thinking…", timeout=2)
-                gen = self._llm_gen
-                self.run_worker(
-                    lambda: self._llm_answer(answer, gen),
-                    thread=True,
-                    group="llm",
-                    exit_on_error=False,
-                )
+                self._ask_model(answer)
             else:
                 store.llm_answer(answer)  # built-in reply, instant / offline
                 self.refresh_view()
@@ -100,21 +95,41 @@ class ActionsMixin:
         self.refresh_view()
         if result == "started":
             self.controller.resume()
-        elif result == "ask":  # no target: the offline mock answers
+        elif result == "ask":  # no target, a model active: the model answers
             self.notify("Thinking…", timeout=2)
-            gen = self._llm_gen
-            line = store.recorded_line(text)  # the model gets the masked line only
-            self.run_worker(
-                lambda: self._llm_answer(line, gen), thread=True, group="llm", exit_on_error=False
-            )
+            self._ask_model(store.recorded_line(text))  # the model gets the masked line only
         return True
 
-    def _llm_answer(self, text: str, gen: int) -> None:
-        """Worker thread: build the model reply, then record it on the UI thread."""
-        draft = store.build_draft(text)
-        self.call_from_thread(self._record_llm_reply, draft, gen)
+    def _ask_model(self, line: str) -> None:
+        """Ask the model about `line` in a worker: a "thinking…" line shows at once, the
+        reply grows in it while the model writes, and it is recorded only on this run."""
+        gen = self._llm_gen
+        placeholder = store.begin_reply()
+        self.refresh_view()
+        self.run_worker(
+            lambda: self._llm_answer(line, gen, placeholder),
+            thread=True, group="llm", exit_on_error=False,
+        )
 
-    def _record_llm_reply(self, draft: store.Draft, gen: int) -> None:
+    def _llm_answer(self, text: str, gen: int, placeholder: ChatEntry) -> None:
+        """Worker thread: build the model reply (its line grows on screen while the model
+        writes), then record it on the UI thread."""
+        draft = store.build_draft(
+            text,
+            on_text=lambda so_far: self.call_from_thread(
+                self._preview_reply, placeholder, so_far, gen),
+        )
+        self.call_from_thread(self._record_llm_reply, draft, gen, placeholder)
+
+    def _preview_reply(self, placeholder: ChatEntry, text: str, gen: int) -> None:
+        """A streamed reply grew: show it in its line, only on the run it was asked in."""
+        if gen != self._llm_gen:
+            return
+        store.preview_reply(placeholder, text)
+        self._redraw_reply()
+
+    def _record_llm_reply(self, draft: store.Draft, gen: int,
+                          placeholder: Optional[ChatEntry] = None) -> None:
         """Write the reply the worker built into the assessment it was asked in, or drop it.
 
         Nothing is recorded when another assessment came on screen while the model was
@@ -123,7 +138,7 @@ class ActionsMixin:
         """
         if gen != self._llm_gen:
             return
-        store.record_draft(draft)
+        store.record_draft(draft, placeholder)
         self.refresh_view()
 
     def llm_generation(self) -> int:
@@ -134,11 +149,13 @@ class ActionsMixin:
         """About to leave the current assessment (a switch or /new).
 
         Drops what is still in flight on the run being left: a running agent turn, a model
-        reply being built, and any open HIGH-risk confirmation token — so coming back to a
-        HIGH gate always needs the confirmation step again.
+        reply being built (and its unfinished "thinking…" line), and any open HIGH-risk
+        confirmation token — so coming back to a HIGH gate always needs the confirmation
+        step again.
         """
         self.cancel_agent()  # stop a running agent turn on the run we leave
         self._llm_gen += 1  # a late model reply is dropped, not misfiled
+        store.drop_pending_replies()
         self._void_confirmations()
         self.controller.stop()
 
@@ -148,6 +165,12 @@ class ActionsMixin:
         for request in store.get_assessment().approvals:
             if request.risk == "HIGH" and store.decision_for(request.request_id) is None:
                 store.decline_confirmation(request.request_id)
+
+    def _redraw_reply(self) -> None:
+        """A streamed reply grew: redraw the screen (no save; the final refresh saves)."""
+        screen = self.flow_screen()
+        if screen is not None:
+            screen.refresh_view()
 
     # --- template and scope (the Template screen) --------------------------------------------
     def open_template(self, template_id: Optional[str] = None) -> None:
@@ -191,7 +214,26 @@ class ActionsMixin:
         if getattr(self, "agent_mode", False):
             self.begin_agent_execution()  # hand off to the harness agent
         else:
+            self._draft_plan()
             self.resume_run()
+
+    def _draft_plan(self) -> None:
+        """With a model active, it drafts the plan's phases in a worker; Run plan waits."""
+        request = store.plan_draft_request()
+        if request is None:
+            return
+
+        def work() -> None:
+            from ..llm import LLMError
+            try:
+                raw = store.fetch_plan_draft(request)
+            except LLMError as exc:
+                self.call_from_thread(store.plan_draft_failed, request, str(exc))
+            else:
+                self.call_from_thread(store.apply_plan_draft, request, raw)
+            self.call_from_thread(self.refresh_view)
+
+        self.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
     def edit_scope(self) -> None:
         self.open_dialog(ScopeEditForm(), lambda _result: self.refresh_view())

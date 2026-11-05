@@ -313,6 +313,7 @@ async def test_yes_at_the_plan_shows_the_plan_menu_and_run_plan_runs(app, model_
     calls = fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "plan", request=NETWORK)
+        await wait_until(pilot, lambda: not store.plan_drafting(), what="the plan draft")
         type_in_menu(app, "yes")
         await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
         assert calls == []

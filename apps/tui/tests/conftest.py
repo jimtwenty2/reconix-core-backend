@@ -78,6 +78,20 @@ def reachable(monkeypatch):
     monkeypatch.setattr(client, "ping", lambda pid, model, **kw: (True, "reachable"))
 
 
+@pytest.fixture(autouse=True)
+def stream_via_complete(monkeypatch):
+    """The app streams model replies; tests fake `client.complete`, so a stream replays that
+    reply as one chunk (and never reaches the network)."""
+    from reconix.llm import client
+
+    def stream(pid, model, messages, on_text, **kw):
+        text = client.complete(pid, model, messages, **kw)
+        on_text(text)
+        return text
+
+    monkeypatch.setattr(client, "stream", stream)
+
+
 @pytest.fixture
 def model_active(reachable):
     """A configured, tested and active model, so /assess takes the agent path."""

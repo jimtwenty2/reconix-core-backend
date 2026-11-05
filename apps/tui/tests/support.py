@@ -237,12 +237,17 @@ def toasts(app) -> List[str]:
 
 
 def fake_model(monkeypatch) -> list:
-    """Chat calls answer "model answer N"; returns the list of messages each call got."""
+    """Chat calls answer "model answer N" (a plan draft keeps the template's plan); returns
+    the list of messages each chat call got."""
     from reconix.llm import client
 
     calls: list = []
 
     def complete(pid, model, messages, **kw):
+        from reconix.store import ai_plan  # reconix-ai: a plan draft keeps the template's plan
+
+        if messages[0]["content"] == ai_plan.PLAN_PROMPT:
+            return "{}"
         calls.append(messages)
         return f"model answer {len(calls)}"
 

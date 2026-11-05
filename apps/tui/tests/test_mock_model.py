@@ -255,14 +255,15 @@ async def test_who_are_you_at_the_start_prompt_gets_the_mock_answer(app):
         assert not store.get_run().started  # a question starts nothing
 
 
-def test_a_real_provider_never_gets_start_screen_questions(reachable):
-    """Review fix: before a run only the offline mock answers; a real (possibly remote)
-    provider keeps the built-in reply, so nothing typed at Start leaves this computer."""
+def test_a_real_provider_gets_start_screen_questions_masked(reachable):
+    """reconix-ai: before a run a real provider answers Start-screen questions too (the
+    static build keeps the built-in reply there); only the masked line is recorded and sent."""
     store.set_provider("openai", api_key=FAKE_KEY, models=["gpt-4o-mini"])
     store.test_provider("openai")
     store.activate("openai", "gpt-4o-mini")
-    assert store.submit_prompt(f"my key is {FAKE_KEY}, check it") == "answered"
-    assert _last_reply().startswith("I didn't find a target in that.")  # the built-in reply
+    assert store.submit_prompt("is password=hunter2 strong enough?") == "ask"
+    line = store.list_chat()[-1]
+    assert line.speaker == "you" and "hunter2" not in line.text   # masked before anything
 
 
 def test_mock_facts_show_statuses_as_the_data_model_writes_them():

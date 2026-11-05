@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import timedelta
 from pathlib import PurePath
 from string import Template as TextTemplate
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from ..models import (
     ApprovalRequest,
@@ -102,27 +102,27 @@ def submit_prompt(text: str) -> str:
 
     Before a run, a line that names a target starts the run on it; anything else (a
     greeting, a question, "scan my network" without an address) gets a short answer and
-    nothing starts. With the offline mock model active that answer is the mock's (except for
-    a line a template keyword names and that isn't a question, which gets the template
-    hint): "ask" tells
-    the app to call `llm_answer` off the UI thread (a real provider keeps the built-in reply
-    here, so nothing typed before a run leaves this computer). A malformed target (10.0.0.300)
-    raises, so the operator can fix it. During a run the line goes to the assistant.
+    nothing starts. With a model active (a real provider or the offline mock) that answer is
+    the model's, except for a line a template keyword names and that isn't a question, which
+    gets the template hint: the masked line is recorded and "ask" tells the app to call
+    `llm_answer` off the UI thread. A malformed target (10.0.0.300) raises, so the operator
+    can fix it. During a run the line goes to the assistant.
     """
+    from .providers import active_model
+
     if get_run().started:
         say_to_assistant(text)
         return "answered"
     text = clean_request(text)
     parsed = parse_request(text)
     if parsed is None:
-        from .providers import active_is_mock
-
         line = recorded_line(text)  # masked: chat and model never see a secret
         add_chat("text", "you", line)
         # A line that names a kind of test but no target ("scan my network") gets Reconix's
-        # own template hint first, with or without the mock: it says what to type next.
-        if active_is_mock() and not template_hint(line):  # a question: never a template
-            return "ask"  # the app asks the mock (llm_answer) in a worker
+        # own template hint first, with or without a model: it says what to type next.
+        # (a question never gets a template hint)
+        if active_model() is not None and not template_hint(line):
+            return "ask"  # the app asks the model (llm_answer) in a worker
         add_chat("text", "reconix", reply_to(line), tone="muted")
         return "answered"
     _start(text, parsed, picked=False)
@@ -200,19 +200,30 @@ def say_operator_line(text: str) -> str:
     return request.text
 
 
-def llm_answer(text: str) -> None:
+def llm_answer(text: str, on_update: Optional[Callable[[], None]] = None) -> None:
     """Add Reconix's reply: the active model when one is set, else the built-in reply.
 
-    Blocks on the network, so the app runs it in a worker (see `shell/actions.py`). Any
-    model failure falls back to the scripted reply so the offline demo keeps working.
+    With `on_update` the model's reply streams in (`llm_chat.reply`).
+
+    Blocks on the network: the app builds model replies off the UI thread with
+    `llm_chat.build_draft` instead (see `shell/actions.py`); this form serves the built-in
+    reply. Any model failure falls back to the scripted reply so the offline demo keeps working.
     """
     from . import llm_chat, providers
+    from .. import core_api
     from ..llm import LLMError
 
     active = providers.active_model()
+    if core_api.enabled() and active is not None:
+        try:
+            llm_chat.core_reply(text, on_update)
+            return
+        except LLMError as exc:
+            add_chat("text", "reconix",
+                     f"Core API unavailable ({exc}). Asking the model directly.", tone="muted")
     if active is not None:
         try:
-            llm_chat.reply(text, active)
+            llm_chat.reply(text, active, on_update)
             return
         except LLMError as exc:
             add_chat(
@@ -282,6 +293,9 @@ def run_plan() -> None:
         raise StoreValidationError("The plan can only be run when Reconix asks for it.")
     if run.plan_started:
         raise StoreValidationError("The plan is already running.")
+    if get_assessment().plan_drafting:
+        raise StoreValidationError("The AI is still drafting the plan. It runs once the "
+                                   "draft is in (a few seconds).")
     run.plan_started = True
     add_activity("USER", "Plan approved · testing starts", tone="ok")
     log_event("plan.run", get_assessment().label)

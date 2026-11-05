@@ -470,6 +470,10 @@ class ReconixScreen(Screen):
                 last = replies[-1]
                 chat.show_reply(reply, last.text, last.tone, last.author)
 
+        def preview(so_far: str) -> None:
+            if gen == self.app.llm_generation() and chat.is_mounted:
+                chat.show_reply(reply, so_far, "default")  # the screen only: not recorded
+
         def done(draft: store.Draft) -> None:
             if gen != self.app.llm_generation():
                 return  # another assessment is on screen: record nothing into it
@@ -486,8 +490,10 @@ class ReconixScreen(Screen):
 
         def work() -> None:
             # Built off the UI thread and recorded in `done()`, so a switch while the model
-            # is answering can't put this reply in another run.
-            self.app.call_from_thread(done, store.build_draft(line))
+            # is answering can't put this reply in another run; it streams into the screen.
+            draft = store.build_draft(
+                line, on_text=lambda so_far: self.app.call_from_thread(preview, so_far))
+            self.app.call_from_thread(done, draft)
 
         self.app.run_worker(work, thread=True, group="llm", exit_on_error=False)
 

@@ -189,10 +189,10 @@ def test_without_a_model_a_question_gets_no_template_hint():
     assert not store.get_run().started
 
 
-def test_with_a_real_model_a_question_before_a_target_stays_local(model_active):
-    assert store.submit_prompt("what is my api key?") == "answered"
-    reply = store.list_chat()[-1].text
-    assert "API needs" not in reply and "nothing you type is sent" in reply
+def test_with_a_real_model_a_question_before_a_target_asks_the_model(model_active):
+    # reconix-ai: a question at Start goes to the real model (static keeps it local)
+    assert store.submit_prompt("what is my api key?") == "ask"
+    assert all("API needs" not in entry.text for entry in store.list_chat())
 
 
 def test_a_question_with_a_target_still_starts_the_run():

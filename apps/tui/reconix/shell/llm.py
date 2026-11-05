@@ -290,3 +290,52 @@ class LlmMixin:
         agent_run.switch_model()        # repoint a live agent, keeping its history
         self.refresh_view()
         self.notify(f"Active model: {active.label} · {active.model}", markup=False)
+        if store.core_api_needs_ok():
+            self.ask_core_api_ok(provider_id.strip(), active)
+
+    # --- the Core API's OK for a model off this computer --------------------------------
+    def ask_core_api_ok(self, provider_id: str, active) -> None:
+        """The Core API calls the model itself. For a model off this computer it asks a
+        person first: you, here. No: chat calls the model directly, as before."""
+        from urllib.parse import urlsplit
+
+        from rich.text import Text
+
+        view = store.get_provider(provider_id)
+        host = urlsplit(view.base_url).hostname if view.base_url else ""
+        body = [
+            Text("The Core API will send your scope, plan and chat (secrets masked) to:"),
+            Text(f"  Provider  {view.label}"),
+            Text(f"  Model     {active.model}"),
+            Text(f"  Address   {host or 'the provider’s own API'}"),
+            Text(f"  Key       {view.api_key_hint or 'none'}"),
+        ]
+        choices = [
+            Choice("approve", "Approve", "the Core API may use this model", recommended=True),
+            Choice("cancel", "Not now", "chat calls the model directly, without the Core API"),
+        ]
+        self.open_dialog(
+            ChoiceScreen("◆ USE THIS MODEL IN THE CORE API?",
+                         "This model runs off this computer.", choices, body=body,
+                         chip="Approval"),
+            self._core_api_ok_answer)
+
+    def _core_api_ok_answer(self, answer: Optional[str]) -> None:
+        if answer != "approve":
+            self.notify("Not approved: chat calls the model directly.", markup=False)
+            return
+        self.notify("Approving it in the Core API…", markup=False)
+        self.run_worker(self._core_api_approve, thread=True, group="llm", exit_on_error=False)
+
+    def _core_api_approve(self) -> None:
+        from ..llm import LLMError
+
+        try:
+            store.core_api_approve()
+        except LLMError as exc:
+            self.call_from_thread(self.notify, f"Core API: {exc}", severity="warning",
+                                  markup=False)
+            return
+        self.call_from_thread(self.notify, "The Core API may use this model now.",
+                              markup=False)
+        self.call_from_thread(self.refresh_view)

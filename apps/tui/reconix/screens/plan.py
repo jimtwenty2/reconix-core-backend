@@ -30,6 +30,12 @@ from ..widgets.plan_rows import MISSING, plan_line
 EDIT_UNAVAILABLE = "Edit steps is unavailable: no gated step can be changed right now."
 
 
+def drafting_line() -> str:
+    """The loading line while the active model drafts the plan's phases."""
+    model = store.active_model()
+    return f"{model.model if model else 'the model'} is drafting the plan's phases…"
+
+
 def status_counts(rows: List[PlanRow]) -> str:
     """'4 done · 1 rejected · 2 not run' for the finished and stopped panels."""
     done = sum(row.status == "done" for row in rows)
@@ -72,7 +78,8 @@ class PlanScreen(ReconixScreen):
         return "busy"
 
     def view_state(self) -> object:
-        return self.state()
+        # the AI's draft landing rebuilds the screen (new labels, the menu comes back)
+        return self.state(), store.plan_drafting(), store.plan_author()
 
     # --- layout ------------------------------------------------------------------------------
     def compose_body(self) -> ComposeResult:
@@ -97,10 +104,13 @@ class PlanScreen(ReconixScreen):
         if requests:
             yield UserMessage(requests[0].text)          # what started it, not a chat line
         template = store.selected_template()
+        author, drafting = store.plan_author(), store.plan_drafting()
+        counts = ("drafting the plan" if drafting else
+                  f"{len(rows)} steps planned · {store.gated_count()} need your approval")
         yield Static(Text.assemble(
             ("◆ reconix ", theme.CYAN),
-            (f"template: {template.name if template else MISSING} · {len(rows)} steps "
-             f"planned · {store.gated_count()} need your approval", theme.DIM)),
+            (f"template: {template.name if template else MISSING} · {counts}", theme.DIM),
+            (f" · phases drafted by {author}" if author else "", theme.CYAN)),
             classes="ai-label")
         scope = store.get_scope()
         limit = scope.time_limit_minutes
@@ -117,6 +127,9 @@ class PlanScreen(ReconixScreen):
             line.append(value, style=f"bold {theme.TEAL}")
         yield Static(line, classes="muted")
         yield Static("")
+        if drafting:          # the template's steps would be replaced: show none until it lands
+            yield Spinner(drafting_line(), classes="spinner", id="plan-drafting")
+            return
         yield Static(Text.assemble(
             ("●●  Press ", theme.DIM), ("Tab", f"bold {theme.TEXT}"),
             (" to browse steps with ↑/↓", theme.DIM)), classes="muted")
@@ -133,9 +146,12 @@ class PlanScreen(ReconixScreen):
                        hint=menu_hint("go back"), typing=False, menu_id="plan-menu")
 
     def _question_busy(self) -> ComposeResult:
-        yield Spinner("reconix is preparing the test plan…", classes="spinner")
+        if not store.plan_drafting():               # (else the drafting line shows)
+            yield Spinner("reconix is preparing the test plan…", classes="spinner")
 
     def _question_ready(self) -> ComposeResult:
+        if store.plan_drafting():
+            return                                  # the menu comes with the drafted steps
         decision = self._ready_decision()
         yield Question(
             decision.chip, decision.question, decision.choices,
@@ -261,7 +277,7 @@ class PlanScreen(ReconixScreen):
 
     # --- choices -----------------------------------------------------------------------------
     def decision(self) -> Optional[Decision]:
-        if self.state() == "ready":
+        if self.state() == "ready" and not store.plan_drafting():
             return self._ready_decision()
         return None
 
@@ -302,4 +318,4 @@ class PlanScreen(ReconixScreen):
         return plan_card() if self.state() != "none" else None
 
     def allows_reorder(self) -> bool:
-        return self.state() == "ready"
+        return self.state() == "ready" and not store.plan_drafting()

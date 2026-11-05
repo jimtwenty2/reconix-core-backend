@@ -10,7 +10,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 # LiteLLM downloads its model price list from the internet when it is imported, unless told to
 # use the copy it ships with: the app makes no call it wasn't asked to make (set before import).
@@ -99,6 +99,47 @@ def complete(provider_id: str, model: str, messages: List[dict], *,
     except Exception as exc:  # noqa: BLE001 — any LiteLLM/transport error maps to LLMError
         raise LLMError(_map_error(exc)) from None
     return _validate(response)
+
+
+def stream(provider_id: str, model: str, messages: List[dict], on_text: Callable[[str], None],
+           *, api_key: Optional[str] = None, api_base: Optional[str] = None) -> str:
+    """Like `complete`, but the reply streams: `on_text(reply so far)` runs on every chunk
+    (the same text while a reasoning model is still thinking). Returns the whole reply."""
+    entry = catalog.get(provider_id)
+    if entry is None:
+        raise LLMError("unknown provider")
+    text = ""
+    try:
+        chunks = litellm.completion(
+            model=entry.model_string(model),
+            messages=messages,
+            api_key=api_key,
+            api_base=api_base,
+            timeout=config.TIMEOUT,
+            num_retries=0,      # LiteLLM's retry needs tenacity (not installed)
+            stream=True,
+        )
+        for chunk in chunks:
+            text += _delta(chunk)
+            if len(text) > MAX_REPLY_CHARS:
+                raise LLMError("the model's reply was too long")
+            on_text(text)
+    except LLMError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — any LiteLLM/transport error maps to LLMError
+        raise LLMError(_map_error(exc)) from None
+    if not text.strip():
+        raise LLMError("empty response from the model")
+    return text
+
+
+def _delta(chunk: object) -> str:
+    """A streamed chunk's new reply text ("" for reasoning or an empty chunk)."""
+    try:
+        content = chunk.choices[0].delta.content  # type: ignore[attr-defined]
+    except (AttributeError, IndexError, TypeError):
+        return ""
+    return content if isinstance(content, str) else ""
 
 
 def _validate(response: object) -> str:

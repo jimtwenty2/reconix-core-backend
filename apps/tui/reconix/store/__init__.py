@@ -30,7 +30,9 @@ from .findings_view import (
     severity_counts, sort_label,
 )
 from .history import add_history, list_history
-from .llm_chat import Draft, build_draft, record_draft
+from .llm_chat import (
+    Draft, begin_reply, build_draft, drop_pending_replies, preview_reply, record_draft,
+)
 from . import knowledge
 from .knowledge import add_source, list_sources, remove_source
 from .knowledge import clear as clear_knowledge
@@ -41,12 +43,17 @@ from .openapi import (
     remove_api_spec,
 )
 from .persist import autosave, close_session, web_dashboard_url
+from .ai_plan import (
+    apply_plan_draft, fetch_plan_draft, plan_author, plan_draft_failed, plan_draft_request,
+    plan_drafting,
+)
 from .plan import gated_count, plan_overview, rejected_checks, validation_skipped
 from .plan_order import answer_plan_reorder, reorder_gated, wants_plan_reorder
 from .plan_order import movable as movable_checks
 from .providers import (
     activate, active_is_mock, active_llm_settings, active_model, active_remote_label,
-    get_provider, list_providers, set_provider, test_provider, unset_provider, use_mock,
+    core_api_approve, core_api_needs_ok, get_provider, list_providers, set_provider,
+    test_provider, unset_provider, use_mock,
 )
 from .progress import StepStatus, step_states, step_status
 from .report import (
@@ -101,6 +108,9 @@ __all__ = [
     "advance", "peek", "gate_state", "stop_run",
     "waiting_gate", "get_run", "display_phase", "is_completed", "is_finished", "counters",
     "phase_progress", "plan_tasks", "plan_overview", "gated_count", "step_states",
+    # the plan's phases drafted by the active model (store/ai_plan.py)
+    "plan_draft_request", "fetch_plan_draft", "apply_plan_draft", "plan_draft_failed",
+    "plan_drafting", "plan_author",
     "rejected_checks", "validation_skipped",
     "pipeline_stage", "elapsed", "time_limit",
     # gates
@@ -138,7 +148,9 @@ __all__ = [
     # flexible LLM: providers and the active model
     "list_providers", "get_provider", "set_provider", "unset_provider", "test_provider",
     "activate", "active_model", "active_llm_settings", "active_remote_label",
-    "Draft", "build_draft", "record_draft",
+    "core_api_approve", "core_api_needs_ok",
+    "Draft", "build_draft", "record_draft", "begin_reply", "preview_reply",
+    "drop_pending_replies",
     "active_is_mock", "use_mock",
     # the saved copy the web dashboard reads
     "autosave", "close_session", "web_dashboard_url",

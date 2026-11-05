@@ -329,6 +329,56 @@ async def test_a_late_model_reply_never_lands_in_another_run(app, model_active, 
         assert all("three findings" not in entry.text for entry in store.list_chat())
 
 
+async def test_a_switch_mid_stream_records_nothing_in_either_run(app, model_active,
+                                                                   monkeypatch):
+    """reconix-ai streams replies: a switch while the model is still writing keeps the half
+    reply out of the run on screen, takes the run's own "thinking…" line back out, and
+    saves nothing to the model's history of either run."""
+    from reconix.llm import client, db
+    from reconix.store import llm_chat
+    from reconix.store.snapshot import uid_for
+
+    monkeypatch.setattr(llm_chat, "STREAM_REDRAW", 0)
+    half_shown, finish = threading.Event(), threading.Event()
+
+    def slow_stream(pid, model, messages, on_text, **kw):
+        on_text("The first run has three ")
+        half_shown.set()
+        finish.wait(5)
+        on_text("The first run has three findings so far. ")
+        return "The first run has three findings so far."
+
+    monkeypatch.setattr(client, "stream", slow_stream)
+    run_to("scope")
+    store.new_assessment()
+    store.start_run("scan 10.0.0.0/24 for open ports")
+    store.switch_assessment(0)
+    first_uid = uid_for(store.get_assessment())
+
+    async with app.run_test(size=SIZE) as pilot:
+        await settle(pilot)
+        app.agent_mode = False                       # the scripted chat path, not the agent
+        assert app.submit_request("what did you find so far?")
+        for _ in range(20):
+            await settle(pilot)
+            if half_shown.is_set() and any(
+                    "three" in entry.text for entry in store.list_chat()):
+                break
+        assert any("three" in entry.text for entry in store.list_chat())  # it streamed
+        app.switch_assessment(1)                     # the operator moves on, mid-stream
+        await settle(pilot)
+        second_uid = uid_for(store.get_assessment())
+        finish.set()
+        for _ in range(12):
+            await settle(pilot)
+        assert all("three" not in entry.text for entry in store.list_chat())
+        store.switch_assessment(0)
+        texts = [entry.text for entry in store.list_chat()]
+        assert all("three" not in text and text != llm_chat.THINKING for text in texts)
+    for uid in (first_uid, second_uid):
+        assert all("three" not in row["content"] for row in db.list_chat_messages(uid))
+
+
 # --- gap 6: the list getters return copies ------------------------------------------------
 def test_the_list_getters_return_copies():
     run_to(None)
