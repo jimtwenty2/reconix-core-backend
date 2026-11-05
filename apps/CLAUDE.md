@@ -89,8 +89,8 @@ Rules that keep it safe:
 - **Read-only for assessments**: no route writes what the TUI reads. The only writes are the
   AI Assistant's chats and models, sent to the Core API (`src/lib/api/assistant.ts`,
   `models.ts`: one chat is one web session, the models are `/llm-providers`), and knowledge
-  changes through
-  `python -m reconix.knowledge` (`src/lib/knowledge/cli.ts`, fixed args, no shell).
+  uploads, removals and re-ingests, sent to the Core API's knowledge add-ons
+  (`src/lib/api/knowledge.ts`).
 - Every page and route but sign-in needs a session (`src/proxy.ts`, and handlers check again).
   The server binds to 127.0.0.1, refuses other Host headers and checks every change's Origin.
 - The model never supplies numbers (cards come from the saved data); questions are masked by

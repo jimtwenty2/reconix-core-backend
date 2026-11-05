@@ -90,8 +90,7 @@ npm start -- --no-open             # don't open a browser
 | `RECONIX_CHROME` | the usual names on PATH, then the common install paths | the Chrome/Chromium that prints the PDF exports; without one the PDF routes answer 501 |
 | `RECONIX_WEB_PORT` | `3100` | port on 127.0.0.1 |
 | `RECONIX_PYTHON` | repo `.venv`, else `python3` (`python` on Windows) | the Python that runs the knowledge CLI |
-| `RECONIX_KNOWLEDGE_DIR` | `~/.reconix/knowledge` | the knowledge folder (the TUI's `/add-on` and the Security knowledge page) |
-| `RECONIX_KNOWLEDGE_KEY_FILE` | `~/.reconix/knowledge.key` | the key the knowledge CLI encrypts the kept originals with (passed on to it) |
+| `RECONIX_KNOWLEDGE_DIR` | `~/.reconix/knowledge` | the TUI's `/add-on` folder, which the AI Assistant's route reads |
 | `RECONIX_WEB_TOKEN` | random per start | only for tests; normally `scripts/serve.mjs` makes one |
 
 ## Sign-in
@@ -209,47 +208,41 @@ The Overview's Ask bar and the sidebar's **AI Assistant** tab open the same chat
 
 The AI Assistant's header has a **Security knowledge** button (a book with a lock; just the icon
 on a phone) that opens `?view=knowledge` (`components/knowledge/`; no sidebar item).
-"← AI Assistant" goes back.
+"← AI Assistant" goes back. Everything on it comes from the Core API's knowledge add-ons
+(Qdrant), through the server-only `lib/api/knowledge.ts`; the run filters of the top bar are
+hidden here.
 
-- **Header:** the title, a search over the names, **Table / Grid** (remembered per browser in
-  `localStorage`, wrapped in try/catch; with nothing chosen a phone starts on the grid) and
-  **Upload**.
-- **The files**, newest first, ten a page (`lib/paging.ts`): Name (with its type's icon), Source
-  ("Web upload" or "Terminal (/add-on)", with the type and size: "Web upload · PDF · 1.2 MB"; never
-  a path), Uploaded (local date and time) and the actions. The grid shows the same as cards. On a
-  phone the table's rows stack into blocks; nothing scrolls sideways at 360 px.
+- **Header:** the title, **Re-ingest all** (asks in place first), **Ingest N new** (only while
+  uploads wait) and **Upload**. A job shows its progress under it and a toast when it ends.
+- **Documents** (left; under the graph on a narrow screen): a search over the names and one row
+  per document (type, name, passages, links, size, date). Only a document still waiting carries
+  an amber "Not ingested" mark; the count of those sits above the list. Picking a row focuses it
+  in the graph; the bin asks in place first.
+- **The graph** (`knowledge-graph.tsx`, a canvas): documents linked to the references they name
+  (CVE, CWE, OWASP, ATT&CK, tools) and to topics, laid out by a small force simulation
+  (`lib/knowledge/graph.ts`), floating gently (still with reduced motion). A waiting document
+  has a dashed amber ring and "· not ingested" in its name. Drag, scroll to zoom, +/−, and the
+  corner button expands the graph over the whole stage (the list folds away) and back;
+  double-click or `0` fits it.
+- **Details** (`graph-details.tsx`): a document has Overview (what it talks about) and Content
+  (its masked passages with each reference marked); a reference has About (from the built-in
+  knowledge base) and Mentions (the sentences that name it).
 - **Upload** (`upload-dialog.tsx`, a native modal `<dialog>`): one `.docx .pdf .txt .md .json .yaml
-  .yml` file up to 10 MB, checked in the page first (a `.doc`: "Save it as .docx first"), sent
-  with its progress shown, then "Reading the file and masking secrets…"; a refusal keeps the dialog
-  open with the server's message.
-- **Open** is `/api/knowledge/<id>/original`: PDF, text, Markdown, JSON and YAML in a new tab, a
-  Word file downloaded. A file added before originals were kept has Open unavailable, with why.
-- **Remove** asks in place ("Remove this file?", No focused, Escape is No).
+  .yml` file up to 10 MB. The API masks it and keeps its passages encrypted until **Ingest**
+  puts them into the knowledge search, so the AI Assistant uses it only after that.
 
 Routes (a session in `proxy.ts` and again in each handler, `lib/knowledge/access.ts`; changes
 need the page's Origin):
 
-| Route | Does |
+| Route | Core API |
 |---|---|
-| `GET /api/knowledge` | the list, read from the index as the assistant reads it (`lib/knowledge/list.ts` over `lib/assistant/knowledge/read.ts`); no path ever |
-| `POST /api/knowledge` | one multipart file, counted while it is read (413 past 10 MB), the extension allow-list (`lib/knowledge/rules.ts`); copied to a private temp file (0600 in a 0700 folder, a random name, deleted afterwards whatever happened) and added by the CLI; 201 with the file, 400 with the CLI's refusal, 500 with a fixed message; one at a time (429) and ten a minute |
-| `GET /api/knowledge/<id>/original` | the CLI decrypts the kept original; its type by kind, `Content-Disposition` inline (attachment for DOCX) with the name sanitised (RFC 5987), `nosniff`, `no-store` and its own policy, `sandbox; default-src 'none'` for what opens inline (the proxy leaves the page's policy off this route) |
-| `DELETE /api/knowledge/<id>` | the CLI removes the file, its passages and its original |
-
-**The process:** every change goes through the same Python code as the TUI's `/add-on`,
-`python -m reconix.knowledge add --file <tmp> --name <base name> --source web | original <id> |
-remove <id>` (`lib/knowledge/cli.ts`; the contract: `../docs/WEB_KNOWLEDGE_PAGE_AND_MODELS_PLAN.md`).
-It runs with the dashboard's Python (`RECONIX_PYTHON`, else the repo's `.venv`, else
-`python3`/`python`, as `scripts/serve.mjs` finds it) from the repo root, with fixed arguments, no
-shell, an environment of `PATH`, `HOME` and the knowledge folder and key file only (never `LLM_*`
-or the launch token), a 60 s limit and a cap on its output; what it prints is never logged. Exit 0
-is done, 2 a refusal shown to the operator, anything else a fixed message. Adds and removals run
-one after another (`lib/knowledge/gate.ts`). The text is masked and split exactly as in the
-terminal, the original is kept encrypted, and the AI still only ever sees the masked passages.
-Tests only: with `RECONIX_KNOWLEDGE_CLI_TEST=1`, `RECONIX_KNOWLEDGE_CLI` names a stand-in that keeps the same
-contract over a temp folder (`e2e/knowledge-cli-stub.mjs`; it also refuses an environment holding
-anything else and an upload copy that isn't private). The e2e server uses it; remove that line
-from `playwright.config.ts` to run the e2e against the real CLI.
+| `GET /api/knowledge` | `GET /knowledge-add-ons` (ingested and waiting) |
+| `POST /api/knowledge` | `POST /knowledge-add-ons` with `ingest_now=false` (413 past 10 MB, one at a time) |
+| `DELETE /api/knowledge/<id>` | `DELETE /knowledge-add-ons/{id}` |
+| `GET /api/knowledge/graph` | `GET /knowledge-add-ons/{id}/references` for each document |
+| `GET /api/knowledge/<id>/passages` | `GET /knowledge-add-ons/{id}/passages` |
+| `GET /api/knowledge/about` | `POST /knowledge/search`, kept only on an exact `ref_id` match |
+| `GET`, `POST /api/knowledge/reingest?scope=NEW\|ALL` | `GET`, `POST /knowledge/reingest` |
 
 ## Develop
 
@@ -336,8 +329,8 @@ src/
 │   │                        #   knowledge/ (the TUI's /add-on files, read-only: paths.ts, schema.ts,
 │   │                        #   read.ts, rank.ts (BM25), index.ts searchKnowledge)
 │   ├── knowledge/           # the Security knowledge page: paths.ts, rules.ts (what an upload may be),
-│   │                        #   format.ts, types.ts, client.ts (browser); access.ts, list.ts, upload.ts,
-│   │                        #   cli.ts (the Python CLI) + commands.ts, gate.ts, original.ts (server)
+│   │                        #   format.ts, types.ts, graph.ts, highlight.ts, client.ts (browser);
+│   │                        #   access.ts, upload.ts, gate.ts (server; the API calls: api/knowledge.ts)
 │   ├── scroll/              # stick-rules.ts + stick-controller.ts (the conversation follows its end)
 │   ├── scroll.ts            # scrolling a row into view by hand (never scrollIntoView, which moves the page)
 │   ├── paging.ts            # ten rows a page: the page clamped from the address, the label
@@ -411,9 +404,8 @@ once, with each run as an occurrence; what a run lacks is listed under Limitatio
 
 - **Read-only for assessments.** No route writes, deletes or starts anything the TUI reads;
   decisions belong in the TUI. One exception: the AI Assistant writes **its own conversation files** and its saved models (`models.json`, `models.key`) in
-  `~/.reconix/assistant` (and nothing else). The Security knowledge page adds and removes
-  knowledge files, never itself: it starts the Python knowledge CLI (the same code as `/add-on`)
-  for each change and for each original it opens (the knowledge folder is not assessment data). The assistant's route is also the one place saved
+  `~/.reconix/assistant` (and nothing else). The Security knowledge page uploads, removes and
+  re-ingests knowledge documents through the Core API (they are not assessment data). The assistant's route is also the one place saved
   data leaves the machine, and only to the model you chose (the model picker's test and
   fetch send no assessment data). The PDF exports (single and combined) start a headless Chrome on a
   temp file the server wrote (`lib/report/pdf.ts`), never on anything the request said.

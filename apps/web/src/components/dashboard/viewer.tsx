@@ -76,9 +76,9 @@ export function Viewer({
         <HydratedMark />
         <CardCursorLight />
         <Intro />
-        <div className="dash-frame" data-assistant-open={shown === "assistant" ? "" : undefined}>
+        <div className="dash-frame" data-assistant-open={shown === "assistant" ? "" : undefined} data-no-bar={shown === "knowledge" ? "" : undefined}>
           <Sidebar active={view} onSelect={select} />
-          {topBar}
+          {shown !== "knowledge" && topBar /* the filters choose runs; Security knowledge has none */}
           {/* tabIndex -1: focusable by script and click, so the keys scroll it (no tab stop) */}
           {/* under the open assistant it holds only the inert backdrop, so it stops scrolling:
               a scroller nothing inside can be focused is a WCAG 2.2 failure (QAL-002) */}

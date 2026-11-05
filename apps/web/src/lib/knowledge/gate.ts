@@ -1,7 +1,5 @@
 /* The Security knowledge page's brakes (per dashboard process, kept on globalThis so every route
-   module shares them): one upload at a time and at most UPLOADS_PER_MINUTE a minute, and every
-   change to the folder (add, remove) one after another, so the CLI never rewrites the index twice
-   at once. */
+   module shares them): one upload at a time and at most UPLOADS_PER_MINUTE a minute. */
 
 export const UPLOADS_PER_MINUTE = 10;
 export const BUSY = "Another upload is still running. Try again when it has finished.";
@@ -11,10 +9,9 @@ const KEY = Symbol.for("reconix.knowledge.gate");
 interface Gate {
   recent: number[]; // when the uploads of the last minute started
   uploading: boolean;
-  queue: Promise<unknown>;
 }
 const shared = globalThis as { [KEY]?: Gate };
-const gate = (): Gate => (shared[KEY] ??= { recent: [], uploading: false, queue: Promise.resolve() });
+const gate = (): Gate => (shared[KEY] ??= { recent: [], uploading: false });
 
 /** A slot for one upload (call the returned release() when it ends), or why there is none:
     `busy` while another upload runs, `rate` past the minute's uploads. */
@@ -31,12 +28,4 @@ export function takeUpload(now: number = Date.now()): (() => void) | "busy" | "r
     released = true;
     g.uploading = false;
   };
-}
-
-/** Runs `task` after every change queued before it. */
-export function oneAtATime<T>(task: () => Promise<T>): Promise<T> {
-  const g = gate();
-  const run = g.queue.then(task, task);
-  g.queue = run.catch(() => undefined);
-  return run;
 }

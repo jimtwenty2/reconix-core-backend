@@ -28,6 +28,10 @@ export interface FakeCore {
       AssessmentOverviewOut, FindingOut[], ActionOut[], TimelineOut), and the approvals. */
   assessments: { row: Record<string, unknown>; overview: Record<string, unknown>; findings: unknown[]; actions: unknown[]; events: unknown[] }[];
   approvals: { approval_status: string; [key: string]: unknown }[];
+  /** Knowledge add-ons (KnowledgeAddOnOut) with their references (KnowledgeReferenceOut). */
+  addOns: { row: Record<string, unknown>; references: unknown[]; text: string }[];
+  /** A re-ingest job is running (POST /knowledge/reingest answers 409). */
+  reingesting: boolean;
   /** Forget every token, as an API restart does. */
   restart(): void;
   close(): Promise<void>;
@@ -49,6 +53,8 @@ export async function startFakeCore(): Promise<FakeCore> {
     listFails: false,
     assessments: [] as FakeCore["assessments"],
     approvals: [] as FakeCore["approvals"],
+    addOns: [] as FakeCore["addOns"],
+    reingesting: false,
   };
 
   const open = (iface: string) => {
@@ -73,7 +79,7 @@ export async function startFakeCore(): Promise<FakeCore> {
   const handle = (req: IncomingMessage, res: ServerResponse, raw: string) => {
     const url = new URL(req.url ?? "/", "http://x");
     const path = url.pathname.replace(/^\/api\/v1/, "");
-    const body = raw ? JSON.parse(raw) : undefined;
+    const body = raw && (req.headers["content-type"] ?? "").includes("json") ? JSON.parse(raw) : undefined;
     const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
     fake.calls.push({ method: req.method ?? "", path: `${path}${url.search}`, body, token });
     const m = req.method;
@@ -126,6 +132,50 @@ export async function startFakeCore(): Promise<FakeCore> {
       }
     }
 
+    if (m === "GET" && path === "/knowledge-add-ons") return send(res, 200, fake.addOns.map((a) => a.row));
+    if (m === "POST" && path === "/knowledge-add-ons") {
+      const name = /filename="([^"]+)"/.exec(raw)?.[1] ?? "upload.md";
+      const text = raw.split("\r\n\r\n")[1]?.split("\r\n--")[0] ?? "";
+      if (!text.trim()) return refuse(res, 422, "FILE_HAS_NO_TEXT", "That file has no readable text to add.");
+      const waits = /name="ingest_now"\r\n\r\nfalse/.test(raw);
+      const row = { knowledge_add_on_id: randomUUID(), name, kind: "MD", size_bytes: text.length, chunk_count: 1, interface: "web", created_at: now(), ingest_status: waits ? "PENDING" : "INGESTED" };
+      const refs = /CWE-89/.test(text) ? [{ type: "CWE", ref_id: "CWE-89", label: "CWE-89", count: 1 }] : [];
+      fake.addOns.push({ row, references: refs, text });
+      return send(res, 201, row);
+    }
+    if (path === "/knowledge/reingest") {
+      const job = { step: "PUBLIC", public_pieces: 0, add_ons_done: 0, add_ons_total: 0, started_at: null, finished_at: null, error_code: null, error_message: null };
+      if (m === "GET") return send(res, 200, { ...job, status: fake.reingesting ? "RUNNING" : "IDLE", step: fake.reingesting ? "PUBLIC" : null });
+      if (fake.reingesting) return refuse(res, 409, "REINGEST_RUNNING", "The knowledge is being re-ingested already.");
+      fake.reingesting = true;
+      return send(res, 202, { ...job, status: "RUNNING", started_at: now() });
+    }
+    if (m === "GET" && path === "/knowledge/search") {
+      const q = url.searchParams.get("q") ?? "";
+      const sources = url.searchParams.getAll("source");
+      if (q === "CWE-89" && sources.includes("CWE"))
+        return send(res, 200, [{ source: "CWE", ref_id: "CWE-89", title: "CWE-89: SQL Injection", text: "Improper neutralization of special elements used in an SQL command.", url: "https://cwe.mitre.org/data/definitions/89.html", section: "", score: 0.9 }]);
+      return send(res, 200, []);
+    }
+    hit = path.match(/^\/knowledge-add-ons\/([^/]+)\/passages$/);
+    if (m === "GET" && hit) {
+      const a = fake.addOns.find((x) => x.row.knowledge_add_on_id === hit![1]);
+      if (!a) return refuse(res, 404, "KNOWLEDGE_ADD_ON_NOT_FOUND", "No knowledge add-on with this id.");
+      const at = a.text.indexOf("CWE-89");
+      const spans = at >= 0 ? [{ type: "CWE", ref_id: "CWE-89", start: at, end: at + 6 }] : [];
+      return send(res, 200, { knowledge_add_on_id: hit[1], total: 1, offset: 0, passages: [{ index: 0, text: a.text, spans }] });
+    }
+    hit = path.match(/^\/knowledge-add-ons\/([^/]+)(\/references)?$/);
+    if (hit) {
+      const a = fake.addOns.find((x) => x.row.knowledge_add_on_id === hit![1]);
+      if (!a) return refuse(res, 404, "KNOWLEDGE_ADD_ON_NOT_FOUND", "No knowledge add-on with this id.");
+      if (m === "GET" && hit[2]) return send(res, 200, { knowledge_add_on_id: hit[1], references: a.references });
+      if (m === "DELETE" && !hit[2]) {
+        fake.addOns.splice(fake.addOns.indexOf(a), 1);
+        res.writeHead(204);
+        return res.end();
+      }
+    }
     if (m === "GET" && path === "/assessments") return send(res, 200, fake.assessments.map((a) => a.row));
     hit = path.match(/^\/assessments\/([^/]+)\/(overview|actions|timeline)$/);
     if (m === "GET" && hit) {

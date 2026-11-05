@@ -3,6 +3,7 @@ and the add-ons people upload through the API."""
 
 from reconix_ai.knowledge.add_ons import (
     AddOn,
+    add_on_passages,
     list_add_ons,
     remove_add_on,
     remove_all_add_ons,
@@ -26,6 +27,7 @@ __all__ = [
     "KnowledgeHit",
     "KnowledgeItem",
     "Source",
+    "add_on_passages",
     "list_add_ons",
     "remove_add_on",
     "remove_all_add_ons",

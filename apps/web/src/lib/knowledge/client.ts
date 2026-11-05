@@ -3,11 +3,11 @@
    page uses it, and every refusal becomes one sentence for the page. */
 import { z } from "zod";
 
-import { knowledgeFileRoute, KNOWLEDGE_ROUTE } from "./paths";
+import { knowledgeAboutRoute, KNOWLEDGE_GRAPH_ROUTE, KNOWLEDGE_REINGEST_ROUTE, knowledgeFileRoute, knowledgePassagesRoute, KNOWLEDGE_ROUTE } from "./paths";
 import type { KnowledgeItem, KnowledgeListing } from "./types";
 
 const ItemSchema = z.object({
-  id: z.string().regex(/^[0-9a-f]{32}$/),
+  id: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
   name: z.string().min(1).max(400),
   kind: z.enum(["txt", "md", "json", "yaml", "docx", "pdf"]),
   bytes: z.number().int().min(0),
@@ -15,6 +15,7 @@ const ItemSchema = z.object({
   addedAt: z.string().max(40),
   source: z.enum(["web", "terminal"]),
   original: z.boolean(),
+  ingested: z.boolean(),
 });
 const ListingSchema = z.object({ state: z.enum(["missing", "refused", "ok"]), items: z.array(ItemSchema).max(500), max: z.number().int().min(1) });
 const AddedSchema = z.object({ source: ItemSchema });
@@ -54,6 +55,18 @@ async function call<T>(url: string, init: RequestInit, schema: z.ZodType<T>): Pr
 
 export const listKnowledge = (): Promise<Result<KnowledgeListing>> => call(KNOWLEDGE_ROUTE, { method: "GET" }, ListingSchema);
 
+const RefSchema = z.object({
+  type: z.enum(["CVE", "CWE", "OWASP", "ATTACK", "TOOL", "TOPIC"]),
+  ref_id: z.string().max(200),
+  label: z.string().max(200),
+  count: z.number().int().min(0),
+});
+const GraphSchema = z.object({ items: z.array(ItemSchema).max(500), references: z.record(z.string(), z.array(RefSchema).max(200)) });
+export type KnowledgeGraphAnswer = z.infer<typeof GraphSchema>;
+
+/** Every document and what it talks about (names and counts only). */
+export const loadKnowledgeGraph = (): Promise<Result<KnowledgeGraphAnswer>> => call(KNOWLEDGE_GRAPH_ROUTE, { method: "GET" }, GraphSchema);
+
 export const removeKnowledge = (id: string): Promise<Result<unknown>> => call(knowledgeFileRoute(id), { method: "DELETE" }, z.object({ ok: z.literal(true) }));
 
 /** Uploads `file` (the field `file` of a multipart body). `onProgress` gets the share sent so far
@@ -85,3 +98,43 @@ export function uploadKnowledge(file: File, onProgress: (sent: number) => void):
     xhr.send(form);
   });
 }
+
+const SpanSchema = z.object({ type: RefSchema.shape.type, ref_id: z.string().max(200), start: z.number().int().min(0), end: z.number().int().min(0) });
+const PassagesSchema = z.object({
+  total: z.number().int().min(0),
+  offset: z.number().int().min(0),
+  passages: z.array(z.object({ index: z.number().int().min(0), text: z.string().max(20_000), spans: z.array(SpanSchema).max(2_000) })).max(100),
+});
+export type PassagePage = z.infer<typeof PassagesSchema>;
+export type Passage = PassagePage["passages"][number];
+
+/** A page of a document's passages (masked), with where each reference is named. */
+export const loadPassages = (id: string, offset: number, limit = 50): Promise<Result<PassagePage>> => call(knowledgePassagesRoute(id, offset, limit), { method: "GET" }, PassagesSchema);
+
+const AboutSchema = z.object({
+  about: z.object({ title: z.string().max(400), text: z.string().max(2_000), url: z.string().max(1_000), source: z.string().max(40) }).nullable(),
+});
+export type About = z.infer<typeof AboutSchema>["about"];
+
+/** What a reference is, from the built-in knowledge base (null: nothing there). */
+export const loadAbout = (type: string, ref: string, label: string): Promise<Result<About>> =>
+  call(knowledgeAboutRoute(type, ref, label), { method: "GET" }, AboutSchema).then((r) => (r.ok ? { ok: true, value: r.value.about } : r));
+
+const ReingestSchema = z.object({
+  status: z.enum(["IDLE", "RUNNING", "COMPLETED", "FAILED"]),
+  scope: z.enum(["NEW", "ALL"]),
+  new_ingested: z.number().int().min(0),
+  step: z.enum(["PUBLIC", "ADD_ONS"]).nullable(),
+  public_pieces: z.number().int().min(0),
+  add_ons_done: z.number().int().min(0),
+  add_ons_total: z.number().int().min(0),
+  started_at: z.string().max(40).nullable(),
+  finished_at: z.string().max(40).nullable(),
+  error_code: z.string().max(80).nullable(),
+  error_message: z.string().max(400).nullable(),
+});
+export type Reingest = z.infer<typeof ReingestSchema>;
+
+/** The re-ingest job, and starting it (409 while one runs). */
+export const loadReingest = (): Promise<Result<Reingest>> => call(KNOWLEDGE_REINGEST_ROUTE, { method: "GET" }, ReingestSchema);
+export const startReingest = (scope: "NEW" | "ALL"): Promise<Result<Reingest>> => call(`${KNOWLEDGE_REINGEST_ROUTE}?scope=${scope}`, { method: "POST" }, ReingestSchema);

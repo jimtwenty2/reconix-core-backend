@@ -2188,6 +2188,15 @@
             ],
             "title": "Cut"
           },
+          "ingest_status": {
+            "default": "INGESTED",
+            "enum": [
+              "INGESTED",
+              "PENDING"
+            ],
+            "title": "Ingest Status",
+            "type": "string"
+          },
           "interface": {
             "enum": [
               "web",
@@ -2232,6 +2241,62 @@
           "created_at"
         ],
         "title": "KnowledgeAddOnOut",
+        "type": "object"
+      },
+      "KnowledgeAddOnPassagesOut": {
+        "description": "One add-on's content: a page of its passages, for reading on the Security knowledge page.",
+        "properties": {
+          "knowledge_add_on_id": {
+            "format": "uuid",
+            "title": "Knowledge Add On Id",
+            "type": "string"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "passages": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePassageOut"
+            },
+            "title": "Passages",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "knowledge_add_on_id",
+          "total",
+          "offset",
+          "passages"
+        ],
+        "title": "KnowledgeAddOnPassagesOut",
+        "type": "object"
+      },
+      "KnowledgeAddOnReferencesOut": {
+        "description": "What one add-on talks about, for the Security knowledge graph. Never its text.",
+        "properties": {
+          "knowledge_add_on_id": {
+            "format": "uuid",
+            "title": "Knowledge Add On Id",
+            "type": "string"
+          },
+          "references": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeReferenceOut"
+            },
+            "title": "References",
+            "type": "array"
+          }
+        },
+        "required": [
+          "knowledge_add_on_id",
+          "references"
+        ],
+        "title": "KnowledgeAddOnReferencesOut",
         "type": "object"
       },
       "KnowledgeAddOnsCleared": {
@@ -2298,6 +2363,220 @@
           "score"
         ],
         "title": "KnowledgeHitOut",
+        "type": "object"
+      },
+      "KnowledgePassageOut": {
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSpanOut"
+            },
+            "title": "Spans",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "text",
+          "spans"
+        ],
+        "title": "KnowledgePassageOut",
+        "type": "object"
+      },
+      "KnowledgeReferenceOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "ref_id": {
+            "title": "Ref Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "CVE",
+              "CWE",
+              "OWASP",
+              "ATTACK",
+              "TOOL",
+              "TOPIC"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "ref_id",
+          "label",
+          "count"
+        ],
+        "title": "KnowledgeReferenceOut",
+        "type": "object"
+      },
+      "KnowledgeReingestOut": {
+        "description": "The knowledge re-ingest job: the public knowledge, then every add-on.",
+        "properties": {
+          "add_ons_done": {
+            "title": "Add Ons Done",
+            "type": "integer"
+          },
+          "add_ons_total": {
+            "title": "Add Ons Total",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "new_ingested": {
+            "title": "New Ingested",
+            "type": "integer"
+          },
+          "public_pieces": {
+            "title": "Public Pieces",
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "NEW",
+              "ALL"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "IDLE",
+              "RUNNING",
+              "COMPLETED",
+              "FAILED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "enum": [
+                  "PUBLIC",
+                  "ADD_ONS"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          }
+        },
+        "required": [
+          "status",
+          "scope",
+          "step",
+          "public_pieces",
+          "add_ons_done",
+          "add_ons_total",
+          "new_ingested",
+          "started_at",
+          "finished_at",
+          "error_code",
+          "error_message"
+        ],
+        "title": "KnowledgeReingestOut",
+        "type": "object"
+      },
+      "KnowledgeSpanOut": {
+        "description": "Where a reference or topic is named in a passage: text[start:end].",
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "ref_id": {
+            "title": "Ref Id",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "type": {
+            "enum": [
+              "CVE",
+              "CWE",
+              "OWASP",
+              "ATTACK",
+              "TOOL",
+              "TOPIC"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "ref_id",
+          "start",
+          "end"
+        ],
+        "title": "KnowledgeSpanOut",
         "type": "object"
       },
       "LimitBounds": {
@@ -6380,7 +6659,7 @@
         ]
       },
       "get": {
-        "description": "Lists your knowledge add-ons, oldest first.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Lists your knowledge add-ons, oldest first: ingested ones and ones waiting for a\nre-ingest (ingest_status INGESTED or PENDING).\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_knowledge_add_ons_api_v1_knowledge_add_ons_get",
         "responses": {
           "200": {
@@ -6409,7 +6688,7 @@
         ]
       },
       "post": {
-        "description": "Adds your own file to the knowledge search.\n\nBusiness Rules:\n- Send multipart/form-data: a .txt, .md, .json, .yaml, .yml, .docx, or .pdf file of at most\n  10 MB, plus interface (web or cli).\n- The file type comes from the uploaded file's own name. The optional name is only the\n  display name, except for a file whose own name has no supported type (such as a pasted\n  \"blob\"): its type then comes from name's extension.\n\nExecution Behavior:\n- Masks the text, splits it into passages, and saves them in the knowledge search, where the\n  agent finds them from then on.\n\nState Changes:\n- Adds the passages to the knowledge search. No copy of the file itself is kept.\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Adds your own file to the knowledge search.\n\nBusiness Rules:\n- Send multipart/form-data: a .txt, .md, .json, .yaml, .yml, .docx, or .pdf file of at most\n  10 MB, plus interface (web or cli).\n- The file type comes from the uploaded file's own name. The optional name is only the\n  display name, except for a file whose own name has no supported type (such as a pasted\n  \"blob\"): its type then comes from name's extension.\n- Optional ingest_now (default true). false: the file is read and masked now, but waits\n  (ingest_status PENDING) until POST /knowledge/reingest puts it into the knowledge\n  search; until then the agent cannot find it.\n\nExecution Behavior:\n- Masks the text, splits it into passages, and saves them in the knowledge search, where the\n  agent finds them from then on.\n\nState Changes:\n- Adds the passages to the knowledge search. No copy of the file itself is kept.\n\nOperational Considerations:\n- Requires Qdrant and the embedding model; returns 503 without them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "create_knowledge_add_on_api_v1_knowledge_add_ons_post",
         "requestBody": {
           "content": {
@@ -6467,7 +6746,7 @@
     },
     "/api/v1/knowledge-add-ons/{knowledge_add_on_id}": {
       "delete": {
-        "description": "Deletes one add-on and removes its text from the knowledge search.\n\nBusiness Rules:\n- Returns 404 KNOWLEDGE_ADD_ON_NOT_FOUND if no add-on has this id.\n\nState Changes:\n- Deletes the add-on and its passages.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Deletes one add-on and removes its text from the knowledge search (or forgets it,\nwhile it waits to be ingested).\n\nBusiness Rules:\n- Returns 404 KNOWLEDGE_ADD_ON_NOT_FOUND if no add-on has this id.\n\nState Changes:\n- Deletes the add-on and its passages.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_knowledge_add_on_api_v1_knowledge_add_ons__knowledge_add_on_id__delete",
         "parameters": [
           {
@@ -6502,6 +6781,205 @@
           }
         ],
         "summary": "Delete Knowledge Add On",
+        "tags": [
+          "knowledge add-ons"
+        ]
+      }
+    },
+    "/api/v1/knowledge-add-ons/{knowledge_add_on_id}/passages": {
+      "get": {
+        "description": "Returns a page of one add-on's passages, to read it on the Security knowledge page.\n\nBusiness Rules:\n- Passages come in the document's order: `offset` (0 first) and `limit` (at most 100) page\n  through them; `total` says how many there are.\n- Each passage lists where its references and topics are named (`spans`: character\n  offsets into its text), found by the same rules as /references.\n- Returns 404 KNOWLEDGE_ADD_ON_NOT_FOUND for an unknown id, and 503 when the knowledge\n  search (Qdrant) is not there.\n\nSecurity:\n- Requires a valid session token.\n- The text was masked when the file was added, and is masked again before it is sent.",
+        "operationId": "knowledge_add_on_passages_api_v1_knowledge_add_ons__knowledge_add_on_id__passages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_add_on_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Add On Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeAddOnPassagesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Knowledge Add On Passages",
+        "tags": [
+          "knowledge add-ons"
+        ]
+      }
+    },
+    "/api/v1/knowledge-add-ons/{knowledge_add_on_id}/references": {
+      "get": {
+        "description": "Lists what one add-on talks about: its security references and topics.\n\nBusiness Rules:\n- References are exact ids found in its passages: CVE (CVE-2021-44228), CWE (CWE-89),\n  OWASP (A03:2021, API1:2023), MITRE ATT&CK (T1190) and Kali catalog tools (NMAP).\n- Topics come from plain words (SQL injection, Cross-site scripting, ...).\n- Each is counted once per passage; most mentioned first, at most 60.\n- Returns 404 KNOWLEDGE_ADD_ON_NOT_FOUND for an unknown id, and 503 when the knowledge\n  search (Qdrant) is not there.\n\nSecurity:\n- Requires a valid session token.\n- Never returns the passages themselves, only names and counts.",
+        "operationId": "knowledge_add_on_references_api_v1_knowledge_add_ons__knowledge_add_on_id__references_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_add_on_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Knowledge Add On Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeAddOnReferencesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Knowledge Add On References",
+        "tags": [
+          "knowledge add-ons"
+        ]
+      }
+    },
+    "/api/v1/knowledge/reingest": {
+      "get": {
+        "description": "Returns the knowledge re-ingest job: IDLE before the first, else the last one.\n\nBusiness Rules:\n- status RUNNING, COMPLETED or FAILED (error_code and error_message say why); step is the\n  step running, or the last one reached.\n\nSecurity:\n- Requires a valid session token.",
+        "operationId": "knowledge_reingest_status_api_v1_knowledge_reingest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeReingestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Knowledge Reingest Status",
+        "tags": [
+          "knowledge add-ons"
+        ]
+      },
+      "post": {
+        "description": "Starts re-ingesting the knowledge, as one background job.\n\nBusiness Rules:\n- scope NEW: only the add-ons waiting (ingest_status PENDING) are put into the knowledge\n  search. Quick.\n- scope ALL (default): step PUBLIC loads the public knowledge again (CVE, CWE, OWASP,\n  ATT&CK, tool guides); step ADD_ONS then embeds every ingested add-on's passages again\n  and puts the waiting ones in.\n- One job at a time: 409 REINGEST_RUNNING while one runs. Uploads wait during ADD_ONS.\n- It runs in the API's process: an API restart ends it; waiting add-ons stay waiting.\n\nExecution Behavior:\n- Answers at once (202); follow it with GET /knowledge/reingest.\n\nState Changes:\n- Replaces the public knowledge in Qdrant and the add-ons' vectors.\n- Writes KNOWLEDGE_REINGEST_STARTED, KNOWLEDGE_ADD_ON_INGESTED for each waiting add-on\n  put in, then KNOWLEDGE_REINGEST_FINISHED.\n\nSecurity:\n- Requires a valid session token.",
+        "operationId": "start_knowledge_reingest_api_v1_knowledge_reingest_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "ALL",
+              "enum": [
+                "NEW",
+                "ALL"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeReingestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Start Knowledge Reingest",
         "tags": [
           "knowledge add-ons"
         ]

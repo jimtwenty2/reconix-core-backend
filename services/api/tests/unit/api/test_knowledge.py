@@ -30,9 +30,9 @@ def test_knowledge_search_needs_a_query_and_known_sources(client, operator_heade
     assert blank.json()["code"] == "VALIDATION_ERROR"
 
 
-def test_knowledge_search_with_qdrant_down_is_503(audit_events, operator_headers):
+def test_knowledge_search_with_qdrant_down_is_503(audit_events, operator_headers, settings):
     down = KnowledgeStore(client=store.connect("http://127.0.0.1:1"), embed=fake_embed)
-    response = make_client(audit_events, down).get(
+    response = make_client(audit_events, down, settings).get(
         "/knowledge/search", params={"q": "sql injection"}, headers=operator_headers
     )
     assert response.status_code == 503

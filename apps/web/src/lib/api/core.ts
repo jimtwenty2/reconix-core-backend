@@ -38,7 +38,7 @@ const UNREACHABLE = "The Reconix Core API is not running. Start it, then try aga
 /** One raw call. `stream`: no timeout, and the caller reads the body. */
 export async function coreFetch(
   path: string,
-  { method = "GET", body, token, signal, stream = false }: { method?: string; body?: unknown; token?: string; signal?: AbortSignal; stream?: boolean } = {},
+  { method = "GET", body, form, token, signal, stream = false }: { method?: string; body?: unknown; form?: FormData; token?: string; signal?: AbortSignal; stream?: boolean } = {},
 ): Promise<Response> {
   const headers: Record<string, string> = { Accept: stream ? "text/event-stream" : "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -49,7 +49,7 @@ export async function coreFetch(
     response = await fetch(`${coreBase()}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: form ?? (body === undefined ? undefined : JSON.stringify(body)), // a form sets its own type
       signal: signals.length ? AbortSignal.any(signals) : undefined,
       cache: "no-store",
       redirect: "error",

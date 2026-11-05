@@ -4,13 +4,11 @@
 import "server-only";
 
 import { refuse } from "../assistant/access";
-import { SOURCE_ID } from "../assistant/knowledge/schema";
 
 export const BAD_ID = "That is not a knowledge file id.";
-export const GONE = "That knowledge file is not saved any more.";
 
 /** A refusal, or null when the request may go on. `change`: it adds or removes something. */
 export const refuseKnowledge = (request: Request, change: boolean) => refuse(request, { change });
 
-/** A knowledge file's id: 32 lower-case hex digits. */
-export const isKnowledgeId = (id: string) => SOURCE_ID.test(id);
+/** A knowledge document's id: the Core API's UUID, lower case. */
+export const isKnowledgeId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);

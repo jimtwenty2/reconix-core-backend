@@ -7,10 +7,18 @@ import zlib
 import pytest
 from fastapi.testclient import TestClient
 
-from reconix_ai.knowledge import AddOn, KnowledgeFilters, Source, search_knowledge, store
+from reconix_ai.knowledge import (
+    AddOn,
+    KnowledgeError,
+    KnowledgeFilters,
+    Source,
+    search_knowledge,
+    store,
+)
 from reconix_ai.knowledge.add_ons import add_on_chunk
 from reconix_ai.providers import EMBEDDING_SIZE, ProviderError
 from reconix_api.api.knowledge_add_ons import MAX_UPLOAD_BYTES
+from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.knowledge_add_ons import KnowledgeStore
 from reconix_api.core.knowledge_files import MAX_FILE_BYTES
 from reconix_api.main import create_app
@@ -46,16 +54,13 @@ def audit_events():
     return []
 
 
-def make_client(audit_events, store: KnowledgeStore) -> TestClient:
+def make_client(audit_events, store: KnowledgeStore, settings: Settings) -> TestClient:
+    """Always with test settings: never the real folder of add-ons waiting to be ingested."""
     interfaces, parts = build_fake_interfaces()
     parts["audit"].events = audit_events
     app = create_app(interfaces, mask_secrets=fake_mask_secrets, knowledge_store=store)
+    app.dependency_overrides[get_settings] = lambda: settings
     return TestClient(app, base_url="http://127.0.0.1/api/v1")
-
-
-@pytest.fixture
-def client(qdrant, audit_events):
-    return make_client(audit_events, KnowledgeStore(client=qdrant, embed=fake_embed))
 
 
 def upload(client, headers, file_name="runbook.md", data=RUNBOOK, interface="cli", **form):
@@ -276,9 +281,9 @@ def test_the_list_is_empty_before_any_upload(client, operator_headers):
     assert client.get("/knowledge-add-ons", headers=operator_headers).json() == []
 
 
-def test_qdrant_down_answers_503(audit_events, operator_headers):
+def test_qdrant_down_answers_503(audit_events, operator_headers, settings):
     down = KnowledgeStore(client=store.connect("http://127.0.0.1:1"), embed=fake_embed)
-    client = make_client(audit_events, down)
+    client = make_client(audit_events, down, settings)
 
     response = client.get("/knowledge-add-ons", headers=operator_headers)
 
@@ -289,9 +294,9 @@ def test_qdrant_down_answers_503(audit_events, operator_headers):
 
 
 def test_the_embedding_model_down_answers_503_and_saves_nothing(
-    qdrant, audit_events, operator_headers
+    qdrant, audit_events, operator_headers, settings
 ):
-    client = make_client(audit_events, KnowledgeStore(client=qdrant, embed=model_down))
+    client = make_client(audit_events, KnowledgeStore(client=qdrant, embed=model_down), settings)
 
     response = upload(client, operator_headers)
 
@@ -299,3 +304,136 @@ def test_the_embedding_model_down_answers_503_and_saves_nothing(
     assert response.json()["code"] == "MODEL_UNAVAILABLE"
     assert client.get("/knowledge-add-ons", headers=operator_headers).json() == []
     assert audit_events == []
+
+
+GUIDE = (
+    b"# Web testing notes\n\n"
+    b"SQL injection (CWE-89, A03:2021) in the login form; confirm it with sqlmap.\n\n"
+    b"Log4Shell is CVE-2021-44228, used for initial access (T1190). Run nmap first.\n\n"
+    b"Cross-site scripting (XSS, CWE-79) in comments; another SQL injection in search.\n"
+)
+
+
+def test_references_list_what_an_add_on_talks_about(client, operator_headers):
+    added = upload(client, operator_headers, file_name="notes.md", data=GUIDE).json()
+
+    response = client.get(
+        f"/knowledge-add-ons/{added['knowledge_add_on_id']}/references", headers=operator_headers
+    )
+
+    assert response.status_code == 200, response.json()
+    body = response.json()
+    assert body["knowledge_add_on_id"] == added["knowledge_add_on_id"]
+    found = {(r["type"], r["ref_id"]) for r in body["references"]}
+    assert {
+        ("CWE", "CWE-89"),
+        ("CWE", "CWE-79"),
+        ("OWASP", "A03:2021"),
+        ("CVE", "CVE-2021-44228"),
+        ("ATTACK", "T1190"),
+        ("TOOL", "SQLMAP"),
+        ("TOOL", "NMAP"),
+        ("TOPIC", "sql-injection"),
+        ("TOPIC", "cross-site-scripting"),
+    } <= found
+    assert "login form" not in response.text  # names and counts only, never the text
+
+
+def test_references_of_an_unknown_add_on_are_404(client, operator_headers):
+    response = client.get(
+        "/knowledge-add-ons/00000000-0000-4000-8000-000000000000/references",
+        headers=operator_headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["code"] == "KNOWLEDGE_ADD_ON_NOT_FOUND"
+
+
+def passages_of(client, headers, add_on_id, **params):
+    return client.get(f"/knowledge-add-ons/{add_on_id}/passages", headers=headers, params=params)
+
+
+def test_passages_come_with_where_each_reference_is_named(client, operator_headers):
+    added = upload(client, operator_headers, file_name="notes.md", data=GUIDE).json()
+
+    response = passages_of(client, operator_headers, added["knowledge_add_on_id"])
+
+    assert response.status_code == 200, response.json()
+    body = response.json()
+    assert body["total"] == added["chunk_count"]
+    assert body["offset"] == 0
+    first = body["passages"][0]
+    assert first["index"] == 0
+    named = {(s["type"], first["text"][s["start"] : s["end"]]) for s in first["spans"]}
+    assert ("CWE", "CWE-89") in named
+    assert ("TOOL", "sqlmap") in named
+    assert ("TOPIC", "SQL injection") in named  # the words as written
+    starts = [s["start"] for s in first["spans"]]
+    assert starts == sorted(starts)  # reading order
+
+
+def test_passages_are_masked_again_and_paged(client, operator_headers):
+    text = b"First part, password=hunter2-not-real.\n\n" + b"\n\n".join(
+        f"Part {i}: CWE-{i}. ".encode() * 60 for i in range(1, 8)
+    )
+    added = upload(client, operator_headers, file_name="long.md", data=text).json()
+    assert added["chunk_count"] > 2
+
+    first = passages_of(client, operator_headers, added["knowledge_add_on_id"], limit=2).json()
+    assert [p["index"] for p in first["passages"]] == [0, 1]
+    assert "hunter2" not in str(first)
+    rest = passages_of(
+        client, operator_headers, added["knowledge_add_on_id"], offset=2, limit=100
+    ).json()
+    assert [p["index"] for p in rest["passages"]] == list(range(2, first["total"]))
+    too_many = passages_of(client, operator_headers, added["knowledge_add_on_id"], limit=101)
+    assert too_many.status_code == 422
+
+
+def test_passages_of_an_unknown_add_on_are_404(client, operator_headers):
+    response = passages_of(client, operator_headers, "00000000-0000-4000-8000-000000000000")
+    assert response.status_code == 404
+
+
+def test_an_upload_can_wait_to_be_ingested(client, operator_headers, qdrant):
+    waiting = upload(client, operator_headers, file_name="notes.md", data=GUIDE, ingest_now="false")
+    assert waiting.status_code == 201, waiting.json()
+    body = waiting.json()
+    assert body["ingest_status"] == "PENDING"
+    add_on_id = body["knowledge_add_on_id"]
+
+    listed = client.get("/knowledge-add-ons", headers=operator_headers).json()
+    assert [(a["knowledge_add_on_id"], a["ingest_status"]) for a in listed] == [
+        (add_on_id, "PENDING")
+    ]
+    # the agent cannot find it yet (nothing is in the knowledge search), but the page can read it
+    filters = KnowledgeFilters(sources=[Source.USER_DOC])
+    try:
+        hits = asyncio.run(search_knowledge("sqlmap", filters, client=qdrant, embed=fake_embed))
+    except KnowledgeError:
+        hits = []  # no knowledge collection at all yet
+    assert hits == []
+    refs = client.get(f"/knowledge-add-ons/{add_on_id}/references", headers=operator_headers)
+    assert ("CWE", "CWE-89") in {(r["type"], r["ref_id"]) for r in refs.json()["references"]}
+    assert passages_of(client, operator_headers, add_on_id).json()["total"] == body["chunk_count"]
+
+    removed = client.delete(f"/knowledge-add-ons/{add_on_id}", headers=operator_headers)
+    assert removed.status_code == 204
+    assert client.get("/knowledge-add-ons", headers=operator_headers).json() == []
+
+
+def test_an_upload_still_ingests_at_once_by_default(client, operator_headers):
+    added = upload(client, operator_headers).json()
+    assert added["ingest_status"] == "INGESTED"
+
+
+def test_the_reingest_routes_start_a_job_and_report_it(client, operator_headers):
+    idle = client.get("/knowledge/reingest", headers=operator_headers)
+    assert idle.status_code == 200
+    assert idle.json()["status"] == "IDLE"
+
+    started = client.post("/knowledge/reingest?scope=NEW", headers=operator_headers)
+    assert started.status_code == 202, started.json()
+    assert started.json()["status"] in ("RUNNING", "COMPLETED")
+    assert started.json()["scope"] == "NEW"
+    bad = client.post("/knowledge/reingest?scope=SOME", headers=operator_headers)
+    assert bad.status_code == 422
