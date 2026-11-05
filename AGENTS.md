@@ -277,7 +277,8 @@ Report results honestly. If a test fails or a step was skipped, say so in the PR
 ## 8. Git and pull requests
 
 - `Main` always works. Nobody pushes to `Main` or `Develop` directly; the settings deny it.
-- Open PRs against `Develop`. Every PR needs green CI and one review.
+- Open PRs against `Develop`. Every PR needs one review. There is no CI workflow: before you
+  open a PR, run lint and the tests of every package you touched yourself (section 6).
 - Branch name: `<name>/<task>` (for example `pojim/scope-check`), or `feat/`, `fix/`, `chore/` plus
   a short name.
 - Commit messages: conventional style with the part, for example
@@ -360,9 +361,9 @@ When unsure whether something counts, ask. A short question costs less than a re
 
 Keep this list true; remove an item in the PR that closes it.
 
-- **CI skips part of `apps/`.** Ruff in `.github/workflows/ci.yml` leaves out `apps/tui` (194
-  files need `ruff format`) and `apps/.claude` (17 lint errors in `hooks/stay-in-apps.py`) until
-  their owners fix them.
+- **No CI.** `.github/workflows/ci.yml` was removed; nothing runs lint or tests on a PR. Run them
+  by hand (section 6). Ruff still fails on `apps/tui` (194 files need `ruff format`) and
+  `apps/.claude` (17 lint errors in `hooks/stay-in-apps.py`) until their owners fix them.
 - **The TUI does not use the `src/` layout yet.** Its package is `apps/tui/reconix/`, and it uses
   in-memory and static data (`reconix/store/`), not the API. The `api/` client in its AGENTS.md is
   the plan.

@@ -136,5 +136,5 @@ reminder on safety files).
 
 ## Git
 
-Branch `<name>/<task>` from `Develop`; open a pull request (green CI, one review). Conventional
+Branch `<name>/<task>` from `Develop`; open a pull request (lint and tests run by hand, one review). Conventional
 commit subjects: `feat(tui): …`, `fix(web): …`, `test(tui): …`, `docs(apps): …`.

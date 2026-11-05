@@ -9,7 +9,7 @@ Only cut a release after the full-flow test and the leak test pass on the merged
 
 ## Checklist
 
-1. All CI green on the release branch. No open bug marked as blocking.
+1. Lint and every package's tests pass on the release branch (run them by hand; there is no CI). No open bug marked as blocking.
 2. Run the `run-full-flow-test` and `run-leak-test` skills on the real stack.
 3. Run the `sync-openapi` skill. `docs/openapi.json` matches the code.
 4. Pin the Kali MCP image in `deploy/docker-compose.yml` to the matching **numbered** tag (not `:dev`/`latest`).
