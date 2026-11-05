@@ -116,3 +116,58 @@ def tool_risk(name: str) -> str:
     tool = KALI_TOOLS.get(catalog_name(name))
     return tool.risk if tool else ""
 
+
+# Each suggestible tool's job (role) and a one-line purpose, so the scope can explain what a
+# tool is for ("ffuf — brute-force hidden paths") and offer ONE choice per job (two tools that
+# do the same thing collapse to a single pick).
+ROLE: Dict[str, str] = {
+    "katana": "crawl", "zap_spider": "crawl", "zap_ajax_spider": "crawl",
+    "gobuster": "path-bruteforce", "ffuf": "path-bruteforce", "wfuzz": "path-bruteforce",
+    "httpx_probe": "fingerprint", "whatweb": "fingerprint",
+    "nikto": "web-scan", "nuclei": "vuln-scan", "wpscan": "cms-scan",
+    "arjun": "param-discovery", "dalfox": "xss",
+    "nmap": "port-scan", "masscan": "port-scan", "rustscan": "port-scan",
+    "testssl": "tls", "onesixtyone": "snmp", "enum4linux": "smb",
+    "schemathesis": "api-fuzz", "newman": "api-replay",
+    "semgrep": "static-analysis", "gitleaks": "secrets",
+    "trivy": "dependencies", "grype": "dependencies", "osv_scanner": "dependencies",
+    "syft": "sbom",
+}
+
+PURPOSE: Dict[str, str] = {
+    "katana": "crawl the site to find linked paths",
+    "zap_spider": "crawl the site with OWASP ZAP",
+    "zap_ajax_spider": "crawl a JavaScript app with OWASP ZAP",
+    "gobuster": "brute-force hidden paths and files",
+    "ffuf": "brute-force hidden paths and files",
+    "wfuzz": "brute-force paths and parameters",
+    "httpx_probe": "probe HTTP and detect the stack",
+    "whatweb": "fingerprint the web technologies",
+    "nikto": "scan the web server for known issues",
+    "nuclei": "scan for known vulnerabilities",
+    "wpscan": "scan a WordPress site",
+    "arjun": "discover hidden parameters",
+    "dalfox": "test parameters for XSS",
+    "nmap": "scan ports and detect services",
+    "masscan": "fast port scan of a range",
+    "rustscan": "fast port scan, then nmap",
+    "testssl": "check TLS/SSL configuration",
+    "onesixtyone": "scan for SNMP",
+    "enum4linux": "enumerate SMB/Windows shares and users",
+    "schemathesis": "fuzz the API from its schema",
+    "newman": "replay a Postman collection",
+    "semgrep": "static analysis of the code",
+    "gitleaks": "find leaked secrets",
+    "trivy": "scan dependencies for known issues",
+    "grype": "scan dependencies for known issues",
+    "osv_scanner": "scan dependencies for known/malicious packages",
+    "syft": "build a software bill of materials",
+}
+
+
+def tool_role(name: str) -> str:
+    return ROLE.get(catalog_name(name), "")
+
+
+def tool_purpose(name: str) -> str:
+    return PURPOSE.get(catalog_name(name), "")

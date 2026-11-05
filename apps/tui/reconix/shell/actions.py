@@ -221,13 +221,11 @@ class ActionsMixin:
         self.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
     def _scope_suggested(self, request, reply) -> None:
-        used = store.apply_scope_suggest(request, reply)
+        # The goal read landed: record it and rebuild the Scope screen. The card (its "Your
+        # goal" line) and an unticked tick list of the suggested tools appear together, once;
+        # only the operator's tick adds a tool. The card stays on screen (no flash).
+        store.apply_scope_suggest(request, reply)
         self.refresh_view()
-        from ..screens.base import ReconixScreen
-
-        screen = self.screen
-        if used and isinstance(screen, ReconixScreen) and screen.flow_name == "template":
-            self.run_worker(screen.show_scope_suggestions(), exclusive=False)
 
     def _draft_plan(self, on_done=None) -> None:
         """The AI drafts the plan on the Core API in a worker; Run plan waits for it.

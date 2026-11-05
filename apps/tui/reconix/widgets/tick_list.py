@@ -4,7 +4,7 @@ Used by the step chat for the scope's ports and tools. The rows and what starts 
 from the store (`answer_scope_change`); this widget only reports what the operator ticked.
 """
 
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Mapping, Optional, Sequence, Tuple
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -55,6 +55,7 @@ class TickList(Vertical):
         suggested_tools: Sequence[str] = (),
         *,
         focus: str = "",
+        tool_purposes: Optional[Mapping[str, str]] = None,
         id: Optional[str] = None,
     ) -> None:
         # A class, not a fixed id: a second scope change in the same chat mounts a new list
@@ -64,6 +65,9 @@ class TickList(Vertical):
         self._tools = list(tools)
         self._suggested = set(suggested)
         self._suggested_tools = {s.casefold() for s in suggested_tools}
+        # a one-line purpose per tool ("ffuf" -> "brute-force hidden paths"), shown on the
+        # suggested rows so the operator reads what each tool is for before ticking it.
+        self._purposes = {k.casefold(): v for k, v in (tool_purposes or {}).items()}
         self._focus = focus  # the row to open on ("port:3389"; "" = the first)
 
     def compose(self) -> ComposeResult:
@@ -84,7 +88,12 @@ class TickList(Vertical):
     def _tool_label(self, tool: str) -> Text:
         label = Text(f"tool  {tool}")
         if tool.casefold() in self._suggested_tools:
-            label.append("   suggested by the AI · tick to add", style=theme.DIM)
+            purpose = self._purposes.get(tool.casefold())
+            if purpose:
+                label.append(f" — {purpose}", style=theme.MUTED)
+                label.append("   tick to add", style=theme.DIM)
+            else:
+                label.append("   suggested by the AI · tick to add", style=theme.DIM)
         return label
 
     def _port_label(self, port: int) -> Text:
@@ -92,6 +101,10 @@ class TickList(Vertical):
         if port in self._suggested:
             label.append("suggested by the model · tick to add", style=theme.DIM)
         return label
+
+    def focus_rows(self) -> None:
+        """Focus the tick rows (so the operator can Space/Enter) from an outside screen."""
+        self.query_one(_Ticks).focus()
 
     def on_mount(self) -> None:
         ticks = self.query_one(_Ticks)

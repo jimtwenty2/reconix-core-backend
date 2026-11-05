@@ -511,22 +511,66 @@ async def test_a_plan_change_from_the_plan_step_redrafts_the_plan(app, model_act
 async def test_the_ai_suggests_tools_at_the_scope_step(app, model_active, fake_api,
                                                        monkeypatch):
     from reconix.app import ReconixApp
+    from reconix.widgets.manifest import manifest_text
 
     monkeypatch.setattr(ReconixApp, "SUGGEST_SCOPE_ON_REVIEW", True)
     fake_api.reply = ("To list the site's paths, crawl it with katana and brute-force "
-                      "directories with ffuf.")
+                      "directories with ffuf and gobuster.")
     async with app.run_test(size=SIZE) as pilot:
         await type_request(pilot, "i want to list all paths on http://shop.example.com")
-        # the Template screen auto-asks the AI; it opens the step chat with a tick list
-        await wait_until(pilot, lambda: bool(app.screen.query(SelectionList)),
-                         what="the suggestion tick list")
-        rows = app.screen.query_one(SelectionList)
+        # the AI reads the goal, then the card and a tick list of its suggestions appear.
+        await wait_until(pilot, lambda: bool(app.screen.query("#scope-suggest-ticks")),
+                         what="the suggestion tick list under the card")
+        suggested = store.suggested_tools()
+        assert "Katana" in suggested and "ffuf" in suggested   # both named by the model
+        assert "gobuster" not in suggested                     # same job as ffuf -> one only
+        assert "Katana" not in store.get_scope().tools         # scope unchanged until you tick
+        notes = dict(store.suggested_tool_notes())
+        assert notes["ffuf"]                                   # each suggestion states its purpose
+        # the card stays visible (its "Your goal" line); the suggestions are the tick list,
+        # not a read-only list on the card (so they are never shown twice).
+        assert app.screen.query_one(ScopePanel)
+        card = manifest_text(store.get_scope(), with_suggestions=False).plain
+        assert "Your goal" in card and "Suggested for your goal" not in card
+        rows = app.screen.query_one("#scope-suggest-ticks").query_one(SelectionList)
         values = {opt.value for opt in rows.options}
-        assert "tool:Katana" in values and "tool:ffuf" in values
-        assert "tool:Katana" not in rows.selected          # suggested, unticked
-        assert "Katana" not in store.get_scope().tools      # scope unchanged until you tick
+        assert "tool:ffuf" in values and "tool:Katana" in values
+        assert "tool:gobuster" not in values                   # deduped out
+        assert not rows.selected                               # unticked
+        # ticking a suggestion adds it to the scope (a union; the template tools stay)
         rows.select("tool:Katana")
         rows.focus()
         await pilot.press("enter")
         await settle(pilot)
-        assert "Katana" in store.get_scope().tools          # your tick added it
+        assert "Katana" in store.get_scope().tools
+        assert "Nuclei" in store.get_scope().tools             # template default kept
+
+
+async def test_the_scope_card_waits_for_the_goal_read(app, model_active, fake_api, monkeypatch):
+    """No glitch: while the AI reads the goal, the screen shows a 'reading…' spinner and no
+    card; the card and the suggestion list appear together, once, when the read lands."""
+    import threading
+
+    from reconix.app import ReconixApp
+
+    monkeypatch.setattr(ReconixApp, "SUGGEST_SCOPE_ON_REVIEW", True)
+    release = threading.Event()
+
+    def slow_read(_request):
+        release.wait(5)
+        return "To list the paths, crawl with katana and brute-force with ffuf."
+
+    monkeypatch.setattr(store, "fetch_scope_suggest", slow_read)
+    async with app.run_test(size=SIZE) as pilot:
+        await type_request(pilot, "list all paths on http://shop.example.com")
+        # while the read is in flight: the reading spinner, no card, no tick list yet
+        await wait_until(pilot, lambda: bool(app.screen.query("#template-activity")),
+                         what="the reading spinner")
+        assert app.screen._reading()
+        assert not app.screen.query(ScopePanel)
+        assert not app.screen.query("#scope-suggest-ticks")
+        release.set()
+        # the read lands: the card and its suggestion list show together, spinner gone
+        await wait_until(pilot, lambda: bool(app.screen.query(ScopePanel)), what="the card")
+        assert app.screen.query("#scope-suggest-ticks")
+        assert not app.screen.query("#template-activity")

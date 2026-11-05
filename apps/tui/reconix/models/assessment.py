@@ -65,6 +65,7 @@ class Assessment:
     plan_drafting: bool = False     # a model is drafting the plan; Run plan waits for it
     scope_suggest: Optional[ScopeSuggest] = None  # the AI's reading/suggestions for the goal
     scope_suggesting: bool = False  # the AI is evaluating the goal; suggestions on the way
+    scope_suggest_tried: bool = False  # the goal read has finished (done or failed); don't wait
     approvals: List[ApprovalRequest] = field(default_factory=list)
     decisions: List[ApprovalDecision] = field(default_factory=list)
     confirmations: List[Confirmation] = field(default_factory=list)
