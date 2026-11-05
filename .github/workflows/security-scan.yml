@@ -1,0 +1,139 @@
+# Security scan: OSV-Scanner, Gitleaks, Semgrep and Trivy, one job each, in parallel.
+#
+# Runs on our own runner (label "self-hosted-runner"); it needs Docker. Every tool runs from
+# its pinned image with the repo mounted read-only, so nothing is written into the workspace.
+# The private repo has no GitHub Advanced Security, so results go to each job's Summary page
+# and log, not the Security tab.
+#
+# Blocks:  OSV-Scanner (any known vulnerability), Gitleaks (any secret),
+#          Trivy (HIGH/CRITICAL vulnerability).
+# Reports: Semgrep and Trivy misconfigurations (never fail, for now).
+#
+# To update a tool, change its image tag below (pick a release at least two weeks old).
+name: Security scan
+
+on:
+  pull_request:
+    branches: [Develop]
+  push:
+    branches: [Develop, ci/code-scanner] # ci/code-scanner: testing this workflow; remove before the PR
+  schedule:
+    - cron: "17 */3 * * *" # every 3 hours: new advisories show up without a code change
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OSV_IMAGE: ghcr.io/google/osv-scanner:v2.7.0
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.30.1
+  SEMGREP_IMAGE: semgrep/semgrep:1.182.0
+  TRIVY_IMAGE: aquasec/trivy:0.76.1
+
+jobs:
+  osv-scanner:
+    name: OSV-Scanner (dependencies)
+    runs-on: [self-hosted, self-hosted-runner]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan uv.lock and package-lock.json
+        shell: bash
+        run: |
+          set +e -o pipefail
+          log="$RUNNER_TEMP/osv.log"
+          docker run --rm -v "$PWD:/src:ro" "$OSV_IMAGE" \
+            scan source --recursive /src 2>&1 | tee "$log"
+          code=${PIPESTATUS[0]}
+          { echo "## OSV-Scanner (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
+            >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+  gitleaks:
+    name: Gitleaks (secrets)
+    runs-on: [self-hosted, self-hosted-runner]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history
+          persist-credentials: false
+      - name: Scan git history
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set +e -o pipefail
+          # A PR scans only its own commits, so an old leak (already rotated) does not block
+          # every PR. Push, schedule and manual runs scan the whole history.
+          range=()
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range=(--log-opts="origin/${BASE_REF}..HEAD")
+          fi
+          log="$RUNNER_TEMP/gitleaks.log"
+          # safe.directory: the repo is owned by the runner user, not the container user.
+          docker run --rm -v "$PWD:/src:ro" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            "$GITLEAKS_IMAGE" git /src --redact --verbose --no-banner "${range[@]}" 2>&1 | tee "$log"
+          code=${PIPESTATUS[0]}
+          { echo "## Gitleaks (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
+            >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+
+  semgrep:
+    name: Semgrep (code)
+    runs-on: [self-hosted, self-hosted-runner]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan Python and TypeScript
+        shell: bash
+        run: |
+          set +e -o pipefail
+          log="$RUNNER_TEMP/semgrep.log"
+          # Report only for now: no --error, so findings do not fail the job.
+          docker run --rm -v "$PWD:/src:ro" -w /src "$SEMGREP_IMAGE" \
+            semgrep scan --metrics=off \
+              --config p/default --config p/python --config p/typescript 2>&1 | tee "$log"
+          code=${PIPESTATUS[0]}
+          { echo "## Semgrep (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
+            >> "$GITHUB_STEP_SUMMARY"
+          exit "$code" # non-zero only when semgrep itself broke
+
+  trivy:
+    name: Trivy (dependencies + config)
+    runs-on: [self-hosted, self-hosted-runner]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan dependencies, Dockerfile and Compose files
+        shell: bash
+        run: |
+          set +e -o pipefail
+          log="$RUNNER_TEMP/trivy.log"
+          # The vulnerability database is kept in a Docker volume between runs.
+          trivy() { docker run --rm -v "$PWD:/src:ro" -v reconix-trivy-cache:/root/.cache "$TRIVY_IMAGE" "$@"; }
+
+          echo "### Vulnerabilities (HIGH, CRITICAL)" | tee "$log"
+          trivy fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 /src 2>&1 | tee -a "$log"
+          code=${PIPESTATUS[0]}
+
+          echo "### Misconfigurations (report only)" | tee -a "$log"
+          trivy config --exit-code 0 /src 2>&1 | tee -a "$log"
+          [ "${PIPESTATUS[0]}" -eq 0 ] || code=2 # trivy itself broke
+
+          { echo "## Trivy (exit $code)"; echo '```'; head -c 60000 "$log"; echo '```'; } \
+            >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
