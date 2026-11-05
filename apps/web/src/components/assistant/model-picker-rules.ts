@@ -36,7 +36,7 @@ export function chipState(model: ModelSummary): ChipState {
   const from = model.provider ? `${model.provider}, ${where}` : where;
   const title = model.local
     ? `${model.name} (${model.provider}): a local endpoint on this machine`
-    : `${model.name} (${model.provider}): a remote model. Questions, the assessment data they need and relevant /add-on knowledge passages are sent to it.`;
+    : `${model.name} (${model.provider}): a remote model. The Core API sends it your questions and the session data they need.`;
   return { label: model.name, name: `Model: ${model.name} (${from})`, title, tone: "success" };
 }
 
@@ -49,6 +49,7 @@ export interface ModelRow {
   provider: string; // the provider's name as shown
   where: "local" | "remote";
   checked: boolean; // answers the next question
+  first: boolean; // its provider's first model: the provider's heading goes above it
 }
 
 const hostOf = (url: string) => {
@@ -75,7 +76,8 @@ export const savedName = (provider: ProviderView) => (presetFor(provider).id ===
 export function modelRows(view: ModelsView): ModelRow[] {
   const active = view.active;
   return view.providers.flatMap((p) =>
-    p.models.map((model) => ({
+    p.models.map((model, i) => ({
+      first: i === 0,
       key: `${p.id}/${model}`,
       providerId: p.id,
       model,
@@ -86,28 +88,23 @@ export function modelRows(view: ModelsView): ModelRow[] {
   );
 }
 
-/** What removing a row sends: the provider goes with its last model (DELETE, its key too),
-    otherwise its list loses the model (PATCH). Null: the provider is not saved any more. */
+/** What removing sends: the provider with all its models and its saved key (DELETE). A
+    provider's models are what it has (built in, or listed by its server), so none is removed
+    alone. Null: the provider is not saved any more. */
 export type RemoveRequest = { kind: "delete"; id: string } | { kind: "update"; id: string; body: UpdateProvider };
 
-export function removeRequest(view: ModelsView, row: ModelRow): RemoveRequest | null {
+export function removeRequest(view: ModelsView, row: Pick<ModelRow, "providerId">): RemoveRequest | null {
   const p = view.providers.find((x) => x.id === row.providerId);
-  if (!p) return null;
-  const rest = p.models.filter((m) => m !== row.model);
-  return rest.length ? { kind: "update", id: p.id, body: { models: rest } } : { kind: "delete", id: p.id };
+  return p ? { kind: "delete", id: p.id } : null;
 }
 
-/** The inline confirm's words: "Remove <model> (<provider>)?" and what follows from it. */
-export function removeQuestion(view: ModelsView, row: ModelRow): { title: string; detail: string } {
-  const title = `Remove ${row.model} (${row.provider})?`;
+/** The inline confirm's words: "Remove <provider>?" and what goes with it. */
+export function removeQuestion(view: ModelsView, row: Pick<ModelRow, "providerId" | "provider">): { title: string; detail: string } {
   const p = view.providers.find((x) => x.id === row.providerId);
-  const rest = p ? p.models.filter((m) => m !== row.model) : [];
-  if (rest.length) {
-    const kept = `${row.provider} keeps its other models`;
-    return { title, detail: row.checked ? `${kept}; ${rest[0]} answers instead.` : `${kept}.` };
-  }
-  const gone = `It is ${row.provider}'s last model, so ${row.provider}${p?.keySaved ? " and its saved API key are" : " is"} removed too.`;
-  return { title, detail: row.checked ? `${gone} No model answers until you add or choose one.` : gone };
+  const answering = view.active?.providerId === row.providerId;
+  const subject = `${p?.models.length === 1 ? "Its model" : "Its models"}${p?.keySaved ? " and its saved API key" : ""}`;
+  const what = `${subject} ${p?.models.length === 1 && !p?.keySaved ? "goes" : "go"} with it.`;
+  return { title: `Remove ${row.provider}?`, detail: answering ? `${what} No model answers until you choose another.` : what };
 }
 
 // --- the form: Set the provider --------------------------------------------------------------------
@@ -117,19 +114,22 @@ export interface ProviderOption {
   label: string;
 }
 
-/** The preset's name in the list: "Ollama (local)", "Custom (OpenAI-compatible)". */
-export const presetLabel = (preset: Preset) => (preset.kind === "local" ? `${preset.label} (local)` : preset.kind === "custom" ? "Custom (OpenAI-compatible)" : preset.label);
+/** The preset's name in the list, as the TUI's /provider names it. */
+export const presetLabel = (preset: Preset) => preset.label;
 
-/** The Provider select: the presets in their order, every one usable (a cloud one sends the
-    questions off this machine: the form says so under it). */
+/** The Provider select: the TUI's /provider list in its order, every one usable (a cloud one
+    sends the questions off this machine: the form says so under it). */
 export const providerOptions = (): ProviderOption[] => PRESETS.map((p) => ({ id: p.id, label: presetLabel(p) }));
 
-/** The provider the form starts on: the first local one (nothing leaves this machine until a
-    cloud preset or a remote address is chosen). */
-export const firstPreset = (): Preset => PRESETS.find((p) => p.kind === "local") ?? presetOf("custom");
+/** The provider the form starts on: Reconix, the TUI's default. */
+export const firstPreset = (): Preset => PRESETS[0];
 
-/** Only Custom and the local presets take an address; a cloud preset's is fixed. */
-export const showsUrl = (preset: Preset) => preset.kind !== "cloud";
+/** Only Ollama and Custom take an address: Reconix's comes from the Core API's .env and a
+    cloud service's is fixed (the TUI's provider form shows the same fields). */
+export const showsUrl = (preset: Preset) => preset.kind === "local" || preset.kind === "custom";
+
+/** Whether the form asks for an API key: not for Reconix (the Core API's .env) or Ollama. */
+export const showsKey = (preset: Preset) => preset.key !== "none";
 
 export interface Credentials {
   baseUrl: string; // as typed (only Custom and the local presets show the field)
@@ -154,6 +154,7 @@ export function normalAddress(url: string): string | null {
 }
 
 const sameAddress = (a: string, b: string) => {
+  if (a.trim() === b.trim()) return true;
   const na = normalAddress(a);
   return na !== null && na === normalAddress(b);
 };
@@ -161,7 +162,15 @@ const sameAddress = (a: string, b: string) => {
 /** The saved provider "Add model" adds to: the one shown as this preset at this address (a cloud
     one is at the cloud's own address), or null (a new provider is saved). */
 export const savedFor = (view: ModelsView, preset: Preset, address: string): ProviderView | null =>
-  view.providers.find((p) => presetFor(p).id === preset.id && sameAddress(p.baseUrl, address)) ?? null;
+  view.providers.find((p) => presetFor(p).id === preset.id && (preset.kind === "reconix" || sameAddress(p.baseUrl, address))) ?? null;
+
+/** The models the form can list without asking anyone: a cloud service's built-in ones (the
+    saved one first), Reconix's from the Core API; null: fetch or type the name. */
+export function knownModels(preset: Preset, saved: ProviderView | null): string[] | null {
+  if (preset.kind === "cloud") return [...new Set([...(saved?.models ?? []), ...preset.models])];
+  if (preset.kind === "reconix") return saved ? [...saved.models] : [];
+  return null;
+}
 
 /** The provider's name in the form's words ("OpenAI needs an API key."). */
 const nameOf = (preset: Preset, saved: ProviderView | null) => (saved ? savedName(saved) : preset.label);

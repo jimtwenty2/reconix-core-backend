@@ -1,49 +1,39 @@
 "use client";
 
-/* The model picker's "Set the provider" (+ Model in the list): Provider, a native select of the
-   presets in order (it starts on the first local one; a cloud one says where the questions go,
-   under it); Base URL (Custom and the local presets only, filled in from the preset); API key
-   (model-key-field.tsx: never controlled, never kept); Model (model-name-field.tsx: the list
-   Fetch models brings, or a typed name); Cancel / Add model. Choosing a provider empties the key
-   field and, when it needs nothing more (a local preset), fetches its models; so does leaving the
-   address or the key for another control of the form once they changed; Enter in either is Fetch
-   models. A fetch asks the saved provider by its id while it is the same preset at the same
-   address with its key kept (its key goes only to its saved address), else the values typed
-   here; when the model's server answers without a list, a model the saved provider is known to
-   have is tested instead. Add model checks what the form holds, tests the model unless it came
-   from the list fetched for exactly these values, then saves: a new provider (POST, made active)
-   or, when that preset at that address is saved already, the model added to it (PATCH) and a
-   switch to it (PUT); the picker then closes and the chip names the model. A refusal stays here,
-   in the error style ("Type a model name instead" when the server only failed to list its
-   models). An answer that comes back after the form changed or went is dropped. */
+/* The model picker's "Set the provider" (+ Model in the list), as the TUI's /provider asks it:
+   Provider (the TUI's list, Reconix first); Base URL (Ollama and Custom only); API key (not for
+   Reconix or Ollama; model-key-field.tsx: never controlled, never kept); Model, a list only:
+   Test connection beside it saves a new provider (not active), checks it through the Core API
+   and lists its models (lib/api/models.ts `connect`), so no name is ever typed; Cancel / Add
+   model. A saved provider shows its model at once. Add model makes the chosen model the
+   provider's and makes it active; Cancel removes a provider this form saved and never added.
+   Changing the provider, the address or the key asks for a new test. A refusal stays here, in
+   the error style. An answer that comes back after the form went is dropped. */
 import { useEffect, useId, useRef, useState } from "react";
-import { Loader } from "lucide-react";
+import { CircleCheck, Loader, PlugZap } from "lucide-react";
 
+import { toast } from "@/components/ui/toast";
 import * as api from "@/lib/assistant/client";
 import { type PresetId, presetOf } from "@/lib/assistant/models/presets";
 import { MAX_URL } from "@/lib/assistant/models/schema";
-import type { ModelsView } from "@/lib/assistant/models/view";
+import type { ModelsView, ProviderView } from "@/lib/assistant/models/view";
 import { ModelKeyField, NOT_A_LOGIN } from "./model-key-field";
 import { type ListState, ModelNameField } from "./model-name-field";
 import {
   addressOf,
-  afterFetch,
-  afterTest,
-  choiceProblem,
   type Credentials,
   credentialsProblem,
   firstPreset,
+  freeName,
   initialChoice,
+  knownModels,
   NO_MODEL_YET,
-  normalAddress,
-  probeOf,
   providerOptions,
   requestsForAdd,
   savedFor,
   savedName,
+  showsKey,
   showsUrl,
-  TYPED,
-  typeInstead,
 } from "./model-picker-rules";
 import type { Models } from "./use-models";
 
@@ -52,13 +42,6 @@ interface Props {
   models: Models;
   onCancel: () => void;
   onDone: () => void;
-}
-
-/** The values a fetch or Add model reads (the key comes from its field). */
-interface Values {
-  presetId: PresetId;
-  baseUrl: string;
-  removeKey: boolean;
 }
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
@@ -70,27 +53,31 @@ const hostOf = (url: string) => {
   }
 };
 
+/** What the Model list holds before a test: a saved provider's models, else nothing. */
+function listOf(preset: ReturnType<typeof presetOf>, saved: ProviderView | null): ListState {
+  if (!saved) return { status: "none" };
+  const models = knownModels(preset, saved) ?? [...saved.models];
+  return { status: "ready", sig: "", next: "list", models, note: null, verify: false };
+}
+
+const firstOf = (list: ListState) => (list.status === "ready" ? (list.models[0] ?? NO_MODEL_YET) : NO_MODEL_YET);
+
 export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
   const id = useId();
   const ids = { provider: `${id}-provider`, providerHint: `${id}-provider-hint`, url: `${id}-url`, urlHint: `${id}-url-hint`, key: `${id}-key`, model: `${id}-model` };
-  const root = useRef<HTMLDivElement>(null);
   const providerField = useRef<HTMLSelectElement>(null);
   const keyField = useRef<HTMLInputElement>(null);
-  const typedField = useRef<HTMLInputElement>(null);
   const [presetId, setPresetId] = useState<PresetId>(() => firstPreset().id);
   const [baseUrl, setBaseUrl] = useState<string>(() => firstPreset().baseUrl);
   const [removeKey, setRemoveKey] = useState(false);
   const [keyTyped, setKeyTyped] = useState(false);
-  const [list, setList] = useState<ListState>({ status: "none" });
-  const [choice, setChoice] = useState(NO_MODEL_YET);
-  const [typed, setTyped] = useState("");
+  const [list, setList] = useState<ListState>(() => listOf(firstPreset(), savedFor(view, firstPreset(), firstPreset().baseUrl)));
+  const [choice, setChoice] = useState(() => firstOf(listOf(firstPreset(), savedFor(view, firstPreset(), firstPreset().baseUrl))));
+  const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<{ text: string; typeInstead: boolean } | null>(null);
-  const keyVersion = useRef(0); // bumped on every change of the key field (never the key itself)
-  const asked = useRef(0); // the latest fetch: an older answer is dropped
-  const tried = useRef<string | null>(null); // what the last fetch asked about
-  const inFlight = useRef<string | null>(null); // what the fetch on its way asks about
-  const focusTyped = useRef(false);
+  const [tested, setTested] = useState<string | null>(null); // a passed test, in words
+  const [error, setError] = useState<string | null>(null);
+  const created = useRef<string | null>(null); // a provider Test connection saved, not added yet
   const alive = useRef(true);
 
   const preset = presetOf(presetId);
@@ -108,112 +95,104 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
       alive.current = false; // gone (Cancel, Escape, closed) while asking: the answer is dropped
     };
   }, []);
-  useEffect(() => {
-    if (!focusTyped.current || !typedField.current) return;
-    focusTyped.current = false;
-    typedField.current.focus({ preventScroll: true });
-  });
 
-  /** The form's values with the key read from its field, as the rules take them. */
-  const read = (v: Values) => {
-    const p = presetOf(v.presetId);
-    const s = savedFor(view, p, addressOf(p, v));
-    const c: Credentials = { baseUrl: v.baseUrl, apiKey: keyField.current?.value ?? "", removeKey: v.removeKey && Boolean(s?.keySaved) };
-    const where = addressOf(p, v);
-    return { preset: p, saved: s, c, sig: `${v.presetId}|${normalAddress(where) ?? where}|${keyVersion.current}|${c.removeKey}` };
-  };
-  const now = (): Values => ({ presetId, baseUrl, removeKey });
+  const credentials = (): Credentials => ({ baseUrl, apiKey: keyField.current?.value ?? "", removeKey: removeKey && keySaved });
 
-  /** Fetch models; `auto`: the form's own, which asks only what wasn't asked yet and says
-      nothing when something is still missing. */
-  const fetchList = async (v: Values, auto: boolean) => {
-    const { preset: p, saved: s, c, sig } = read(v);
-    const problem = credentialsProblem(p, s, c);
-    if (problem) {
-      if (!auto) setError({ text: problem, typeInstead: false });
-      return;
-    }
-    if (inFlight.current === sig || (auto && tried.current === sig)) return;
-    tried.current = sig;
-    inFlight.current = sig;
-    const n = ++asked.current;
+  /** The list as it is before a test (for `p` saved as `s`): any change asks for a new test. */
+  const reset = (p: ReturnType<typeof presetOf>, s: ProviderView | null) => {
+    const l = listOf(p, s);
+    setList(l);
+    setChoice(firstOf(l));
+    setTested(null);
     setError(null);
-    setList({ status: "loading" });
-    const known = s?.models ?? [];
-    let next = afterFetch(await api.fetchModelNames(probeOf(p, s, c)), known);
-    if (next.next === "test" && n === asked.current && alive.current) next = afterTest(await api.testModel(probeOf(p, s, c, next.model)), known);
-    if (n !== asked.current || !alive.current) return;
-    inFlight.current = null;
-    if (next.next === "list") {
-      const found = next;
-      setList({ status: "ready", sig, ...found });
-      // a model chosen, or a name being typed, stays; otherwise the list's first choice
-      setChoice((was) => (was === TYPED || found.models.includes(was) ? was : found.models.length ? (initialChoice(found.models, s, view) ?? TYPED) : TYPED));
-    } else if (next.next === "stay") {
-      setList({ status: "none" });
-      setChoice((was) => (was === TYPED ? was : NO_MODEL_YET));
-      setError({ text: next.error, typeInstead: next.typeInstead });
-    }
   };
 
   const choosePreset = (next: PresetId) => {
     const p = presetOf(next);
     if (keyField.current) keyField.current.value = ""; // a key typed for one provider never goes to another
-    keyVersion.current += 1;
-    asked.current += 1; // a fetch on its way was for the provider before
-    inFlight.current = null;
     setKeyTyped(false);
     setPresetId(next);
     setBaseUrl(p.baseUrl);
     setRemoveKey(false);
-    setList({ status: "none" });
-    setChoice(NO_MODEL_YET);
-    setError(null);
-    void fetchList({ presetId: next, baseUrl: p.baseUrl, removeKey: false }, true);
+    reset(p, savedFor(view, p, addressOf(p, { baseUrl: p.baseUrl })));
   };
 
-  /** Leaving the address or the key for another control of this form fetches what it can (not
-      for Cancel or Add model, nor outside the form). */
-  const onLeave = (e: React.FocusEvent) => {
-    const to = e.relatedTarget;
-    if (!(to instanceof HTMLElement) || !root.current?.contains(to) || to.dataset.noFetch !== undefined) return;
-    void fetchList(now(), true);
-  };
-  const fetchOnEnter = (e: React.KeyboardEvent) => {
-    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-    e.preventDefault();
-    void fetchList(now(), false);
+  /** Test connection: save the provider if new (not active), check it, list its models. */
+  const testConnection = async () => {
+    if (testing) return;
+    const c = credentials();
+    const problem = credentialsProblem(preset, saved, c);
+    if (problem) return setError(problem);
+    const key = c.apiKey.trim();
+    setTesting(true);
+    setTested(null);
+    setError(null);
+    setList({ status: "loading" });
+    // a saved provider is tested as saved: a new or removed key is saved to it first
+    if (saved && (key || c.removeKey)) {
+      const updated = await api.updateModelProvider(saved.id, key ? { apiKey: key } : { removeKey: true });
+      if (!alive.current) return;
+      if (!updated.ok) {
+        setTesting(false);
+        setList(listOf(preset, saved));
+        return setError(updated.detail);
+      }
+      models.accept(updated.view);
+    }
+    const answer = await api.connectModel({
+      name: freeName(preset.label, view.providers),
+      preset: preset.id,
+      baseUrl: address,
+      ...(saved ? { providerId: saved.id } : key ? { apiKey: key } : {}),
+    });
+    if (!alive.current) return;
+    setTesting(false);
+    if (!answer.ok) {
+      setList(listOf(preset, saved));
+      return setError(answer.detail);
+    }
+    models.accept(answer.view);
+    if (answer.created) created.current = answer.providerId;
+    if (keyField.current) keyField.current.value = ""; // saved now: never kept here
+    setKeyTyped(false);
+    setRemoveKey(false);
+    const now = answer.view.providers.find((p) => p.id === answer.providerId) ?? null;
+    setList({ status: "ready", sig: "", next: "list", models: answer.models, note: null, verify: false });
+    setChoice((was) => (answer.models.includes(was) ? was : (initialChoice(answer.models, now, answer.view) ?? NO_MODEL_YET)));
+    setTested(answer.detail);
+    toast(`${providerName}: ${answer.detail}`);
   };
 
   const add = async () => {
     if (saving) return;
-    const { c, sig } = read(now());
-    const problem = credentialsProblem(preset, saved, c) ?? choiceProblem(choice, typed);
-    if (problem) return setError({ text: problem, typeInstead: false });
-    const model = choice === TYPED ? typed.trim() : choice;
-    const built = requestsForAdd(preset, saved, view, c, model);
-    if (!built.ok) return setError({ text: built.problem, typeInstead: false });
-    const listedHere = choice !== TYPED && list.status === "ready" && !list.verify && list.sig === sig;
+    if (!saved || list.status !== "ready" || choice === NO_MODEL_YET) return setError("Test connection first, then choose one of the models it finds.");
+    const built = requestsForAdd(preset, saved, view, { baseUrl, apiKey: "", removeKey: false }, choice);
+    if (!built.ok) return setError(built.problem);
     setSaving(true);
     setError(null);
-    if (!listedHere) {
-      const tested = await api.testModel(probeOf(preset, saved, c, model));
-      const failed = !tested.ok ? tested.detail : tested.result.ok ? null : tested.result.detail;
-      if (!alive.current) return;
-      if (failed) {
-        setSaving(false);
-        return setError({ text: failed, typeInstead: false });
-      }
-    }
     const refused = await models.save(built.requests);
     if (!alive.current) return;
     setSaving(false);
-    if (refused) setError({ text: refused, typeInstead: false });
-    else onDone();
+    if (refused) return setError(refused);
+    created.current = null; // added: it stays
+    onDone();
+  };
+
+  const cancel = () => {
+    const leftover = created.current;
+    created.current = null;
+    if (leftover) void models.discard(leftover); // saved by Test connection, never added
+    onCancel();
+  };
+
+  const testOnEnter = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    void testConnection();
   };
 
   return (
-    <div ref={root} className="ai-picker-form">
+    <div className="ai-picker-form">
       <div className="ai-picker-body ai-picker-fields">
         <div className="ai-field">
           <label htmlFor={ids.provider} className="ai-label">
@@ -227,12 +206,11 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
             ))}
           </select>
           <div id={ids.providerHint} className="flex flex-col gap-1">
-            {!showsUrl(preset) && (
-              <p className="ai-hint">
-                {`${preset.label} runs at ${host}: your questions, the assessment data they need and relevant /add-on knowledge passages are sent there.`}
-              </p>
+            {preset.kind === "reconix" && <p className="ai-hint">Its address, model and key come from the Core API&apos;s .env (read-only).</p>}
+            {preset.kind === "cloud" && (
+              <p className="ai-hint">{`Just the API key: ${preset.label}'s models are built in. It runs at ${host}, so the Core API sends your questions and the session data they need there.`}</p>
             )}
-            {saved && <p className="ai-hint">Saved as {providerName}: Add model adds the model to it.</p>}
+            {saved && preset.kind !== "reconix" && <p className="ai-hint">Saved as {providerName}: Add model switches it to the chosen model.</p>}
           </div>
         </div>
         {showsUrl(preset) && (
@@ -245,87 +223,91 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
               value={baseUrl}
               onChange={(e) => {
                 setBaseUrl(e.target.value);
-                setError(null);
+                reset(preset, savedFor(view, preset, addressOf(preset, { baseUrl: e.target.value })));
               }}
-              onKeyDown={fetchOnEnter}
-              onBlur={onLeave}
+              onKeyDown={testOnEnter}
               maxLength={MAX_URL}
               inputMode="url"
               spellCheck={false}
               {...NOT_A_LOGIN}
-              placeholder="http://127.0.0.1:8000/v1"
+              placeholder="http://127.0.0.1:1234/v1"
               aria-describedby={ids.urlHint}
               className="ai-input ai-mono"
             />
             <p id={ids.urlHint} className="ai-hint">
               {remote
-                ? "Off this machine: your questions, the assessment data they need and relevant /add-on knowledge passages are sent there."
-                : "An OpenAI-compatible address, usually ending in /v1."}
+                ? "Off this machine: the Core API sends your questions and the session data they need there."
+                : preset.kind === "local"
+                  ? "Ollama's address on this machine (the default needs no change)."
+                  : "An OpenAI-compatible address, usually ending in /v1."}
             </p>
           </div>
         )}
-        <ModelKeyField
-          id={ids.key}
-          inputRef={keyField}
-          provider={providerName}
-          required={preset.key === "required"}
-          keySaved={keySaved}
-          removeKey={removeKey}
-          keyTyped={keyTyped}
-          onTyped={(typedNow) => {
-            keyVersion.current += 1;
-            setKeyTyped(typedNow);
-            setError(null);
-          }}
-          onRemoveKey={(remove) => {
-            setRemoveKey(remove);
-            setError(null);
-          }}
-          onKeyDown={fetchOnEnter}
-          onBlur={onLeave}
-        />
-        <ModelNameField
-          id={ids.model}
-          list={list}
-          choice={choice}
-          typed={typed}
-          typedRef={typedField}
-          onChoice={(value) => {
-            setChoice(value);
-            setError(null);
-          }}
-          onTyped={(value) => {
-            setTyped(value);
-            setError(null);
-          }}
-          onFetch={() => void fetchList(now(), false)}
-          onSubmit={() => void add()}
-        />
+        {showsKey(preset) && (
+          <ModelKeyField
+            id={ids.key}
+            inputRef={keyField}
+            provider={providerName}
+            required={preset.key === "required"}
+            keySaved={keySaved}
+            removeKey={removeKey}
+            keyTyped={keyTyped}
+            onTyped={(typedNow) => {
+              setKeyTyped(typedNow);
+              setTested(null);
+              setError(null);
+            }}
+            onRemoveKey={(remove) => {
+              setRemoveKey(remove);
+              setTested(null);
+              setError(null);
+            }}
+            onKeyDown={testOnEnter}
+            onBlur={() => undefined}
+          />
+        )}
+        <div className="ai-field">
+          <button type="button" onClick={() => void testConnection()} disabled={testing} className="ai-btn ai-btn-test">
+            {testing ? <Loader className="size-3.5 animate-spin" aria-hidden /> : <PlugZap className="size-3.5" aria-hidden />}
+            {testing ? "Testing the connection…" : tested ? "Test again" : "Test connection"}
+          </button>
+          {tested && !error ? (
+            <p className="ai-test-ok" role="status">
+              <CircleCheck className="size-3.5 shrink-0" aria-hidden />
+              {tested}
+            </p>
+          ) : (
+            list.status !== "ready" && !error && <p className="ai-hint">Checks the provider and finds its models. Nothing is used until you add one.</p>
+          )}
+        </div>
+        {list.status === "ready" && list.models.length > 0 && (
+          <ModelNameField
+            id={ids.model}
+            list={list}
+            choice={choice}
+            onChoice={(value) => {
+              setChoice(value);
+              setError(null);
+            }}
+          />
+        )}
         {error && (
           <div className="ai-picker-refusal" role="alert">
-            <p>{error.text}</p>
-            {error.typeInstead && (
-              <button
-                type="button"
-                onClick={() => {
-                  focusTyped.current = true;
-                  setList({ status: "ready", sig: read(now()).sig, ...typeInstead() });
-                  setChoice(TYPED);
-                  setError(null);
-                }}
-                className="ai-btn ai-btn-small ai-btn-outline mt-2"
-              >
-                Type a model name instead
-              </button>
-            )}
+            <p>{error}</p>
           </div>
         )}
       </div>
       <div className="ai-picker-foot">
-        <button type="button" data-no-fetch onClick={onCancel} className="ai-btn ai-btn-small ai-btn-outline">
+        <button type="button" onClick={cancel} className="ai-btn ai-btn-small ai-btn-outline">
           Cancel
         </button>
-        <button type="button" data-no-fetch onClick={() => void add()} disabled={saving} className="ai-btn ai-btn-small ai-btn-primary">
+        <button
+          type="button"
+          onClick={() => void add()}
+          disabled={saving || testing || list.status !== "ready" || choice === NO_MODEL_YET}
+          title={list.status !== "ready" ? "Test the connection first" : undefined}
+          className="ai-btn ai-btn-small ai-btn-primary"
+        >
           {saving && <Loader className="size-3.5 animate-spin" aria-hidden />}
           Add model
         </button>

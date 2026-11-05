@@ -6,7 +6,7 @@
 import { z } from "zod";
 
 import { type Conversation, ConversationSchema, type ConversationSummary, ConversationSummarySchema } from "./history-schema";
-import type { AddProvider, Probe, SetActive, UpdateProvider } from "./models/requests";
+import type { AddProvider, Connect, Probe, SetActive, UpdateProvider } from "./models/requests";
 import { type FetchResult, FetchResultSchema, type ModelsView, ModelsViewSchema, type ProbeResult, ProbeResultSchema } from "./models/view";
 import {
   ASSISTANT_ROUTE,
@@ -14,6 +14,7 @@ import {
   CONVERSATIONS_ROUTE,
   modelRoute,
   MODELS_ACTIVE_ROUTE,
+  MODELS_CONNECT_ROUTE,
   MODELS_FETCH_ROUTE,
   MODELS_ROUTE,
   MODELS_TEST_ROUTE,
@@ -182,5 +183,14 @@ export async function testModel(body: Probe): Promise<{ ok: true; result: ProbeR
 /** The names the model's server lists, or `listed: false` (it answered without a list). */
 export async function fetchModelNames(body: Probe): Promise<({ ok: true } & FetchResult) | Failure> {
   const result = await call(MODELS_FETCH_ROUTE, send("POST", body), FetchResultSchema);
+  return result.ok ? { ok: true, ...result.value } : result;
+}
+
+const ConnectedSchema = z.object({ view: ViewAnswer, providerId: z.string(), models: z.array(z.string()).max(200), detail: z.string().max(400), created: z.boolean() });
+export type ConnectAnswer = { ok: true; view: ModelsView; providerId: string; models: string[]; detail: string; created: boolean } | Failure;
+
+/** "Test connection": saves the provider if new, checks it and lists its models. */
+export async function connectModel(body: Connect): Promise<ConnectAnswer> {
+  const result = await call(MODELS_CONNECT_ROUTE, send("POST", body), ConnectedSchema);
   return result.ok ? { ok: true, ...result.value } : result;
 }

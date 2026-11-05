@@ -18,3 +18,5 @@ export const MODELS_TEST_ROUTE = `${MODELS_ROUTE}/test`;
 export const MODELS_FETCH_ROUTE = `${MODELS_ROUTE}/fetch`;
 /** The assistant on the dashboard page; /assistant redirects here. */
 export const ASSISTANT_VIEW = "/?view=assistant";
+/** "Test connection" (POST): save the provider if new, check it, list its models. */
+export const MODELS_CONNECT_ROUTE = `${MODELS_ROUTE}/connect`;

@@ -413,8 +413,37 @@
 /* on the checked row's tint the muted grey falls under 4.5:1: lift it toward the text colour */
 .ai-picker-model[aria-current="true"] .ai-picker-meta { color: color-mix(in oklab, var(--foreground) 40%, var(--muted-foreground)); }
 .ai-picker-remove { flex-shrink: 0; }
-.ai-picker-add { width: 100%; justify-content: flex-start; height: 34px; padding: 0 8px; color: var(--foreground); }
+/* + Add a provider: a full-width outlined button in the accent colour, easy to find */
+.ai-picker-add {
+  width: 100%;
+  justify-content: center;
+  height: 34px;
+  padding: 0 10px;
+  font-weight: 500;
+  color: var(--primary);
+  border: 1px dashed color-mix(in oklab, var(--primary) 55%, var(--border));
+  background: color-mix(in oklab, var(--primary) 6%, transparent);
+}
+.ai-picker-add:hover:not(:disabled) { color: var(--primary); background: color-mix(in oklab, var(--primary) 14%, transparent); }
 .ai-picker-add svg { color: var(--primary); }
+/* a provider's heading: a visible open/close arrow, its name and "local · 2 models" */
+.ai-picker-head { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; min-height: 38px; padding: 4px 8px; border-radius: 9px; text-align: left; color: var(--foreground); }
+.ai-picker-head:hover { background: color-mix(in oklab, var(--foreground) 6%, transparent); }
+.ai-picker-head:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.ai-picker-chevron { display: grid; place-items: center; width: 18px; height: 18px; flex-shrink: 0; border-radius: 6px; color: var(--foreground); background: color-mix(in oklab, var(--foreground) 8%, transparent); }
+.ai-picker-head-name { font-size: 13px; font-weight: 600; }
+/* Test connection: the form's main step, full width in the accent colour */
+.ai-btn-test {
+  width: 100%;
+  justify-content: center;
+  height: 34px;
+  font-weight: 500;
+  color: var(--primary);
+  border: 1px solid color-mix(in oklab, var(--primary) 60%, var(--border));
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+.ai-btn-test:hover:not(:disabled) { color: var(--primary); background: color-mix(in oklab, var(--primary) 18%, transparent); }
+.ai-test-ok { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--success); }
 /* Set the provider: native selects, and the Model select beside Fetch models */
 .ai-select {
   width: 100%;

@@ -192,6 +192,8 @@ export const FrameSchema = z.discriminatedUnion("t", [
     .strict(),
   z.object({ t: z.literal("card"), card: CardSchema }).strict(),
   z.object({ t: z.literal("text"), delta: z.string().max(20_000) }).strict(),
+  // the reply as the Core API saved it: shown in place of the pieces
+  z.object({ t: z.literal("final"), text: z.string().max(20_000) }).strict(),
   z.object({ t: z.literal("error"), detail: z.string().max(400) }).strict(),
   z.object({ t: z.literal("done") }).strict(),
 ]);

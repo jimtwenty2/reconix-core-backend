@@ -4,13 +4,10 @@
 import { describe, expect, it } from "vitest";
 
 import { parseBlocks } from "@/lib/assistant/markdown";
-import { checkModel } from "@/lib/assistant/config";
 import { buildContext, clean, CONTEXT_LIMIT } from "@/lib/assistant/context";
-import { fenceTag, systemPrompt } from "@/lib/assistant/prompt";
 import { redact } from "@/lib/assistant/redact";
 import { createLimiter, limitsFromEnv, PER_MINUTE, RUNNING } from "@/lib/assistant/rate";
 import { ChatRequestSchema, MAX_QUESTION } from "@/lib/assistant/request";
-import { createEventParser, createThinkFilter } from "@/lib/assistant/stream";
 
 import { sampleAssessments } from "./fixtures";
 import { redactVectors as vectors } from "./vectors";
@@ -36,31 +33,6 @@ describe("ChatRequestSchema", () => {
     ["extra fields", { ...ask(), context: "my own data" }],
   ])("rejects %s", (_name, body) => {
     expect(ChatRequestSchema.safeParse(body).success).toBe(false);
-  });
-});
-
-describe("checkModel (every saved model, again on each use)", () => {
-  const model = (baseUrl: string, name = "m", apiKey: string | null = null) => checkModel({ baseUrl, model: name, apiKey });
-  it("allows an address off this machine by default (cloud allowed), marked not local", () => {
-    expect(model("https://llm.example.com/v1")).toEqual({ ok: true, config: { baseUrl: "https://llm.example.com/v1", model: "m", apiKey: null, local: false } });
-    expect(model("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "gsk-k").ok).toBe(true);
-  });
-  it("reads a local endpoint", () => {
-    expect(model("http://127.0.0.1:11434/v1/", "llama3.2")).toEqual({ ok: true, config: { baseUrl: "http://127.0.0.1:11434/v1", model: "llama3.2", apiKey: null, local: true } });
-  });
-  it.each([
-    ["not an address", () => model("nope")],
-    ["another scheme", () => model("file:///etc/passwd")],
-    ["a key in the address", () => model("https://user:secret@llm.example.com/v1")],
-    ["a key over plain http to a remote host", () => model("http://llm.example.com/v1", "m", "k")],
-    ["an odd model name", () => model("http://127.0.0.1:1/v1", "a b\nc")],
-  ])("refuses %s", (_name, check) => {
-    expect(check().ok).toBe(false);
-  });
-  it("sends a key to a remote model over https only", () => {
-    const setup = model("https://llm.example.com/v1", "m", "k");
-    expect(setup.ok && setup.config.apiKey).toBe("k");
-    expect(setup.ok && setup.config.local).toBe(false);
   });
 });
 
@@ -97,11 +69,7 @@ describe("buildContext", () => {
       const text = buildContext([run], uid)!.text;
       expect(text).not.toMatch(/[<>\u2028\u2029\u200b\u202e]/);
       expect(text.split("\n").some((line) => line.startsWith("SYSTEM:"))).toBe(false);
-      const tag = fenceTag();
-      const prompt = systemPrompt("x", text, tag);
-      expect(prompt.split(`</${tag}>`)).toHaveLength(3); // named once in the rules, closed once
     }
-    expect(fenceTag()).not.toBe(fenceTag());
   });
   it("keeps one line per field and caps the whole", () => {
     expect(clean("a\nb\u0007c")).toBe("a b c");
@@ -114,26 +82,6 @@ describe("buildContext", () => {
 describe("redact", () => {
   it.each(vectors)("masks like the TUI: %s", (text, masked) => {
     expect(redact(text)).toBe(masked);
-  });
-});
-
-describe("reading a streamed reply", () => {
-  it("joins the text of chunks split anywhere, and stops at [DONE]", () => {
-    const out: string[] = [];
-    let done = false;
-    const parser = createEventParser((t) => out.push(t), () => (done = true));
-    const chunk = (text: string) => `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`;
-    const raw = chunk("Hel") + ": keep-alive\n" + chunk("lo") + "data: {broken\n\n" + chunk(" world") + "data: [DONE]\n\n";
-    for (let i = 0; i < raw.length; i += 7) parser.push(raw.slice(i, i + 7));
-    parser.end();
-    expect(out.join("")).toBe("Hello world");
-    expect(done).toBe(true);
-  });
-  it("drops <think> sections even when the tags are split", () => {
-    const filter = createThinkFilter();
-    const pieces = ["<thi", "nk>secret plan</th", "ink>\n\nAnswer", " <think>more</think>done"];
-    expect(pieces.map(filter).join("")).toBe("Answer done");
-    expect(["a <", "b"].map(createThinkFilter()).join("")).toBe("a <b");
   });
 });
 

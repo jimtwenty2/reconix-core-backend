@@ -2,8 +2,10 @@
 
 try_provider sends one fixed prompt with no Reconix data in it, so nothing about an
 assessment leaves this computer, even for a provider that is not approved yet.
-local_models asks an Ollama on this computer which models it has; cloud providers
-are not asked (that would be a new kind of outside call).
+local_models asks an Ollama on this computer which models it has, and
+compatible_models an OpenAI-compatible server on this computer (LM Studio, vLLM...);
+servers off this computer and cloud providers are not asked (that would be a new kind of
+outside call).
 """
 
 import ipaddress
@@ -22,7 +24,7 @@ from reconix_api.core.errors import ApiError
 
 TEST_PROMPT = "Reply with the single word OK."
 LIST_TIMEOUT_SECONDS = 5
-MAX_LIST_BYTES = 1024 * 1024  # an Ollama model list is a few KB
+MAX_LIST_BYTES = 1024 * 1024  # a model list is a few KB
 
 
 @dataclass(frozen=True)
@@ -45,23 +47,58 @@ async def try_provider(config: ProviderConfig) -> ProviderTest:
 async def local_models(base_url: str | None) -> list[str]:
     """The model names an Ollama on this computer has, e.g. ["reconix:latest"]."""
     url = (base_url or ollama_url()).rstrip("/").removesuffix("/v1")
+    body = await _model_list(url, f"{url}/api/tags", "Ollama")
+    models = body.get("models", []) if isinstance(body, dict) else []
+    return sorted(str(model.get("name")) for model in models if isinstance(model, dict))
+
+
+async def compatible_models(base_url: str, api_key: str | None) -> list[str]:
+    """The model ids an OpenAI-compatible server on this computer lists at /models, e.g.
+    LM Studio's ["google/gemma-4-e4b"]. Only a loopback address is asked."""
+    url = base_url.rstrip("/")
+    if not _is_loopback(url):
+        raise ApiError(
+            422,
+            "MODEL_LIST_NOT_SUPPORTED",
+            "Only a server on this computer can list its models.",
+        )
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    body = await _model_list(url, f"{url}/models", "The server", headers)
+    models = body.get("data", []) if isinstance(body, dict) else []
+    return sorted(str(model.get("id")) for model in models if isinstance(model, dict))
+
+
+async def _model_list(
+    base_url: str, list_url: str, who: str, headers: dict[str, str] | None = None
+) -> object:
+    """GET a model list as JSON: the address checked first, no redirects, at most
+    MAX_LIST_BYTES. Any failure is one fixed 503 that never repeats the address."""
     try:
-        check_base_url(url)
+        check_base_url(base_url)
     except BaseUrlError as error:
         raise ApiError(422, "PROVIDER_URL_NOT_ALLOWED", str(error)) from None
     try:
         async with httpx.AsyncClient(timeout=LIST_TIMEOUT_SECONDS) as client:
-            async with client.stream("GET", f"{url}/api/tags") as response:
+            async with client.stream("GET", list_url, headers=headers or {}) as response:
                 response.raise_for_status()
                 body = b""
                 async for part in response.aiter_bytes():
                     body += part
                     if len(body) > MAX_LIST_BYTES:
                         raise ValueError("too large")
-        models = json.loads(body).get("models", [])
+        return json.loads(body)
     except (httpx.HTTPError, ValueError, AttributeError):
-        raise ApiError(503, "MODEL_UNAVAILABLE", "Ollama did not answer with its models.") from None
-    return sorted(str(model.get("name")) for model in models if isinstance(model, dict))
+        raise ApiError(503, "MODEL_UNAVAILABLE", f"{who} did not answer with its models.") from None
+
+
+def _is_loopback(url: str) -> bool:
+    host = urlsplit(url).hostname or ""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def ensure_public_host(base_url: str) -> None:

@@ -50,6 +50,9 @@ def create_provider(
 
     Business Rules:
     - OPENAI, ANTHROPIC, and DEEPSEEK require an API key; OPENAI_API_COMPATIBLE requires a base_url.
+    - Another model of a saved provider can reuse its key: send `copy_key_from` (that
+      provider's id) instead of `api_key`. Only from the same provider_type at the same
+      base_url (422 KEY_NOT_COPYABLE); not together with `api_key` (422 KEY_GIVEN_TWICE).
 
     State Changes:
     - Creates the provider. Its API key is encrypted and shown only as its last 4 characters.
@@ -174,13 +177,22 @@ async def test_provider(
 
 
 @router.get("/{llm_provider_id}/models")
-async def list_models(llm_provider_id: UUID, db: Db, _: CurrentOperator) -> LlmProviderModelsOut:
-    """Lists the models that an OLLAMA provider's Ollama has on this computer.
+async def list_models(
+    llm_provider_id: UUID,
+    db: Db,
+    _: CurrentOperator,
+    settings: CurrentSettings,
+) -> LlmProviderModelsOut:
+    """Lists the models a provider on this computer has.
 
     Business Rules:
-    - RECONIX and cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.
+    - An OLLAMA provider lists its Ollama's models; an OPENAI_API_COMPATIBLE provider on
+      this computer (LM Studio, for example) lists what its server returns at /models.
+    - RECONIX, cloud providers and servers off this computer return 422
+      MODEL_LIST_NOT_SUPPORTED.
 
     Security:
     - Requires a valid session token.
+    - The saved API key is sent only to the provider's own address on this computer.
     """
-    return await llm_providers.list_models(db, llm_provider_id)
+    return await llm_providers.list_models(db, settings, llm_provider_id)

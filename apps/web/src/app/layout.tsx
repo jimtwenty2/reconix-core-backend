@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import { Toaster } from "@/components/ui/toast";
 import { SITE_NAME } from "@/lib/site";
 import "./globals.css";
 
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             scroll natively, because on a desktop frame the scroller is the content area
             (.dash-content), not the window. */}
         {children}
+        <Toaster />
       </body>
     </html>
   );

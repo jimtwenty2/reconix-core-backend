@@ -447,3 +447,52 @@ async def test_on_piece_errors_still_hide_the_provider_text(monkeypatch) -> None
         await complete(QUESTION, reconix_provider(), on_piece=on_piece)
     assert raised.value.code == "MODEL_UNAVAILABLE"
     assert "secret-url" not in raised.value.message
+
+
+class RefusesJsonObject:
+    """An OpenAI-compatible server such as LM Studio: response_format json_object is a 400."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def acompletion(self, **kwargs: object) -> litellm.ModelResponse:
+        self.calls.append(kwargs)
+        if kwargs.get("response_format") == {"type": "json_object"}:
+            raise litellm.exceptions.BadRequestError(
+                message="'response_format.type' must be 'json_schema' or 'text'",
+                model="m",
+                llm_provider="openai",
+            )
+        return await REAL_ACOMPLETION(**kwargs, mock_response='{"answer": "hi"}')
+
+
+LM_STUDIO = ProviderConfig(
+    ProviderType.OPENAI_API_COMPATIBLE, "google/gemma-4-e4b", "http://127.0.0.1:1234/v1"
+)
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+async def test_a_refused_json_object_is_asked_again_without_it(monkeypatch, streamed) -> None:
+    server = RefusesJsonObject()
+    monkeypatch.setattr(client.litellm, "acompletion", server.acompletion)
+
+    async def on_piece(_: str) -> None:
+        pass
+
+    completion = await complete(
+        QUESTION, LM_STUDIO, json_answer=True, on_piece=on_piece if streamed else None
+    )
+
+    assert json.loads(completion.text) == {"answer": "hi"}
+    assert [c["response_format"] for c in server.calls] == [{"type": "json_object"}, None]
+
+
+async def test_other_bad_requests_are_not_asked_again(monkeypatch) -> None:
+    server = RefusesJsonObject()
+    monkeypatch.setattr(client.litellm, "acompletion", server.acompletion)
+    deepseek = ProviderConfig(ProviderType.DEEPSEEK, "deepseek-chat", None, api_key="fake-key-0123")
+
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, deepseek, json_answer=True)
+    assert raised.value.code == "MODEL_UNAVAILABLE"
+    assert len(server.calls) == 1
