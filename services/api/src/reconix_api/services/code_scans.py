@@ -87,6 +87,13 @@ MANIFEST = re.compile(
     r"|pom\.xml|build\.gradle|build\.gradle\.kts|gradle\.lockfile|Gemfile\.lock|composer\.lock"
     r"|packages\.lock\.json|pubspec\.lock|mix\.lock"
 )
+# IaC / config files trivy's misconfig scanner reads (Docker, Compose, Terraform). A
+# change to one reruns trivy (only), so an IaC-only edit is still re-scanned.
+IAC = re.compile(
+    r"Dockerfile[^/]*|Containerfile[^/]*|docker-compose[^/]*\.ya?ml|compose\.ya?ml"
+    r"|.*\.tf|.*\.tfvars",
+    re.I,
+)
 TOOLS_INFO_TIMEOUT_SECONDS = 60
 ANALYZE_PROGRESS = 85  # progress when the AI review starts; it moves to 99 as reviews finish
 MAX_SNIPPET = 500
@@ -146,6 +153,7 @@ async def start_scan(
     details = {
         "agent_run_id": str(run.agent_run_id),
         "analyze": str(body.analyze),
+        "refresh": str(body.refresh),
         "excluded_files_removed": str(removed),
         "tools": ",".join(tools),
         "paths": str(len(body.paths)),  # a count: the audit never holds file names
@@ -489,7 +497,7 @@ async def _scan(
     scanned = await asyncio.to_thread(_hashes, files)  # up to max_upload_mb of code
     previous = agent_run_repo.latest_completed_code_scan(db, assessment_id)
     before = (previous.plan or {}) if previous else {}
-    full = previous is None or not set(tools) <= set(before.get("tools", []))
+    full = previous is None or not set(tools) <= set(before.get("tools", [])) or body.refresh
     known = before.get("scanned", {})
     inside = {path: sha256 for path, sha256 in known.items() if _in_scan(path, body.paths)}
     changed, deleted = changes(scanned, inside)  # files outside the paths are not deleted
@@ -623,17 +631,24 @@ def due_tools(tools: list[str], changed: set[str], deleted: set[str], full: bool
     a manifest or lockfile changed (or on a full scan); sonar_scan when anything changed."""
     touched = changed | deleted
     manifests = full or any(is_manifest(path) for path in touched)
+    iac = any(is_iac(path) for path in touched)
     due = {}
     for tool in tools:
         if tool in CHANGED_TOOLS and changed:
             due[tool] = CHANGED
         elif (tool in DEPENDENCY_TOOLS and manifests) or (tool == ToolName.SONAR_SCAN and touched):
             due[tool] = ALL
+        elif tool == ToolName.TRIVY and iac:  # trivy also scans IaC/config misconfig
+            due[tool] = ALL
     return due
 
 
 def is_manifest(path: str) -> bool:
     return bool(MANIFEST.fullmatch(path.rsplit("/", 1)[-1]))
+
+
+def is_iac(path: str) -> bool:
+    return bool(IAC.fullmatch(path.rsplit("/", 1)[-1]))
 
 
 @dataclass(frozen=True)

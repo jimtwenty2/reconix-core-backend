@@ -14,7 +14,7 @@ import pytest
 from reconix_ai.harness import mask_secrets
 from reconix_api.core.masking import mask_output
 from reconix_api.findings import code_notes
-from reconix_api.findings.shape import OutputUnreadable, dedupe_key
+from reconix_api.findings.shape import OutputUnreadable, sca_dedupe_key
 from reconix_api.models.enums import SeverityStatus
 from reconix_api.services.findings import parse_run
 
@@ -78,9 +78,9 @@ def test_trivy_target_is_the_manifest_from_the_parent_result():
     lodash = [f for f in found if f.evidence[0].location.startswith("lodash:")]
     assert lodash and {f.target for f in lodash} == {LOCKFILE}
     proof = json.loads(lodash[0].evidence[0].content)
-    # the dedupe key is the vulnerability, the package and the manifest
-    assert lodash[0].dedupe_key == dedupe_key(
-        "trivy_vulnerability", proof["VulnerabilityID"], "lodash", "4.17.4", LOCKFILE
+    # the dedupe key is the CVE (or id), the package and the manifest — shared across SCA tools
+    assert lodash[0].dedupe_key == sca_dedupe_key(
+        lodash[0].cve_ids, proof["VulnerabilityID"], "lodash", LOCKFILE
     )
 
 
@@ -134,8 +134,8 @@ def test_trivy_on_an_image_keeps_the_package_as_target():
     }
     [finding], _ = parse_run("trivy", json.dumps(document))
     assert finding.target == "musl"
-    # no manifest: the key is the vulnerability and the package, as before
-    assert finding.dedupe_key == dedupe_key("trivy_vulnerability", "CVE-2024-1", "musl", "1")
+    # no manifest (an image, not a filesystem): the key is the CVE and the package only
+    assert finding.dedupe_key == sca_dedupe_key(finding.cve_ids, "CVE-2024-1", "musl", "")
 
 
 def test_trivy_relative_folder_gives_a_relative_manifest():

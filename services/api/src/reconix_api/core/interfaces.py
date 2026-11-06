@@ -328,6 +328,9 @@ class AgentRequest(BaseModel):
     resume: ResumeInput | None = None
     chat_scope: ChatScope | None = None  # CHAT: the scope the person talks about
     plan: list[str] = Field(default_factory=list)  # CHAT: the current plan, one line a step
+    # The agent's own earlier per-step reasoning this assessment (masked), oldest first, so a
+    # PLAN or SUGGEST step builds on what it already decided instead of re-deriving it.
+    recent_reasoning: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def scope_unless_chat(self) -> Self:

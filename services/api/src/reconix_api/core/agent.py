@@ -78,6 +78,7 @@ class PlanInput:
     report: ReportInput | None
     chat_scope: ChatScope | None
     plan: list[str]
+    recent_reasoning: list[str]
 
 
 def provider_config(settings: Settings, provider: LlmProvider, model_name: str) -> ProviderConfig:
@@ -175,6 +176,7 @@ def plan_input(request: AgentRequest) -> PlanInput:
         report=request.report,
         chat_scope=request.chat_scope,
         plan=list(request.plan),
+        recent_reasoning=list(request.recent_reasoning),
     )
 
 

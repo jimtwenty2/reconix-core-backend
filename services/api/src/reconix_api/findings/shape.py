@@ -35,3 +35,18 @@ def dedupe_key(*parts: str) -> str:
     """The same thing found again, by any tool, gets the same key."""
     text = "|".join(part.strip().lower() for part in parts)
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def sca_dedupe_key(cve_ids: list[str], fallback_id: str, package: str, manifest: str) -> str:
+    """One key for a dependency vulnerability, shared by trivy, grype and osv so the same CVE
+    in the same package+manifest is one finding (listing each tool as a source), not three.
+
+    - Prefer a CVE id (the tools disagree on GHSA vs CVE ids); fall back to the tool's own id.
+    - Keep the manifest path (the tools scan the same folder, so the paths agree), so the same
+      package in two different manifests is still two findings.
+    - Leave the *version* out of the key on purpose: a manifest pins one version per package,
+      and the tools format it differently (5.3 vs 5.3.0), so keying on it would wrongly split
+      the same vulnerability across tools. The version stays on the finding as evidence.
+    """
+    ident = min((cve.upper() for cve in cve_ids), default="") or fallback_id
+    return dedupe_key("dependency_vuln", ident, package, manifest)

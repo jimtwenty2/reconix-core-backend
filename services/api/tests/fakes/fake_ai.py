@@ -168,13 +168,13 @@ class FakeAgent:
 def unsure_analysis(finding: FindingInput) -> FindingAnalysis:
     return FindingAnalysis(
         code=finding.code,
-        explanation=finding.title,
+        explanation=f"In plain terms: {finding.title}.",
         related=[],
         severity_status=finding.severity_status,
         cvss_score=finding.cvss_score,
         evidence="",
-        impact="",
-        remediation="",
+        impact="Fake impact.",
+        remediation="Fake remediation.",
         cwe_ids=finding.cwe_ids,
         owasp_id=finding.owasp_id,
         cve_ids=finding.cve_ids,

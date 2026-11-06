@@ -47,11 +47,21 @@ class PlanOut(BaseModel):
     draft: bool = False
 
 
+class AnalyzeIn(BaseModel):
+    """Which findings to analyze. Omitted or empty: every OPEN finding (the end-of-run
+    batch). A list of ids: only those OPEN findings — used for per-step analysis, so each
+    step's new findings are analyzed as they are found, not all at the end."""
+
+    finding_ids: list[UUID] | None = None
+
+
 class AnalysisOut(BaseModel):
-    """The agent's suggestions for each OPEN finding. Nothing here changes a finding: a
-    person accepts a suggestion with PATCH /findings/{id}. A next_step is a validation
-    step: send it to POST /assessments/{id}/actions with purpose "validation", where it
-    is checked and waits for an approval like any MEDIUM action."""
+    """The agent's analysis of each OPEN finding. The explanatory fields (a plain-language
+    explanation, impact and remediation, and a CVSS score when missing) are written onto the
+    finding so a reader sees them; the status a person owns (OPEN / FALSE_POSITIVE / FIXED)
+    stays theirs via PATCH /findings/{id}. A next_step is a validation step: send it to POST
+    /assessments/{id}/actions with purpose "validation", where it is checked and waits for an
+    approval like any MEDIUM action."""
 
     agent_run: AgentRunOut
     summary: str

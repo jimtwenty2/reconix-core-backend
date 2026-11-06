@@ -34,6 +34,7 @@ from reconix_api.findings import schemathesis as schemathesis_findings
 from reconix_api.findings import sqlmap as sqlmap_findings
 from reconix_api.findings import testssl as testssl_findings
 from reconix_api.findings.shape import NewFinding
+from reconix_api.findings.text import host_of
 from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
 from reconix_api.models.enums import (
     AgentRunStatus,
@@ -41,6 +42,7 @@ from reconix_api.models.enums import (
     ToolRunStatus,
     ValidationStatus,
 )
+from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as finding_repo
 from reconix_api.schemas.findings import (
@@ -225,6 +227,27 @@ def review_finding(
 POC = "poc"
 
 
+def _poc_targets_finding(poc_target: str, finding_target: str) -> bool:
+    """True when a PoC tool run actually hit the finding's target.
+
+    Compares host identity (host_of), not a raw substring, so an *adjacent* target is
+    never taken as proof: "10.0.0.5" does not match "10.0.0.50", "example.com" does not
+    match "admin.example.com", "h:8080" does not match "h:80". The one allowance is a bare
+    host against the same "host:port/proto" (so an nmap finding on "10.0.0.5" is confirmed
+    by its own run recorded as "10.0.0.5:22/tcp"), and only at a real boundary. This is the
+    sole gate on the CONFIRMED verdict, so it fails closed."""
+    poc, found = poc_target.strip().lower(), finding_target.strip().lower()
+    if not poc or not found:
+        return False
+    poc_host, found_host = host_of(poc), host_of(found)
+    if not poc_host or not found_host:
+        return False
+    if poc_host == found_host:
+        return True
+    short, long = sorted((poc_host, found_host), key=len)
+    return long.startswith(short) and not long[len(short)].isalnum()
+
+
 async def check_finding(
     db: Db,
     interfaces: Interfaces,
@@ -249,6 +272,14 @@ async def check_finding(
         raise ApiError(404, "TOOL_RUN_NOT_FOUND", "No tool run with this id for this finding.")
     if tool_run.tool_run_status != ToolRunStatus.COMPLETED:
         raise ApiError(422, "TOOL_RUN_NOT_COMPLETED", "The PoC tool run has not completed.")
+    # The PoC must have run against this finding's target. A completed run elsewhere in the
+    # same assessment is not proof for an unrelated target, and CONFIRMED is the strongest
+    # verdict, so an unlinked run must never flip a finding to it.
+    poc_action = action_repo.get(db, tool_run.action_id)
+    if poc_action is None or not _poc_targets_finding(poc_action.target, finding.target):
+        raise ApiError(
+            422, "POC_TARGET_MISMATCH", "The PoC tool run did not run against this finding."
+        )
 
     scope = plans.approved_scope(interfaces, assessment_id)
     run = agent_runs.new_agent_run(db, operator, assessment_id, task="VALIDATE")

@@ -1,9 +1,14 @@
-"""Analysis: the agent suggests the 8-part analysis of each OPEN finding.
+"""Analysis: the agent writes the 8-part analysis of each OPEN finding.
 
-Suggestions only. They are saved in the run (agent_runs.plan) and returned; no
-finding changes until a person accepts a suggestion with PATCH /findings/{id}.
+The ANALYZE step fills each finding's plain-language explanation, impact and remediation
+(empty until now), so the operator reads an analysis instead of only the raw tool evidence.
+The verdict a person owns is left alone: the finding status (OPEN / FALSE_POSITIVE / FIXED)
+and the severity are never set here, only the explanatory fields and a missing CVSS score.
+The full suggestion (related findings, a next step, "unsure") is still kept in the run
+(agent_runs.plan) and returned. Changing a finding's status stays PATCH /findings/{id}.
 """
 
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
@@ -30,13 +35,22 @@ TOOL_OUTPUTS = 3  # the agent reads the newest 3 outputs; evidence must come fro
 
 
 async def analyze(
-    db: Db, interfaces: Interfaces, mask: MaskSecrets, operator: Operator, assessment_id: UUID
+    db: Db,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    operator: Operator,
+    assessment_id: UUID,
+    finding_ids: list[UUID] | None = None,
 ) -> AnalysisOut:
     actions.ensure_can_act(db, assessment_id)
+    # finding_ids limits the analysis to those findings (per-step analysis, as each step
+    # finds them); omitted, it analyzes every OPEN finding (the end-of-run batch).
+    wanted = set(finding_ids) if finding_ids else None
     findings = [
         finding
         for finding in findings_repo.list_by_assessment(db, assessment_id)
         if finding.finding_status == FindingStatus.OPEN
+        and (wanted is None or finding.finding_id in wanted)
     ]
     if not findings:
         raise ApiError(422, "NO_FINDINGS", "This assessment has no OPEN findings to analyze.")
@@ -82,6 +96,7 @@ async def analyze_in_groups(
         summaries.append(mask(response.analysis_summary)[0])
         analysis.extend(masked(item, mask) for item in response.analysis)
     summary = "\n\n".join(text for text in summaries if text)
+    apply_analysis(findings, analysis)
     run.plan = {
         "task": "ANALYZE",
         "summary": summary,
@@ -91,6 +106,26 @@ async def analyze_in_groups(
         db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"findings": str(len(analysis))}
     )
     return AnalysisOut(agent_run=agent_runs.agent_run_out(run), summary=summary, analysis=analysis)
+
+
+def apply_analysis(findings: list[Finding], analysis: list[FindingAnalysis]) -> None:
+    """Write the agent's analysis onto each finding, matched by code. The texts are already
+    masked (see `masked`). Only the explanatory fields a reader needs are set — the plain
+    explanation, the impact and the remediation — plus a CVSS score when the finding has
+    none. The status and severity, which a person owns, are left untouched."""
+    by_code = {finding.code: finding for finding in findings}
+    for item in analysis:
+        finding = by_code.get(item.code)
+        if finding is None:
+            continue
+        if item.explanation:
+            finding.description = item.explanation
+        if item.impact:
+            finding.impact = item.impact
+        if item.remediation:
+            finding.remediation = item.remediation
+        if item.cvss_score is not None and finding.cvss_score is None:
+            finding.cvss_score = Decimal(str(item.cvss_score))
 
 
 def masked(item: FindingAnalysis, mask: MaskSecrets) -> FindingAnalysis:
