@@ -45,7 +45,7 @@ import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
 from reconix_ai.harness import StreamMasker, mask_secrets, mask_value  # noqa: E402
-from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
+from reconix_ai.providers.base_url import BaseUrlError, call_address, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
 litellm.suppress_debug_info = True  # no "Give Feedback" banner on every error
@@ -235,7 +235,7 @@ def checked_base_url(config: ProviderConfig) -> str | None:
         check_base_url(base_url)
     except BaseUrlError as error:
         raise ProviderError("PROVIDER_URL_NOT_ALLOWED", str(error)) from None
-    return base_url
+    return call_address(base_url)
 
 
 def check_key(config: ProviderConfig) -> None:

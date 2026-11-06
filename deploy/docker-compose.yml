@@ -31,6 +31,8 @@ services:
       RECONIX_EMBEDDINGS_URL: http://embeddings:8080/v1
       RECONIX_QDRANT_URL: http://qdrant:6333
     ports: ["127.0.0.1:8000:8000"]
+    # host.docker.internal = this computer, so a model server on it (LM Studio, Ollama) can be reached.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
       interval: 5s

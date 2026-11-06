@@ -44,7 +44,7 @@ interface Props {
   onDone: () => void;
 }
 
-const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "host.docker.internal"]);
 const hostOf = (url: string) => {
   try {
     return new URL(url).hostname;
@@ -210,6 +210,12 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
             {preset.kind === "cloud" && (
               <p className="ai-hint">{`Just the API key: ${preset.label}'s models are built in. It runs at ${host}, so the Core API sends your questions and the session data they need there.`}</p>
             )}
+            {preset.kind === "custom" && host !== null && !remote && (
+              <p className="ai-hint">
+                On this computer. The Core API reaches it through Docker&apos;s host address, so the server must listen on the local network (LM Studio: Serve on local network).
+              </p>
+            )}
+            {preset.kind === "local" && <p className="ai-hint">Ollama on this computer: start it with OLLAMA_HOST=0.0.0.0 so the Core API can reach it.</p>}
             {saved && preset.kind !== "reconix" && <p className="ai-hint">Saved as {providerName}: Add model switches it to the chosen model.</p>}
           </div>
         </div>

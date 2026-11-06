@@ -18,9 +18,10 @@ from urllib.parse import urlsplit
 import httpx
 
 from reconix_ai.providers import Message, ProviderConfig, ProviderError, complete
-from reconix_ai.providers.base_url import BaseUrlError, check_base_url
+from reconix_ai.providers.base_url import BaseUrlError, call_address, check_base_url
 from reconix_ai.providers.settings import ollama_url
 from reconix_api.core.errors import ApiError
+from reconix_api.core.provider_urls import HOST_GATEWAY_NAME
 
 TEST_PROMPT = "Reply with the single word OK."
 LIST_TIMEOUT_SECONDS = 5
@@ -79,7 +80,9 @@ async def _model_list(
         raise ApiError(422, "PROVIDER_URL_NOT_ALLOWED", str(error)) from None
     try:
         async with httpx.AsyncClient(timeout=LIST_TIMEOUT_SECONDS) as client:
-            async with client.stream("GET", list_url, headers=headers or {}) as response:
+            async with client.stream(
+                "GET", call_address(list_url), headers=headers or {}
+            ) as response:
                 response.raise_for_status()
                 body = b""
                 async for part in response.aiter_bytes():
@@ -93,7 +96,7 @@ async def _model_list(
 
 def _is_loopback(url: str) -> bool:
     host = urlsplit(url).hostname or ""
-    if host == "localhost":
+    if host in ("localhost", HOST_GATEWAY_NAME):
         return True
     try:
         return ipaddress.ip_address(host).is_loopback
