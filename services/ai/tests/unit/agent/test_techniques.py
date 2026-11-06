@@ -14,6 +14,7 @@ from reconix_ai.agent.techniques import (
     TYPES,
     assessment_types,
     methodology,
+    sample_values,
     split_step,
     techniques_text,
 )
@@ -255,12 +256,67 @@ def test_the_plan_and_reflect_prompts_carry_the_techniques() -> None:
     assert "## Techniques to cover" in reflect
 
 
+def test_findings_reach_the_plan_and_reflect_prompts() -> None:
+    # The planner follows leads in the evidence, so recorded findings must be visible to
+    # it (a version, a parameter, a path), not only the newest raw outputs.
+    finding = {
+        "code": "RCX-1",
+        "title": "Apache httpd 2.2.8",
+        "target": URL,
+        "severity_status": "NONE",
+    }
+    with_findings = state(findings=[finding])
+
+    assert "RCX-1" in plan_messages(with_findings)[-1].content
+    assert "Apache httpd 2.2.8" in reflect_messages(with_findings)[-1].content
+    # The rendered findings block is fenced as <findings>; with none it is absent, so an
+    # empty run adds no noise. (The prompt text itself mentions "## Findings", so assert
+    # on the fence tag, which only appears when findings are actually rendered.)
+    assert "<findings>" not in plan_messages(state())[-1].content
+
+
+def test_prior_reasoning_reaches_the_plan_and_reflect_prompts() -> None:
+    # The agent carries its own earlier per-step reasoning forward, so each step builds on
+    # what it decided before instead of re-deriving it from the findings every time.
+    with_reasoning = state(prior_reasoning=["Step 1: whatweb says WordPress, pursuing wpscan."])
+
+    for content in (
+        plan_messages(with_reasoning)[-1].content,
+        reflect_messages(with_reasoning)[-1].content,
+    ):
+        # the <earlier_reasoning> fence only renders when prior reasoning is actually present
+        # (the header phrase itself also appears in the prompt instructions, so assert the fence)
+        assert "<earlier_reasoning>" in content
+        assert "pursuing wpscan" in content
+    assert "<earlier_reasoning>" not in plan_messages(state())[-1].content
+
+
 def test_a_code_plan_prompt_has_no_empty_section() -> None:
     code = state(scope=scope_dict(repo_paths=["/w"], allowed_tools=["SEMGREP"]))
 
     text = plan_messages(code)[-1].content
 
     assert "## Techniques to cover" not in text and "\n\n\n\n" not in text
+
+
+def test_schemathesis_targets_a_non_default_doc_path() -> None:
+    # A Spring/Swagger API serves its OpenAPI doc at /v3/api-docs, not /openapi.json. With that
+    # doc URL in scope, schemathesis uses it directly; the base URL stays for crawling.
+    scope = Scope(
+        allowed_tools=["schemathesis"],
+        ip_ranges=[],
+        url_prefixes=["http://api.example.com/", "http://api.example.com/v3/api-docs"],
+    )
+    values = sample_values(scope)
+    assert values["schema"] == "http://api.example.com/v3/api-docs"
+    assert values["url"] == "http://api.example.com/"  # the base, not the doc
+
+
+def test_schemathesis_falls_back_to_openapi_json_when_no_doc_url_is_in_scope() -> None:
+    scope = Scope(
+        allowed_tools=["schemathesis"], ip_ranges=[], url_prefixes=["http://api.example.com/"]
+    )
+    assert sample_values(scope)["schema"] == "http://api.example.com/openapi.json"
 
 
 def test_the_default_goal_is_to_find_vulnerabilities() -> None:
