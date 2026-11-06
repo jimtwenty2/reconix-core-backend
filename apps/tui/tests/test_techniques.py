@@ -77,11 +77,13 @@ def test_the_new_defaults():
         "nikto",
         "dalfox",
     ]
-    assert _scope("api").tools == ["httpx", "Katana", "Nuclei", "schemathesis", "dalfox"]
+    # ffuf drives API endpoint and version discovery (Core supplies the wordlist).
+    assert _scope("api").tools == ["httpx", "Katana", "ffuf", "Nuclei", "schemathesis", "dalfox"]
     # schemathesis is a default now, so an operator spec does not change the tool list.
     assert _scope("api", with_spec=True).tools == [
         "httpx",
         "Katana",
+        "ffuf",
         "Nuclei",
         "schemathesis",
         "dalfox",

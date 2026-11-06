@@ -75,12 +75,12 @@ WEB: Tuple[Technique, ...] = (
 
 NETWORK: Tuple[Technique, ...] = (
     _t("host_discovery", "Host discovery", "Identify live devices", "nmap", AUTO),
-    _t("port_scan", "Port scanning", "Find open TCP/UDP ports", "nmap masscan rustscan", AUTO),
+    _t("port_scan", "Port scanning", "Find open TCP/UDP ports", "nmap", AUTO),
     _t("services", "Service detection", "Identify running services", "nmap", AUTO),
     _t("versions", "Version detection", "Detect outdated service versions", "nmap", AUTO),
     _t("os_fingerprint", "OS fingerprinting", "Identify operating systems", "nmap", PARTIAL),
     _t("cve_matching", "CVE matching", "Compare detected versions against known CVEs",
-       "nuclei searchsploit", AUTO),
+       "nuclei", AUTO),
     _t("misconfiguration", "Misconfiguration checks", "Default credentials, insecure services",
        "nuclei enum4linux onesixtyone", PARTIAL),
     _t("tls", "SSL/TLS testing", "Weak ciphers and protocols", "testssl", AUTO),

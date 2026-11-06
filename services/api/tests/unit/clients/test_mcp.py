@@ -192,6 +192,14 @@ def test_gobuster_gets_the_wordlist_but_no_fuzz():
     assert args["target"] == "http://juice-shop:3000/"  # gobuster has no FUZZ keyword
 
 
+def test_semgrep_config_is_left_to_the_kali_wrapper_default():
+    # Core does not inject the ruleset; the Kali wrapper defaults to the full stack (p/default +
+    # OWASP + CWE). So a Core-only deploy never sends a ruleset an older wrapper can't split.
+    name, args = tool_call(job("semgrep", "/workspace/code/s", []))
+    assert name == "semgrep"
+    assert "config" not in args
+
+
 def test_nikto_port_comes_from_the_url():
     _, args = tool_call(job("nikto", "http://juice-shop:3000/", []))
     assert args["host"] == "http://juice-shop:3000/"

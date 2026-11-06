@@ -28,3 +28,4 @@ class LiveRun:
     finding_ids: Dict[str, str] = field(default_factory=dict)  # app fid -> API finding_id
     actions: List[str] = field(default_factory=list)  # the API's action ids, in order
     finished_tools: List[str] = field(default_factory=list)  # tools whose runs completed
+    to_analyze: List[str] = field(default_factory=list)  # API finding ids awaiting analysis

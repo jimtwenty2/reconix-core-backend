@@ -22,6 +22,7 @@ class ApiSpec:
     methods: List[str] = field(default_factory=list)
     security_schemes: List[str] = field(default_factory=list)
     base_methods: Optional[List[str]] = None   # the scope's methods before the first attach
+    source_url: str = ""                 # the OpenAPI doc URL it came from ("" = a file)
 
     @property
     def label(self) -> str:

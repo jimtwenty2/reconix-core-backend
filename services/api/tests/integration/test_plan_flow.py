@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import update
 
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import Action, ToolName
+from reconix_api.core.interfaces import Action, AgentTask, ToolName
 from reconix_api.models import Action as ActionRow
 from reconix_api.models import AgentRun, Approval, ScopeManifest
 from reconix_api.services import plans
@@ -24,6 +24,23 @@ def plan(client, headers, assessment_id):
 def runs(client, headers):
     session_id = client.get("/operator", headers=headers).json()["session_id"]
     return client.get(f"/sessions/{session_id}/agent-runs", headers=headers).json()
+
+
+def test_the_next_step_carries_the_agents_earlier_reasoning(db_client, db_app):
+    # Cross-step memory: a SUGGEST step gets the agent's own earlier reasoning (the completed
+    # PLAN run's text), so it builds on what it decided instead of re-deriving it each step.
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+
+    body = plan(db_client, headers, assessment_id).json()
+    approval_id = body["action"]["approval_id"]
+    db_client.post(f"/approvals/{approval_id}/approve", json={}, headers=headers)
+    nxt = db_client.post(f"/assessments/{assessment_id}/next-step", headers=headers)
+
+    assert nxt.status_code == 201, nxt.json()
+    request = db_app.state.parts["agent"].requests[-1]
+    assert request.task == AgentTask.SUGGEST
+    assert "Start with a service scan." in request.recent_reasoning
 
 
 def test_a_medium_step_waits_then_resumes_after_approval(db_client, db_app):

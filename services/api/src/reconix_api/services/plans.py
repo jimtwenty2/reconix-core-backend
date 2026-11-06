@@ -34,6 +34,7 @@ from reconix_api.core.interfaces import (
     ApprovedScope,
     BlockedStep,
     ChatMessage,
+    FindingInput,
     Interfaces,
     Operator,
     PlanStep,
@@ -41,7 +42,7 @@ from reconix_api.core.interfaces import (
 )
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import Action as ActionRow
-from reconix_api.models import AgentRun, Approval
+from reconix_api.models import AgentRun, Approval, ToolRun
 from reconix_api.models.enums import ActionStatus, AgentRunStatus, ApprovalStatus
 from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import agent_runs as agent_run_repo
@@ -63,6 +64,9 @@ STALE_MINUTES = 30
 TOOL_OUTPUTS = 3  # the next step reads the newest 3 tool outputs, masked when saved
 RUN_LINES = 40  # the list of every finished tool run the next step reads, newest kept
 TARGET_CHARS = 60  # a target in that list or an output's header line, cut to this length
+PLAN_FINDINGS = 40  # the findings the planner reads, so it can follow leads in the evidence
+ERROR_CHARS = 200  # a failed run's masked error, cut to this on its header and the summary
+PLAN_REASONING = 6  # the agent's own recent reasoning lines fed back, oldest first
 
 
 async def start_plan(
@@ -117,6 +121,8 @@ async def plan_and_send(
         scope=scope,
         messages=chat(db, operator.session_id),
         tool_results=tool_results or [],
+        findings=recent_findings(db, run.assessment_id),
+        recent_reasoning=recent_reasoning(db, run.assessment_id),
     )
     response = await agent_runs.ask_agent(db, interfaces, request)
     ensure_still_running(db, run)
@@ -142,7 +148,12 @@ async def plan_and_send(
         "PLAN_CREATED" if task == AgentTask.PLAN else "STEP_SUGGESTED",
         operator,
         run.assessment_id,
-        {"agent_run_id": str(run.agent_run_id), "steps": len(plan), "draft": keep},
+        {
+            "agent_run_id": str(run.agent_run_id),
+            "steps": len(plan),
+            "draft": keep,
+            "reason": plan[0].reason if plan else "",  # the agent's rationale, already masked
+        },
     )
     if keep:
         return PlanOut(
@@ -476,30 +487,86 @@ def recent_outputs(db: Db, assessment_id: UUID, mask: MaskSecrets) -> list[str]:
         return []
     counts = finding_repo.finding_counts(db, [run.tool_run_id for run, _ in runs])
     rows = [
-        (action.tool, action.target, str(run.tool_run_status), counts.get(run.tool_run_id, 0))
+        (
+            action.tool,
+            action.target,
+            str(run.tool_run_status),
+            counts.get(run.tool_run_id, 0),
+            short_error(run.error),
+        )
         for run, action in runs
     ]
     outputs = [
-        f"{output_header(action.tool, action.target, str(run.tool_run_status))}\n"
-        f"{run.output_masked}"
+        output_block(action.tool, action.target, run)
         for run, action in runs
-        if run.output_masked
+        if run.output_masked or run.error  # a failed run with no output still shows its error
     ]
     return [mask(text)[0] for text in [*outputs[-TOOL_OUTPUTS:], runs_summary(rows)]]
 
 
-def output_header(tool: str, target: str, status: str) -> str:
-    """One line naming the tool run an output came from, e.g. "NMAP 10.0.0.5 COMPLETED"."""
-    return f"{tool} {short(target)} {status}"
+def recent_findings(db: Db, assessment_id: UUID) -> list[FindingInput]:
+    """The assessment's findings, for the planner, already masked in the database.
+
+    The next step is chosen from evidence, not only from the newest raw outputs (which
+    scroll out of the 3-output window as a run grows): a version, a parameter or a path
+    the parsers already pulled into a finding stays visible so the agent can follow it.
+    Capped so a long run cannot crowd out the prompt.
+    """
+    # Imported here, not at module load: analysis imports plans, so a top-level import
+    # of finding_input would be a cycle (findings.py reuses it the same way).
+    from reconix_api.services.analysis import finding_input
+
+    rows = finding_repo.list_by_assessment(db, assessment_id)
+    return [finding_input(row) for row in rows[:PLAN_FINDINGS]]
 
 
-def runs_summary(rows: list[tuple[str, str, str, int]]) -> str:
+def output_block(tool: str, target: str, run: ToolRun) -> str:
+    """One tool run's masked output for the next step: a header line, then its error (when
+    it did not finish cleanly) and its output, so the agent can tell a timeout from a parse
+    failure from an auth problem rather than seeing only "FAILED"."""
+    lines = [output_header(tool, target, str(run.tool_run_status), run.exit_code)]
+    if run.error:
+        lines.append(f"error: {short_error(run.error)}")
+    if run.output_masked:
+        lines.append(run.output_masked)
+    return "\n".join(lines)
+
+
+def output_header(tool: str, target: str, status: str, exit_code: int | None = None) -> str:
+    """One line naming the tool run an output came from, e.g. "NMAP 10.0.0.5 COMPLETED". A
+    non-zero exit code is shown, since it often explains a failed or empty run."""
+    code = f" exit={exit_code}" if exit_code not in (None, 0) else ""
+    return f"{tool} {short(target)} {status}{code}"
+
+
+def short_error(error: str | None) -> str:
+    """A run's error as one short line (already masked in the database). Empty for a run
+    that finished cleanly."""
+    if not error:
+        return ""
+    text = " ".join(error.split())
+    return text if len(text) <= ERROR_CHARS else text[: ERROR_CHARS - 1] + "…"
+
+
+def recent_reasoning(db: Db, assessment_id: UUID) -> list[str]:
+    """The agent's own recent per-step reasoning (already masked when it was stored), oldest
+    first, so each PLAN/SUGGEST step builds on what it decided before instead of re-deriving
+    it from the findings alone."""
+    runs = agent_run_repo.recent_plan_runs(db, assessment_id, PLAN_REASONING)
+    texts = [(run.plan or {}).get("text", "") for run in runs]
+    return [text for text in reversed(texts) if text]
+
+
+def runs_summary(rows: list[tuple[str, str, str, int, str]]) -> str:
     """Every finished tool run (rows oldest first), one line each, newest first so a cut
-    end loses the oldest. Past RUN_LINES the older runs are counted, not listed."""
-    lines = [
-        f"- {tool} {short(target)} {status}, {found} findings"
-        for tool, target, status, found in reversed(rows)
-    ]
+    end loses the oldest. A run that did not finish cleanly shows a short reason. Past
+    RUN_LINES the older runs are counted, not listed."""
+    lines = []
+    for tool, target, status, found, error in reversed(rows):
+        line = f"- {tool} {short(target)} {status}, {found} findings"
+        if error:
+            line += f" — {error}"
+        lines.append(line)
     if len(lines) > RUN_LINES:
         lines = [*lines[:RUN_LINES], f"- ({len(lines) - RUN_LINES} older runs not shown)"]
     return "Tool runs so far, newest first (tool, target, status, findings):\n" + "\n".join(lines)

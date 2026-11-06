@@ -12,11 +12,10 @@ def analyze(client, headers, assessment_id):
     return client.post(f"/assessments/{assessment_id}/analyze", headers=headers)
 
 
-def test_open_findings_are_analyzed_and_nothing_changes(db_client, db_app):
+def test_open_findings_are_analyzed_and_the_analysis_is_applied(db_client, db_app):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)
     run_nmap(db_client, headers, assessment_id)
-    before = findings(db_client, headers, assessment_id)
 
     response = analyze(db_client, headers, assessment_id)
 
@@ -30,8 +29,35 @@ def test_open_findings_are_analyzed_and_nothing_changes(db_client, db_app):
     assert request.task == AgentTask.ANALYZE
     assert [f.code for f in request.findings] == ["RCX-001", "RCX-002"]
     assert 'portid="22"' in request.tool_results[0]  # the run that found them, masked
-    assert findings(db_client, headers, assessment_id) == before  # suggestions only
+    # The ANALYZE step now fills each finding's explanation, impact and remediation so the
+    # operator reads a plain-language analysis, not just the raw tool evidence.
+    after = {f["code"]: f for f in findings(db_client, headers, assessment_id)}
+    assert after["RCX-001"]["description"].startswith("In plain terms:")
+    assert after["RCX-001"]["impact"] == "Fake impact."
+    assert after["RCX-001"]["remediation"] == "Fake remediation."
+    # The status a person owns is untouched: the analysis does not accept the finding.
+    assert after["RCX-001"]["finding_status"] == "OPEN"
     assert "AGENT_RUN_COMPLETED" in event_types(db_app)
+
+
+def test_analyze_can_target_specific_findings(db_client, db_app):
+    # Per-step analysis: analyze only the finding(s) a step just found, not every OPEN one.
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    run_nmap(db_client, headers, assessment_id)
+    rows = {f["code"]: f for f in findings(db_client, headers, assessment_id)}
+
+    response = db_client.post(
+        f"/assessments/{assessment_id}/analyze",
+        json={"finding_ids": [rows["RCX-001"]["finding_id"]]},
+        headers=headers,
+    )
+
+    assert response.status_code == 201, response.json()
+    assert [a["code"] for a in response.json()["analysis"]] == ["RCX-001"]
+    after = {f["code"]: f for f in findings(db_client, headers, assessment_id)}
+    assert after["RCX-001"]["impact"] == "Fake impact."  # the targeted finding was analyzed
+    assert after["RCX-002"]["impact"] is None  # the other was left for its own step
 
 
 def test_findings_are_sent_10_at_a_time(db_client, db_app, monkeypatch):
@@ -131,3 +157,5 @@ def test_what_the_agent_writes_is_masked_before_it_is_saved(db_client, db_app):
 
     assert "Sup3rS3cret!" not in str(body)
     assert "Sup3rS3cret!" not in str(runs(db_client, headers))
+    # The analysis is written onto the finding too, so it must be masked there as well.
+    assert "Sup3rS3cret!" not in str(findings(db_client, headers, assessment_id))

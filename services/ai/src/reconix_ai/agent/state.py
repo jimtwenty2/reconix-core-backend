@@ -13,6 +13,7 @@ from reconix_ai.harness import mask_secrets
 
 MAX_MESSAGES = 10
 MAX_TOOL_RESULTS = 3
+MAX_PRIOR_REASONING = 6  # the agent's own earlier per-step reasoning kept, oldest first
 MAX_INPUT_CHARS = 4000
 
 SCOPE_LISTS = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_targets")
@@ -31,6 +32,9 @@ class AgentState(TypedDict, total=False):
     knowledge: list[dict[str, str]]  # hits: source, ref_id, title, section, text, url
     knowledge_unavailable: bool
     reflections: list[str]  # ReflAct: one masked line per look at the tool results
+    prior_reasoning: list[
+        str
+    ]  # the agent's earlier per-step reasoning (PLAN/SUGGEST), oldest first
     reflect_more: bool
     summary: str
     steps: list[dict[str, Any]]  # the plan; see contracts.PlanStep

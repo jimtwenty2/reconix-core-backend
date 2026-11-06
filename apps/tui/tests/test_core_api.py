@@ -376,6 +376,50 @@ def test_a_scope_the_api_cant_take_is_refused(values, code):
     assert exc.value.code == code
 
 
+def api_manifest(**values) -> ScopeManifest:
+    base = dict(
+        kind="api",
+        target_url="http://api.example/",
+        assessment_type="API",
+        allowed_actions=["discovery", "scan"],
+        allowed_methods=["GET"],
+        excluded_paths=[],
+        time_limit_minutes=30,
+        tools=["schemathesis"],
+    )
+    return ScopeManifest(**{**base, **values})
+
+
+def test_the_openapi_doc_url_is_sent_as_its_own_target():
+    # So the API's schemathesis fuzzes /v3/api-docs, not a guessed <base>/openapi.json.
+    draft = scope_map.scope_draft(api_manifest(), api_doc_url="http://api.example/v3/api-docs")
+
+    assert draft["targets"][0] == {"type": "url", "value": "http://api.example/"}
+    assert {"type": "url", "value": "http://api.example/v3/api-docs"} in draft["targets"]
+
+
+def test_a_doc_url_equal_to_the_base_is_not_duplicated():
+    draft = scope_map.scope_draft(api_manifest(), api_doc_url="http://api.example/")
+
+    assert draft["targets"] == [{"type": "url", "value": "http://api.example/"}]
+
+
+def test_the_spec_doc_url_comes_from_an_attached_spec():
+    from reconix.core_api import sync
+    from reconix.models import ApiSpec
+
+    class _Holder:
+        api_spec = None
+
+    assert sync._spec_doc_url(_Holder()) is None
+    holder = _Holder()
+    holder.api_spec = ApiSpec(
+        title="x", version="1", spec_version="3.0.3",
+        file_name="api.example/v3/api-docs", source_url="http://api.example/v3/api-docs",
+    )
+    assert sync._spec_doc_url(holder) == "http://api.example/v3/api-docs"
+
+
 async def test_choosing_a_remote_model_asks_for_the_core_apis_ok(api, app, reachable):
     from reconix.screens import ChoiceScreen
 

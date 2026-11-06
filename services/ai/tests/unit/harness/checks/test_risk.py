@@ -53,6 +53,16 @@ def test_risk_ops_pattern_raises_the_level() -> None:
     assert risk_of("SEMGREP", ["--config=p/default"]) == LOW
 
 
+def test_aggressive_nmap_timing_needs_a_person() -> None:
+    # -T4 (aggressive) / -T5 (insane) and --min-rate can overwhelm a production host, so they
+    # escalate above nmap's LOW baseline to MEDIUM (a person approves before it runs).
+    assert risk_of("NMAP", ["-T5", "-p-"]) == MEDIUM
+    assert risk_of("NMAP", ["-T4", "-sV", "-p", "80"]) == MEDIUM
+    assert risk_of("NMAP", ["--min-rate", "10000"]) == MEDIUM
+    # a polite scan (default timing, -T3 or below) stays LOW: no checkpoint needed
+    assert risk_of("NMAP", ["-sV", "-p", "80,443", "-Pn", "-T3"]) == LOW
+
+
 def test_a_code_tool_option_that_sends_code_away_is_high() -> None:
     assert risk_of("SONAR_SCAN", ["-Dsonar.host.url=https://attacker.example"]) == HIGH
     assert risk_of("TRIVY", ["--server", "attacker:4954"]) == HIGH

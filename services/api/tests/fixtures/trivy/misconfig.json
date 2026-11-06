@@ -1,0 +1,53 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "/workspace/code/s1",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "requirements.txt",
+      "Class": "lang-pkgs",
+      "Type": "pip",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2020-14343",
+          "PkgName": "pyyaml",
+          "InstalledVersion": "5.3.1",
+          "Title": "PyYAML: arbitrary code execution via full_load or FullLoader",
+          "Description": "A vulnerability was discovered in the PyYAML library in versions before 5.4.",
+          "Severity": "CRITICAL",
+          "CweIDs": ["CWE-20"]
+        }
+      ]
+    },
+    {
+      "Target": "Dockerfile",
+      "Class": "config",
+      "Type": "dockerfile",
+      "Misconfigurations": [
+        {
+          "Type": "Dockerfile Security Check",
+          "ID": "DS002",
+          "AVDID": "AVD-DS-0002",
+          "Title": "Image user should not be 'root'",
+          "Description": "Running containers with 'root' user can lead to privilege escalation.",
+          "Message": "Specify at least 1 USER command in Dockerfile",
+          "Resolution": "Add 'USER <non root user name>' line to the Dockerfile",
+          "Severity": "HIGH",
+          "PrimaryURL": "https://avd.aquasec.com/misconfig/ds002",
+          "Status": "FAIL",
+          "CauseMetadata": { "StartLine": 1, "EndLine": 1, "Resource": "FROM python:3.12" }
+        },
+        {
+          "Type": "Dockerfile Security Check",
+          "ID": "DS026",
+          "AVDID": "AVD-DS-0026",
+          "Title": "No HEALTHCHECK defined",
+          "Description": "A HEALTHCHECK is not defined.",
+          "Severity": "LOW",
+          "Status": "PASS",
+          "CauseMetadata": { "StartLine": 0, "EndLine": 0 }
+        }
+      ]
+    }
+  ]
+}

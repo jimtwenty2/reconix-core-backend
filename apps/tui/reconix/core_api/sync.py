@@ -40,7 +40,7 @@ def sync_scope(assessment: Assessment) -> Optional[str]:
     scope = assessment.scope
     if scope is None:
         return None
-    draft = scope_draft(scope)
+    draft = scope_draft(scope, _spec_doc_url(assessment))
     key = assessment.planned_id
     if _owner.get("planned_id") not in (None, key):
         connect.reset()  # another assessment: a new API session for it
@@ -70,6 +70,14 @@ def sync_scope(assessment: Assessment) -> Optional[str]:
         connect.request("POST", f"/approvals/{submitted['approval_id']}/approve", {})
         entry["assessment_id"] = submitted["assessment"]["assessment_id"]
     return entry["assessment_id"]
+
+
+def _spec_doc_url(assessment: Assessment) -> Optional[str]:
+    """The OpenAPI document URL of an attached spec (one fetched from a URL), or None, so
+    the API fuzzes that document path instead of a guessed <base>/openapi.json."""
+    spec = assessment.api_spec
+    url = getattr(spec, "source_url", "") if spec is not None else ""
+    return url or None
 
 
 def first_message(assessment: Assessment) -> str:

@@ -153,14 +153,37 @@ def step_allowed(step: str, scope: AgentScope) -> bool:
     )
 
 
+DOC_HINTS = (
+    "/openapi.json",
+    "/v3/api-docs",
+    "/v2/api-docs",
+    "/api-docs",
+    "/swagger.json",
+    "/swagger/v1/swagger.json",
+)
+
+
+def looks_like_doc(url: str) -> bool:
+    """Whether a scope URL is itself an OpenAPI/Swagger document, not an API root. Spring
+    serves it at /v3/api-docs, Swagger at /swagger.json, etc. — not every API uses the
+    /openapi.json default, so a doc URL in scope is used as-is."""
+    low = url.lower().rstrip("/")
+    return low.endswith(".json") or any(hint in low for hint in DOC_HINTS)
+
+
 def sample_values(scope: AgentScope, https_only: bool = False) -> dict[str, str]:
     values: dict[str, str] = {}
     urls = [url for url in scope.url_prefixes if not url.startswith("*.")]
     if https_only:
         urls = [url for url in urls if url.lower().startswith("https://")]
     if urls:
-        values["url"] = urls[0]
-        values["schema"] = urls[0].rstrip("/") + "/openapi.json"
+        # schemathesis needs the OpenAPI document: an in-scope URL that is already a doc
+        # (e.g. /v3/api-docs) is used directly; otherwise fall back to <base>/openapi.json.
+        # The base URL for crawling/scanning is the first non-doc URL.
+        docs = [url for url in urls if looks_like_doc(url)]
+        bases = [url for url in urls if not looks_like_doc(url)]
+        values["url"] = (bases or urls)[0]
+        values["schema"] = docs[0] if docs else urls[0].rstrip("/") + "/openapi.json"
     hosts = [host for host in [*scope.ip_ranges, *scope.domains] if not host.startswith("*.")]
     if hosts:
         values["host"] = hosts[0]

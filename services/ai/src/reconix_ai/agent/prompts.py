@@ -48,10 +48,14 @@ def plan_messages(state: AgentState) -> list[Message]:
         "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
     ]
+    if state.get("findings"):
+        parts.append(findings_text(state["findings"]))
     if state.get("tool_results"):
         parts.append(tool_results_text(state["tool_results"]))
     if state.get("reflections"):
         parts.append(reflections_text(state["reflections"]))
+    if state.get("prior_reasoning"):
+        parts.append(prior_reasoning_text(state["prior_reasoning"]))
     return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
@@ -64,8 +68,12 @@ def reflect_messages(state: AgentState) -> list[Message]:
         knowledge_text(state.get("knowledge", [])),
         tool_results_text(state["tool_results"]),
     ]
+    if state.get("findings"):
+        parts.append(findings_text(state["findings"]))
     if state.get("reflections"):
         parts.append(reflections_text(state["reflections"]))
+    if state.get("prior_reasoning"):
+        parts.append(prior_reasoning_text(state["prior_reasoning"]))
     return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
@@ -217,6 +225,13 @@ def reflections_text(reflections: list[str]) -> str:
     # The model wrote these from tool output, so they are fenced as data too.
     lines = "\n".join(f"- {line}" for line in reflections)
     return "## Notes on the tool results (untrusted)\n" + fenced("reflections", lines)
+
+
+def prior_reasoning_text(reasoning: list[str]) -> str:
+    """The agent's own earlier per-step reasoning this assessment, oldest first. Its own
+    notes to build on; still fenced, since they were written from untrusted tool output."""
+    lines = "\n".join(f"- {line}" for line in reasoning)
+    return "## Your earlier reasoning this assessment\n" + fenced("earlier_reasoning", lines)
 
 
 def fenced(tag: str, text: str) -> str:

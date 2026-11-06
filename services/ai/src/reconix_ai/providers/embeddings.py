@@ -1,9 +1,9 @@
-"""Text to vectors for the knowledge search, with BGE-M3.
+"""Text to vectors for the knowledge search, with BGE-small (bge-small-en-v1.5).
 
-BGE-M3 runs on CPU in the `embeddings` container (Hugging Face text-embeddings-inference,
+The model runs on CPU in the `embeddings` container (Hugging Face text-embeddings-inference,
 deploy/docker-compose.yml), which answers OpenAI-style at /v1/embeddings. No Ollama needed.
-Same rules as client.py: texts are masked before they leave, and errors come back as a
-masked ProviderError.
+It is a small 384-dim English model that stays under ~1 GB of memory. Same rules as
+client.py: texts are masked before they leave, and errors come back as a masked ProviderError.
 """
 
 import os
@@ -20,8 +20,8 @@ from reconix_ai.providers.client import (
 )
 from reconix_ai.providers.settings import DEFAULT_TIMEOUT_SECONDS, ProviderConfig, ProviderType
 
-EMBEDDING_MODEL_NAME = "bge-m3"
-EMBEDDING_SIZE = 1024  # BGE-M3 dense vectors
+EMBEDDING_MODEL_NAME = "bge-small-en-v1.5"
+EMBEDDING_SIZE = 384  # BAAI/bge-small-en-v1.5 dense vectors
 BATCH_SIZE = 32
 # The embedding server when RECONIX_EMBEDDINGS_URL is not set: one on this computer.
 DEFAULT_EMBEDDINGS_URL = "http://127.0.0.1:8081/v1"
@@ -60,7 +60,7 @@ async def embed_batch(texts: list[str], config: EmbeddingConfig) -> list[list[fl
     failure = None
     try:
         response = await litellm.aembedding(
-            model=f"openai/{config.model_name}",  # the server only serves BGE-M3
+            model=f"openai/{config.model_name}",  # the server only serves one model
             input=masked,
             api_base=base_url,
             api_key=NO_KEY,
