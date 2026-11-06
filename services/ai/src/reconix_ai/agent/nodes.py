@@ -69,7 +69,10 @@ MAX_HITS = 6
 MAX_REFLECTIONS = 5
 MAX_KNOWLEDGE_HITS = 12  # find's hits plus what reflect looks up
 MAX_PROMPT_HIT_CHARS = 1200
-DEFAULT_GOAL = "Find what runs on the approved targets."
+DEFAULT_GOAL = (
+    "Find vulnerabilities on the approved targets by covering the techniques for this "
+    "assessment type, discovery first."
+)
 
 Complete = Callable[..., Awaitable[Completion]]
 Search = Callable[..., Awaitable[list[KnowledgeHit]]]

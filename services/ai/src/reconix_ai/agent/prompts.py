@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from reconix_ai.agent.state import AgentState
+from reconix_ai.agent.techniques import techniques_text
 from reconix_ai.contracts import severity_rank
 from reconix_ai.harness.catalog import description, is_known_tool, param_names
 from reconix_ai.providers import Message
@@ -43,6 +44,7 @@ def plan_messages(state: AgentState) -> list[Message]:
         read_markdown(PROMPTS_DIR / "plan.md"),
         scope_text(state["scope"]),
         tools_text(state["scope"]["allowed_tools"]),
+        techniques_text(state["scope"], state.get("messages", [])),
         "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
     ]
@@ -50,20 +52,21 @@ def plan_messages(state: AgentState) -> list[Message]:
         parts.append(tool_results_text(state["tool_results"]))
     if state.get("reflections"):
         parts.append(reflections_text(state["reflections"]))
-    return [system_message(), Message("user", "\n\n".join(parts))]
+    return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
 def reflect_messages(state: AgentState) -> list[Message]:
     parts = [
         read_markdown(PROMPTS_DIR / "reflect.md"),
         scope_text(state["scope"]),
+        techniques_text(state["scope"], state.get("messages", [])),
         "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
         tool_results_text(state["tool_results"]),
     ]
     if state.get("reflections"):
         parts.append(reflections_text(state["reflections"]))
-    return [system_message(), Message("user", "\n\n".join(parts))]
+    return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
 def analyze_messages(state: AgentState) -> list[Message]:
