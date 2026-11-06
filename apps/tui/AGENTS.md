@@ -1,6 +1,6 @@
 # AGENTS.md — Terminal app (Textual, Typer)
 
-Owner: Vanhong
+Owner: Sokpiseth
 
 Read the root `AGENTS.md` first. These rules add to it.
 

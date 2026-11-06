@@ -74,7 +74,7 @@ One uv workspace (Python 3.12) plus one npm app.
 | `services/ai/` | AI Service: LiteLLM, LangGraph, Qdrant. Package `reconix_ai`. No web server of its own. | Sakphearoth |
 | `services/ai/src/reconix_ai/harness/` | Safety checks, masking, audit log | Pojim |
 | `services/ai/data/tool-guides/` | One Markdown guide per tool for the knowledge search | Youlong |
-| `apps/tui/` | Terminal app: Textual, Typer. Package `reconix` (see section 11). | Vanhong |
+| `apps/tui/` | Terminal app: Textual, Typer. Package `reconix` (see section 11). | Sokpiseth |
 | `apps/web/` | Local web: Next.js, xterm.js | Sokpiseth |
 | `apps/sample-data/` | Fake data for the TUI and web, built from `deploy/seed.sql` | shared |
 | `deploy/` | Docker Compose (`docker-compose.yml`, `kali-standalone.yml`), `lab/`, `seed.sql`, `install.sh` | Vanneth |
