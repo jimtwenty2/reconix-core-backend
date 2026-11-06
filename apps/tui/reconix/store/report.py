@@ -27,6 +27,7 @@ from .report_pdf import HAS_PDF, write_pdf
 from .retest import retest
 from .scope import blocked_count, get_scope, is_scope_approved, list_verdicts
 from .templates import selected_template
+from .templates.techniques import coverage
 from .transcript import add_activity, add_chat
 
 REPORTS_DIR = Path("reports")   # relative to where reconix runs; tests point it elsewhere
@@ -99,6 +100,9 @@ def report_data() -> Dict[str, Any]:
         "mode": assessment.mode,
         "operator": assessment.operator,
         "methodology": list(assessment.methodology),
+        # each technique of the template: tested, partly, not run, or checked by hand
+        "coverage": coverage(template.id if template else scope.kind,
+                             lists.current().live.finished_tools, scope.tools),
         "report_version": assessment.report_version,
         "window": {"started": _iso(run.started_at), "finished": _iso(run.finished_at)},
         "generated_at": utc_now().isoformat(timespec="seconds"),

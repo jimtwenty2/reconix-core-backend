@@ -81,7 +81,8 @@ from .scope_ask import (
 )
 from .scope_suggest import (
     apply_scope_suggest, fetch_scope_suggest, scope_suggest_failed, scope_suggest_request,
-    scope_suggesting, suggested_tools,
+    scope_reading, scope_suggesting, scope_suggest_waiting, suggested_tools,
+    suggested_tool_notes,
 )
 from .scope_view import describe_scope
 from .seed import load_demo_data
@@ -94,6 +95,7 @@ from .targets import (
     DASH_RANGE_UNSUPPORTED, TargetCheck, check_target, looks_like_target, validate_target,
 )
 from .templates import get_template, list_templates, select_template, selected_template
+from .templates.techniques import grouped as technique_groups
 from .thinking import block_seconds, group_stream, stream
 from .transcript import last_exchange, list_activity, list_chat
 from .tools import tool_login, tools_login
@@ -137,8 +139,9 @@ __all__ = [
     "scope_text", "plan_text", "approval_text", "template_text",
     "wants_scope_change", "answer_scope_change", "ScopeChoices", "reopen_scope",
     "scope_tick_choices", "scope_suggest_request", "fetch_scope_suggest",
-    "apply_scope_suggest", "scope_suggest_failed", "scope_suggesting", "suggested_tools",
-    "scope_changeable", "wants_plan_change",
+    "apply_scope_suggest", "scope_suggest_failed", "scope_suggesting",
+    "suggested_tools", "scope_reading", "suggested_tool_notes", "scope_suggest_waiting",
+    "scope_changeable", "wants_plan_change", "technique_groups",
     "wants_decision", "asks_about_decision", "wants_view", "decision_reply", "view_reply",
     "wants_plan_reorder", "answer_plan_reorder", "reorder_gated", "movable_checks",
     "step_status", "StepStatus",

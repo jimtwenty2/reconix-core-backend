@@ -11,6 +11,7 @@ from reconix.models.scope import PolicyVerdict
 from reconix.store import lists, report
 from reconix.store.report_docx import write_docx
 from reconix.store.report_html import render_html
+from reconix.store.templates import network
 
 from .fakes.fake_api import finding_row
 from .support import DEMO_REQUEST, TEST_PASSWORD, add_finding, decide, play_until_gate, run_to
@@ -144,7 +145,7 @@ def test_docx_report_has_every_section(reports_dir, monkeypatch):
     assert [row[0] for row in summary[1:]] == ["001", "003", "002"]
     scope = dict(next(t for t in tables if t[0][0] == "Approval status"))
     assert scope["Approval status"] == "Approved" and scope["Excluded paths"] == "/admin"
-    assert scope["Standards"] == "OWASP WSTG · OWASP Top 10 (2021)"
+    assert scope["Standards"] == "Guided by OWASP WSTG · OWASP Top 10 (2025)"
     approvals = next(t for t in tables if t[0][0] == "Risk")
     assert [row[0] for row in approvals[1:]] == ["Medium", "High"]
     assert "•••" in _docx_text(reports_dir / "RCX-001.docx")      # evidence stays masked
@@ -184,7 +185,7 @@ def test_report_data_carries_cvss_category_and_engagement_metadata():
     data = store.report_data()
     assert data["client"] == "Example"                   # derived from staging.example.com
     assert data["mode"] == "Grey-box, Authorized"
-    assert data["methodology"] == ["OWASP WSTG", "OWASP Top 10 (2021)"]
+    assert data["methodology"] == ["Guided by OWASP WSTG", "OWASP Top 10 (2025)"]
     assert data["window"]["started"] and data["window"]["finished"]
     panel = next(f for f in data["findings"] if f["id"] == "002")
     assert panel["cvss_score"] == 6.5                    # as the API scored it
@@ -258,12 +259,12 @@ def test_a_network_report_lists_the_approved_ports(reports_dir):
     run_to(None, "port scan 192.0.2.10")
     scope = store.report_data()["scope"]
     assert scope["kind"] == "network"
-    assert scope["allowed_ports"] == [22, 80, 443, 8080, 8443]
+    assert scope["allowed_ports"] == network.ALLOWED_PORTS
     assert "<dt>Allowed ports</dt>" in render_html(store.report_data())
     if report.HAS_DOCX:
         store.generate_report("docx")
         text = _docx_text(reports_dir / "RCX-001.docx")
-        assert "Allowed ports" in text and "22, 80, 443, 8080, 8443" in text
+        assert "Allowed ports" in text and "21, 22, 23, 25, 53, 80" in text
 
 
 def test_a_web_report_has_no_ports_line(reports_dir):
@@ -281,3 +282,23 @@ def test_summary_counts_every_human_approval():
     assert summary.status == "Completed"
     assert summary.approvals == ["scope", "MEDIUM", "HIGH"]
     assert (summary.blocked, summary.confirmed, summary.for_review) == (0, 0, 3)
+
+
+def test_report_dates_use_the_laptop_local_timezone(monkeypatch):
+    """Times are stored UTC; the report shows them in the laptop's local zone, labelled so
+    they can't be misread. The operator cannot edit a recorded scan time."""
+    import os
+    import time
+
+    from reconix.store import report_view
+
+    os.environ["TZ"] = "Asia/Bangkok"  # UTC+7
+    time.tzset()
+    try:
+        # a UTC evening is the next local day for UTC+7
+        assert report_view.short_date("2026-11-05T19:30:00+00:00") == "2026-11-06"
+        assert report_view.short_date("2026-11-05T05:30:00+00:00") == "2026-11-05"
+        assert report_view.tz_label() == "UTC+07:00"
+    finally:
+        del os.environ["TZ"]
+        time.tzset()

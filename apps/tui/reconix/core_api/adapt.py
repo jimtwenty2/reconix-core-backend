@@ -71,7 +71,8 @@ def output_rows(text: str) -> List[tuple]:
     lines = [line.rstrip() for line in (text or "").splitlines() if line.strip()]
     rows = [("", line[:160]) for line in lines[:OUTPUT_LINES]]
     if len(lines) > OUTPUT_LINES:
-        rows.append(("", f"… {len(lines) - OUTPUT_LINES} more lines"))
+        rows.append(("", f"… {len(lines) - OUTPUT_LINES} more lines · Ctrl+O expands the log; "
+                         "the full output is on the finding"))
     return rows
 
 

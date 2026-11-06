@@ -142,8 +142,12 @@ def test_the_next_step_reads_the_newest_tool_outputs(db_client, db_app):
     assert response.status_code == 201, response.json()
     request = db_app.state.parts["agent"].requests[-1]
     assert request.task == AgentTask.SUGGEST
-    assert len(request.tool_results) == 1
+    # The newest tool output, then one summary of every finished run so the agent knows
+    # which checks already ran.
+    assert len(request.tool_results) == 2
     assert 'portid="22"' in request.tool_results[0]
+    assert "NMAP" in request.tool_results[0]  # each output is headed with its tool
+    assert "NMAP" in request.tool_results[-1]  # the run summary lists it
     assert response.json()["agent_run"]["plan"]["task"] == "SUGGEST"
     assert "STEP_SUGGESTED" in event_types(db_app)
 

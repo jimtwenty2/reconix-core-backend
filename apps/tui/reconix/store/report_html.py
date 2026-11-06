@@ -372,6 +372,26 @@ def _finding_card(finding: Dict[str, Any]) -> str:
     )
 
 
+def _coverage_block(data: Dict[str, Any]) -> str:
+    """Each technique of the template and how much of it the run tested; the manual ones
+    are the tester's checklist."""
+    rows = view.coverage_rows(data)
+    body = "".join(
+        f'<tr><td>{esc(name)}</td><td>{esc(status)}</td><td class="mono">{esc(tools)}</td></tr>'
+        for name, status, tools in rows
+    ) or f'<tr><td colspan="3">{esc(view.NO_COVERAGE)}</td></tr>'
+    head = "".join(f"<th>{esc(h)}</th>" for h in view.COVERAGE_HEAD)
+    checklist = view.manual_checklist(data)
+    items = "".join(f"<li>{esc(item)}</li>" for item in checklist)
+    todo = (f'<p class="note">{esc(view.CHECKLIST_NOTE)}</p><ul>{items}</ul>'
+            if checklist else "")
+    return (
+        f'<div class="eyebrow" style="margin-bottom:8px">{esc(view.COVERAGE_HEADING)}</div>'
+        f'<div class="tw"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody>'
+        f'</table></div>{todo}<div style="height:14px"></div>'
+    )
+
+
 def _governance_block(data: Dict[str, Any]) -> str:
     blocked = data.get("blocked_requests", [])
     approvals = data.get("approvals", [])
@@ -386,6 +406,7 @@ def _governance_block(data: Dict[str, Any]) -> str:
         for a in approvals
     ) or f'<tr><td colspan="5">{esc(view.NO_APPROVALS)}</td></tr>'
     return (
+        _coverage_block(data) +
         f'<div class="eyebrow" style="margin-bottom:8px">Blocked by policy · {len(blocked)}</div>'
         '<div class="tw"><table><thead><tr><th>Request</th><th>Reason</th></tr></thead>'
         f'<tbody>{blocked_rows}</tbody></table></div>'

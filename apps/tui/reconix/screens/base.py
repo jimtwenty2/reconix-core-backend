@@ -483,25 +483,6 @@ class ReconixScreen(Screen):
 
         self.app.run_worker(work, thread=True, group="llm", exit_on_error=False)
 
-    async def show_scope_suggestions(self) -> None:
-        """Open the step chat and show the AI's reading of the goal and a tick list of the
-        tools it suggests (unticked). Only the operator's tick changes the scope."""
-        suggest = store.get_assessment().scope_suggest
-        if suggest is None:
-            return
-        chat = await self.open_step_chat()
-        if suggest.reading:
-            chat.add_reply(suggest.reading)
-        choices = store.scope_tick_choices()
-        if choices is not None and (choices.suggested_tools or choices.ports):
-            chat.add_reply("Tick the tools to add for your goal, then press Enter. Or press "
-                           "Esc and approve the scope as it is.", tone="muted")
-            chat.add(
-                TickList(choices.ports, choices.tools, choices.suggested,
-                         choices.suggested_tools, focus=choices.focus)
-            )
-        chat.scroll_to_end()
-
     def _scope_reply(self, chat: StepChat, text: str, model_reply: str = "") -> None:
         """Reconix's own line ("Only you can change the scope…"), then your tick list
         (nothing new ticked; the ports/tools the model named are added unticked). Recorded,

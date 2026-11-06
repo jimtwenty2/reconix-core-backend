@@ -47,6 +47,7 @@ from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
+from reconix_api.repositories import findings as finding_repo
 from reconix_api.repositories import messages as message_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut
 from reconix_api.schemas.agent_runs import AgentRunOut, PlanOut
@@ -60,6 +61,8 @@ Decision = Literal["APPROVED", "REJECTED"]
 # ensure_still_running).
 STALE_MINUTES = 30
 TOOL_OUTPUTS = 3  # the next step reads the newest 3 tool outputs, masked when saved
+RUN_LINES = 40  # the list of every finished tool run the next step reads, newest kept
+TARGET_CHARS = 60  # a target in that list or an output's header line, cut to this length
 
 
 async def start_plan(
@@ -75,7 +78,7 @@ async def start_plan(
     """PLAN: a plan and its first step. SUGGEST: the next step, from the newest tool
     outputs. Only a PLAN can be a draft."""
     actions.ensure_can_act(db, assessment_id)
-    tool_results = recent_outputs(db, assessment_id) if task == AgentTask.SUGGEST else []
+    tool_results = recent_outputs(db, assessment_id, mask) if task == AgentTask.SUGGEST else []
     if task == AgentTask.SUGGEST and not tool_results:
         raise ApiError(
             409, "NO_TOOL_RESULTS", "No tool has run yet. Ask for a plan, or run a step first."
@@ -455,11 +458,56 @@ def waiting_step(db: Db, run: AgentRun) -> tuple[ActionRow, Approval] | None:
     return None
 
 
-def recent_outputs(db: Db, assessment_id: UUID) -> list[str]:
-    """The newest tool outputs of the assessment, masked when they were saved."""
-    runs = action_repo.tool_runs_in_assessment(db, assessment_id)
-    outputs = [run.output_masked for run, _ in runs if run.output_masked]
-    return outputs[-TOOL_OUTPUTS:]
+def recent_outputs(db: Db, assessment_id: UUID, mask: MaskSecrets) -> list[str]:
+    """What the next step reads about the tools that ran, all masked:
+
+    the newest tool outputs, each headed "TOOL target STATUS", then one list of every
+    finished tool run (tool, target, status, findings), so the agent knows which checks
+    already ran and does not repeat them. The list comes last: the agent keeps only its
+    newest few texts, so it drops an old output before it drops the list. Empty when no
+    tool run has finished.
+    """
+    runs = [
+        (run, action)
+        for run, action in action_repo.tool_runs_in_assessment(db, assessment_id)
+        if run.finished_at is not None
+    ]
+    if not runs:
+        return []
+    counts = finding_repo.finding_counts(db, [run.tool_run_id for run, _ in runs])
+    rows = [
+        (action.tool, action.target, str(run.tool_run_status), counts.get(run.tool_run_id, 0))
+        for run, action in runs
+    ]
+    outputs = [
+        f"{output_header(action.tool, action.target, str(run.tool_run_status))}\n"
+        f"{run.output_masked}"
+        for run, action in runs
+        if run.output_masked
+    ]
+    return [mask(text)[0] for text in [*outputs[-TOOL_OUTPUTS:], runs_summary(rows)]]
+
+
+def output_header(tool: str, target: str, status: str) -> str:
+    """One line naming the tool run an output came from, e.g. "NMAP 10.0.0.5 COMPLETED"."""
+    return f"{tool} {short(target)} {status}"
+
+
+def runs_summary(rows: list[tuple[str, str, str, int]]) -> str:
+    """Every finished tool run (rows oldest first), one line each, newest first so a cut
+    end loses the oldest. Past RUN_LINES the older runs are counted, not listed."""
+    lines = [
+        f"- {tool} {short(target)} {status}, {found} findings"
+        for tool, target, status, found in reversed(rows)
+    ]
+    if len(lines) > RUN_LINES:
+        lines = [*lines[:RUN_LINES], f"- ({len(lines) - RUN_LINES} older runs not shown)"]
+    return "Tool runs so far, newest first (tool, target, status, findings):\n" + "\n".join(lines)
+
+
+def short(target: str) -> str:
+    """A target cut to TARGET_CHARS, so one long URL cannot crowd out the list."""
+    return target if len(target) <= TARGET_CHARS else target[: TARGET_CHARS - 1] + "…"
 
 
 def step_note(action: ActionOut | None) -> str:

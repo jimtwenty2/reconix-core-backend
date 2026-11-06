@@ -24,6 +24,13 @@ def _para(text: str, color: str = theme.MUTED) -> Static:
     return Static(Text(text, style=color))
 
 
+def _url(url: str, color: str = theme.CYAN) -> Static:
+    """A URL the terminal makes clickable (ctrl/cmd+click opens it in the browser)."""
+    if url.startswith(("http://", "https://")):
+        return Static(Text(url, style=f"link {url} {color}"))
+    return _para(url, color)
+
+
 class FindingDetailScreen(ReconixScreen):
     flow_name = "detail"
     mode_name = "DETAIL"
@@ -77,7 +84,7 @@ class FindingDetailScreen(ReconixScreen):
                 evidence.border_title = "▤ EVIDENCE"
                 evidence.border_subtitle = Text(d.tool)     # imported text: never markup
                 yield _heading("Affected URL", theme.DIM)
-                yield _para(d.affected_url, theme.CYAN)
+                yield _url(d.affected_url, theme.CYAN)
                 yield Static("")
                 yield _heading("Evidence (masked)", theme.DIM)
                 for line in d.evidence:

@@ -11,6 +11,7 @@ PROMPT_FILES = [
     "validate.md",
     "report.md",
     "chat.md",
+    "techniques.md",
 ]
 # findings.severity_status in ERD V3: NONE, never INFO.
 SEVERITY_VALUES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN"]

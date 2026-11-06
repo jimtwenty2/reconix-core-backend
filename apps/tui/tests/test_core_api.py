@@ -30,7 +30,7 @@ class FakeApi:
         self.reply = "The API's answer."
         self.fail: Optional[Tuple[int, str, str]] = None  # status, code, message
         self.down = False
-        self.pending_activation = False      # activate answers 409 APPROVAL_PENDING
+        self.pending_activation = False  # activate answers 409 APPROVAL_PENDING
         self.plan_steps = [
             {
                 "order": 1,
@@ -90,8 +90,9 @@ class FakeApi:
                 row["is_active"] = True
                 return {"llm_provider": row, "approval": None}
             if self.pending_activation:
-                raise client.CoreApiError("APPROVAL_PENDING", "waits", 409,
-                                          {"approval_id": "a-old"})
+                raise client.CoreApiError(
+                    "APPROVAL_PENDING", "waits", 409, {"approval_id": "a-old"}
+                )
             return {"llm_provider": row, "approval": {"approval_id": "a-cfg"}}
         if path.startswith("/approvals/"):
             return {}
@@ -186,15 +187,14 @@ def test_the_api_uses_the_model_you_chose(api, approved, no_direct_model):
     assert (added["provider_type"], added["model_name"]) == ("OPENAI", "gpt-4o-mini")
     assert added["api_key"] == "sk-x-1234"
     assert "POST /approvals/a-cfg/approve" in api.paths()
-    assert api.paths().count("GET /llm-providers") == 1          # synced once
+    assert api.paths().count("GET /llm-providers") == 1  # synced once
     assert any("Core API uses" in a.message for a in store.list_activity())
 
 
 def test_a_remote_model_is_not_approved_without_your_ok(api, model_active, no_direct_model):
     store.llm_answer("hello")
 
-    assert not any(p.endswith("/activate") or p.startswith("POST /approvals")
-                   for p in api.paths())
+    assert not any(p.endswith("/activate") or p.startswith("POST /approvals") for p in api.paths())
     assert not any(p.endswith("/chat") for p in api.paths())
     assert "needs your OK" in last_reply() and "/provider" in last_reply()
 
@@ -226,7 +226,7 @@ def test_only_a_remote_model_in_core_api_mode_asks(api, monkeypatch, model_activ
     store.activate("ollama", "llama3.2")
     assert not store.core_api_needs_ok()
     store.activate("openai", "gpt-4o-mini")
-    monkeypatch.delenv(client.ENV_URL)          # the default address: the API is still used
+    monkeypatch.delenv(client.ENV_URL)  # the default address: the API is still used
     assert store.core_api_needs_ok()
 
 
@@ -244,7 +244,7 @@ def test_an_api_that_is_down_is_said_plainly(api, approved, no_direct_model):
     store.llm_answer("hello")
 
     texts = [e.text for e in store.get_assessment().chat]
-    assert "thinking…" not in texts                    # the placeholder is taken back out
+    assert "thinking…" not in texts  # the placeholder is taken back out
     assert texts[-1].startswith("The AI couldn't answer: the Core API is not running")
 
 
@@ -275,7 +275,15 @@ def test_the_scope_goes_to_the_api_and_follows_your_edits(api, approved, no_dire
     store.llm_answer("Is /admin in scope?")
 
     [draft] = api.bodies("POST", "/sessions/s-1/scope-manifests")
-    assert draft["allowed_tools"] == ["NUCLEI", "ZAP"]
+    assert draft["allowed_tools"] == [
+        "WHATWEB",
+        "KATANA",
+        "NUCLEI",
+        "TESTSSL",
+        "FFUF",
+        "NIKTO",
+        "DALFOX",
+    ]
     assert draft["targets"][0]["type"] == "url"
     assert {
         "type": "url",
@@ -283,7 +291,10 @@ def test_the_scope_goes_to_the_api_and_follows_your_edits(api, approved, no_dire
         "excluded": True,
     } in draft["targets"]
 
-    assert api.bodies("POST", "/sessions/s-1/messages") == [{"content": DEMO_REQUEST}]
+    # the assessment type first, so the API's AI plans the web techniques
+    assert api.bodies("POST", "/sessions/s-1/messages") == [
+        {"content": f"Assessment type: Web URL\n{DEMO_REQUEST}"}
+    ]
 
     store.edit_scope(tools=["Nuclei"])
     store.llm_answer("And now?")
@@ -309,7 +320,7 @@ def test_an_approved_scope_is_approved_on_the_api_and_the_plan_drafted(
     assert not any(p.endswith("/send") for p in paths)  # kept as a draft until Run plan
     tasks = {task.key: task for task in store.plan_tasks()}
     assert tasks["discovery"].label == "Find the shop's pages"
-    assert tasks["discovery"].tools == ("OWASP ZAP",)  # the scope's own name
+    assert tasks["discovery"].tools == ()  # ZAP is no longer in the web scope
     assert tasks["scanning"].tools == ("Nuclei",)
 
 
@@ -378,8 +389,8 @@ async def test_choosing_a_remote_model_asks_for_the_core_apis_ok(api, app, reach
         assert isinstance(app.screen, ChoiceScreen)
         shown = screen_text(app.screen)
         assert "Core API will send your scope" in shown and "sk-x-1234" not in shown
-        assert "sk-…1234" in shown                       # only the key's hint
-        await pilot.press("enter")                      # Approve (recommended, the default)
+        assert "sk-…1234" in shown  # only the key's hint
+        await pilot.press("enter")  # Approve (recommended, the default)
         await app.workers.wait_for_complete()
         await settle(pilot)
     assert "POST /approvals/a-cfg/approve" in api.paths()
@@ -393,6 +404,6 @@ async def test_not_now_approves_nothing(api, app, reachable):
     async with app.run_test(size=SIZE) as pilot:
         app.activate_model("openai/gpt-4o-mini")
         await settle(pilot)
-        await pilot.press("down", "enter")              # Not now
+        await pilot.press("down", "enter")  # Not now
         await settle(pilot)
     assert api.calls == []

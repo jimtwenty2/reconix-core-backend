@@ -107,20 +107,20 @@ async def test_the_tick_list_opens_on_the_new_port_and_space_enter_adds_it(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
         await settle(pilot)
         rows = app.screen.query_one(SelectionList)
         assert rows.has_focus
-        assert rows.get_option_at_index(rows.highlighted).value == "port:3389"
+        assert rows.get_option_at_index(rows.highlighted).value == "port:7070"
         await pilot.press("space", "enter")
         await settle(pilot)
-        assert store.get_scope().allowed_ports == before + [3389]   # 22 stays allowed
+        assert store.get_scope().allowed_ports == before + [7070]   # 22 stays allowed
 
 
 def test_a_suggested_port_label_fits_80_columns():
-    ticks = TickList([(22, True), (3389, False)], [], suggested=[3389])
-    label = ticks._port_label(3389).plain
+    ticks = TickList([(22, True), (7070, False)], [], suggested=[7070])
+    label = ticks._port_label(7070).plain
     assert len("▐X▌ " + label) <= 80 - 16  # the chat's and the list's borders and padding
     assert "suggested by the model" in label
 
@@ -227,7 +227,7 @@ async def test_a_model_reply_in_the_step_chat_is_labelled_with_the_model(
         text = chat_text(app)
         assert "◆ gpt-4o-mini  model answer 1" in text
         assert "◆ reconix" not in text.split("model answer 1")[0].splitlines()[-1]
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: "Only you can change" in chat_text(app), what="line")
         assert "◆ reconix  Only you can change the scope" in chat_text(app)
 

@@ -22,6 +22,8 @@ _scopes: Dict[str, dict] = {}
 _owner: Dict[str, str] = {}  # "planned_id": the app assessment the API session belongs to
 # Scope errors that leave a chat answerable without the scope.
 SCOPE_ONLY = {"SCOPE_NOT_SUPPORTED", "NO_API_TOOLS", "BAD_TARGET"}
+# The scope's kind as the API's AI reads it: it picks that kind's testing techniques.
+KIND_NAMES = {"web_url": "Web URL", "api": "API", "network": "Network", "source": "Source Code"}
 
 
 def _forget() -> None:
@@ -52,11 +54,10 @@ def sync_scope(assessment: Assessment) -> Optional[str]:
             "sent": draft,
             "assessment_id": None,
         }
-        if assessment.requests:
+        first = first_message(assessment)
+        if first:
             # What you asked for: the API plans toward it (it masks the text first).
-            connect.request(
-                "POST", f"/sessions/{session_id}/messages", {"content": assessment.requests[0].text}
-            )
+            connect.request("POST", f"/sessions/{session_id}/messages", {"content": first})
     elif entry["assessment_id"] is None and entry["sent"] != draft:
         connect.request("PATCH", f"/scope-manifests/{entry['manifest_id']}", draft)
         entry["sent"] = draft
@@ -69,6 +70,16 @@ def sync_scope(assessment: Assessment) -> Optional[str]:
         connect.request("POST", f"/approvals/{submitted['approval_id']}/approve", {})
         entry["assessment_id"] = submitted["assessment"]["assessment_id"]
     return entry["assessment_id"]
+
+
+def first_message(assessment: Assessment) -> str:
+    """The first chat line the API gets: the assessment type, so its AI plans that kind's
+    techniques, then what you asked for ("" when there is neither)."""
+    kind = KIND_NAMES.get(assessment.scope.kind, "") if assessment.scope else ""
+    lines = [f"Assessment type: {kind}"] if kind else []
+    if assessment.requests:
+        lines.append(assessment.requests[0].text)
+    return "\n".join(lines)
 
 
 def use_active_model(approved: bool = False) -> List[str]:

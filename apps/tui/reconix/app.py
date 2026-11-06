@@ -44,6 +44,7 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
         # Start prompt focused; in a dialog or a field with selected text it is left to them.
         Binding("ctrl+c", "stop_assessment", "stop", show=False, priority=True),
         Binding("ctrl+o", "toggle_activity", "expand steps", show=False),
+        Binding("ctrl+y", "copy_selection", "copy", show=False),
         # Quick jumps for presenting — hidden to keep the footer clean. On Alt, never on a
         # bare digit: a menu's digits pick a choice, and the same key must not mean "show
         # me screen N" on one screen and "decide this gate" on the next (QA-008).
@@ -89,6 +90,17 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
             self.pop_screen()
         else:
             self.push_screen(HelpScreen.for_screen(self.screen))
+
+    def action_copy_selection(self) -> None:
+        """Ctrl+Y: copy the selected text (drag to select) to the clipboard. Ctrl+C is Stop,
+        so copy is its own key. Paste works in any input."""
+        text = self.screen.get_selected_text()
+        if text:
+            self.copy_to_clipboard(text)
+            self.notify(f"Copied {len(text)} characters.", title="Clipboard", timeout=2)
+        else:
+            self.notify("Select text first (drag with the mouse), then Ctrl+Y.", title="Copy",
+                        timeout=3)
 
     def action_toggle_activity(self) -> None:
         self.activity_expanded = not self.activity_expanded
