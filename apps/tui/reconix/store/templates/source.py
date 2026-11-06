@@ -6,18 +6,19 @@ from .base import RunBundle, RunProfile, run_bundle
 
 SCOPE_PROMPT = (
     "You scope an authorized static review of a source repository. The default tools are "
-    "Semgrep (static analysis), gitleaks (secrets) and the dependency scanners trivy, grype "
-    "and osv-scanner. syft builds an SBOM. All read the code only; never suggest tools that "
-    "reach the network or run the code. Respect excluded folders like node_modules and .git."
+    "Semgrep (static analysis), gitleaks (secrets) and trivy (dependencies); grype and "
+    "osv-scanner also scan dependencies, and syft builds an SBOM. All read the code only; "
+    "never suggest tools that reach the network or run the code. Respect excluded folders "
+    "like node_modules and .git."
 )
 SUGGEST_CATEGORIES = ["source"]
 SPEC = Template("source", "Source Code", "Static review of a repository",
                 target_hint="a git repo URL or a local path",
                 example="https://git.example.com/acme/app.git")
 
-TOOLS = ["Semgrep", "gitleaks", "pip-audit"]
+TOOLS = ["Semgrep", "gitleaks", "trivy"]
 # the scope tools each phase uses (the plan shows those still in the approved scope)
-PHASE_TOOLS = {"scanning": ("Semgrep", "gitleaks", "pip-audit"),
+PHASE_TOOLS = {"scanning": ("Semgrep", "gitleaks", "trivy"),
                "validation": ("Semgrep",)}
 
 
@@ -41,5 +42,5 @@ def build_run(assessment) -> RunBundle:
                                ("validation", "Review findings"),
                                ("analysis", "Correlate & dedupe findings"),
                                ("report", "Generate report")),
-                         methodology=("OWASP ASVS", "CWE Top 25"))
+                         methodology=("Guided by OWASP ASVS", "CWE Top 25"))
     return run_bundle(scope, profile, PHASE_TOOLS)

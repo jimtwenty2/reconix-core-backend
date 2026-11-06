@@ -162,6 +162,13 @@ def _finding(doc, finding: Dict[str, Any], text_width) -> None:
 
 def _governance(doc, data: Dict[str, Any], text_width) -> None:
     _heading(doc, "5", "Audit trail")
+    doc.add_heading(view.COVERAGE_HEADING, level=3)
+    _grid(doc, view.COVERAGE_HEAD, view.coverage_rows(data), view.NO_COVERAGE, text_width)
+    checklist = view.manual_checklist(data)
+    if checklist:
+        _note(doc, view.CHECKLIST_NOTE)
+        for item in checklist:
+            doc.add_paragraph(item, style="List Bullet")
     blocked = view.blocked_rows(data)
     doc.add_heading(f"Blocked by policy · {len(blocked)}", level=3)
     _grid(doc, view.BLOCKED_HEAD, blocked, view.NO_BLOCKED, text_width, KV_WIDTHS)

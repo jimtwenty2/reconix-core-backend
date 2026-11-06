@@ -11,14 +11,32 @@ from textual.widgets import SelectionList
 from reconix import store
 from reconix.core_api import client as api_client
 from reconix.widgets import (
-    ChatBar, ChoiceMenu, FlowProgress, PlanPanel, Question, ScopePanel, StepChat,
-    TickList, UserMessage,
+    ChatBar,
+    ChoiceMenu,
+    FlowProgress,
+    PlanPanel,
+    Question,
+    ScopePanel,
+    StepChat,
+    TickList,
+    UserMessage,
 )
 
 from .support import (
     wait_for_run,
-    NETWORK, SIZE, ask_in_chat, chat_about_this, chat_menu, chat_menu_ready,
-    chat_text, run_ui_to, screen_text, settle, step_menu, type_in_menu, type_request,
+    NETWORK,
+    SIZE,
+    ask_in_chat,
+    chat_about_this,
+    chat_menu,
+    chat_menu_ready,
+    chat_text,
+    run_ui_to,
+    screen_text,
+    settle,
+    step_menu,
+    type_in_menu,
+    type_request,
     wait_until,
 )
 
@@ -111,10 +129,10 @@ async def test_chat_about_this_shows_the_scope_card_and_esc_brings_the_menu_back
         await wait_until(pilot, lambda: bool(app.screen.query(ScopePanel)), what="the card")
         await settle(pilot)
         chat = app.screen.query_one(StepChat)
-        assert chat.query(ScopePanel)                       # the card, as on the screen
+        assert chat.query(ScopePanel)  # the card, as on the screen
         text = chat_text(app)
         assert NETWORK in text and "nmap" in text
-        assert chat_menu(app) is None                      # you came to talk, not decide
+        assert chat_menu(app) is None  # you came to talk, not decide
         assert chat.input.has_focus
         assert not _question_shown(app)
         await pilot.press("escape")
@@ -131,7 +149,7 @@ async def test_chat_about_this_at_the_plan_prints_the_plan(app):
         chat_about_this(app)
         await wait_until(pilot, lambda: bool(app.screen.query(PlanPanel)), what="the card")
         text = screen_text(app.screen.query_one(PlanPanel))
-        assert "Find open ports" in text and "nmap" in text   # the API plan's steps
+        assert "Find open ports" in text and "nmap" in text  # the API plan's steps
         assert not app.screen.query_one("#plan-list").display
 
 
@@ -149,21 +167,21 @@ async def test_asking_to_add_a_port_opens_your_tick_list(app, model_active, monk
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
         assert "model answer 1" in chat_text(app)  # the model answers it first
         assert len(calls) == 1
         rows = app.screen.query_one(SelectionList)
         ticked = {f"port:{p}" for p in before} | {f"tool:{t}" for t in store.get_scope().tools}
         assert set(rows.selected) == ticked  # only what the scope allows today
-        assert "port:3389" not in rows.selected  # nothing new ticked for you
-        rows.select("port:3389")  # you tick it
+        assert "port:7070" not in rows.selected  # nothing new ticked for you
+        rows.select("port:7070")  # you tick it
         rows.focus()
         await pilot.press("enter")
         await settle(pilot)
-        assert 3389 in store.get_scope().allowed_ports
+        assert 7070 in store.get_scope().allowed_ports
         assert not app.screen.query(TickList)
-        assert "3389" in chat_text(app)
+        assert "7070" in chat_text(app)
         assert app.screen.query(StepChat)  # you stay in chat
 
 
@@ -171,10 +189,10 @@ async def test_esc_on_the_tick_list_changes_nothing(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
-        assert "Only you can change the scope" in chat_text(app)   # the built-in reply
-        app.screen.query_one(SelectionList).select("port:3389")
+        assert "Only you can change the scope" in chat_text(app)  # the built-in reply
+        app.screen.query_one(SelectionList).select("port:7070")
         await pilot.press("escape")
         await settle(pilot)
         assert store.get_scope().allowed_ports == before
@@ -182,24 +200,22 @@ async def test_esc_on_the_tick_list_changes_nothing(app):
         assert "No change to the scope" in chat_text(app)
 
 
-async def test_a_scope_change_from_the_plan_step_reopens_the_scope(app, model_active,
-                                                                 monkeypatch):
+async def test_a_scope_change_from_the_plan_step_reopens_the_scope(app, model_active, monkeypatch):
     fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "plan", request=NETWORK)
         assert store.is_scope_approved()
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
         rows = app.screen.query_one(SelectionList)
-        assert "port:3389" not in rows.selected          # the AI's suggestion is unticked
-        rows.select("port:3389")                         # you tick it
+        assert "port:7070" not in rows.selected  # the AI's suggestion is unticked
+        rows.select("port:7070")  # you tick it
         rows.focus()
         await pilot.press("enter")
-        await wait_until(pilot, lambda: not store.is_scope_approved(),
-                         what="the scope re-opened")
+        await wait_until(pilot, lambda: not store.is_scope_approved(), what="the scope re-opened")
         # the scope re-opened to a draft with your port, back on the Scope step to approve
         assert store.get_scope().status == "DRAFT"
-        assert 3389 in store.get_scope().allowed_ports
+        assert 7070 in store.get_scope().allowed_ports
         assert store.waiting_gate() == "scope"
 
 
@@ -218,7 +234,7 @@ async def test_the_question_box_is_pinned_at_the_bottom(app):
         await settle(pilot)
         bar = app.screen.query_one(ChatBar)
         body = app.screen.query_one("#body")
-        assert bar.region.bottom == body.region.bottom       # docked under the chat
+        assert bar.region.bottom == body.region.bottom  # docked under the chat
         assert bar.query_one("#step-chat-input").has_focus
         await pilot.press("escape")
         await settle(pilot)
@@ -230,45 +246,50 @@ async def test_a_model_claiming_it_changed_the_scope_is_corrected(app, model_act
     from reconix.llm import guardrail
     from reconix.store import scope_ask
 
-    fake_model(monkeypatch, "Port 3389 has been added.")
+    fake_model(monkeypatch, "Port 7070 has been added.")
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
         text = chat_text(app)
         assert text.index("has been added") < text.index("Only you can change the scope")
-        assert store.list_chat()[-1].text == scope_ask.ONLY_YOU   # in the model's history
+        assert store.list_chat()[-1].text == scope_ask.ONLY_YOU  # in the model's history
         assert store.get_scope().allowed_ports == before
     assert "Never say you changed" in guardrail.SYSTEM_PROMPT
 
 
 # --- a decision typed in the chat: the step's own menu, never the model ---------------------
-async def test_a_typed_decision_shows_the_menu_and_no_model_is_asked(app, model_active,
-                                                                     monkeypatch):
+async def test_a_typed_decision_shows_the_menu_and_no_model_is_asked(
+    app, model_active, monkeypatch
+):
     calls = fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
-        type_in_menu(app, "apporve that scope")                   # a typo still counts
+        type_in_menu(app, "apporve that scope")  # a typo still counts
         await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
-        assert calls == []                                 # the model never saw it
+        assert calls == []  # the model never saw it
         text = chat_text(app)
         assert "nothing is approved" in text and "Only you decide this" in text
-        assert _chat_choices(app) == ["Approve scope", "Edit manifest", "Reject",
-                                      "Chat about this"]   # typing anywhere goes to the chat
-        assert "1. Approve scope" not in chat_text(app)     # no numbers: a digit types
+        assert _chat_choices(app) == [
+            "Approve scope",
+            "Edit manifest",
+            "Reject",
+            "Chat about this",
+        ]  # typing anywhere goes to the chat
+        assert "1. Approve scope" not in chat_text(app)  # no numbers: a digit types
         assert "type to chat" in chat_text(app)
-        assert not app.screen.query_one(ChatBar).display   # the menu, not the input
+        assert not app.screen.query_one(ChatBar).display  # the menu, not the input
         assert not store.is_scope_approved()
         # The focus is queued until the menu has drawn: wait for it, don't race it.
         await wait_until(pilot, lambda: chat_menu(app).has_focus, what="the menu focused")
-        await pilot.press("enter")                         # 1. Approve scope
+        await pilot.press("enter")  # 1. Approve scope
         await wait_until(pilot, lambda: store.waiting_gate() == "plan", what="the plan gate")
         await settle(pilot)
         assert store.is_scope_approved()
-        assert not app.screen.query(StepChat)              # the chat closed
+        assert not app.screen.query(StepChat)  # the chat closed
         line = _step_line(app)
-        assert "✓ Template" in line and "! Plan" in line   # the step line moved
+        assert "✓ Template" in line and "! Plan" in line  # the step line moved
 
 
 async def test_typing_on_the_chat_menu_brings_the_input_back_and_is_answered(
@@ -331,16 +352,16 @@ async def test_chat_about_this_in_the_chat_menu_brings_the_input_back(app):
 async def test_a_saved_tick_list_shows_the_new_scope_card_and_the_menu(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
         rows = app.screen.query_one(SelectionList)
-        rows.select("port:3389")
+        rows.select("port:7070")
         rows.focus()
         await pilot.press("enter")
         await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
         chat = app.screen.query_one(StepChat)
         [card] = chat.query(ScopePanel)
-        assert "3389" in screen_text(card) and "draft" in str(card.border_subtitle)
+        assert "7070" in screen_text(card) and "draft" in str(card.border_subtitle)
         assert "Scope updated" in chat_text(app)
         assert not store.is_scope_approved()
 
@@ -353,8 +374,9 @@ async def test_show_the_scope_prints_the_card(app):
         assert app.screen.query_one(StepChat).query(ScopePanel)
 
 
-async def test_yes_at_the_plan_shows_the_plan_menu_and_run_plan_runs(app, model_active,
-                                                                     monkeypatch):
+async def test_yes_at_the_plan_shows_the_plan_menu_and_run_plan_runs(
+    app, model_active, monkeypatch
+):
     calls = fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "plan", request=NETWORK)
@@ -366,11 +388,12 @@ async def test_yes_at_the_plan_shows_the_plan_menu_and_run_plan_runs(app, model_
         assert not store.is_plan_started()
         app.screen.post_message(ChoiceMenu.Chosen(chat_menu(app), "run"))
         await wait_until(pilot, store.is_plan_started, what="the plan to run")
-        await wait_for_run(pilot)   # let the switch to Execution and the plan's send settle
+        await wait_for_run(pilot)  # let the switch to Execution and the plan's send settle
 
 
-async def test_a_question_about_the_decision_is_answered_then_the_menu(app, model_active,
-                                                                       monkeypatch):
+async def test_a_question_about_the_decision_is_answered_then_the_menu(
+    app, model_active, monkeypatch
+):
     calls = fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
@@ -390,9 +413,10 @@ async def test_approve_in_chat_keeps_the_high_double_check(app):
         type_in_menu(app, "approve")
         await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
         app.screen.post_message(ChoiceMenu.Chosen(chat_menu(app), "approve"))
-        await wait_until(pilot, lambda: isinstance(app.screen, ChoiceScreen),
-                         what="the double check")
-        assert store.decision_for(gate[9:]) is None   # nothing approved yet
+        await wait_until(
+            pilot, lambda: isinstance(app.screen, ChoiceScreen), what="the double check"
+        )
+        assert store.decision_for(gate[9:]) is None  # nothing approved yet
 
 
 async def test_a_new_menu_replaces_the_one_shown_before(app):
@@ -430,8 +454,9 @@ async def test_the_plan_shows_your_request_not_the_chat_line(app):
 
 # --- the model's ports, the plan card and the plan's order ----------------------------------
 async def test_ports_the_model_names_are_offered_unticked(app, model_active, monkeypatch):
-    reply = ("To scan 12 ports, add port 4000 along with 21 (FTP), 23 (Telnet) and "
-             "3306 (MySQL).")
+    reply = (
+        "To scan 12 ports, add port 4000 along with 7071 (HTTP-ALT), 7072 (APP) and 7073 (ADMIN)."
+    )
     fake_model(monkeypatch, reply)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
@@ -440,12 +465,12 @@ async def test_ports_the_model_names_are_offered_unticked(app, model_active, mon
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
         rows = app.screen.query_one(SelectionList)
         values = [rows.get_option_at_index(i).value for i in range(rows.option_count)]
-        for port in (4000, 21, 23, 3306):
+        for port in (4000, 7071, 7072, 7073):
             assert f"port:{port}" in values and f"port:{port}" not in rows.selected
-        assert "port:12" not in values                      # a count, not a port
-        prompt = rows.get_option_at_index(values.index("port:21")).prompt
+        assert "port:12" not in values  # a count, not a port
+        prompt = rows.get_option_at_index(values.index("port:7071")).prompt
         assert "suggested by the model" in str(prompt)
-        assert store.get_scope().allowed_ports == before    # nothing changed by itself
+        assert store.get_scope().allowed_ports == before  # nothing changed by itself
 
 
 async def test_give_the_plan_shows_the_plan_card_and_the_menu(app, model_active, monkeypatch):
@@ -456,7 +481,7 @@ async def test_give_the_plan_shows_the_plan_card_and_the_menu(app, model_active,
         await wait_until(pilot, lambda: bool(app.screen.query(StepChat)), what="the chat")
         await ask_in_chat(app, pilot, "give the plan")
         await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
-        assert calls == []                                  # the card, not the model's list
+        assert calls == []  # the card, not the model's list
         assert len(app.screen.query_one(StepChat).query(PlanPanel)) == 2
         assert _chat_choices(app)[0] == "Run plan"
 
@@ -472,61 +497,73 @@ async def test_a_second_scope_change_shows_a_fresh_tick_list(app):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request=NETWORK)
         before = list(store.get_scope().allowed_ports)
-        type_in_menu(app, "add port 3389")
+        type_in_menu(app, "add port 7070")
         await wait_until(pilot, lambda: bool(app.screen.query(TickList)), what="the tick list")
-        await ask_in_chat(app, pilot, "add 3389, 0, 99999, 8080 and then scan 12 ports")
+        await ask_in_chat(app, pilot, "add 7070, 0, 99999, 8080 and then scan 12 ports")
         await wait_until(pilot, lambda: len(_mounted(app, TickList)) == 1, what="one list")
         await settle(pilot)
         (ticks,) = _mounted(app, TickList)
         rows = ticks.query_one(SelectionList)
-        assert rows.has_focus                               # Space/Enter work at once
+        assert rows.has_focus  # Space/Enter work at once
         values = [rows.get_option_at_index(i).value for i in range(rows.option_count)]
-        assert "port:3389" in values and "port:0" not in values and "port:99999" not in values
-        assert "port:12" not in values                      # a count, not a port
+        assert "port:7070" in values and "port:0" not in values and "port:99999" not in values
+        assert "port:12" not in values  # a count, not a port
         assert chat_text(app).count("Only you can change the scope") == 2
-        assert store.get_scope().allowed_ports == before    # nothing changed by typing
-        await pilot.press("enter")                          # the new list saves
+        assert store.get_scope().allowed_ports == before  # nothing changed by typing
+        await pilot.press("enter")  # the new list saves
         await wait_until(pilot, lambda: bool(chat_menu(app)), what="the menu in the chat")
         assert not _mounted(app, TickList)
 
 
-async def test_a_plan_change_from_the_plan_step_redrafts_the_plan(app, model_active,
-                                                                  monkeypatch):
+async def test_a_plan_change_from_the_plan_step_redrafts_the_plan(app, model_active, monkeypatch):
     fake_model(monkeypatch)
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "plan", request=NETWORK)
         author_before = store.plan_author()
         type_in_menu(app, "add a login brute-force step")
         # the AI answers, then Reconix re-drafts the plan and shows the new plan card
-        await wait_until(pilot, lambda: "re-drafted plan" in chat_text(app).lower()
-                         or "re-drafting" in chat_text(app).lower(), what="the re-draft note")
-        await wait_until(pilot, lambda: bool(app.screen.query_one(StepChat).query(PlanPanel)),
-                         what="the new plan card")
-        assert store.is_scope_approved()          # the scope did not change
-        assert not store.is_plan_started()        # nothing ran
+        await wait_until(
+            pilot,
+            lambda: (
+                "re-drafted plan" in chat_text(app).lower()
+                or "re-drafting" in chat_text(app).lower()
+            ),
+            what="the re-draft note",
+        )
+        await wait_until(
+            pilot,
+            lambda: bool(app.screen.query_one(StepChat).query(PlanPanel)),
+            what="the new plan card",
+        )
+        assert store.is_scope_approved()  # the scope did not change
+        assert not store.is_plan_started()  # nothing ran
         assert store.plan_author() == author_before  # still an AI draft
 
 
-
-async def test_the_ai_suggests_tools_at_the_scope_step(app, model_active, fake_api,
-                                                       monkeypatch):
+async def test_the_ai_suggests_tools_at_the_scope_step(app, model_active, fake_api, monkeypatch):
     from reconix.app import ReconixApp
     from reconix.widgets.manifest import manifest_text
 
     monkeypatch.setattr(ReconixApp, "SUGGEST_SCOPE_ON_REVIEW", True)
-    fake_api.reply = ("To list the site's paths, crawl it with katana and brute-force "
-                      "directories with ffuf and gobuster.")
+    # katana and ffuf are default web tools; arjun (hidden parameters) is not, so it is
+    # the one that gets suggested.
+    fake_api.reply = (
+        "To list the site's paths, crawl it with katana and discover hidden parameters with arjun."
+    )
     async with app.run_test(size=SIZE) as pilot:
         await type_request(pilot, "i want to list all paths on http://shop.example.com")
         # the AI reads the goal, then the card and a tick list of its suggestions appear.
-        await wait_until(pilot, lambda: bool(app.screen.query("#scope-suggest-ticks")),
-                         what="the suggestion tick list under the card")
+        await wait_until(
+            pilot,
+            lambda: bool(app.screen.query("#scope-suggest-ticks")),
+            what="the suggestion tick list under the card",
+        )
         suggested = store.suggested_tools()
-        assert "Katana" in suggested and "ffuf" in suggested   # both named by the model
-        assert "gobuster" not in suggested                     # same job as ffuf -> one only
-        assert "Katana" not in store.get_scope().tools         # scope unchanged until you tick
+        assert "arjun" in suggested  # named by the model, not default
+        assert "Katana" not in suggested  # already in the scope (crawl)
+        assert "arjun" not in store.get_scope().tools  # scope unchanged until you tick
         notes = dict(store.suggested_tool_notes())
-        assert notes["ffuf"]                                   # each suggestion states its purpose
+        assert notes["arjun"]  # each suggestion states its purpose
         # the card stays visible (its "Your goal" line); the suggestions are the tick list,
         # not a read-only list on the card (so they are never shown twice).
         assert app.screen.query_one(ScopePanel)
@@ -534,16 +571,15 @@ async def test_the_ai_suggests_tools_at_the_scope_step(app, model_active, fake_a
         assert "Your goal" in card and "Suggested for your goal" not in card
         rows = app.screen.query_one("#scope-suggest-ticks").query_one(SelectionList)
         values = {opt.value for opt in rows.options}
-        assert "tool:ffuf" in values and "tool:Katana" in values
-        assert "tool:gobuster" not in values                   # deduped out
-        assert not rows.selected                               # unticked
+        assert "tool:arjun" in values and "tool:Katana" not in values
+        assert not rows.selected  # unticked
         # ticking a suggestion adds it to the scope (a union; the template tools stay)
-        rows.select("tool:Katana")
+        rows.select("tool:arjun")
         rows.focus()
         await pilot.press("enter")
         await settle(pilot)
-        assert "Katana" in store.get_scope().tools
-        assert "Nuclei" in store.get_scope().tools             # template default kept
+        assert "arjun" in store.get_scope().tools
+        assert "Nuclei" in store.get_scope().tools  # template default kept
 
 
 async def test_the_scope_card_waits_for_the_goal_read(app, model_active, fake_api, monkeypatch):
@@ -558,14 +594,15 @@ async def test_the_scope_card_waits_for_the_goal_read(app, model_active, fake_ap
 
     def slow_read(_request):
         release.wait(5)
-        return "To list the paths, crawl with katana and brute-force with ffuf."
+        return "To list the paths, crawl with katana and find parameters with arjun."
 
     monkeypatch.setattr(store, "fetch_scope_suggest", slow_read)
     async with app.run_test(size=SIZE) as pilot:
         await type_request(pilot, "list all paths on http://shop.example.com")
         # while the read is in flight: the reading spinner, no card, no tick list yet
-        await wait_until(pilot, lambda: bool(app.screen.query("#template-activity")),
-                         what="the reading spinner")
+        await wait_until(
+            pilot, lambda: bool(app.screen.query("#template-activity")), what="the reading spinner"
+        )
         assert app.screen._reading()
         assert not app.screen.query(ScopePanel)
         assert not app.screen.query("#scope-suggest-ticks")

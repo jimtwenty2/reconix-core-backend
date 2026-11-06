@@ -50,6 +50,10 @@ APPROVALS_HEAD = ("Risk", "Action", "Target", "Decision", "Analyst")
 NO_FINDINGS_ROW = "No findings were recorded."
 NO_BLOCKED = "No requests were blocked."
 NO_APPROVALS = "No gated actions were required."
+COVERAGE_HEADING = "Test coverage"
+COVERAGE_HEAD = ("Technique", "Status", "Tools that ran")
+NO_COVERAGE = "This template lists no techniques."
+CHECKLIST_NOTE = "Check by hand: these techniques need a person (no safe automated tool)."
 
 # A piece of the summary sentence: (text, bold).
 Segment = Tuple[str, bool]
@@ -241,6 +245,23 @@ def scope_rows(data: Dict[str, Any]) -> List[Tuple[str, str]]:
         ("Tools", ", ".join(scope.get("tools", [])) or "—"),
     ]
     return rows
+
+
+def coverage_rows(data: Dict[str, Any]) -> List[List[str]]:
+    """The test coverage table (COVERAGE_HEAD): what the run tested of each technique."""
+    from .templates.techniques import status_text
+
+    return [
+        [row["name"], status_text(row),
+         ", ".join(row.get("tools", [])) or "—"]
+        for row in data.get("coverage", [])
+    ]
+
+
+def manual_checklist(data: Dict[str, Any]) -> List[str]:
+    """The techniques the tester checks by hand: "Name: what to investigate"."""
+    return [f"{row['name']}: {row['investigates']}" for row in data.get("coverage", [])
+            if row["status"] == "MANUAL"]
 
 
 def blocked_rows(data: Dict[str, Any]) -> List[List[str]]:

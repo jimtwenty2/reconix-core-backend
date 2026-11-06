@@ -24,8 +24,8 @@ A URL like https://shop.example.com picks Web URL at once. A bare hostname asks 
 
 | What this template sets up | |
 |---|---|
-| Scope | methods GET and POST; never touches /admin; tools Nuclei and OWASP ZAP; time limit 30 min |
-| Login | email/username + password, then a 6-digit one-time code (OWASP ZAP needs it) |
+| Scope | methods GET and POST; never touches /admin; tools whatweb, Katana, Nuclei and testssl.sh; time limit 30 min |
+| Login | a session cookie (Nuclei sends it) |
 | MEDIUM | Baseline request (read-only) · GET /api/orders/10482 |
 | HIGH | Cross-account read check · GET /api/orders/10483 (test account B) |
 | Blocked in the run | Blocked: GET /admin · Path outside approved scope. Not executed. |
@@ -137,7 +137,7 @@ The "API TEMPLATE: BASE URL AND SPEC" form opens first: press Esc to skip it (MF
 
 | What this template sets up | |
 |---|---|
-| Scope | methods GET and POST; never touches /internal and /admin; tools Nuclei, Postman and ZAP API scan; time limit 30 min |
+| Scope | methods GET and POST; never touches /internal and /admin; tools httpx, Katana and Nuclei (+ schemathesis with a spec); time limit 30 min |
 | Login | a session cookie (the API tools send it) |
 | MEDIUM | Baseline request (read-only) · GET /v1/orders/8842 (token A) |
 | HIGH | Cross-account read check · GET /v1/orders/8843 (token B's order) |
@@ -350,7 +350,7 @@ A git repo (https://…/x.git, git@host:owner/repo, github.com/owner/repo) or a 
 
 | What this template sets up | |
 |---|---|
-| Scope | read only; never touches .git, node_modules, vendor and secrets; tools Semgrep, gitleaks and pip-audit; no login |
+| Scope | read only; never touches .git, node_modules, vendor and secrets; tools Semgrep, gitleaks and trivy; no login |
 | MEDIUM | Read the flagged line (read-only) · app/config/settings.py:42 |
 | HIGH | Check the flagged credential once · one try on a test database |
 | Blocked in the run | Blocked: read .git/config · Path excluded from the review. Not executed. |

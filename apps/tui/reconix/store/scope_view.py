@@ -56,6 +56,10 @@ LOGIN_LINES: Dict[str, str] = {
 
 def _login(scope: ScopeManifest) -> List[str]:
     """Which login the tools will ask for, and which tools need it ([] for none)."""
+    # A login (cookie or account) only reaches pages behind a web sign-in; a network or
+    # source scope has no login to use, even when a tool like Nuclei could take a cookie.
+    if scope.kind in ("network", "source"):
+        return []
     kind, tools = tools_login(scope.tools)
     if not kind:
         return []
@@ -67,8 +71,11 @@ def _login(scope: ScopeManifest) -> List[str]:
 def _limits(scope: ScopeManifest) -> List[str]:
     """How it may reach the target: request methods, ports, or file access."""
     if scope.kind == "network":
-        line = f"Only connect to ports {join_and(scope.allowed_ports)}" if scope.allowed_ports \
+        line = (
+            f"Only connect to ports {join_and(scope.allowed_ports)}"
+            if scope.allowed_ports
             else "Only connect to the hosts in range"
+        )
         return [f"{line}, using {join_and(scope.allowed_methods)}"]
     if scope.kind == "source":
         return [f"Only {join_and(scope.allowed_methods)} the files; nothing is run"]

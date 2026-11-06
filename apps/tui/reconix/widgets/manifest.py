@@ -46,6 +46,7 @@ def manifest_text(scope: ScopeManifest, *, with_suggestions: bool = True) -> Tex
             text.append(tool, style=theme.GREEN)
             if purpose:
                 text.append(f" — {purpose}", style=theme.MUTED)
+    _techniques(text, scope.kind)
     text.append("\nTime limit: ", style=f"bold {theme.TEXT}")
     limit = f"{scope.time_limit_minutes} min" if scope.time_limit_minutes > 0 else "no limit"
     text.append(limit, style=theme.MUTED)
@@ -62,6 +63,28 @@ def manifest_text(scope: ScopeManifest, *, with_suggestions: bool = True) -> Tex
             text.append("\nOut of scope  ", style=f"bold {theme.TEXT}")
             text.append(", ".join(spec.out_of_scope_servers), style=theme.MEDIUM)
     return text
+
+
+# The scope card's technique groups: (mode, glyph, color token, label).
+TECHNIQUE_GROUPS = (
+    ("auto", "✓", "GREEN", "tested by the tools"),
+    ("partial", "◐", "MEDIUM", "partly; finish by hand"),
+    ("manual", "○", "DIM", "you check by hand"),
+)
+
+
+def _techniques(text: Text, kind: str) -> None:
+    """What the template tests: one line per group, so the card stays short."""
+    groups = store.technique_groups(kind)
+    if not any(groups.values()):
+        return
+    text.append("\n\nTechniques", style=f"bold {theme.TEXT}")
+    for mode, glyph, color, label in TECHNIQUE_GROUPS:
+        names = groups.get(mode, [])
+        if names:
+            text.append(f"\n  {glyph} ", style=getattr(theme, color))
+            text.append(f"{label}: ", style=theme.TEXT)
+            text.append(", ".join(names), style=theme.MUTED)
 
 
 class ScopeManifestView(Static):

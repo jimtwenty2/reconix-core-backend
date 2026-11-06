@@ -27,3 +27,4 @@ class LiveRun:
     failed: str = ""  # why the last call failed ("" when it didn't)
     finding_ids: Dict[str, str] = field(default_factory=dict)  # app fid -> API finding_id
     actions: List[str] = field(default_factory=list)  # the API's action ids, in order
+    finished_tools: List[str] = field(default_factory=list)  # tools whose runs completed

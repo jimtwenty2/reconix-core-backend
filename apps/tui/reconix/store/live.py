@@ -30,7 +30,7 @@ from .activity import log_event
 from .scenario import banner, gate
 from .transcript import add_activity
 
-MAX_STEPS = 12  # the run asks the agent for at most this many steps (the API caps it too)
+MAX_STEPS = 24  # the run asks the agent for at most this many steps (the API caps it too)
 
 
 @dataclass
@@ -345,6 +345,8 @@ def _ran_steps(assessment: Assessment, action: dict) -> List[RunStep]:
     if not run:
         return [_log("TOOL", f"{tool} on {target}: no tool run recorded", "warn")]
     tone = "ok" if run["status"] == "COMPLETED" else "block"
+    if run["status"] == "COMPLETED" and tool not in assessment.live.finished_tools:
+        assessment.live.finished_tools.append(tool)   # the report's test coverage
     line = f"{tool} on {target}: {run['status'].lower()}"
     if run["exit"]:
         line += f" · exit {run['exit']}"

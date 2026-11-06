@@ -79,7 +79,7 @@ def test_network_blocks_other_hosts_and_ports_but_allows_in_range():
     decide(play_until_gate())            # scope (the range picked Network itself)
     assert store.check_request("TCP", "10.0.0.17:443").allowed
     assert not store.check_request("TCP", "10.9.9.9:443").allowed      # out of range
-    assert not store.check_request("TCP", "10.0.0.17:3306").allowed    # port not allowed
+    assert not store.check_request("TCP", "10.0.0.17:7070").allowed    # port not allowed
 
 
 def test_source_blocks_excluded_paths_but_allows_the_tree():

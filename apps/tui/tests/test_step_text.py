@@ -13,7 +13,7 @@ def test_the_scope_text_lists_target_ports_and_tools():
     run_to("scope", NETWORK)
     text = store.scope_text()
     assert NETWORK in text and "waits for your approval" in text
-    assert "Ports: 22, 80, 443, 8080 and 8443" in text
+    assert "Ports: 21, 22, 23, 25, 53, 80" in text and "9200 and 27017" in text
     assert "nmap" in text and "time limit" in text
 
 
