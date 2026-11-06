@@ -10,8 +10,8 @@ SCOPE_PROMPT = (
     "parameters), authentication, CORS, data exposure and SSRF checks (nuclei), HTTP "
     "methods (nuclei, httpx_probe), and input and schema validation (schemathesis drives "
     "the API from its OpenAPI document at <base>/openapi.json; dalfox tests a parameter "
-    "found by crawling for XSS). The default tools are httpx, katana, Nuclei, schemathesis "
-    "and dalfox; newman only replays a Postman collection. "
+    "found by crawling for XSS). The default tools are httpx, katana, ffuf, Nuclei, "
+    "schemathesis and dalfox; newman only replays a Postman collection. "
     "Authorization (BOLA/IDOR), rate limits and mass assignment are checked by hand. Never "
     "suggest destructive, exploitation or password tools (sqlmap, hydra). Respect excluded "
     "paths like /internal and /admin."
@@ -23,11 +23,11 @@ SPEC = Template("api", "API", "REST and GraphQL endpoints",
 # schemathesis is a default: the agent drives it from the OpenAPI document at
 # <base>/openapi.json, which is inside the approved URL prefix, so no operator-supplied
 # spec is needed. An explicit operator spec still enriches the plan text (see build_run).
-TOOLS = ["httpx", "Katana", "Nuclei", "schemathesis", "dalfox"]
+TOOLS = ["httpx", "Katana", "ffuf", "Nuclei", "schemathesis", "dalfox"]
 SPEC_TOOLS = []  # kept for build_scope's signature; schemathesis is now a default
 # the scope tools each phase uses (the plan shows those still in the approved scope)
 PHASE_TOOLS = {
-    "discovery": ("httpx", "Katana"),
+    "discovery": ("httpx", "Katana", "ffuf"),
     "scanning": ("Nuclei", "schemathesis"),
     "validation": ("Nuclei", "schemathesis", "dalfox"),
 }

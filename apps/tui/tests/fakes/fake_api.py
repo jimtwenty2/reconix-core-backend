@@ -233,7 +233,7 @@ class FakeApi:
         if parts[0] == "findings":
             return self.findings[parts[1]]
         if path.endswith("/analyze"):
-            return self._analyze(parts[1])
+            return self._analyze(parts[1], body)
         raise AssertionError(f"the fake API has no route for {method} {path}")
 
     # --- providers ---------------------------------------------------------------------------
@@ -569,7 +569,7 @@ class FakeApi:
         )
         self.findings[finding_id] = finding
 
-    def _analyze(self, assessment_id: str) -> dict:
+    def _analyze(self, assessment_id: str, body=None) -> dict:
         assessment = self._assessment(assessment_id)
         run_id = self._id("r")
         run = {
@@ -584,25 +584,35 @@ class FakeApi:
         }
         self.runs[run_id] = run
         rows = [f for f in self.findings.values() if f["assessment_id"] == assessment_id]
-        return {
-            "agent_run": self._run_out(run),
-            "summary": self.analysis_summary,
-            "analysis": [
+        wanted = set((body or {}).get("finding_ids") or [])
+        if wanted:  # per-step analysis targets just this step's findings
+            rows = [f for f in rows if f["finding_id"] in wanted]
+        analysis = []
+        for f in rows:
+            # The ANALYZE step writes a plain-language analysis onto each finding, as the
+            # real API now does, so GET /findings afterwards returns the filled-in texts.
+            f["description"] = f"In plain terms: {f['title']}."
+            f["impact"] = f"An attacker could abuse {f['title']}."
+            f["remediation"] = f["remediation"] or "Close what is not needed."
+            analysis.append(
                 {
                     "code": f["code"],
-                    "explanation": f"About {f['title']}.",
+                    "explanation": f["description"],
                     "related": [],
                     "severity_status": f["severity_status"],
                     "cvss_score": None,
                     "evidence": "",
-                    "impact": f["impact"] or "",
-                    "remediation": f["remediation"] or "",
+                    "impact": f["impact"],
+                    "remediation": f["remediation"],
                     "cwe_ids": [],
                     "owasp_id": [],
                     "cve_ids": [],
                     "next_step": None,
                     "unsure": "",
                 }
-                for f in rows
-            ],
+            )
+        return {
+            "agent_run": self._run_out(run),
+            "summary": self.analysis_summary,
+            "analysis": analysis,
         }

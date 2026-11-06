@@ -1,7 +1,8 @@
 """Downloading an OpenAPI spec from the API's own host: one read, nothing else.
 
-A spec URL is accepted only on the draft target's host, over https (http only for localhost,
-127.0.0.1 and ::1), with no user name or password in it. The download is one GET with no
+A spec URL is accepted only on the draft target's host, over https (http is allowed for
+localhost, and when the target itself is http), with no user name or password in it. The
+download is one GET with no
 redirects (a 3xx is an error), no proxy, no cookies, a 10 s limit and a hard 5 MB cap read in
 chunks. The audit log gets the host and path, never the query. What comes back goes through
 the same parse / summarize / redact pipeline as a file (`store/openapi.py`), whose `$ref`
@@ -59,7 +60,13 @@ def check_spec_url(text: str, target_url: str) -> SplitResult:
     if not host or host != target_host:
         raise StoreValidationError(f"The spec URL must be on {target_host}.")
     scheme = parts.scheme.casefold()
-    if scheme != "https" and not (scheme == "http" and host in LOCAL_HOSTS):
+    target_scheme = urlsplit(target_url).scheme.casefold()
+    # https is always fine. http is allowed for localhost, or when the target itself is http:
+    # the whole assessment already runs over http to this same host, so fetching its spec over
+    # http is the same trust level. An https target still needs an https spec (no downgrade).
+    if scheme != "https" and not (
+        scheme == "http" and (host in LOCAL_HOSTS or target_scheme == "http")
+    ):
         raise StoreValidationError("The spec URL must use https.")
     return parts
 

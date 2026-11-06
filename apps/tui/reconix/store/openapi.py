@@ -229,7 +229,9 @@ def _security_schemes(document: Dict[str, Any], version: str) -> List[str]:
     return out
 
 
-def summarize(document: Dict[str, Any], file_name: str, target_url: str) -> ApiSpec:
+def summarize(
+    document: Dict[str, Any], file_name: str, target_url: str, source_url: str = ""
+) -> ApiSpec:
     """The kept summary of a parsed OpenAPI / Swagger document, or StoreValidationError."""
     version = _spec_version(document)
     paths = document.get("paths")
@@ -248,6 +250,7 @@ def summarize(document: Dict[str, Any], file_name: str, target_url: str) -> ApiS
         endpoints=endpoints, total=total,
         methods=[m for m in SPEC_METHODS if m in used],
         security_schemes=_security_schemes(document, version),
+        source_url=source_url,
     )
 
 
@@ -605,19 +608,29 @@ def _refresh_run(assessment) -> None:
     assessment.methodology = bundle.methodology or []
 
 
-def load_spec(text: str, target_url: str) -> Tuple[Dict[str, Any], str]:
+def load_spec(text: str, target_url: str) -> Tuple[Dict[str, Any], str, str]:
     """Read the spec named by `text` (a file path, or a URL on the target's host, downloaded
-    by `openapi_fetch`): (the parsed document, its display name). Nothing is changed."""
+    by `openapi_fetch`): (the parsed document, its display name, the doc URL or "" for a
+    file). Nothing is changed."""
     if is_spec_url(text):
         name, content, is_json = fetch_spec(text, target_url)
-        return _parse_document(content, is_json), name
+        return _parse_document(content, is_json), name, _doc_url(text)
     path, content = _read_spec_file(text)
-    return _parse_document(content, path.suffix.lower() == ".json"), path.name
+    return _parse_document(content, path.suffix.lower() == ".json"), path.name, ""
 
 
-def attach_document(assessment, document: Dict[str, Any], name: str) -> ApiSpec:
+def _doc_url(text: str) -> str:
+    """The canonical scheme://host[:port]/path of a spec URL (no query or fragment): the
+    OpenAPI document location sent to the Core API as the scan's schema target."""
+    parts = urlsplit(text.strip())
+    return f"{parts.scheme.lower()}://{parts.netloc}{parts.path or '/'}"
+
+
+def attach_document(
+    assessment, document: Dict[str, Any], name: str, source_url: str = ""
+) -> ApiSpec:
     """Attach a document read by `load_spec` to the draft (store-internal; see below)."""
-    spec = summarize(document, name, assessment.scope.target_url)
+    spec = summarize(document, name, assessment.scope.target_url, source_url)
     assessment.api_schema_digest = build_digest(document)   # the AI's digest (in memory only)
     previous = assessment.api_spec
     verb = "replaced" if previous is not None else "attached"
@@ -653,10 +666,10 @@ def attach_api_spec(path_text: str) -> ApiSpec:
     never adds a method.
     """
     assessment = _draft_api_assessment()
-    document, name = load_spec(path_text, assessment.scope.target_url)
+    document, name, source_url = load_spec(path_text, assessment.scope.target_url)
     if _draft_api_assessment() is not assessment:            # changed during a download
         raise StoreValidationError("The assessment changed while the spec was read.")
-    return attach_document(assessment, document, name)
+    return attach_document(assessment, document, name, source_url)
 
 
 def api_spec_methods_outside() -> List[str]:

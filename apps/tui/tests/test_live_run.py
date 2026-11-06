@@ -138,13 +138,39 @@ def test_a_rejected_step_never_runs(fake_api):
     assert fake_api.approvals[gate.split(":", 1)[1]]["approval_status"] == "REJECTED"
 
 
-def test_the_whole_run_ends_with_the_apis_analysis(fake_api):
+def test_the_whole_run_ends_with_each_finding_analyzed(fake_api):
     run_to(None)
     assert store.is_completed()
     assert fake_api.tool_runs() == ["NMAP", "NUCLEI", "SQLMAP"]
-    assert store.get_assessment().live.analysis_summary == fake_api.analysis_summary
-    severities = sorted(f.severity for f in store.list_findings())
-    assert severities == ["LOW", "MEDIUM"]
+    shown = store.list_findings()
+    assert sorted(f.severity for f in shown) == ["LOW", "MEDIUM"]
+    # each finding was analyzed as its step found it (per step, not one end-of-run batch)
+    assert all(f.impact for f in shown)
+
+
+def test_each_step_is_analyzed_as_it_is_found_with_reasoning_shown(fake_api):
+    run_to(None)
+    analyze_calls = [b for (m, p, b, _) in fake_api.calls if m == "POST" and p.endswith("/analyze")]
+    # per-step analysis: each call targets the step's own findings (a batch would send no body)
+    assert analyze_calls
+    assert all(b and b.get("finding_ids") for b in analyze_calls)
+    assert all(f.impact for f in store.list_findings())  # each finding got its analysis
+    # the AI's per-step reasoning is shown in the run log
+    texts = " ".join(getattr(s, "text", "") or "" for s in store.get_assessment().script)
+    assert "Next." in texts
+
+
+def test_the_analysis_fills_each_finding_with_plain_language(fake_api):
+    # Fix #4: the ANALYZE step persists the analysis onto findings, and the app refreshes
+    # the ones it already showed, so the detail view reads in plain language, not raw JSON.
+    run_to(None)
+
+    shown = store.list_findings()
+    assert shown  # the run found something to analyze
+    for finding in shown:
+        assert finding.description.startswith("In plain terms:")
+        assert "abuse" in finding.impact
+        assert finding.remediation
 
 
 def test_a_none_finding_is_shown_not_dropped(fake_api):
