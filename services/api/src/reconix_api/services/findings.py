@@ -22,10 +22,17 @@ from reconix_api.core.interfaces import (
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets, mask_output
-from reconix_api.findings import code_notes, json_mapping
+from reconix_api.findings import code_notes, json_mapping, paths, web_fingerprint
+from reconix_api.findings import dalfox as dalfox_findings
+from reconix_api.findings import enum4linux as enum4linux_findings
+from reconix_api.findings import nikto as nikto_findings
 from reconix_api.findings import nmap as nmap_findings
+from reconix_api.findings import onesixtyone as onesixtyone_findings
 from reconix_api.findings import osv as osv_findings
 from reconix_api.findings import sarif as sarif_findings
+from reconix_api.findings import schemathesis as schemathesis_findings
+from reconix_api.findings import sqlmap as sqlmap_findings
+from reconix_api.findings import testssl as testssl_findings
 from reconix_api.findings.shape import NewFinding
 from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
 from reconix_api.models.enums import (
@@ -60,6 +67,20 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     "trivy": json_mapping.read_trivy,  # the manifest file is the target
     "grype": json_mapping.read_grype,
     "syft": code_notes.read_syft,  # a package list: no findings, a note in the code scan
+    # Text tools: one reader each (findings/text.py helpers). Facts (stack, open paths)
+    # are NONE; a tool's own verdict sets any higher severity, never a guess.
+    "whatweb": web_fingerprint.read_whatweb,
+    "httpx_probe": web_fingerprint.read_httpx,
+    "katana": paths.read_katana,
+    "ffuf": paths.read_ffuf,
+    "gobuster": paths.read_gobuster,
+    "testssl": testssl_findings.read,
+    "nikto": nikto_findings.read,
+    "dalfox": dalfox_findings.read,
+    "schemathesis": schemathesis_findings.read,
+    "enum4linux": enum4linux_findings.read,
+    "onesixtyone": onesixtyone_findings.read,
+    "sqlmap": sqlmap_findings.read,
 }
 
 # Control characters, except tab and newline. A scanned host can put terminal escape
@@ -104,6 +125,8 @@ def save_findings(
         finding = finding_repo.get_by_dedupe_key(db, assessment_id, item.dedupe_key)
         if finding is None:
             finding = _new_finding(db, mask, assessment_id, item)
+        else:
+            _enrich(mask, finding, item)
         finding_repo.add_source(db, finding.finding_id, run.tool_run_id)
         for proof_no, proof in enumerate(item.evidence):
             content, _ = mask_output(mask, CONTROL.sub("", proof.content))
@@ -318,6 +341,57 @@ def _get_finding(db: Db, finding_id: UUID, lock: bool = False) -> Finding:
     if finding is None:
         raise ApiError(404, "FINDING_NOT_FOUND", "No finding with this id.")
     return finding
+
+
+def _enrich(mask: MaskSecrets, finding: Finding, item: NewFinding) -> None:
+    """A later run found the same thing (same dedupe_key) with more detail: upgrade the
+    stored finding in place. Used e.g. when a plain `nmap -p` port finding is found again
+    by `nmap -sV` with the service version.
+
+    Only acts when the new occurrence is strictly more detailed, so it never downgrades:
+    the title is replaced only when the new title extends the stored one (contains it and
+    is longer), and the description only when it is longer. CVE/CWE/OWASP ids are merged
+    (union, additive). Severity is never changed, and the stored evidence is kept (the new
+    run's evidence is added by the caller either way).
+    """
+    title = _clean(mask, item.title)
+    if _more_detailed(finding.title, title):
+        finding.title = title
+        description = _clean(mask, item.description)
+        if len(description) > len(finding.description or ""):
+            finding.description = description
+        if item.remediation and not finding.remediation:
+            finding.remediation = _clean(mask, item.remediation)
+    finding.cve_ids = _union(finding.cve_ids, item.cve_ids)
+    finding.cwe_ids = _union(finding.cwe_ids, item.cwe_ids)
+    finding.owasp_id = _union(finding.owasp_id, item.owasp_id)
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _more_detailed(old: str, new: str) -> bool:
+    """True when `new` says everything `old` did and more, so upgrading never loses
+    information: "Open port 21/tcp (ftp)" -> "Open port 21/tcp (ftp, vsftpd 2.3.4)".
+
+    Compared by word, so punctuation differences (a closing ")" moving) do not matter:
+    every word of `old` must appear in `new`, and `new` must add at least one.
+    """
+    old_words, new_words = _tokens(old or ""), _tokens(new)
+    if not new_words or new_words == old_words:
+        return False
+    new_set = set(new_words)
+    return all(word in new_set for word in old_words) and len(new_words) > len(old_words)
+
+
+def _union(existing: list[str], extra: list[str]) -> list[str]:
+    """`existing` with any new values from `extra` appended (order kept, no duplicates)."""
+    out = list(existing or [])
+    for value in extra or []:
+        if value not in out:
+            out.append(value)
+    return out
 
 
 def _new_finding(db: Db, mask: MaskSecrets, assessment_id: UUID, item: NewFinding) -> Finding:

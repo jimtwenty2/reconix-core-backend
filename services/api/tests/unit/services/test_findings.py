@@ -26,7 +26,7 @@ def test_every_reader_is_named_like_its_kali_tool():
 
 
 def test_tool_without_a_reader_gives_no_findings():
-    assert parse_run("whatweb", "anything") == ([], 0)
+    assert parse_run("wpscan", "anything") == ([], 0)
 
 
 def reviewed(finding_status: str) -> FindingOut:

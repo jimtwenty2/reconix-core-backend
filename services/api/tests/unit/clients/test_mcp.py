@@ -159,3 +159,62 @@ async def test_without_an_auth_token_no_authorization_header_is_sent():
     headers, body = kali.call()
     assert "authorization" not in headers
     assert body["params"]["_meta"] == {"job_token": "job-token"}  # the job token still goes
+
+
+# --- fixed inputs the model never supplies (ffuf/gobuster/wfuzz/nikto) -----------------
+
+
+def test_ffuf_gets_corecs_wordlist_and_a_fuzz_url():
+    from reconix_api.clients.mcp import WORDLIST
+
+    name, args = tool_call(job("ffuf", "http://juice-shop:3000/", []))
+    assert name == "ffuf"
+    assert args["wordlist"] == WORDLIST
+    assert args["target"] == "http://juice-shop:3000/FUZZ"
+
+
+def test_ffuf_target_without_a_trailing_slash_still_gets_fuzz():
+    _, args = tool_call(job("ffuf", "http://juice-shop:3000", []))
+    assert args["target"] == "http://juice-shop:3000/FUZZ"
+
+
+def test_ffuf_keeps_an_existing_fuzz_keyword():
+    _, args = tool_call(job("ffuf", "http://juice-shop:3000/api/FUZZ", []))
+    assert args["target"] == "http://juice-shop:3000/api/FUZZ"
+
+
+def test_gobuster_gets_the_wordlist_but_no_fuzz():
+    from reconix_api.clients.mcp import WORDLIST
+
+    name, args = tool_call(job("gobuster", "http://juice-shop:3000/", []))
+    assert name == "gobuster"
+    assert args["wordlist"] == WORDLIST
+    assert args["target"] == "http://juice-shop:3000/"  # gobuster has no FUZZ keyword
+
+
+def test_nikto_port_comes_from_the_url():
+    _, args = tool_call(job("nikto", "http://juice-shop:3000/", []))
+    assert args["host"] == "http://juice-shop:3000/"
+    assert args["port"] == "3000"
+
+
+def test_nikto_https_defaults_to_443():
+    _, args = tool_call(job("nikto", "https://shop.example.com/", []))
+    assert args["port"] == "443"
+
+
+def test_a_tool_without_these_inputs_is_unchanged():
+    name, args = tool_call(job(ToolName.NMAP, "172.20.0.5", ["-sV"]))
+    assert "wordlist" not in args and "port" not in args
+    assert args["target"] == "172.20.0.5"
+
+
+def test_schemathesis_base_url_is_the_schema_origin():
+    _, args = tool_call(job("schemathesis", "http://vampi:5000/openapi.json", []))
+    assert args["schema"] == "http://vampi:5000/openapi.json"
+    assert args["base_url"] == "http://vampi:5000"
+
+
+def test_schemathesis_schema_with_a_port_and_path_keeps_the_origin_only():
+    _, args = tool_call(job("schemathesis", "https://api.example.com:8443/v1/openapi.json", []))
+    assert args["base_url"] == "https://api.example.com:8443"
