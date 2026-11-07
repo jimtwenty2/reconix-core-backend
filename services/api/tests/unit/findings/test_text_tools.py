@@ -1,5 +1,5 @@
 """Readers for the text tools (whatweb, httpx, katana, ffuf, gobuster, testssl, nikto,
-dalfox). Fixtures are real output captured from these tools in the lab Kali container
+dalfox, arjun). Fixtures are real output captured from these tools in the lab Kali container
 against the lab target only (testssl against a throwaway local TLS server; dalfox against
 a throwaway local reflector), see each fixture's folder."""
 
@@ -206,3 +206,36 @@ def test_new_readers_reject_wrong_output(tool):
 
     with pytest.raises(OutputUnreadable):
         parse_run(tool, "this is not that tool's output at all")
+
+
+# --- arjun: one NONE hidden-parameters finding per URL ---------------------------------
+
+
+def test_arjun_makes_one_none_hidden_params_finding():
+    findings, requests = parse_run("arjun", load("arjun", "juice_shop.txt"))
+    assert requests == 0
+    [finding] = findings
+    assert finding.severity == SeverityStatus.NONE
+    assert finding.target == "http://172.20.0.2:3000/rest/products/search"
+    assert "Hidden parameters" in finding.title
+    # both discovered parameters are named, from the summary line
+    assert "q" in finding.evidence[0].content and "security" in finding.evidence[0].content
+
+
+def test_arjun_with_no_parameters_makes_no_finding():
+    output = (
+        "[*] Scanning 0/1: http://host/x\n"
+        "[*] Probing the target for stability\n"
+        "[*] Logicforcing the URL endpoint\n"
+    )
+    assert parse_run("arjun", output) == ([], 0)
+
+
+def test_arjun_unreadable_output_is_rejected():
+    import pytest as _pytest
+
+    from reconix_api.findings import arjun as arjun_findings
+    from reconix_api.findings.shape import OutputUnreadable
+
+    with _pytest.raises(OutputUnreadable):
+        arjun_findings.read("totally unrelated text\n")
