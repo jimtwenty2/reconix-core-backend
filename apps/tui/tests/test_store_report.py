@@ -302,3 +302,25 @@ def test_report_dates_use_the_laptop_local_timezone(monkeypatch):
     finally:
         del os.environ["TZ"]
         time.tzset()
+
+
+def test_the_report_reads_the_evidence_in_plain_language(reports_dir):
+    """The client report shows the AI's plain reading of the evidence and a validation
+    sentence (HTML and DOCX), so a reader sees prose, not a JSON blob. The JSON->lines
+    humanizing is the adapter's job and is tested there."""
+    run_to(None)
+    add_finding(
+        "Reflected XSS", "/search", severity="HIGH",
+        evidence=["Matched at: http://lab/search?q=x", "Template id: reflected-xss"],
+        evidence_summary="The q parameter is reflected unescaped, so a script runs.",
+        validation="CONFIRMED", validation_reason="dalfox replayed it and it executed.",
+        validation_method="dalfox",
+    )
+
+    html = render_html(store.report_data())
+
+    assert "The q parameter is reflected unescaped" in html       # the AI's plain reading
+    assert 'class="evidence-summary"' in html
+    assert "Confirmed during the run by dalfox" in html           # the validation sentence
+    assert "dalfox replayed it and it executed." in html
+    assert "Matched at: http://lab/search?q=x" in html            # the readable proof line

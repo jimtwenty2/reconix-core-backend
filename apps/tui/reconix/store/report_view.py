@@ -147,6 +147,23 @@ def status_label(finding: Dict[str, Any]) -> str:
     return STATUS_LABEL.get(state, state)
 
 
+def validation_line(finding: Dict[str, Any]) -> str:
+    """One plain sentence on how far the finding was validated, for the evidence section.
+    Confirmed names the method; anything else says it still needs a person's review. The AI's
+    own masked reason is appended when there is one."""
+    state = str(finding.get("validation") or "UNCONFIRMED").upper()
+    method = finding.get("validation_method") or ""
+    reason = finding.get("validation_reason") or ""
+    if state == "CONFIRMED":
+        by = f" by {method}" if method else ""
+        line = f"Confirmed during the run{by} by the limited validation that was approved."
+    elif state == "INCONCLUSIVE":
+        line = "A validation ran but was inconclusive; a person decides."
+    else:
+        line = "Not yet validated — a reviewer confirms it."
+    return f"{line} {reason}".strip() if reason else line
+
+
 def cover_rows(data: Dict[str, Any]) -> List[Tuple[str, str]]:
     return [
         ("Client", data.get("client") or "—"),
@@ -252,16 +269,18 @@ def coverage_rows(data: Dict[str, Any]) -> List[List[str]]:
     from .templates.techniques import status_text
 
     return [
-        [row["name"], status_text(row),
-         ", ".join(row.get("tools", [])) or "—"]
+        [row["name"], status_text(row), ", ".join(row.get("tools", [])) or "—"]
         for row in data.get("coverage", [])
     ]
 
 
 def manual_checklist(data: Dict[str, Any]) -> List[str]:
     """The techniques the tester checks by hand: "Name: what to investigate"."""
-    return [f"{row['name']}: {row['investigates']}" for row in data.get("coverage", [])
-            if row["status"] == "MANUAL"]
+    return [
+        f"{row['name']}: {row['investigates']}"
+        for row in data.get("coverage", [])
+        if row["status"] == "MANUAL"
+    ]
 
 
 def blocked_rows(data: Dict[str, Any]) -> List[List[str]]:

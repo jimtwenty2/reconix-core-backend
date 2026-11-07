@@ -40,6 +40,8 @@ def for_display(finding: Finding) -> Finding:
         category=mask(finding.category),
         references=redact_lines(list(finding.references)),
         evidence=redact_lines(list(finding.evidence)),
+        evidence_summary=mask(finding.evidence_summary),
+        validation_reason=mask(finding.validation_reason),
         triage_note=mask(finding.triage_note),
     )
 
@@ -54,6 +56,19 @@ def severity_text(finding: Finding) -> Text:
 def validation_text(finding: Finding) -> Text:
     color, glyph = theme.STATUS.get(finding.validation, (theme.MUTED, "○"))
     return Text(f"{glyph} {finding.validation}", style=f"bold {color}")
+
+
+def confidence_text(finding: Finding) -> Text:
+    """How trustworthy the signal is (derived by the API), apart from its severity.
+    The full word, for the detail view."""
+    color, glyph = theme.CONFIDENCE.get(finding.confidence, (theme.MUTED, "○"))
+    return Text(f"{glyph} {finding.confidence}", style=f"bold {color}")
+
+
+def confidence_cell(finding: Finding) -> Text:
+    """The glyph alone, for the findings table (the full word is in the detail view)."""
+    color, glyph = theme.CONFIDENCE.get(finding.confidence, (theme.MUTED, "○"))
+    return Text(glyph, style=f"bold {color}")
 
 
 def triage_text(finding: Finding) -> Text:

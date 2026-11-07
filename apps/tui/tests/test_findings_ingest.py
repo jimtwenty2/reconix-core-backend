@@ -9,6 +9,7 @@ from .support import add_finding, run_to
 
 def _finding(severity: str, title: str = "T") -> Finding:
     return Finding(fid="", severity=severity, title=title, path="/p", validation="UNCONFIRMED",
+                   confidence="TENTATIVE",
                    description="", affected_url="/p", impact="", remediation="", tool="agent")
 
 

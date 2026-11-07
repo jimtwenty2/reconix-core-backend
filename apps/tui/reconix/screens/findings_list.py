@@ -17,13 +17,14 @@ from ..models import Choice
 from ..widgets import SeverityStrip
 from ..wording import counted
 from ..widgets.findings import (
-    for_display, reference_text, severity_text, triage_text, validation_text,
+    confidence_cell, for_display, reference_text, severity_text, triage_text,
+    validation_text,
 )
 
 # Triage (STATUS) and VALIDATION sit right after TITLE so they stay visible without scrolling
 # right on a narrow terminal; PATH / TOOL / CVE can scroll off to the right.
-_COLUMNS = ("ID", "SEVERITY", "TITLE", "STATUS", "VALIDATION", "PATH / COMPONENT",
-            "TOOL", "CVE / CWE")
+_COLUMNS = ("ID", "SEVERITY", "TITLE", "STATUS", "VALIDATION", "CONF",
+            "PATH / COMPONENT", "TOOL", "CVE / CWE")
 
 
 def _status_label() -> str:
@@ -116,7 +117,8 @@ class FindingsListScreen(ReconixScreen):
         for f, d, title in zip(rows, display, titles):
             table.add_row(
                 Text(d.fid, style=theme.KEY), severity_text(d), title,
-                triage_text(d), validation_text(d), Text(d.path, style=theme.MUTED),
+                triage_text(d), validation_text(d), confidence_cell(d),
+                Text(d.path, style=theme.MUTED),
                 Text(d.tool, style=theme.TEAL), reference_text(d), key=f.fid,
             )
         confirmed = sum(1 for f in findings if not f.needs_review)
@@ -182,7 +184,8 @@ class FindingsListScreen(ReconixScreen):
         fixed = (column("ID", [d.fid for d in display])
                  + column("SEVERITY", [severity_text(d).plain for d in display])
                  + column("STATUS", [triage_text(d).plain for d in display])
-                 + column("VALIDATION", [validation_text(d).plain for d in display]))
+                 + column("VALIDATION", [validation_text(d).plain for d in display])
+                 + column("CONF", [confidence_cell(d).plain for d in display]))
         rest = (column("PATH / COMPONENT", [d.path for d in display])
                 + column("TOOL", [d.tool for d in display])
                 + column("CVE / CWE", [reference_text(d).plain for d in display]))
