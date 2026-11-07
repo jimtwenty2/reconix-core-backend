@@ -11,6 +11,7 @@ makes the server use its own default options, which were never checked.
 """
 
 import json
+import os
 import shlex
 from typing import Any
 from urllib.parse import urlsplit
@@ -28,6 +29,10 @@ NETWORK_MARGIN_SECONDS = 30  # on top of the tool's own timeout
 WORDLIST = "/usr/share/wfuzz/wordlist/general/common.txt"
 WORDLIST_TOOLS = ("ffuf", "gobuster", "wfuzz")
 FUZZ_TOOLS = ("ffuf", "wfuzz")  # these need the FUZZ keyword where the word goes
+# A Reconix-controlled Interactsh server for nuclei_dast OOB callbacks. When unset, nuclei
+# uses its public default; deploy SHOULD point this at a self-hosted server so a target's
+# out-of-band interactions are not sent to a third party.
+INTERACTSH_SERVER = os.environ.get("RECONIX_INTERACTSH_SERVER", "")
 
 KALI_STATUS = {
     "ok": ToolRunStatus.COMPLETED,
@@ -79,6 +84,7 @@ def _fixed_inputs(name: str, target: str, props: dict[str, Any]) -> dict[str, An
       scan port 80 of an https or :3000 site.
     - schemathesis: the base URL is the scheme+host of the schema URL (the target), so
       the tests hit the API the schema came from and nothing wider.
+    - nuclei_dast: a Reconix-controlled Interactsh server for OOB callbacks, when set.
     """
     fixed: dict[str, Any] = {}
     if name in WORDLIST_TOOLS and "wordlist" in props:
@@ -91,6 +97,8 @@ def _fixed_inputs(name: str, target: str, props: dict[str, Any]) -> dict[str, An
         base = _origin(target)
         if base:
             fixed["base_url"] = base
+    if name == "nuclei_dast" and INTERACTSH_SERVER and "interactsh_server" in props:
+        fixed["interactsh_server"] = INTERACTSH_SERVER
     return fixed
 
 

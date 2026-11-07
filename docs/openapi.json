@@ -1140,6 +1140,10 @@
             "title": "Code",
             "type": "string"
           },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence",
+            "readOnly": true
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1397,7 +1401,8 @@
           "end_line",
           "rule_id",
           "snippet",
-          "file_sha256"
+          "file_sha256",
+          "confidence"
         ],
         "title": "CodeFindingOut",
         "type": "object"
@@ -1633,6 +1638,17 @@
         "title": "CombinedReportIn",
         "type": "object"
       },
+      "Confidence": {
+        "description": "How trustworthy a finding is, derived at read time (never stored, like the code\nVerdict). It ranks a report so confirmed and firm findings sit above tentative guesses.\n\n- CONFIRMED:     a validation run confirmed it (an OOB callback, sqlmap, a dalfox verify).\n- FIRM:          strong deterministic signal with no validation yet \u2014 a verifying tool\n                 (sqlmap/dalfox/commix/schemathesis/nuclei -dast), or two or more tools agree.\n- TENTATIVE:     a single scanner's unvalidated match.\n- INFORMATIONAL: a fact, not a weakness (NONE severity: ports, stack, paths, hidden\n                 parameters), or a finding a person marked a false positive.",
+        "enum": [
+          "CONFIRMED",
+          "FIRM",
+          "TENTATIVE",
+          "INFORMATIONAL"
+        ],
+        "title": "Confidence",
+        "type": "string"
+      },
       "DisclosedValueOut": {
         "properties": {
           "approval_id": {
@@ -1791,6 +1807,11 @@
             "title": "Evidence",
             "type": "string"
           },
+          "evidence_summary": {
+            "default": "",
+            "title": "Evidence Summary",
+            "type": "string"
+          },
           "explanation": {
             "title": "Explanation",
             "type": "string"
@@ -1864,6 +1885,10 @@
           "code": {
             "title": "Code",
             "type": "string"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence",
+            "readOnly": true
           },
           "created_at": {
             "format": "date-time",
@@ -2024,7 +2049,8 @@
           "reviewed_by",
           "reviewed_at",
           "created_at",
-          "assessment_id"
+          "assessment_id",
+          "confidence"
         ],
         "title": "FindingOut",
         "type": "object"

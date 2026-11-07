@@ -35,6 +35,12 @@ def test_open_findings_are_analyzed_and_the_analysis_is_applied(db_client, db_ap
     assert after["RCX-001"]["description"].startswith("In plain terms:")
     assert after["RCX-001"]["impact"] == "Fake impact."
     assert after["RCX-001"]["remediation"] == "Fake remediation."
+    # The AI's plain reading of the evidence is kept as an analysis_summary evidence row,
+    # so a reader sees prose beside the raw proof instead of only a JSON blob.
+    summaries = [
+        e["content"] for e in after["RCX-001"]["evidence"] if e["kind"] == "analysis_summary"
+    ]
+    assert summaries == ["Fake reading: the output shows the finding plainly."]
     # The status a person owns is untouched: the analysis does not accept the finding.
     assert after["RCX-001"]["finding_status"] == "OPEN"
     assert "AGENT_RUN_COMPLETED" in event_types(db_app)

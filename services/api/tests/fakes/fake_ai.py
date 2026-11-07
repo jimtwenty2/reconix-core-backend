@@ -173,6 +173,7 @@ def unsure_analysis(finding: FindingInput) -> FindingAnalysis:
         severity_status=finding.severity_status,
         cvss_score=finding.cvss_score,
         evidence="",
+        evidence_summary="Fake reading: the output shows the finding plainly.",
         impact="Fake impact.",
         remediation="Fake remediation.",
         cwe_ids=finding.cwe_ids,
