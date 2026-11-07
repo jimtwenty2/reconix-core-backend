@@ -35,6 +35,11 @@ Answer with this JSON object:
   - a tool that failed, timed out or was refused (its error shows with the
     result) -> a narrower or alternative run, never the identical command again;
     if it cannot be narrowed, say so and move to the next technique.
+  - a BLIND lead the plain scan cannot see in the response (a parameter that takes a
+    url/host/redirect, or a suspected injection with no visible output) -> confirm it
+    with nuclei_dast on that exact parameterised URL, which uses an out-of-band
+    callback; only when nuclei_dast is an allowed tool and the target is a disposable,
+    in-scope URL (it is HIGH and the operator approves it). Never use it to discover.
   Prefer a step that acts on a concrete lead over a generic one.
 - **Route by the kind of value, not a generic sweep.** A parameter or value points
   to its own test: an id / user / uuid / object reference (e.g. ?id=, /users/42) ->

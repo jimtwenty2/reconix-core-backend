@@ -237,6 +237,9 @@ class FindingInput(BaseModel):
     cwe_ids: list[str] = Field(default_factory=list)
     owasp_id: list[str] = Field(default_factory=list)
     cve_ids: list[str] = Field(default_factory=list)
+    # How trustworthy the signal is, derived (never guessed): CONFIRMED, FIRM, TENTATIVE
+    # or INFORMATIONAL. The report ranks trustworthy findings above unverified ones.
+    confidence: str = "TENTATIVE"
 
 
 class ToolRunInput(BaseModel):
@@ -298,6 +301,7 @@ class FindingAnalysis(BaseModel):
     severity_status: str  # suggested
     cvss_score: float | None
     evidence: str  # copied from the masked tool output
+    evidence_summary: str = ""  # plain-language reading of the evidence; the AI's words
     impact: str
     remediation: str
     cwe_ids: list[str]

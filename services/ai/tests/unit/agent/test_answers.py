@@ -65,6 +65,18 @@ def test_a_known_phase_and_one_line_reason_are_kept() -> None:
     assert (kept["phase"], kept["reason"]) == ("discovery", "Find what runs first.")
 
 
+@pytest.mark.parametrize(
+    ("phase", "is_validation"),
+    [("validation", True), ("discovery", False), ("scan", False), (None, False)],
+)
+def test_a_validation_phase_step_is_flagged_as_validation(phase, is_validation) -> None:
+    # A step the model puts in the validation phase must carry is_validation, so the API
+    # sends it as purpose="validation" and the risk check applies the MEDIUM floor.
+    _, [kept] = read_plan({"steps": [step(phase=phase)]})
+
+    assert kept["action"]["is_validation"] is is_validation
+
+
 @pytest.mark.parametrize("phase", ["exploit", 3, None, ""])
 def test_an_unknown_phase_is_no_phase(phase) -> None:
     _, [kept] = read_plan({"steps": [step(phase=phase)]})
