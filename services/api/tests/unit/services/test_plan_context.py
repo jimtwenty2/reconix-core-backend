@@ -4,6 +4,7 @@ recent_outputs / finding_counts are covered by the integration tests."""
 
 from reconix_api.services.plans import (
     RUN_LINES,
+    clean_output,
     output_header,
     runs_summary,
     short,
@@ -58,3 +59,26 @@ def test_short_error_is_empty_for_a_clean_run_and_capped_otherwise():
     assert short_error("  a\n  b ") == "a b"  # whitespace collapsed to one line
     capped = short_error("x" * 500)
     assert len(capped) <= 200 and capped.endswith("…")
+
+
+def test_clean_output_drops_the_banner_and_heavy_json_fields():
+    raw = (
+        "__ _ ____  projectdiscovery.io  v3.11.1\n"  # the nuclei ASCII banner
+        "[INF] Current nuclei version: v3.11.1\n"  # a progress/version line
+        '{"template-id":"swagger-api","info":{"name":"Swagger","severity":"info"},'
+        '"matched-at":"http://h/api-docs","request":"GET / HTTP/1.1 ...",'
+        '"response":"HTTP/1.1 200 OK <a very long html body>"}\n'
+        "Server: nginx\n"  # an ordinary line
+    )
+    out = clean_output(raw)
+    assert "projectdiscovery.io" not in out and "Current nuclei version" not in out
+    assert '"request"' not in out and '"response"' not in out  # heavy HTTP fields gone
+    assert "swagger-api" in out and "Swagger" in out  # the match is kept
+    assert "Server: nginx" in out  # ordinary lines are kept
+
+
+def test_clean_output_keeps_a_finding_summary_line():
+    # Not everything with symbols is a banner: arjun's "[+] Parameters found" is a finding.
+    raw = "[+] Parameters found: q, security\nhttp://juice-shop:3000/ftp/incident-support.kdbx\n"
+    out = clean_output(raw)
+    assert "Parameters found" in out and "incident-support.kdbx" in out

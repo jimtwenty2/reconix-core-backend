@@ -33,7 +33,10 @@ Answer with this JSON object:
 - If a "Techniques to cover" section is given, the plan works through it:
   discovery first (fingerprinting, crawling, ports and services), then the
   techniques that no earlier tool result covers yet, least intrusive first. Do not
-  stop after discovery while a listed technique is still uncovered.
+  stop after discovery while a listed technique is still uncovered. A technique in
+  that section's "Already tested (do not repeat these)" line has had one of its
+  tools finish — it is covered, so never plan it again; plan the techniques still
+  listed with steps, or a concrete lead.
 - Build each step from a technique's step form: the same tool and options, with
   {url}, {host}, {schema} or {ports} replaced by a value from the approved scope.
   One step may cover several techniques (one NUCLEI step with several -tags).

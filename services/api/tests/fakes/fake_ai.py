@@ -45,6 +45,7 @@ class FakeAgent:
         self.requests: list[AgentRequest] = []
         self.waiting: dict[UUID, tuple[UUID, Action]] = {}  # run -> (assessment, action)
         self.suggest: Action | None = None  # set by a test: the step the next plan suggests
+        self.reflections: list[str] = []  # set by a test: the ReflAct observations a plan returns
         self.verdict = "CONFIRMED"  # set by a test: the VALIDATE verdict the fake returns
         self.down = False  # set by a test: the model is not running
         self.error: Exception | None = None  # set by a test: a bug, not an ApiError
@@ -146,6 +147,7 @@ class FakeAgent:
             ],
             proposed_action=action,
             risk=RiskLevel.MEDIUM,  # the real harness rates -sV as MEDIUM
+            reflections=list(self.reflections),
             agent_run_id=run_id,
             waiting=True,
         )

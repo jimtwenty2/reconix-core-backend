@@ -12,8 +12,9 @@ from typing import Any, Protocol, TypedDict
 from reconix_ai.harness import mask_secrets
 
 MAX_MESSAGES = 10
-MAX_TOOL_RESULTS = 3
+MAX_TOOL_RESULTS = 6  # the newest tool outputs kept (the API sends up to TOOL_OUTPUTS + a summary)
 MAX_PRIOR_REASONING = 6  # the agent's own earlier per-step reasoning kept, oldest first
+MAX_PRIOR_OBSERVATIONS = 8  # the agent's own earlier ReflAct observations kept, oldest first
 MAX_INPUT_CHARS = 4000
 
 SCOPE_LISTS = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_targets")
@@ -35,6 +36,8 @@ class AgentState(TypedDict, total=False):
     prior_reasoning: list[
         str
     ]  # the agent's earlier per-step reasoning (PLAN/SUGGEST), oldest first
+    prior_observations: list[str]  # the agent's earlier ReflAct observations, oldest first
+    tools_run: list[str]  # tools that have completed, for the technique coverage map
     reflect_more: bool
     summary: str
     steps: list[dict[str, Any]]  # the plan; see contracts.PlanStep

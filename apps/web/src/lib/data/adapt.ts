@@ -59,7 +59,7 @@ function logLines(a: Assessment): { lines: LogLine[]; startMs: number; spanSec: 
 
 const REQUEST = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|TCP|read)\b/;
 
-function evidenceTone(text: string): EvidenceLine["tone"] {
+export function evidenceTone(text: string): EvidenceLine["tone"] {
   if (/•|masked/i.test(text)) return "masked";
   return REQUEST.test(text) ? "request" : "response";
 }

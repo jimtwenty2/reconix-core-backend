@@ -20,6 +20,7 @@ from typing import Any
 
 from reconix_ai.agent.state import AgentScope, scope_from_dict
 from reconix_ai.harness import check
+from reconix_ai.harness.catalog import canonical
 from reconix_ai.harness.checks.result import Decision
 
 TECHNIQUES_FILE = Path(__file__).resolve().parents[1] / "prompts" / "techniques.md"
@@ -220,20 +221,48 @@ def _fill(text: str, values: dict[str, str]) -> str:
     return PLACEHOLDER.sub(lambda match: values[match.group(1)], text)
 
 
-def techniques_text(scope: dict[str, Any], messages: list[str]) -> str:
-    """The prompt section for the plan, or "" when no methodology fits (a code scope)."""
+def techniques_text(
+    scope: dict[str, Any], messages: list[str], tools_run: tuple[str, ...] = ()
+) -> str:
+    """The prompt section for the plan, or "" when no methodology fits (a code scope).
+
+    tools_run are the tools that have already completed in this assessment: a technique
+    whose tool is among them is marked covered, so the planner covers what remains and does
+    not re-run a tool. Coverage is a fact from the tool runs, never the model's claim.
+    """
     types = assessment_types(scope, messages)
     if not types:
         return ""
     rules = scope_from_dict(scope)
+    covered = {canonical(tool) for tool in tools_run}
     parts = ["## Techniques to cover", PLACEHOLDERS_TEXT]
     for kind in types:
-        parts.append(section_text(kind, methodology().get(kind, ()), rules))
+        parts.append(section_text(kind, methodology().get(kind, ()), rules, covered))
     return "\n\n".join(parts)
 
 
-def section_text(kind: str, techniques: tuple[Technique, ...], scope: AgentScope) -> str:
+def covered_by(steps: list[str], covered: set[str]) -> str:
+    """The completed tool among these step forms that covers them, or "" if none has run.
+
+    Keyed on the tool each step would actually run (the step's first token), not the
+    technique's wider informational tool list — so a weak related tool having run does not
+    suppress a stronger planned step (e.g. whatweb does not cover a NUCLEI versions step).
+    """
+    for step in steps:
+        tool = canonical(split_step(step)[0])
+        if tool in covered:
+            return tool
+    return ""
+
+
+def section_text(
+    kind: str,
+    techniques: tuple[Technique, ...],
+    scope: AgentScope,
+    covered: set[str] = frozenset(),
+) -> str:
     lines = [f"### {TYPE_TITLES[kind]}"]
+    done: list[str] = []
     not_possible: list[str] = []
     manual: list[str] = []
     for technique in techniques:
@@ -246,11 +275,22 @@ def section_text(kind: str, techniques: tuple[Technique, ...], scope: AgentScope
             tools = ", ".join(technique.tools)
             not_possible.append(f"{technique.name} (needs {tools} on a target it allows)")
             continue
+        hit = covered_by(steps, covered)
+        if hit:
+            done.append(f"{technique.name} (tested by {hit})")
+            continue
         partial = " Partial: a person finishes it." if technique.mode == "partial" else ""
         note = f" {technique.note}" if technique.note else ""
         lines.append(f"- {technique.key}: {label}. Steps: {'; '.join(steps)}.{partial}{note}")
     if len(lines) == 1:
-        lines.append("- none can run with this scope's tools and targets")
+        left = (
+            "all covered — nothing left here (follow a lead or stop)"
+            if done
+            else ("none can run with this scope's tools and targets")
+        )
+        lines.append(f"- {left}")
+    if done:
+        lines.append("Already tested (do not repeat these): " + "; ".join(done))
     if not_possible:
         lines.append("Not possible with this scope (never plan these): " + "; ".join(not_possible))
     if manual:

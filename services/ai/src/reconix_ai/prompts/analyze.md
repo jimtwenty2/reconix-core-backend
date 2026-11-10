@@ -50,6 +50,15 @@ Answer with this JSON object:
   fields and on the knowledge entries.
 - When you cannot tell the severity, use UNKNOWN and say why in "unsure". A
   person makes the call. NONE is for a result that carries no risk.
+- Rate by real-world impact, not the tool's label. An exposed credential, key or
+  backup file (.kdbx, .pem, .key, keystore, .bak, .sql, .env), an exposed admin or
+  management panel, or a reflected cross-site scripting hit is at least HIGH — do
+  not leave it LOW or NONE. Use only CRITICAL, HIGH, MEDIUM, LOW, NONE or UNKNOWN.
+- Match the length to the severity. For a NONE or informational finding, keep
+  explanation, impact and remediation to one short sentence each, and leave
+  related, evidence_summary, cwe_ids, owasp_id, cve_ids and next_step empty unless
+  one is clearly needed. Write the full 8-part detail only for a MEDIUM, HIGH or
+  CRITICAL finding.
 - cvss_score is null unless the knowledge gives one for this exact CVE.
 - Evidence is copied, never written by you. If no line shows it, leave evidence
   empty and say so in "unsure".

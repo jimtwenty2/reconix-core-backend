@@ -25,6 +25,8 @@ NOT_RUNNING = "the Core API is not running: start it with ./deploy/dev.sh"
 API_PREFIX = "/api/v1"
 # A plan or an answer from a thinking model can take minutes (the API waits for the model).
 TIMEOUT_SECONDS = 600
+# The health check only confirms the API is up, so it fails fast instead of blocking.
+HEALTH_TIMEOUT_SECONDS = 3
 
 
 class CoreApiError(LLMError):
@@ -33,8 +35,9 @@ class CoreApiError(LLMError):
     It is an LLMError, so every place that falls back when the model fails falls back the
     same way when the API does."""
 
-    def __init__(self, code: str, message: str, status: int = 0,
-                 details: Optional[dict] = None) -> None:
+    def __init__(
+        self, code: str, message: str, status: int = 0, details: Optional[dict] = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.status = status
@@ -63,7 +66,13 @@ def enabled() -> bool:
     return True
 
 
-def call(method: str, path: str, body: Any = None, token: str = "") -> Any:
+def call(
+    method: str,
+    path: str,
+    body: Any = None,
+    token: str = "",
+    timeout: int = TIMEOUT_SECONDS,
+) -> Any:
     """One API call: the decoded JSON answer (None for 204). Raises CoreApiError with the
     API's own code and message, which are safe to show (the API masks them)."""
     url = base_url()
@@ -76,14 +85,23 @@ def call(method: str, path: str, body: Any = None, token: str = "") -> Any:
     request = urllib.request.Request(
         url + API_PREFIX + path, data=data, headers=headers, method=method
     )
-    return _send(request)
+    return _send(request, timeout)
 
 
-def _send(request: urllib.request.Request) -> Any:
+def health() -> bool:
+    """True if the Core API answers its health check. Never raises: any error means down."""
+    try:
+        call("GET", "/health", timeout=HEALTH_TIMEOUT_SECONDS)
+        return True
+    except CoreApiError:
+        return False
+
+
+def _send(request: urllib.request.Request, timeout: int = TIMEOUT_SECONDS) -> Any:
     """The network call itself (tests replace this)."""
     try:
         # The address was checked to be this computer in base_url().
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             raw = response.read()
     except urllib.error.HTTPError as exc:
         raise _api_error(exc.code, exc.read()) from None

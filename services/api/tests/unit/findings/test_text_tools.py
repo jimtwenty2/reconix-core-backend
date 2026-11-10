@@ -52,12 +52,30 @@ def test_katana_makes_one_summary_finding():
     assert len(summary.evidence) >= 1
 
 
-def test_ffuf_flags_the_ftp_path_as_low():
+def test_ffuf_flags_the_ftp_store_as_medium():
     findings, _ = parse_run("ffuf", load("ffuf", "juice_shop.txt"))
     assert findings[0].severity == SeverityStatus.NONE  # summary first
-    sensitive = [f for f in findings if f.severity == SeverityStatus.LOW]
+    sensitive = [f for f in findings if f.severity != SeverityStatus.NONE]
     assert any("ftp" in f.title.lower() for f in sensitive)
     assert all(f.owasp_id == ["A01:2021"] for f in sensitive)
+    assert all(f.severity == SeverityStatus.MEDIUM for f in sensitive)  # exposed file store
+
+
+def test_sensitive_paths_group_by_kind_and_a_key_store_is_high():
+    out = (
+        "http://juice-shop:3000/ftp/legal.md\n"
+        "http://juice-shop:3000/ftp/acquisitions.md\n"
+        "http://juice-shop:3000/ftp/incident-support.kdbx\n"
+    )
+    findings, _ = parse_run("katana", out)
+    assert findings[0].severity == SeverityStatus.NONE  # summary first
+    sensitive = findings[1:]
+    # the .kdbx vault is its own HIGH finding, not lumped in as a low /ftp path
+    vault = next(f for f in sensitive if f.severity == SeverityStatus.HIGH)
+    assert "kdbx" in vault.evidence[0].content
+    # the two /ftp documents collapse into ONE medium finding, not two
+    store = next(f for f in sensitive if f.severity == SeverityStatus.MEDIUM)
+    assert len(store.evidence) == 2
 
 
 def test_gobuster_summary_counts_every_path():
@@ -129,6 +147,14 @@ def test_dalfox_verified_xss_is_high():
     assert finding.severity == SeverityStatus.HIGH
     assert finding.cwe_ids == ["CWE-79"]
     assert finding.owasp_id == ["A03:2021"]
+
+
+def test_dalfox_reflected_xss_is_medium():
+    # A reflected (not yet verified) hit is a MEDIUM candidate, so the agent validates it.
+    reflected = "[POC][R] http://host/?q=<script>alert(1)</script> found by dalfox\n"
+    [finding] = parse_run("dalfox", reflected)[0]
+    assert finding.severity == SeverityStatus.MEDIUM
+    assert finding.cwe_ids == ["CWE-79"]
 
 
 def test_dalfox_clean_scan_makes_no_finding():

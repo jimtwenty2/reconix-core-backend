@@ -44,7 +44,9 @@ def plan_messages(state: AgentState) -> list[Message]:
         read_markdown(PROMPTS_DIR / "plan.md"),
         scope_text(state["scope"]),
         tools_text(state["scope"]["allowed_tools"]),
-        techniques_text(state["scope"], state.get("messages", [])),
+        techniques_text(
+            state["scope"], state.get("messages", []), tuple(state.get("tools_run", []))
+        ),
         "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
     ]
@@ -56,6 +58,8 @@ def plan_messages(state: AgentState) -> list[Message]:
         parts.append(reflections_text(state["reflections"]))
     if state.get("prior_reasoning"):
         parts.append(prior_reasoning_text(state["prior_reasoning"]))
+    if state.get("prior_observations"):
+        parts.append(prior_observations_text(state["prior_observations"]))
     return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
@@ -63,7 +67,9 @@ def reflect_messages(state: AgentState) -> list[Message]:
     parts = [
         read_markdown(PROMPTS_DIR / "reflect.md"),
         scope_text(state["scope"]),
-        techniques_text(state["scope"], state.get("messages", [])),
+        techniques_text(
+            state["scope"], state.get("messages", []), tuple(state.get("tools_run", []))
+        ),
         "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
         tool_results_text(state["tool_results"]),
@@ -74,6 +80,8 @@ def reflect_messages(state: AgentState) -> list[Message]:
         parts.append(reflections_text(state["reflections"]))
     if state.get("prior_reasoning"):
         parts.append(prior_reasoning_text(state["prior_reasoning"]))
+    if state.get("prior_observations"):
+        parts.append(prior_observations_text(state["prior_observations"]))
     return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
@@ -232,6 +240,14 @@ def prior_reasoning_text(reasoning: list[str]) -> str:
     notes to build on; still fenced, since they were written from untrusted tool output."""
     lines = "\n".join(f"- {line}" for line in reasoning)
     return "## Your earlier reasoning this assessment\n" + fenced("earlier_reasoning", lines)
+
+
+def prior_observations_text(observations: list[str]) -> str:
+    """The agent's own earlier ReflAct observations this assessment, oldest first: the leads
+    it spotted in results of earlier steps, so it keeps following them instead of re-reading
+    the raw output. Still fenced, since they were written from untrusted tool output."""
+    lines = "\n".join(f"- {line}" for line in observations)
+    return "## Your earlier observations this assessment\n" + fenced("earlier_observations", lines)
 
 
 def fenced(tag: str, text: str) -> str:

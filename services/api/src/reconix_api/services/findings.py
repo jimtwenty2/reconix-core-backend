@@ -67,7 +67,9 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     # ZAP's report is SARIF (zap_report, template sarif-json). Core's "ZAP" is zap_scan.
     "zap_scan": partial(sarif_findings.read, "zap_alert"),
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
-    "nuclei_dast": partial(json_mapping.read, json_mapping.MAPPINGS["nuclei"]),
+    # nuclei's many matcher-findings of one info template are grouped into one (read_nuclei).
+    "nuclei": json_mapping.read_nuclei,
+    "nuclei_dast": json_mapping.read_nuclei,
     "trivy": json_mapping.read_trivy,  # the manifest file is the target
     "grype": json_mapping.read_grype,
     "syft": code_notes.read_syft,  # a package list: no findings, a note in the code scan

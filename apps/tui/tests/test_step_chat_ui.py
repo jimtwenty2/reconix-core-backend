@@ -44,7 +44,7 @@ from .support import (
 @pytest.fixture
 def model_active(reachable):
     """A configured, tested and active model, approved for the Core API (/provider's OK)."""
-    store.set_provider("openai", api_key="sk-x-1234", models=["gpt-4o-mini"])
+    store.set_provider("openai", api_key="sk-1234", models=["gpt-4o-mini"])
     store.test_provider("openai")
     store.activate("openai", "gpt-4o-mini")
     store.core_api_approve()

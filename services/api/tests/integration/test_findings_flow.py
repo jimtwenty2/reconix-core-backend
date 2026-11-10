@@ -130,8 +130,10 @@ def test_real_nuclei_output_saves_one_finding_per_match(db_client, db_app):
     assert run["error"] is None
 
     saved = findings(db_client, headers, assessment_id)
-    assert len(saved) == 11
-    assert len({f["title"] for f in saved}) == 11
+    # The 10 missing-header matches of one template are grouped into one finding, so the
+    # 11 raw matches become 2 findings (the grouped headers + the Wappalyzer detection).
+    assert len(saved) == 2
+    assert len({f["title"] for f in saved}) == 2
     assert {f["severity_status"] for f in saved} == {"NONE"}
 
 

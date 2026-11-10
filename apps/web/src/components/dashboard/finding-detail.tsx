@@ -10,7 +10,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { forwardRef } from "react";
 
-import type { FindingRow } from "@/components/dashboard/derive";
+import type { ListedFinding } from "@/components/dashboard/derive";
 import { reviewLabel, validationOf } from "@/components/dashboard/filters";
 import { IconButton } from "@/components/ui/icon-button";
 import { ScrollRegion } from "@/components/ui/scroll-region";
@@ -31,10 +31,10 @@ const EV_STYLE: Record<string, string> = {
 };
 
 export interface FindingDetailProps {
-  finding: FindingRow;
+  finding: ListedFinding;
   position: { index: number; total: number }; // its place in the filtered order (0-based)
-  prev: FindingRow | null;
-  next: FindingRow | null;
+  prev: ListedFinding | null;
+  next: ListedFinding | null;
   onSelect: (key: string) => void;
 }
 
@@ -74,7 +74,7 @@ export const FindingDetail = forwardRef<HTMLElement, FindingDetailProps>(functio
         {f.run && (
           <p className="text-xs text-muted-foreground">
             From{" "}
-            <Link href={runFindingHref(f.run.uid, f.id)} className="ui-link font-mono">
+            <Link href={f.run.href ?? runFindingHref(f.run.uid, f.id)} className="ui-link font-mono">
               {f.run.label}
             </Link>
           </p>
