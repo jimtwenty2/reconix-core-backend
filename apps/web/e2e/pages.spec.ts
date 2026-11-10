@@ -8,12 +8,12 @@ import { expect, test } from "./fixtures";
 import { PER_PAGE } from "../src/lib/paging";
 import { NO_PRINTER } from "../src/lib/report/formats";
 import { counted, hydrated, newest, sample, signIn, toolSteps } from "./support";
+import { apiId } from "./core-api-ids.mjs";
 
 const view = (name: string) => `nav[aria-label="Views"] button[aria-label^="${name}"]`;
 
 /** The Findings view's rows, and the selected one. */
 const findingRows = (page: Page) => page.getByRole("list", { name: "Findings", exact: true }).getByRole("listitem");
-const selectedFinding = (page: Page) => page.getByRole("list", { name: "Findings", exact: true }).locator('button[aria-current="true"]');
 
 /** A summary-strip card (Findings, Assessment progress, Tool execution, Duration). */
 const card = (page: Page, label: string) => page.locator(`[data-motion="top"] section[aria-label="${label}"]`);
@@ -195,7 +195,30 @@ test("the switcher opens another assessment and keeps the view", async ({ page }
   await page.locator(`[role="dialog"] a[href*="uid=${other.uid}"]`).click();
   await expect(page).toHaveURL(new RegExp(`uid=${other.uid}`));
   await expect(page).toHaveURL(/view=findings/);
-  await expect(findingRows(page)).toHaveCount(other.findings.length);
+  // a saved run has no Core API id: Findings says so and lists every Core API assessment
+  await expect(page.locator(".dash-findings-saved-run")).toContainText(other.uid);
+  await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, sample().flatMap(counted).length));
+});
+
+test("the Findings view's own picker opens one Core API assessment's findings", async ({ page }) => {
+  await signIn(page);
+  await page.click(view("Findings"));
+  const other = sample().find((a) => counted(a).length > 1)!;
+  await page.getByRole("combobox", { name: "Assessment" }).selectOption(apiId(other.uid));
+  await expect(page).toHaveURL(new RegExp(`assessment=${apiId(other.uid)}`));
+  await expect(page).toHaveURL(/view=findings/);
+  await expect(findingRows(page)).toHaveCount(counted(other).length);
+  await page.getByRole("combobox", { name: "Assessment" }).selectOption("");
+  await expect(page).not.toHaveURL(/assessment=/);
+});
+
+test("an assessment id the Core API doesn't know keeps the picker", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/?view=findings&assessment=99999999-9999-4999-8999-999999999999");
+  await expect(page.getByText("The Core API has no assessment with that id. Pick another one.")).toBeVisible();
+  const picker = page.getByRole("combobox", { name: "Assessment" });
+  await picker.selectOption(apiId(newest().uid));
+  await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, counted(newest()).length));
 });
 
 test("the switcher is just the list, and the open run's name opens its Overview", async ({ page }) => {
@@ -344,7 +367,7 @@ test("an unknown assessment says so on every view and opens every run, and an un
 test("findings filter by severity, validation and search, and clear in one click", async ({ page }) => {
   await signIn(page);
   const a = sample().find((x) => x.findings.length >= 3)!;
-  await page.goto(`/?uid=${a.uid}&view=findings`);
+  await page.goto(`/?assessment=${apiId(a.uid)}&view=findings`);
   const rows = findingRows(page);
   await expect(rows).toHaveCount(a.findings.length);
   const sev = a.findings[0].severity;
@@ -367,18 +390,27 @@ test("the overview drills into filtered views", async ({ page }) => {
   await page.getByRole("button", { name: `Show the ${medium} medium ${medium === 1 ? "finding" : "findings"}` }).click();
   await expect(page).toHaveURL(/view=findings/);
   await expect(page).toHaveURL(/sev=MEDIUM/);
-  await expect(findingRows(page)).toHaveCount(medium);
+  // a saved run has no Core API id: the drill-down lists every Core API assessment's MEDIUM findings
+  const savedRun = page.locator(".dash-findings-saved-run");
+  await expect(savedRun).toContainText(a.uid);
+  const allMedium = sample().flatMap(counted).filter((f) => f.severity === "MEDIUM").length;
+  await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, allMedium));
+  await expect(page.locator('ul.dash-findings-rows button:not([data-severity="MEDIUM"])')).toHaveCount(0);
 
-  // the summary strip's Findings card opens every finding, a top finding opens itself
+  // the summary strip's Findings card opens every finding
   await page.click(view("Overview"));
   await page.getByRole("button", { name: "Open all findings" }).click();
   await expect(page).toHaveURL(/view=findings/);
   await expect(page).not.toHaveURL(/sev=/);
-  await expect(findingRows(page)).toHaveCount(a.findings.length);
+  await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, sample().flatMap(counted).length));
+  // a top finding names the saved run's finding: the note says why it isn't selected, instead of
+  // a "no such finding" notice
   await page.click(view("Overview"));
   await page.getByRole("button", { name: /^Open F-\d+/ }).first().click();
   await expect(page).toHaveURL(/finding=F-\d+/);
-  await expect(selectedFinding(page)).toHaveCount(1);
+  await expect(savedRun).toBeVisible();
+  await expect(page.locator(".dash-findings-notice")).toHaveCount(0);
+  await expect(findingRows(page).first()).toBeVisible();
 });
 
 test("the sidebar has no Terminal item and no logo, and the top bar no bell", async ({ page }) => {

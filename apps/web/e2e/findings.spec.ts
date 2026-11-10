@@ -11,6 +11,7 @@ import { expect, test } from "./fixtures";
 
 import { PER_PAGE } from "../src/lib/paging";
 import { counted, hydrated, sample, signIn } from "./support";
+import { apiId } from "./core-api-ids.mjs";
 
 const list = (page: Page) => page.getByRole("list", { name: "Findings", exact: true });
 const rows = (page: Page) => list(page).getByRole("listitem");
@@ -116,11 +117,11 @@ test("a finding the address names but the list lacks falls back to the first row
 
   // hidden by a filter: Show it clears the filters and keeps it selected
   const a = sample().find((x) => new Set(x.findings.map((f) => f.severity)).size > 1)!;
-  await go(page, `/?uid=${a.uid}&view=findings`);
+  await go(page, `/?assessment=${apiId(a.uid)}&view=findings`);
   const fid = await rowId(page, 0);
   const sev = await rowSeverity(page, 0);
   const other = a.findings.find((x) => x.severity !== sev)!.severity;
-  await go(page, `/?uid=${a.uid}&view=findings&sev=${other}&finding=${fid}`);
+  await go(page, `/?assessment=${apiId(a.uid)}&view=findings&sev=${other}&finding=${fid}`);
   await expect(notice(page)).toContainText(`${fid} is hidden by the filters`);
   await page.getByRole("button", { name: "Show it" }).click();
   await expect(page).not.toHaveURL(/sev=/);
@@ -129,7 +130,7 @@ test("a finding the address names but the list lacks falls back to the first row
   await expect(notice(page)).toHaveCount(0);
 
   // a value that is no key is never repeated
-  await go(page, `/?uid=${a.uid}&view=findings&finding=${encodeURIComponent("<b>x</b> y")}`);
+  await go(page, `/?assessment=${apiId(a.uid)}&view=findings&finding=${encodeURIComponent("<b>x</b> y")}`);
   await expect(notice(page)).toHaveText(/This link names a finding that isn't here\./);
   await expect(notice(page)).not.toContainText("<b>");
 });
@@ -143,11 +144,11 @@ test("a run with no findings says so: no list, no filters, no pager", async ({ p
   const run = sample().find((a) => a.uid === NO_FINDINGS)!;
   expect(run.findings).toHaveLength(0);
   expect(run.status).toBe("Completed");
-  await go(page, `/?uid=${NO_FINDINGS}&view=findings`);
+  await go(page, `/?assessment=${apiId(NO_FINDINGS)}&view=findings`);
   await expect(page.getByRole("heading", { name: "Findings", level: 1 })).toBeVisible();
   const view = page.locator("main > :not([hidden])"); // the Report view (hidden) says it too
   await expect(view.getByText("No findings in this assessment yet.")).toBeVisible();
-  await expect(view.getByText("Findings appear here once this assessment's run records some.")).toBeVisible();
+  await expect(view.getByText("This assessment has no findings yet.")).toBeVisible();
   await expect(list(page)).toHaveCount(0);
   await expect(page.getByRole("searchbox", { name: "Search findings" })).toHaveCount(0);
   await expect(pager(page)).toHaveCount(0);
@@ -157,7 +158,7 @@ test("a run with no findings says so: no list, no filters, no pager", async ({ p
 test("one run with more than ten findings pages at ten, and its last page holds the rest", async ({ page }) => {
   const run = MOST;
   test.skip(counted(run).length <= PER_PAGE, "no sample run lists more than ten findings (Info ones are not listed)");
-  await go(page, `/?uid=${run.uid}&view=findings`);
+  await go(page, `/?assessment=${apiId(run.uid)}&view=findings`);
   await expect(rows(page)).toHaveCount(PER_PAGE);
   await expect(pager(page)).toContainText(`Page 1 of 2 · ${counted(run).length} results`);
   await pager(page).getByRole("button", { name: "Next page" }).click();
@@ -170,14 +171,14 @@ test("one run with more than ten findings pages at ten, and its last page holds 
 
 test("a run that fits one page shows no pager", async ({ page }) => {
   const one = sample().find((a) => counted(a).length > 1 && counted(a).length <= PER_PAGE)!;
-  await go(page, `/?uid=${one.uid}&view=findings`);
+  await go(page, `/?assessment=${apiId(one.uid)}&view=findings`);
   await expect(rows(page)).toHaveCount(counted(one).length);
   await expect(pager(page)).toHaveCount(0);
 });
 
 test("a critical finding shows its badge first, there is no Info level, and titles stay text", async ({ page }) => {
   const uid = "20260929-112000-8c51_RCX-DEMO-001";
-  await go(page, `/?uid=${uid}&view=findings`);
+  await go(page, `/?assessment=${apiId(uid)}&view=findings`);
   await expect(rows(page).first().locator("button")).toHaveAttribute("data-severity", "CRITICAL");
   const severity = page.getByRole("group", { name: "Severity" });
   await expect(severity.getByRole("button", { name: /^critical/ })).toBeVisible();
@@ -202,7 +203,7 @@ test("a false positive is left out until Show lists it as closed, and its analys
   test.skip(!run, "the sample data holds no false positive with a note (an Info one is not listed)");
   const fp = run!.findings.find((f) => f.status === "false-positive" && f.triage_note)!;
   const n = counted(run!).length;
-  await go(page, `/?uid=${run!.uid}&view=findings`);
+  await go(page, `/?assessment=${apiId(run!.uid)}&view=findings`);
   // left out: the list, the headline and the summary count what the Overview counts
   await expect(rows(page)).toHaveCount(Math.min(PER_PAGE, n));
   await expect(rows(page).filter({ hasText: fp.title })).toHaveCount(0);
@@ -219,7 +220,7 @@ test("a false positive is left out until Show lists it as closed, and its analys
   await expect(page).not.toHaveURL(/fp=/);
   await expect(rows(page).filter({ hasText: fp.title })).toHaveCount(0);
   // a link naming it says why it isn't listed, and Show it lists and selects it
-  await go(page, `/?uid=${run!.uid}&view=findings&finding=${fp.id}`);
+  await go(page, `/?assessment=${apiId(run!.uid)}&view=findings&finding=${fp.id}`);
   await expect(notice(page)).toContainText(`${fp.id} is marked as a false positive, and false positives are hidden.`);
   await page.getByRole("button", { name: "Show it" }).click();
   await expect(page).toHaveURL(/fp=1/);
@@ -235,7 +236,7 @@ test("a false positive is left out until Show lists it as closed, and its analys
 const MASKED_RUN = "20260929-112000-8c51_RCX-DEMO-001";
 
 test("a login in a target is masked in the finding's detail and in the Word export", async ({ page }) => {
-  await go(page, `/?uid=${MASKED_RUN}&view=findings&finding=IMP-001`);
+  await go(page, `/?assessment=${apiId(MASKED_RUN)}&view=findings&finding=IMP-001`);
   await expect(detail(page)).toContainText("••••@portal.example.com");
   await expect(detail(page)).not.toContainText("hunter2");
   const res = await page.request.get(`/api/assessments/${MASKED_RUN}/export?format=docx`);
