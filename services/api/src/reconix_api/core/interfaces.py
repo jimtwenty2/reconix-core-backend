@@ -335,6 +335,13 @@ class AgentRequest(BaseModel):
     # The agent's own earlier per-step reasoning this assessment (masked), oldest first, so a
     # PLAN or SUGGEST step builds on what it already decided instead of re-deriving it.
     recent_reasoning: list[str] = Field(default_factory=list)
+    # The tools that have already completed in this assessment: a technique counts as covered
+    # when one of its tools is here, so the planner covers what remains and does not re-run a
+    # tool. Facts from the tool_runs table, never the model's claim; tool names, not secret.
+    tools_run: list[str] = Field(default_factory=list)
+    # The agent's own earlier ReflAct observations this assessment (masked), oldest first, so a
+    # SUGGEST step keeps following the leads earlier steps spotted instead of re-reading output.
+    recent_observations: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def scope_unless_chat(self) -> Self:
@@ -358,6 +365,7 @@ class AgentResponse(BaseModel):
     risk: RiskLevel | None = None  # the harness risk of proposed_action
     blocked: list[BlockedStep] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)  # knowledge ids, e.g. CWE-89
+    reflections: list[str] = Field(default_factory=list)  # the run's own ReflAct observations
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = Field(default_factory=list)  # ANALYZE
     # VALIDATE: the AI's verdict on a finding, read from the real (masked) PoC tool output.

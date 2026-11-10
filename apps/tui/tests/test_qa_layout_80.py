@@ -15,7 +15,7 @@ from reconix.screens.forms.provider import ProviderForm
 
 from .support import decide, pass_gate, play_until_gate, run_to, settle, start_demo
 
-PROVIDER = "openai"   # a provider whose form starts at its API key field
+PROVIDER = "openai"  # a provider whose form starts at its API key field
 FAKE_KEY = "sk-1234"  # noqa: S105 - a fake
 
 SMALL = (80, 24)
@@ -26,6 +26,8 @@ def _active_model() -> None:
     store.set_provider(PROVIDER, api_key=FAKE_KEY, models=["gpt-4o-mini"])
     store.test_provider(PROVIDER)
     store.activate(PROVIDER, "gpt-4o-mini")
+    if store.core_api_needs_ok():  # your OK in /provider: the API may use this remote model
+        store.core_api_approve()
 
 
 def _on_screen(widget) -> bool:
@@ -126,7 +128,7 @@ async def test_no_more_fields_hint_when_everything_fits():
         app.push_screen(AddOnForm())
         await settle(pilot, 8)
         assert not app.screen.query_one("#form-more", Static).display
-        assert not app.screen.query_one("#form-error", Static).display   # no empty row
+        assert not app.screen.query_one("#form-error", Static).display  # no empty row
 
 
 # --- 4 + placeholder: the Start screen fits 80 columns ----------------------------------------
@@ -163,7 +165,7 @@ async def test_the_findings_hint_is_one_line_and_no_column_is_drawn_half():
             assert right <= visible or edge >= visible, f"{column.label} is cut at the edge"
             edge = right
         labels = [str(c.label) for c in table.columns.values()]
-        assert "VALIDATION" in labels                    # the last column on screen at 80
+        assert "VALIDATION" in labels  # the last column on screen at 80
 
 
 # --- 6: the highlighted plan row never wraps back to the first column -----------------------
@@ -171,14 +173,19 @@ def test_a_long_plan_row_continues_under_its_own_column():
     from reconix.models import PlanRow
     from reconix.widgets.plan_rows import LABEL_WIDTH, NUM_WIDTH, plan_line
 
-    row = PlanRow(num="1", label="Crawl & map endpoints",
-                  detail="map the permitted surface · OWASP ZAP and more words here",
-                  risk="LOW", gate="auto", status="pending")
+    row = PlanRow(
+        num="1",
+        label="Crawl & map endpoints",
+        detail="map the permitted surface · OWASP ZAP and more words here",
+        risk="LOW",
+        gate="auto",
+        status="pending",
+    )
     width = 70
     lines = plan_line(row, width, full=True).plain.split("\n")
     room = width - NUM_WIDTH - LABEL_WIDTH
-    assert len(lines) >= 3                               # wrapped, then the risk line
-    for line in lines[1:-1]:                             # the continuation lines
+    assert len(lines) >= 3  # wrapped, then the risk line
+    for line in lines[1:-1]:  # the continuation lines
         assert line.startswith(" " * (NUM_WIDTH + LABEL_WIDTH))
         assert len(line.strip()) <= room
     assert all(len(line) <= width for line in lines)
@@ -195,10 +202,10 @@ async def test_the_session_bar_keeps_the_id_and_the_target_at_80_columns(reachab
         await settle(pilot, 6)
         line = str(app.screen.query_one(SessionBar).render())
         label = store.get_assessment().label
-        assert f"{label} · stagin" in line                 # the id whole, then the target
+        assert f"{label} · stagin" in line  # the id whole, then the target
         assert "Scope pending" in line and "gpt-4o-mini" in line
         bar = app.screen.query_one(SessionBar)
-        assert len(line.rstrip()) == bar.content_region.width   # the whole width is used
+        assert len(line.rstrip()) == bar.content_region.width  # the whole width is used
 
 
 async def test_the_session_bar_shows_everything_on_a_wide_terminal(reachable):

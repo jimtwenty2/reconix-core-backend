@@ -79,6 +79,8 @@ class PlanInput:
     chat_scope: ChatScope | None
     plan: list[str]
     recent_reasoning: list[str]
+    recent_observations: list[str]  # the agent's earlier ReflAct observations, oldest first
+    tools_run: list[str]  # tools that have completed, for the coverage map
 
 
 def provider_config(settings: Settings, provider: LlmProvider, model_name: str) -> ProviderConfig:
@@ -177,6 +179,8 @@ def plan_input(request: AgentRequest) -> PlanInput:
         chat_scope=request.chat_scope,
         plan=list(request.plan),
         recent_reasoning=list(request.recent_reasoning),
+        recent_observations=list(request.recent_observations),
+        tools_run=list(request.tools_run),
     )
 
 

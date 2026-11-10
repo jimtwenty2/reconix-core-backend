@@ -28,12 +28,40 @@ def read(output: str) -> tuple[list[NewFinding], int]:
     if not any("Nikto" in row for row in rows):
         raise OutputUnreadable("not nikto output")
     target = _target(rows)
-    findings = []
+    findings: list[NewFinding] = []
+    missing_headers: list[tuple[str, str]] = []
     for row in rows:
         match = ITEM.match(row)
-        if match and not SKIP.match(match.group(1)):
+        if not match or SKIP.match(match.group(1)):
+            continue
+        text = ID.sub("", match.group(1)).strip()
+        if _is_missing_header(text):
+            missing_headers.append((text, row))  # grouped below, not one finding each
+        else:
             findings.append(_finding(match.group(1), target, row))
+    if missing_headers:
+        findings.append(_missing_headers_finding(missing_headers, target))
     return findings, 0
+
+
+def _is_missing_header(text: str) -> bool:
+    low = text.lower()
+    return "security header missing" in low or "header: missing" in low
+
+
+def _missing_headers_finding(items: list[tuple[str, str]], target: str) -> NewFinding:
+    """One finding for all missing security headers, not one per header."""
+    names = [text for text, _ in items]
+    return NewFinding(
+        title=title(f"{len(names)} security header(s) missing on {target}"),
+        target=target,
+        description="nikto reports these response headers are missing: " + "; ".join(names),
+        severity=SeverityStatus.LOW,
+        dedupe_key=dedupe_key("nikto_missing_headers", target),
+        evidence=[
+            NewEvidence(kind="nikto_item", content=row.strip(), location=target) for _, row in items
+        ],
+    )
 
 
 def _target(rows: list[str]) -> str:

@@ -43,6 +43,40 @@ def test_the_next_step_carries_the_agents_earlier_reasoning(db_client, db_app):
     assert "Start with a service scan." in request.recent_reasoning
 
 
+def test_the_next_step_carries_the_coverage_of_completed_tools(db_client, db_app):
+    # Coverage map: a SUGGEST step learns which tools have completed, so the planner marks
+    # their techniques covered and works on what remains instead of re-running a tool.
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+
+    body = plan(db_client, headers, assessment_id).json()
+    assert body["action"]["action_status"] == "COMPLETED"  # a LOW step runs at once
+    ran = body["action"]["tool"]
+
+    nxt = db_client.post(f"/assessments/{assessment_id}/next-step", headers=headers)
+
+    assert nxt.status_code == 201, nxt.json()
+    request = db_app.state.parts["agent"].requests[-1]
+    assert request.task == AgentTask.SUGGEST
+    assert ran in request.tools_run
+
+
+def test_the_next_step_carries_the_agents_earlier_observations(db_client, db_app):
+    # Lead memory: a SUGGEST step gets the agent's own earlier ReflAct observations (stored from
+    # the completed plan run), so it keeps following the leads it spotted instead of re-reading.
+    db_app.state.parts["agent"].reflections = ["katana found /search?q=, a parameter for dalfox"]
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+
+    plan(db_client, headers, assessment_id)  # the plan run stores its observations
+    nxt = db_client.post(f"/assessments/{assessment_id}/next-step", headers=headers)
+
+    assert nxt.status_code == 201, nxt.json()
+    request = db_app.state.parts["agent"].requests[-1]
+    assert request.task == AgentTask.SUGGEST
+    assert any("/search?q=" in obs for obs in request.recent_observations)
+
+
 def test_a_medium_step_waits_then_resumes_after_approval(db_client, db_app):
     headers = open_session(db_client)
     assessment_id = active_assessment(db_client, headers)

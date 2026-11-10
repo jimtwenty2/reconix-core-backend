@@ -1,5 +1,7 @@
 """Each template's testing techniques, its default tools, and the report's test coverage."""
 
+import dataclasses
+
 import pytest
 
 from reconix import store
@@ -171,12 +173,33 @@ def test_grouped_names_per_mode():
 
 
 # --- the scope card ---------------------------------------------------------------------------
-def test_the_scope_card_lists_the_techniques_by_group():
+def test_the_scope_card_shows_what_the_scope_can_and_cannot_test():
+    # The Techniques section is scope-aware: the default web scope has every tool, so every
+    # auto/partial technique is coverable and nothing is a gap.
     text = manifest_text(_scope("web_url"), with_suggestions=False).plain
     assert "Techniques" in text
-    assert "tested by the tools: Technology fingerprinting" in text
+    assert "can test: Technology fingerprinting" in text
     assert "partly; finish by hand: Authentication testing, Input validation" in text
     assert "you check by hand: Authorization testing, File upload testing" in text
+
+
+def test_the_scope_preview_flags_a_gap_and_names_the_tool_to_add():
+    # A scope missing a technique's tool shows it as a gap, naming the tool to add, so the
+    # operator can close it by editing the scope (the preview is informational; the harness
+    # still enforces scope at run time).
+    preview = store.scope_coverage_preview("web_url", ["whatweb"])  # only whatweb chosen
+    assert "Technology fingerprinting" in [item["name"] for item in preview["can"]]
+    gaps = {item["name"]: item["needs"] for item in preview["gap"]}
+    assert "TLS assessment" in gaps and "testssl" in gaps["TLS assessment"]
+    assert "Authorization testing" in [item["name"] for item in preview["manual"]]
+
+
+def test_the_scope_card_flags_a_gap_with_the_tool_to_add():
+    # A scope missing a tool shows the "can't test" line on the card, naming the tool to add.
+    scope = dataclasses.replace(_scope("web_url"), tools=["whatweb"])
+    text = manifest_text(scope, with_suggestions=False).plain
+    assert "can't test: " in text
+    assert "TLS assessment (add testssl)" in text
 
 
 # --- the first chat line ----------------------------------------------------------------------

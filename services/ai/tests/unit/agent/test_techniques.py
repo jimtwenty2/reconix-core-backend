@@ -291,6 +291,66 @@ def test_prior_reasoning_reaches_the_plan_and_reflect_prompts() -> None:
     assert "<earlier_reasoning>" not in plan_messages(state())[-1].content
 
 
+def test_a_covered_technique_is_marked_and_not_planned_again() -> None:
+    # A tool that has finished covers its technique (keyed on the step's own tool): it
+    # moves to "Already tested" and is no longer listed with steps, so the planner works
+    # on what remains, not a repeat (this is what stops the re-run loop).
+    scope = scope_dict(url_prefixes=[URL], allowed_tools=["WHATWEB", "NUCLEI"])
+    msgs = ["Assessment type: Web URL"]
+
+    before = techniques_text(scope, msgs)
+    after = techniques_text(scope, msgs, tools_run=("WHATWEB",))
+
+    assert "- fingerprint: " in before  # planned before whatweb ran
+    assert "- fingerprint: " not in after  # now covered, no longer listed with steps
+    assert (
+        "Already tested (do not repeat these): Technology fingerprinting (tested by whatweb)"
+        in (after)
+    )
+    # A stronger planned step is NOT suppressed by a weaker related tool: the NUCLEI
+    # versions step stays, because whatweb is not the tool its step would run.
+    assert "NUCLEI {url}" in after
+
+
+def test_coverage_reaches_the_plan_and_reflect_prompts() -> None:
+    # The coverage facts (which tools have completed) must reach the planner and the
+    # reflector, so each marks covered techniques done and plans only what remains.
+    scope = scope_dict(url_prefixes=[URL], allowed_tools=["WHATWEB", "NUCLEI"])
+    base = {
+        "scope": scope,
+        "goal": "g",
+        "messages": ["Assessment type: Web URL"],
+        "tool_results": ["x"],
+    }
+    with_coverage = base | {"tools_run": ["WHATWEB"]}
+
+    for content in (
+        plan_messages(with_coverage)[-1].content,
+        reflect_messages(with_coverage)[-1].content,
+    ):
+        assert "Already tested (do not repeat these): Technology fingerprinting" in content
+    # With nothing run yet, no technique is annotated as tested (the "(tested by ...)"
+    # marker renders only in the section, unlike the "Already tested" instruction phrase).
+    assert "(tested by whatweb)" not in plan_messages(base)[-1].content
+
+
+def test_prior_observations_reach_the_plan_and_reflect_prompts() -> None:
+    # Lead memory: the agent carries its own earlier ReflAct observations forward, so it keeps
+    # following the leads earlier steps spotted instead of re-reading the raw output each time.
+    with_obs = state(
+        prior_observations=["katana found /search?q=, a parameter to test with dalfox"]
+    )
+
+    for content in (
+        plan_messages(with_obs)[-1].content,
+        reflect_messages(with_obs)[-1].content,
+    ):
+        # the <earlier_observations> fence renders only when observations are actually present
+        assert "<earlier_observations>" in content
+        assert "/search?q=" in content
+    assert "<earlier_observations>" not in plan_messages(state())[-1].content
+
+
 def test_a_code_plan_prompt_has_no_empty_section() -> None:
     code = state(scope=scope_dict(repo_paths=["/w"], allowed_tools=["SEMGREP"]))
 

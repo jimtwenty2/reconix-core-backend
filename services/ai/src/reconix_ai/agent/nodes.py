@@ -8,6 +8,7 @@ again, with the full context, before anything runs. wait pauses the graph
 until a person approves or rejects the step.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -56,6 +57,10 @@ from reconix_ai.providers import (
 from reconix_ai.reports.answers import read_report
 
 ATTEMPTS = 2  # a bad answer is asked once more
+# An empty answer is a flaky-endpoint hiccup (Anthropic returns empty intermittently, in bursts):
+# retry several times with a short backoff so one burst does not stop the whole run.
+EMPTY_RETRIES = 6
+EMPTY_BACKOFF_SECONDS = 1.0
 # Tokens one ask may spend in total, prompts and answers together. A plan uses a few thousand.
 # A reasoning model spends a few thousand on thinking per call, so a plan with a few
 # reflections needs more than the 20,000 a model without thinking used.
@@ -371,9 +376,22 @@ async def ask_json(
     retry never runs on after it on a screen.
     """
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "masked_count": 0}
+    empty_retries = EMPTY_RETRIES
     for attempt in range(attempts):
         check_budget(deps, spent + usage["prompt_tokens"] + usage["completion_tokens"])
-        completion = await safe_complete(deps, messages, on_piece if attempt == 0 else None)
+        while True:
+            try:
+                completion = await safe_complete(deps, messages, on_piece if attempt == 0 else None)
+                break
+            except AgentError as error:
+                # An empty answer is a flaky-endpoint hiccup (Anthropic returns empty
+                # intermittently), not a real failure: wait a moment and ask again, without
+                # using a bad-answer try, so a burst of empties does not stop the whole run.
+                if error.code == "EMPTY_RESPONSE" and empty_retries > 0:
+                    empty_retries -= 1
+                    await asyncio.sleep(EMPTY_BACKOFF_SECONDS)
+                    continue
+                raise
         usage["prompt_tokens"] += completion.prompt_tokens
         usage["completion_tokens"] += completion.completion_tokens
         usage["masked_count"] += completion.masked_count

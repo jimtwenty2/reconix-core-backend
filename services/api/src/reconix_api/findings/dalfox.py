@@ -2,7 +2,7 @@
 
 dalfox prints one line per confirmed hit, tagged with what it is:
   [POC][V] ...   a verified cross-site scripting hit  -> HIGH (CWE-79)
-  [POC][R] ...   a reflected parameter (not confirmed) -> LOW
+  [POC][R] ...   a reflected parameter (not confirmed) -> MEDIUM
 Only these tagged lines become findings. A scan that finds nothing ("XSS found 0") makes
 no finding. The injected parameter marker in the URL is evidence, not a secret.
 """
@@ -42,7 +42,7 @@ def _finding(row: str) -> NewFinding | None:
             + ("confirmed a cross-site scripting hit" if verified else "saw a reflected parameter")
             + f" at {url}."
         ),
-        severity=SeverityStatus.HIGH if verified else SeverityStatus.LOW,
+        severity=SeverityStatus.HIGH if verified else SeverityStatus.MEDIUM,
         dedupe_key=dedupe_key("dalfox_xss", url, "v" if verified else "r"),
         evidence=[NewEvidence(kind="dalfox_poc", content=row.strip(), location=url)],
         cwe_ids=["CWE-79"],

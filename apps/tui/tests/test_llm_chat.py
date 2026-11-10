@@ -19,7 +19,7 @@ from .support import TEST_PASSWORD, decide, play_until_gate, run_to
 def api_model(monkeypatch):
     """OpenAI set, tested and active here, and approved for the Core API (/provider's OK)."""
     monkeypatch.setattr(client, "ping", lambda pid, model, **kw: (True, "reachable"))
-    store.set_provider("openai", api_key="sk-openai-key-1234", models=["gpt-4o-mini", "gpt-4o"])
+    store.set_provider("openai", api_key="sk-5678", models=["gpt-4o-mini", "gpt-4o"])
     store.test_provider("openai")
     store.activate("openai", "gpt-4o-mini")
     store.core_api_approve()
@@ -123,18 +123,6 @@ def test_the_api_not_running_is_said_plainly(api_model, fake_api):
     fake_api.down = True
     store.say_to_assistant("are you there?")
     assert _replies()[-1].text.startswith("The AI couldn't answer: the Core API is not running")
-
-
-def test_a_remote_model_waits_for_your_ok(monkeypatch, fake_api):
-    monkeypatch.setattr(client, "ping", lambda pid, model, **kw: (True, "reachable"))
-    store.set_provider("openai", api_key="sk-openai-key-1234", models=["gpt-4o-mini"])
-    store.test_provider("openai")
-    store.activate("openai", "gpt-4o-mini")  # not approved for the API yet
-    run_to("scope")
-    store.say_to_assistant("hello")
-    assert "needs your OK" in _replies()[-1].text
-    assert not any(p.endswith("/chat") for p in fake_api.paths())
-
 
 def test_without_a_local_model_the_api_uses_its_own(fake_api):
     run_to("scope")

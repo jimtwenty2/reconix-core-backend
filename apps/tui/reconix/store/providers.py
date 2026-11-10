@@ -1,22 +1,24 @@
 """LLM providers: the only seam the UI calls to configure and pick a model.
 
-All validation lives here and raises `StoreValidationError` with a plain message. API
-keys are encrypted (Fernet) before they reach the database; this module hands the
-plaintext to `client` only for a live call and never logs it. Everything the deterministic
-core guards — scope, approvals, the vault — is untouched: a model can only be displayed.
+The Core API is the source of truth (`core_api.providers`): it keeps the providers, tests
+them, and (for a model off this computer) asks you to approve the one that becomes active.
+This module turns the API's rows into the `ProviderView`/`ActiveModel` the screens read,
+and validates writes with the static catalog (labels, which fields a provider needs). The
+deterministic core the API runs — scope, approvals, risk — is untouched: a model is only
+ever configured, tested, activated or displayed.
 """
 
 import ipaddress
-import json
 from typing import List, Optional
 from urllib.parse import urlsplit
 
-from ..llm import catalog, client, crypto, db
+from ..core_api import providers as api
+from ..core_api.client import CoreApiError
+from ..llm import catalog
 from ..models import ActiveModel, ProviderView
-from ..models.base import utc_now
+from . import known_secrets
 from .activity import log_event
 from .errors import StoreValidationError
-from .snapshot import uid_for
 from .transcript import add_activity, add_chat
 
 MAX_KEY = 4096
@@ -24,8 +26,20 @@ MAX_URL = 2048
 MAX_MODEL = 200
 
 
-def _now() -> str:
-    return utc_now().isoformat()
+def reset() -> None:
+    """Forget the cached rows, test results and the keys typed this run."""
+    api.reset()
+    known_secrets.reset()
+
+
+# --- helpers ----------------------------------------------------------------------------------
+
+
+def _entry(provider_id: str) -> catalog.Provider:
+    entry = catalog.get(provider_id)
+    if entry is None or provider_id not in api.TYPE_FOR_ID:
+        raise StoreValidationError("Unknown provider.")
+    return entry
 
 
 def _require_http(url: str) -> str:
@@ -37,15 +51,12 @@ def _require_http(url: str) -> str:
     try:
         parts = urlsplit(url)
         host = (parts.hostname or "").lower()
-    except ValueError:           # a stray bracket reads as a broken IPv6 literal
+    except ValueError:
         raise StoreValidationError("That base URL isn't a valid URL.") from None
-    # No user:pass@host in any shape (also ":key@host", an empty user name): the key goes in
-    # the key field, encrypted, never into the address saved in clear text
     if parts.username is not None or parts.password is not None or "@" in parts.netloc:
         raise StoreValidationError("Put the API key in the key field, not in the base URL.")
     if _is_metadata_host(host):
-        raise StoreValidationError("That address is a cloud metadata service, not a model "
-                                   "server.")
+        raise StoreValidationError("That address is a cloud metadata service, not a model server.")
     return url
 
 
@@ -53,7 +64,6 @@ _METADATA_HOSTS = ("metadata.google.internal", "metadata")
 
 
 def _is_metadata_host(host: str) -> bool:
-    """A cloud instance-metadata address (169.254.169.254, fd00:ec2::254, link-local…)."""
     if host in _METADATA_HOSTS:
         return True
     try:
@@ -75,110 +85,126 @@ def _parse_models(entry: catalog.Provider, models: Optional[List[str]]) -> List[
     return names
 
 
-# --- views ------------------------------------------------------------------------
+def _key_hint(last4: Optional[str]) -> str:
+    return f"…{last4}" if last4 else ""
 
-def _view(entry: catalog.Provider, row, active) -> ProviderView:
-    active_here = active and active["provider_id"] == entry.id
+
+# --- views ------------------------------------------------------------------------------------
+
+
+def _view(entry: catalog.Provider, rows: List[dict], active: Optional[dict]) -> ProviderView:
+    group = api.rows_for_type(rows, api.TYPE_FOR_ID[entry.id])
+    built_in = entry.id == "reconix"
+    status, detail = api.group_status(group)
+    active_here = active and active in group
     facts = dict(
         needs_key=entry.needs_key,
         key_optional=entry.key_requirement == catalog.OPTIONAL,
         base_mode=entry.base_mode,
         multi_model=entry.multi_model,
+        built_in=built_in,
     )
-    if row is None:
-        # Some providers already know their models before being configured: Reconix's
-        # single model from .env, and the frontier providers' default lineup.
-        if entry.base_mode == catalog.BASE_READONLY:
-            fixed_models = (catalog.reconix_model(),)
-        else:
-            fixed_models = entry.default_models      # () for ollama / custom
+    if not group:
         return ProviderView(
-            id=entry.id, label=entry.label, kind=entry.kind, configured=False,
-            base_url=_default_base(entry), models=fixed_models,
-            active_model=active["model"] if active_here else "", **facts,
+            id=entry.id,
+            label=entry.label,
+            kind=entry.kind,
+            configured=False,
+            base_url=_default_base(entry),
+            models=(),
+            **facts,
         )
+    first = group[0]
     return ProviderView(
-        id=entry.id, label=entry.label, kind=entry.kind, configured=True,
-        api_key_hint=row["api_key_hint"] or "",
-        base_url=row["base_url"] or "",
-        models=tuple(json.loads(row["models_json"])),
-        status=row["status"], status_detail=row["status_detail"] or "",
-        tested_at=row["tested_at"] or "",
-        active_model=active["model"] if active_here else "", **facts,
+        id=entry.id,
+        label=entry.label,
+        kind=entry.kind,
+        configured=True,
+        api_key_hint=_key_hint(first.get("api_key_last4")),
+        base_url=first.get("base_url") or "",
+        models=tuple(r["model_name"] for r in group),
+        status=status,
+        status_detail=detail,
+        active_model=active["model_name"] if active_here else "",
+        **facts,
     )
 
 
 def _default_base(entry: catalog.Provider) -> str:
-    if entry.base_mode == catalog.BASE_READONLY:
-        return catalog.reconix_base_url()
-    return entry.default_base_url
+    if entry.base_mode == catalog.BASE_DEFAULT:
+        return entry.default_base_url
+    return ""
 
 
 def list_providers() -> List[ProviderView]:
-    """Every catalog entry, configured or not, with its current status."""
-    rows = db.all_provider_rows()
-    active = db.get_active()
-    return [_view(entry, rows.get(entry.id), active) for entry in catalog.all_providers()]
+    """Every catalog provider, configured or not, from the API's current rows."""
+    rows = api.fetch_rows()
+    active = api.active_row(rows)
+    return [_view(entry, rows, active) for entry in catalog.all_providers()]
 
 
 def get_provider(provider_id: str) -> ProviderView:
-    entry = catalog.get(provider_id)
-    if entry is None:
-        raise StoreValidationError("Unknown provider.")
-    return _view(entry, db.get_provider_row(provider_id), db.get_active())
+    entry = _entry(provider_id)
+    rows = api.fetch_rows()
+    return _view(entry, rows, api.active_row(rows))
 
 
-# --- writes -----------------------------------------------------------------------
+# --- writes -----------------------------------------------------------------------------------
 
-def set_provider(provider_id: str, api_key: Optional[str] = None,
-                 base_url: Optional[str] = None,
-                 models: Optional[List[str]] = None) -> ProviderView:
-    """Add or update a provider. A blank api_key on update keeps the saved key."""
-    entry = catalog.get(provider_id)
-    if entry is None:
-        raise StoreValidationError("Unknown provider.")
-    row = db.get_provider_row(provider_id)
+
+def set_provider(
+    provider_id: str,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    models: Optional[List[str]] = None,
+) -> ProviderView:
+    """Add or update a provider on the API: one row per model. A blank key on a model that
+    already exists keeps its saved key."""
+    entry = _entry(provider_id)
+    if entry.id == "reconix":
+        raise StoreValidationError(
+            "Reconix is the Core API's own model (set by RECONIX_MODEL_* in its .env)."
+        )
     api_key = (api_key or "").strip()
     if len(api_key) > MAX_KEY:
         raise StoreValidationError("That API key is too long.")
+    if entry.multi_model and not models:
+        models = list(entry.default_models)
+    final_models = _parse_models(entry, models)
+    final_base = _resolve_base(entry, base_url)
 
-    if entry.base_mode == catalog.BASE_READONLY:          # Reconix: env is the only source
-        if base_url and base_url.strip() != catalog.reconix_base_url():
-            raise StoreValidationError("Reconix's base URL comes from .env and can't be changed.")
-        if models and [m.strip() for m in models] != [catalog.reconix_model()]:
-            raise StoreValidationError("Reconix's model comes from .env and can't be changed.")
-        final_base = catalog.reconix_base_url()
-        final_models = [catalog.reconix_model()]
-    else:
-        if entry.multi_model and not models:
-            models = list(entry.default_models)   # frontier: known models, only a key is needed
-        final_models = _parse_models(entry, models)
-        final_base = _resolve_base(entry, base_url, row)
-
-    # Key handling: required providers need one (unless already saved and left blank).
-    enc = row["api_key_enc"] if row else None
-    hint = row["api_key_hint"] if row else ""
-    if api_key:
-        enc, hint = crypto.encrypt(api_key), crypto.hint(api_key)
-    elif entry.needs_key and enc is None:
-        raise StoreValidationError(f"{entry.label} needs an API key.")
-
-    db.upsert_provider(provider_id, {
-        "api_key_enc": enc, "api_key_hint": hint, "base_url": final_base,
-        "models_json": json.dumps(final_models), "status": "UNTESTED",
-        "status_detail": None, "tested_at": None,
-    }, _now())
+    api_type = api.TYPE_FOR_ID[entry.id]
+    existing = {r["model_name"]: r for r in api.rows_for_type(api.fetch_rows(), api_type)}
+    for model in final_models:
+        row = existing.get(model)
+        if row is None:
+            if entry.needs_key and not api_key:
+                raise StoreValidationError(f"{entry.label} needs an API key.")
+            api.create(
+                api_type, f"{entry.label} · {model}", model, final_base or None, api_key or None
+            )
+        elif api_key or (final_base and final_base != (row.get("base_url") or "")):
+            if row.get("is_active"):
+                raise StoreValidationError(
+                    f"{entry.label} · {model} is active; stop using it before changing its key."
+                )
+            fields = {}
+            if api_key:
+                fields["api_key"] = api_key
+            if final_base:
+                fields["base_url"] = final_base
+            api.patch(row["llm_provider_id"], fields)
+    if api_key:  # keep it masked if typed again in chat
+        known_secrets.set_keys(provider_id, {api_key})
     log_event("llm.provider.set", provider_id)
     add_activity("SYS", f"LLM provider saved: {entry.label}")
     return get_provider(provider_id)
 
 
-def _resolve_base(entry: catalog.Provider, base_url: Optional[str], row) -> str:
+def _resolve_base(entry: catalog.Provider, base_url: Optional[str]) -> str:
     provided = (base_url or "").strip()
     if provided:
         return _require_http(provided)
-    if row and row["base_url"]:
-        return row["base_url"]
     if entry.base_mode == catalog.BASE_REQUIRED:
         raise StoreValidationError(f"{entry.label} needs a base URL.")
     if entry.base_mode == catalog.BASE_DEFAULT:
@@ -187,103 +213,81 @@ def _resolve_base(entry: catalog.Provider, base_url: Optional[str], row) -> str:
 
 
 def unset_provider(provider_id: str) -> None:
-    entry = catalog.get(provider_id)
-    if entry is None:
-        raise StoreValidationError("Unknown provider.")
-    if db.get_provider_row(provider_id) is None:
+    entry = _entry(provider_id)
+    group = api.rows_for_type(api.fetch_rows(), api.TYPE_FOR_ID[entry.id])
+    if not group:
         raise StoreValidationError(f"{entry.label} is not configured.")
-    db.delete_provider(provider_id)
+    for row in group:
+        api.delete(row["llm_provider_id"])
+    api.fetch_rows()
+    known_secrets.forget_provider(provider_id)
     log_event("llm.provider.unset", provider_id)
     add_activity("SYS", f"LLM provider removed: {entry.label}")
 
 
 def test_provider(provider_id: str, model: Optional[str] = None) -> ProviderView:
-    """Run the reachability test and save the result."""
-    entry = catalog.get(provider_id)
-    if entry is None:
-        raise StoreValidationError("Unknown provider.")
-    row = db.get_provider_row(provider_id)
-    if row is None:
+    """Run the API's reachability test for one of the provider's models and show the result."""
+    entry = _entry(provider_id)
+    group = api.rows_for_type(api.fetch_rows(), api.TYPE_FOR_ID[entry.id])
+    if not group:
         raise StoreValidationError(f"{entry.label} is not configured.")
-    configured_models = json.loads(row["models_json"])
-    model = (model or (configured_models[0] if configured_models else "")).strip()
-    key = crypto.decrypt(row["api_key_enc"]) if row["api_key_enc"] else None
-    reachable, detail = client.ping(
-        provider_id, model, api_key=key, api_base=row["base_url"] or None)
-    status = "REACHABLE" if reachable else "UNREACHABLE"
-    db.upsert_provider(provider_id, {
-        "status": status, "status_detail": detail, "tested_at": _now()}, _now())
+    model = (model or "").strip()
+    row = next((r for r in group if r["model_name"] == model), group[0])
+    result = api.test(row["llm_provider_id"])
+    status = "REACHABLE" if result.get("ok") else "UNREACHABLE"
     log_event("llm.provider.tested", f"{provider_id}:{status}")
-    add_activity("SYS", f"LLM provider {entry.label}: {status.lower()} ({detail})")
+    add_activity("SYS", f"LLM provider {entry.label}: {status.lower()}")
     return get_provider(provider_id)
 
 
 def activate(provider_id: str, model: str) -> ActiveModel:
-    """Make (provider, model) the active choice. Refuses unless REACHABLE."""
-    entry = catalog.get(provider_id)
-    if entry is None:
-        raise StoreValidationError("Unknown provider.")
-    row = db.get_provider_row(provider_id)
-    if row is None:
-        raise StoreValidationError(f"{entry.label} is not configured.")
-    if row["status"] != "REACHABLE":
-        raise StoreValidationError("Test the connection first — the provider is not reachable.")
+    """Make (provider, model) the active choice through the API. A model on this computer is
+    active at once; a model off this computer is left waiting for your OK (`core_api_needs_ok`)."""
+    entry = _entry(provider_id)
+    rows = api.fetch_rows()
+    group = api.rows_for_type(rows, api.TYPE_FOR_ID[entry.id])
     model = (model or "").strip()
-    if model not in json.loads(row["models_json"]):
+    row = next((r for r in group if r["model_name"] == model), None)
+    if row is None:
         raise StoreValidationError(f"{model or 'That model'} is not configured for {entry.label}.")
+    if entry.id != "reconix" and not row.get("is_active"):
+        if api.group_status(group)[0] != "REACHABLE":
+            raise StoreValidationError("Test the connection first — the provider is not reachable.")
 
-    previous = db.get_active()
-    uid = uid_for(_current_assessment())
-    now = _now()
-    db.set_active(provider_id, model, now)
-    db.add_switch(uid,
-                  previous["provider_id"] if previous else None,
-                  previous["model"] if previous else None,
-                  provider_id, model, now)
-    add_chat("text", "reconix", f"Switched to {entry.label} · {model}", tone="muted")
-    add_activity("SYS", f"LLM model active: {entry.label} · {model}")
-    log_event("llm.model.activated", f"{provider_id}/{model}")
-    return ActiveModel(provider_id, model, entry.label, now)
+    api.clear_pending()
+    try:
+        answer = api.activate(row["llm_provider_id"])
+    except CoreApiError as exc:
+        if exc.code != "APPROVAL_PENDING":
+            raise StoreValidationError(str(exc)) from None
+        api.set_pending(exc.details.get("approval_id", ""), provider_id, model)
+        return ActiveModel(provider_id, model, entry.label)
+    approval = answer.get("approval")
+    if approval:
+        api.set_pending(approval["approval_id"], provider_id, model)
+    else:
+        api.fetch_rows()
+        add_chat("text", "reconix", f"Switched to {entry.label} · {model}", tone="muted")
+        add_activity("SYS", f"LLM model active: {entry.label} · {model}")
+        log_event("llm.model.activated", f"{provider_id}/{model}")
+    return ActiveModel(provider_id, model, entry.label)
 
 
 def active_llm_settings() -> Optional[dict]:
-    """LiteLLM params for the active provider/model, for the harness agent bridge.
-
-    Returns ``{model, base_url, api_key, timeout}`` (model is the LiteLLM string, e.g.
-    ``ollama_chat/llama3.1``) or ``None`` when nothing is active. The plaintext key is
-    decrypted here and handed straight to the agent's client; it is never stored.
-    """
-    from ..llm import catalog, config, crypto
-
-    active = db.get_active()
-    if active is None:
-        return None
-    entry = catalog.get(active["provider_id"])
-    row = db.get_provider_row(active["provider_id"])
-    if entry is None or row is None:
-        return None
-    key = crypto.decrypt(row["api_key_enc"]) if row["api_key_enc"] else ""
-    return {
-        "model": entry.model_string(active["model"]),
-        # Providers that use a custom endpoint pass it; frontier providers resolve
-        # on their own (empty base → LiteLLM uses the provider's default).
-        "base_url": (row["base_url"] or "") if entry.uses_api_base else "",
-        "api_key": key,
-        "timeout": config.TIMEOUT,
-    }
+    """Kept for callers being removed: the Core API uses its own active provider now."""
+    return None
 
 
 def active_model() -> Optional[ActiveModel]:
-    active = db.get_active()
+    """The provider/model active on the API (from the cached rows, no call)."""
+    active = api.active_row(api.cached_rows())
     if active is None:
         return None
-    entry = catalog.get(active["provider_id"])
-    if entry is None:
-        # A provider Reconix no longer has (the removed offline mock): no model of your own,
-        # so the Core API uses its own (RECONIX_MODEL_* in .env).
+    provider_id = api.ID_FOR_TYPE.get(active["provider_type"])
+    if provider_id is None:
         return None
-    return ActiveModel(active["provider_id"], active["model"], entry.label,
-                       active["activated_at"] or "")
+    entry = catalog.get(provider_id)
+    return ActiveModel(provider_id, active["model_name"], entry.label if entry else provider_id)
 
 
 def is_local_url(url: str) -> bool:
@@ -301,41 +305,36 @@ def is_local_url(url: str) -> bool:
 
 
 def active_remote_label() -> Optional[str]:
-    """The active provider's label when the active model runs off this computer (a provider's
-    own API, or an endpoint that isn't loopback), else None (a local model, or none active).
-
-    What the operator is told before reference text goes out with their questions.
-    """
-    active = db.get_active()
+    """The active provider's label when the active model runs off this computer, else None.
+    What the operator is told before reference text goes out with their questions."""
+    active = api.active_row(api.cached_rows())
     if active is None:
         return None
-    row = db.get_provider_row(active["provider_id"])
-    base = (row["base_url"] if row else "") or ""   # empty: the provider's own (remote) API
+    if active.get("is_local"):
+        return None
+    base = active.get("base_url") or ""
     if base and is_local_url(base):
         return None
-    entry = catalog.get(active["provider_id"])
-    return entry.label if entry else active["provider_id"]
+    provider_id = api.ID_FOR_TYPE.get(active["provider_type"], active["provider_type"])
+    entry = catalog.get(provider_id)
+    return entry.label if entry else provider_id
 
 
 def core_api_needs_ok() -> bool:
-    """Core API mode is on and the active model runs off this computer, so the Core API may
-    use it only after you say yes (asked in /provider when you choose the model)."""
-    from .. import core_api
-
-    return core_api.enabled() and active_remote_label() is not None
+    """A model off this computer was chosen and is waiting for your OK to become active."""
+    return bool(api.pending())
 
 
 def core_api_approve() -> None:
-    """You said yes in /provider: the Core API may send its prompts to the active model.
-
-    Blocks on the network (a worker runs it). Raises LLMError (a CoreApiError)."""
-    from .. import core_api
-
-    for note in core_api.approve_active_model():
-        add_activity("AI", note, tone="ok")
+    """You said yes: approve the waiting activation so the Core API uses that model.
+    Blocks on the network (a worker runs it). Raises a CoreApiError."""
+    pending = api.pending()
+    if not pending:
+        return
+    api.approve(pending["approval_id"])
+    api.clear_pending()
+    api.fetch_rows()
+    entry = catalog.get(pending["app_id"])
+    label = entry.label if entry else pending["app_id"]
+    add_activity("AI", f"Core API model active: {label} · {pending['model']}", tone="ok")
     log_event("core_api.provider.approved")
-
-
-def _current_assessment():
-    from .assessment import get_assessment
-    return get_assessment()
