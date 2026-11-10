@@ -6,12 +6,20 @@ reads the assessments the TUI saves to `~/.reconix/assessments/` and shows them 
 Findings, Run log (one run's messages, its work folded into thinking blocks), Reports, AI Assistant and Security knowledge views, all
 switched in-page (`?view=`; each view's
 own address keys and every run link live in `components/dashboard/view-url.ts`). By default the
-Overview totals **every saved run** (`derive-overall.ts`) and Findings lists them all, each
-naming its run; the Assessment switcher in the top bar opens one run instead (`?uid=`) and
+Overview totals **every saved run** (`derive-overall.ts`); the Assessment switcher in the top bar opens one run instead (`?uid=`) and
 searches every saved run. With every run shown, Reports lists every run and combines them. The
 page re-reads the files every 10 s (`RECONIX_LIVE_REFRESH_MS`; `0` turns it off). (The Scope
 view was removed: an old `?view=scope` opens the Overview; the scope stays in the saved files,
 the reports and the TUI.)
+
+**Findings come from the local Core API**, not the saved files (`components/dashboard/api-findings.tsx`,
+`lib/api/`). The view lists every Core API assessment's findings, each naming its assessment, or
+one assessment's, chosen in its own picker (`?view=findings&assessment=<uuid>`). The server opens
+a `web` session (`POST /api/v1/sessions`) and keeps the token in its memory; the browser never
+sees it. When the API is down or refuses, the view shows what it said and nothing else (no
+fallback to the files). A saved run has no Core API id, so a link from its Overview (`?uid=`)
+opens every Core API assessment with a note saying so. The view is streamed (`<Suspense>`), so
+the other views never wait on the API.
 
 - **Overview:** a summary strip (Findings with the worst severity, Assessment progress with its
   state, Tool execution, Duration with a meter against the time limit) over the globe hero with
@@ -88,6 +96,7 @@ npm start -- --no-open             # don't open a browser
 | `RECONIX_STALE_AFTER_HOURS` | `12` | an unfinished run whose file has not changed for this long reads as Interrupted (its TUI was killed before it could say so); `0` turns this off, e.g. for the old sample data |
 | `RECONIX_LIVE_REFRESH_MS` | `10000` | how often the page re-reads the saved files; `0` turns the live refresh off (the e2e server does) |
 | `RECONIX_CHROME` | the usual names on PATH, then the common install paths | the Chrome/Chromium that prints the PDF exports; without one the PDF routes answer 501 |
+| `RECONIX_CORE_API` | `http://127.0.0.1:8000` | the Core API the Findings view reads (the TUI's setting); only a loopback address is accepted |
 | `RECONIX_WEB_PORT` | `3100` | port on 127.0.0.1 |
 | `RECONIX_PYTHON` | repo `.venv`, else `python3` (`python` on Windows) | the Python that runs the knowledge CLI |
 | `RECONIX_KNOWLEDGE_DIR` | `~/.reconix/knowledge` | the knowledge folder (the TUI's `/add-on` and the Security knowledge page) |
@@ -294,7 +303,10 @@ expected failures that fail with "remove this entry" once fixed. The specs wait 
 at least a dozen runs across the four templates through the real TUI store (every severity,
 runs with no findings, a run stopped before its scope was approved, one still running, one
 with more than a page of findings), so it always matches the saved format; the specs read their
-counts from it (`e2e/support.ts`), never from literals.
+counts from it (`e2e/support.ts`), never from literals. The Findings view reads a stand-in Core
+API (`e2e/core-api-stub.mjs`, on the dashboard's port − 6) that serves the same sample runs in the
+API's shapes; `e2e/core-api-ids.mjs` gives each run the fixed id the specs open
+(`?assessment=<id>`). Unit tests use the fake in `tests/fakes/core-api.ts`.
 
 ## Layout
 
@@ -354,7 +366,8 @@ src/
 │   │                        #   event-kinds.ts, legend.tsx, hint.tsx, chart-tooltip.tsx, mark-details.tsx;
 │   │                        #   view-url.ts (?view=, each view's keys, run links), live-refresh.tsx,
 │   │                        #   intro.tsx (GSAP, by data-motion); the Assessments view (assessments-*.ts(x)),
-│   │                        #   Findings (findings-view/-list.tsx, finding-detail.tsx, filters.ts, filter-bar.tsx),
+│   │                        #   Findings (api-findings.tsx, api-assessment-picker.tsx, findings-view/-list.tsx,
+│   │                        #   finding-detail.tsx, filters.ts, filter-bar.tsx),
 │   │                        #   Reports (reports-view.tsx, report-selection/-runs/-preview/-downloads/-file.tsx,
 │   │                        #   use-file-download.ts: fetch then save, with a status line; derive-report.ts),
 │   │                        #   run-cells.tsx (the one run row of Assessments and Reports), view-header.tsx,
@@ -417,7 +430,9 @@ once, with each run as an occurrence; what a run lacks is listed under Limitatio
   data leaves the machine, and only to the model you chose (the model picker's test and
   fetch send no assessment data). The PDF exports (single and combined) start a headless Chrome on a
   temp file the server wrote (`lib/report/pdf.ts`), never on anything the request said.
-- **One data source.** Pages read through `lib/data/store.ts` only; it accepts regular files
+- **One data source each.** The Findings view reads the Core API through `lib/api/` only
+  (server-only: `client.ts` with the session, `findings.ts` checking each answer, `adapt.ts`).
+  The other pages read through `lib/data/store.ts` only; it accepts regular files
   named `<YYYYMMDD-HHMMSS-xxxx>_<id>.json` up to 5 MB that pass `AssessmentSchema`.
   Change `schema.ts` together with `reconix/store/snapshot.py`.
 - **Access.** No roles: one local user. Every page and route but the sign-in page and route

@@ -3,7 +3,8 @@
    never with colour alone (components/ui/status-badge.tsx draws them). Colours are token names
    from reconix/theme.py (WEB_TOKENS); severity uses the TUI's own scale. Pure data: server and
    client components both import it. */
-import type { Severity, Status } from "./data/schema";
+import type { Status } from "./data/schema";
+import type { FindingSeverity } from "./data/view-types";
 
 /** A meaning's colour: teal = AI activity / progress, green = done, amber = waiting or to
     review, red = errors and blocked, slate = informational or neutral. */
@@ -88,11 +89,13 @@ export const FINDING_REVIEW: Record<"confirmed" | "review" | "closed", Meaning> 
 
 /** Severity, on the TUI's four-level scale (theme.SEVERITY): its own colours, always with its
     name. There is no Info level: an older file's informational findings are never shown. */
-export const SEVERITY_META: Record<Severity, { label: string; color: string; hint: string }> = {
+export const SEVERITY_META: Record<FindingSeverity, { label: string; color: string; hint: string }> = {
   CRITICAL: { label: "Critical", color: "var(--sev-critical)", hint: "Fix first: severe impact, easy to exploit." },
   HIGH: { label: "High", color: "var(--sev-high)", hint: "Serious: fix soon." },
   MEDIUM: { label: "Medium", color: "var(--sev-medium)", hint: "Worth fixing; limited impact or harder to exploit." },
   LOW: { label: "Low", color: "var(--sev-low)", hint: "Minor." },
+  UNKNOWN: { label: "Unknown", color: "var(--muted-foreground)", hint: "The tool gave no severity; review it." },
+  NONE: { label: "None", color: "var(--muted-foreground)", hint: "Informational: no direct impact." },
 };
 
 /** An approval's risk, as the TUI colours it (LOW green, MEDIUM amber, HIGH red). */
