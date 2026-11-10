@@ -276,7 +276,7 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start }: Pro
           <div className="ai-connect" data-state={testing ? "testing" : tested ? "ok" : ready ? "ready" : "idle"} role="status">
             {testing ? (
               <Loader className="ai-connect-icon animate-spin" aria-hidden />
-            ) : tested || ready ? (
+            ) : tested ? (
               <CircleCheck className="ai-connect-icon" aria-hidden />
             ) : (
               <PlugZap className="ai-connect-icon" aria-hidden />
@@ -287,7 +287,7 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start }: Pro
                 : tested
                   ? tested
                   : ready
-                    ? `${providerName} is saved: choose a model and add it, or test it again.`
+                    ? `${providerName} is saved but not tested here yet: Test again checks that it answers.`
                     : "Test the connection first: it checks the provider and finds its models. Nothing is used until you add one."}
             </p>
           </div>

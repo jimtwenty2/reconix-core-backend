@@ -21,10 +21,12 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, Hourglass, Loader, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { IconButton } from "@/components/ui/icon-button";
+import { toast } from "@/components/ui/toast";
+import { ConfirmDialog } from "./confirm-dialog";
 import { type Preset, type PresetId, PRESET_IDS, PRESETS, presetOf } from "@/lib/assistant/models/presets";
 import { NEEDS_APPROVAL, type ProviderView } from "@/lib/assistant/models/view";
 import { rememberedTab, rememberTab } from "./model-tab";
-import { type ModelRow, modelRows, presetFor, removeQuestion, removeRequest, savedName } from "./model-picker-rules";
+import { type ModelRow, modelRows, presetFor, removeRequest, savedName } from "./model-picker-rules";
 import { kindLabel, ProviderAvatar, shortLabel } from "./provider-look";
 import { choiceKey, type Models } from "./use-models";
 import { useRoving } from "./use-roving";
@@ -168,14 +170,16 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
     setError(null);
     focusNext.current = `[data-remove="${providerId}"]`;
   };
+  /** Removes a provider (not the one in use: the API keeps the active one). */
   const remove = async (providerId: string) => {
     const request = view && removeRequest(view, { providerId });
     if (!request) return keep(providerId);
     setError(null);
+    const name = view.providers.find((p) => p.id === providerId);
     const problem = await models.remove(providerId, request);
     if (problem) return setError(problem);
-    setConfirm(null);
-    focusNext.current = '[data-focus="back"]';
+    if (name) toast(`${savedName(name)} removed.`);
+    go("providers", page ? `[data-rove="prov:${page.id}"]` : FIRST);
   };
 
   if (!view) {
@@ -409,70 +413,62 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
           </div>
         )}
         {page &&
-          saved.map((p) => {
-            const q = removeQuestion(view, {
-              providerId: p.id,
-              provider: savedName(p),
-            });
-            return confirm === p.id ? (
-              <div
-                key={p.id}
-                role="group"
-                aria-label={q.title}
-                className="ai-menu-confirm mb-1"
-                onKeyDown={(e) => {
-                  if (e.key !== "Escape") return;
-                  e.preventDefault(); // keeps it; the picker stays open
-                  e.stopPropagation();
-                  keep(p.id);
-                }}
-              >
-                <p className="text-foreground">
-                  Remove <span className="font-medium">{savedName(p)}</span>? {q.detail}
-                </p>
-                {error && (
-                  <p className="ai-error-text mt-1" role="alert">
-                    {error}
-                  </p>
-                )}
-                {/* No on the right, under the bin: a double-click on the bin keeps it */}
-                <div className="mt-2 flex justify-end gap-1.5">
-                  <button type="button" onClick={() => void remove(p.id)} disabled={models.pending !== null} className="ai-btn ai-btn-small ai-btn-danger-solid">
-                    {models.pending === `remove:${p.id}` && <Loader className="size-3.5 animate-spin" aria-hidden />}
+          saved.map((p) => (
+            <div key={p.id} className="ai-picker-provider">
+              <span className="ai-picker-meta">
+                {savedName(p)} · {p.local ? "on this computer" : "off this computer"}
+                {p.keySaved ? " · key saved" : ""}
+              </span>
+              {page.kind !== "reconix" && (
+                <span className="flex items-center gap-1">
+                  <button type="button" onClick={() => onAdd(page.id)} className="ai-btn ai-btn-small ai-btn-outline ai-page-action">
+                    <Pencil className="size-3" aria-hidden />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    data-remove={p.id}
+                    onClick={() => {
+                      setError(null);
+                      setConfirm(p.id);
+                    }}
+                    className="ai-btn ai-btn-small ai-btn-outline ai-page-action ai-page-action-danger"
+                  >
+                    <Trash2 className="size-3" aria-hidden />
                     Remove
                   </button>
-                  <button type="button" autoFocus onClick={() => keep(p.id)} className="ai-btn ai-btn-small ai-btn-outline">
-                    No
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div key={p.id} className="ai-picker-provider">
-                <span className="ai-picker-meta">
-                  {savedName(p)} · {p.local ? "on this computer" : "off this computer"}
-                  {p.keySaved ? " · key saved" : ""}
                 </span>
-                {page.kind !== "reconix" && (
-                  <span className="flex items-center">
-                    <IconButton label={`Update ${savedName(p)}`} onClick={() => onAdd(page.id)} className="size-7 [&_svg]:size-3.5">
-                      <Pencil aria-hidden />
-                    </IconButton>
-                    <IconButton
-                      label={`Remove ${savedName(p)}`}
-                      data-remove={p.id}
-                      onClick={() => {
-                        setError(null);
-                        setConfirm(p.id);
-                      }}
-                      className="size-7 hover:text-danger [&_svg]:size-3.5"
-                    >
-                      <Trash2 aria-hidden />
-                    </IconButton>
-                  </span>
-                )}
-              </div>
-            );
-          })}
+              )}
+              {confirm === p.id &&
+                (view.active?.providerId === p.id ? (
+                  // in use: the API keeps the active provider, so say what to do instead
+                  <ConfirmDialog
+                    tone="info"
+                    title={`${savedName(p)} is in use`}
+                    cancelLabel="OK"
+                    confirmLabel="Choose another model"
+                    onCancel={() => keep(p.id)}
+                    onConfirm={() => go("models", SEARCH)}
+                  >
+                    It answers your questions now. Choose another model first, then you can remove it.
+                  </ConfirmDialog>
+                ) : (
+                  <ConfirmDialog
+                    tone="danger"
+                    title={`Remove ${savedName(p)}?`}
+                    cancelLabel="Cancel"
+                    confirmLabel="Remove"
+                    busy={models.pending === `remove:${p.id}`}
+                    error={error}
+                    onCancel={() => keep(p.id)}
+                    onConfirm={() => void remove(p.id)}
+                  >
+                    Its {p.models.length === 1 ? "model" : `${p.models.length} models`}
+                    {p.keySaved ? " and saved API key" : ""} {p.models.length === 1 && !p.keySaved ? "goes" : "go"} with it. You can set it up again later.
+                  </ConfirmDialog>
+                ))}
+            </div>
+          ))}
         {page && list.length > 0 && modelList(list, "")}
 
         {error && confirm === null && (

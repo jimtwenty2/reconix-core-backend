@@ -146,6 +146,8 @@
   .ai-picker-setup { animation: ai-rise 0.25s ease-out; }
   .ai-picker-waiting { animation: ai-slide-down 0.22s ease-out; }
   .ai-picker-page-head { animation: ai-slide-down 0.2s ease-out; }
+  .ai-dialog[open] { animation: ai-pop 0.18s ease-out; }
+  .ai-dialog[open]::backdrop { animation: ai-fade 0.18s ease-out; }
   .ai-connect[data-state="ok"] .ai-connect-icon { animation: ai-check-pop 0.32s cubic-bezier(0.3, 1.5, 0.5, 1); }
   .ai-connect { animation: ai-rise 0.2s ease-out; }
   .ai-tile:active { transform: scale(0.96); }
@@ -156,6 +158,7 @@
   .ai-picker-add svg { transition: transform 0.2s ease; }
   .ai-picker-add:hover svg { transform: rotate(90deg); }
 }
+@keyframes ai-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes ai-row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes ai-check-pop { 0% { opacity: 0; transform: scale(0.3) rotate(-20deg); } 100% { opacity: 1; transform: none; } }
 @keyframes ai-breathe { 0%, 100% { background-color: color-mix(in oklab, var(--primary) 6%, transparent); } 50% { background-color: color-mix(in oklab, var(--primary) 16%, transparent); } }
@@ -449,12 +452,27 @@
 .ai-picker-model[data-first="true"] { background: color-mix(in oklab, var(--primary) 9%, transparent); }
 .ai-picker-kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; border: 1px solid var(--border); border-bottom-width: 2px; font-family: var(--font-mono); font-size: 10px; line-height: 1; color: var(--muted-foreground); background: color-mix(in oklab, var(--foreground) 4%, transparent); }
 .ai-picker-foot-list { justify-content: space-between; }
+/* the confirm dialog (confirm-dialog.tsx): centred in the top layer, the page dimmed behind it */
+.ai-dialog { width: min(360px, calc(100vw - 32px)); margin: auto; padding: 0; border-radius: 16px; border: 1px solid var(--border); color: var(--foreground); background: var(--card); box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.6); }
+.ai-dialog::backdrop { background: rgb(0 0 0 / 0.55); backdrop-filter: blur(2px); }
+.ai-dialog-body { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px 20px 16px; text-align: center; }
+.ai-dialog-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: 999px; color: var(--danger); background: color-mix(in oklab, var(--danger) 14%, transparent); }
+.ai-dialog[data-tone="info"] .ai-dialog-icon { color: var(--warning); background: color-mix(in oklab, var(--warning) 14%, transparent); }
+.ai-dialog-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.ai-dialog-text { font-size: 12.5px; line-height: 1.5; color: var(--muted-foreground); }
+.ai-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 20px 20px; }
+.ai-dialog-actions > .ai-btn { height: 36px; justify-content: center; font-weight: 500; }
+.ai-dialog-danger { color: #fff; background: color-mix(in oklab, var(--danger) 82%, #000); }
+.ai-dialog-danger:hover:not(:disabled) { color: #fff; background: var(--danger); }
+/* a provider's page: labelled Edit and Remove */
+.ai-page-action { height: 26px; padding: 0 8px; gap: 5px; font-size: 11.5px; }
+.ai-page-action-danger:hover:not(:disabled) { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--border)); background: color-mix(in oklab, var(--danger) 8%, transparent); }
 /* Set the provider: where the connection stands, and the footer's main step */
 .ai-connect { display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); font-size: 12px; line-height: 1.45; color: var(--muted-foreground); background: color-mix(in oklab, var(--foreground) 3%, transparent); transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease; }
 .ai-connect-icon { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--primary); }
 .ai-connect[data-state="testing"] { border-color: color-mix(in oklab, var(--primary) 35%, var(--border)); background: color-mix(in oklab, var(--primary) 6%, transparent); color: var(--foreground); }
-.ai-connect[data-state="ok"], .ai-connect[data-state="ready"] { border-color: color-mix(in oklab, var(--success) 35%, var(--border)); background: color-mix(in oklab, var(--success) 7%, transparent); color: var(--foreground); }
-.ai-connect[data-state="ok"] .ai-connect-icon, .ai-connect[data-state="ready"] .ai-connect-icon { color: var(--success); }
+.ai-connect[data-state="ok"] { border-color: color-mix(in oklab, var(--success) 35%, var(--border)); background: color-mix(in oklab, var(--success) 7%, transparent); color: var(--foreground); }
+.ai-connect[data-state="ok"] .ai-connect-icon { color: var(--success); }
 .ai-btn-go { min-width: 132px; justify-content: center; font-weight: 500; }
 /* Models | Providers: a segmented switch on top of the list */
 .ai-picker-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 10px 12px 2px; padding: 3px; border-radius: 10px; background: color-mix(in oklab, var(--foreground) 6%, transparent); }

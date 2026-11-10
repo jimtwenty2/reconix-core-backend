@@ -242,6 +242,8 @@ export async function updateProvider(id: string, body: UpdateProvider): Promise<
 /** Removes a provider: every row it has. */
 export async function removeProvider(id: string): Promise<ModelsView> {
   const group = await groupOf(id);
+  // the API keeps the active row: refuse first, so nothing of the provider is half removed
+  if (group.some((r) => r.is_active)) throw new CoreError(409, "PROVIDER_ACTIVE", "This provider answers your questions now: choose another model first, then remove it.");
   await eachRow(group, (row) => asMain((token) => coreJson(`/llm-providers/${row.llm_provider_id}`, { method: "DELETE", token })));
   return modelsView();
 }
