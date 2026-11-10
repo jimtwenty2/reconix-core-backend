@@ -50,7 +50,7 @@ async def test_template_runs_through_the_ui_to_an_exported_report(
 
 async def test_a_source_repo_url_shows_the_apis_clone_error(app, fake_api):
     async with app.run_test(size=SIZE) as pilot:
-        await run_ui_to(app, pilot, "scope", request="Review https://git.example.com/acme/app.git")
+        await run_ui_to(app, pilot, "scope", request="Review https://github.com/acme/app")
         assert store.get_assessment().template_id == "source"
         await pass_gate(app, pilot)  # Approve the scope
         await wait_for_run(pilot)

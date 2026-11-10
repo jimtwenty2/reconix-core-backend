@@ -13,8 +13,8 @@ SCOPE_PROMPT = (
 )
 SUGGEST_CATEGORIES = ["source"]
 SPEC = Template("source", "Source Code", "Static review of a repository",
-                target_hint="a git repo URL or a local path",
-                example="https://git.example.com/acme/app.git")
+                target_hint="a GitHub repo URL or a local path",
+                example="https://github.com/acme/app")
 
 TOOLS = ["Semgrep", "gitleaks", "trivy"]
 # the scope tools each phase uses (the plan shows those still in the approved scope)

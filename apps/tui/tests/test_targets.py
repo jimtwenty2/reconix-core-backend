@@ -18,9 +18,8 @@ from .support import event_kinds, play_until_gate
     ("web_url", "shop.example.com", "shop.example.com"),
     ("web_url", "192.0.2.10", "192.0.2.10"),
     ("api", "https://api.example.com/v1", "api.example.com"),
-    ("source", "https://github.com/acme/app", "github.com/acme/app"),
-    ("source", "git@github.com:acme/app.git", "git@github.com:acme/app.git"),
-    ("source", "https://git.example.com/acme/app.git", "https://git.example.com/acme/app.git"),
+    ("source", "https://github.com/acme/app", "https://github.com/acme/app"),
+    ("source", "git@github.com:acme/app.git", "https://github.com/acme/app"),
     ("source", "review /home/me/project", "/home/me/project"),
     ("source", "./app", "./app"),
     ("source", "~/code/app/", "~/code/app"),
@@ -43,6 +42,7 @@ def test_valid_targets_are_accepted(template_id, text, target):
     ("api", "the usual one", "API needs"),
     ("source", "https://shop.example.com", "Source Code needs"),  # a site, not a repo
     ("source", "github.com/acme", "isn't a repository"),
+    ("source", "https://git.example.com/acme/app.git", "Only GitHub repos"),
     ("source", "review my code", "Source Code needs"),
     ("source", "   ", "Source Code needs"),
 ])
@@ -58,7 +58,7 @@ def test_unknown_templates_are_refused():
 
 def test_credentials_in_a_url_are_never_kept():
     web = store.check_target("web_url", "https://admin:Hunter2pw@shop.example.com/")
-    repo = store.check_target("source", "https://bot:ghp_tok3n@git.example.com/acme/app.git")
+    repo = store.check_target("source", "https://bot:ghp_tok3n@github.com/acme/app.git")
     assert "Hunter2pw" not in web.target_url and "admin" not in web.target_url
     assert "ghp_tok3n" not in repo.target and "bot" not in repo.target
 

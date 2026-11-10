@@ -136,31 +136,50 @@ def url_target(url: str, kind: str) -> ParsedTarget:
     return ParsedTarget(kind, host, base, label, kind, confident=True)
 
 
-def _repo_url(url: str, min_segments: int) -> Optional[str]:
-    """A repository URL without credentials, query or fragment; None if it isn't one."""
-    parts = _split(_clean(url))
-    if parts is None or not parts.hostname:
-        return None
-    segments = [s for s in parts.path.split("/") if s]
-    if len(segments) < min_segments and not parts.path.endswith(".git"):
-        return None
-    try:
-        port = f":{parts.port}" if parts.port else ""
-    except ValueError:
-        return None
-    return f"{parts.scheme.lower()}://{parts.hostname}{port}/{'/'.join(segments)}"
+GITHUB_ONLY = "Only GitHub repos are supported (https://github.com/<owner>/<repo>)."
+_REPO_PART = re.compile(r"[\w.-]+")  # the backend's GITHUB_URL takes only these characters
 
 
-def _git_ref(ref: str) -> str:
-    """owner/repo on a known git host, or git@host:path; raises when the repo is missing."""
-    ref = _clean(ref).rstrip("/")
+def _is_repo_ref(ref: str) -> bool:
+    """True when `ref` names a git repository (any host), so a non-GitHub one is refused
+    clearly instead of being read as a web site. An ordinary https site is not a repo."""
+    lower = ref.lower()
+    if lower.startswith(("git@", "ssh://", "git://")):
+        return True
+    if lower.startswith(("http://", "https://")):
+        parts = _split(_clean(ref))
+        if parts is None:
+            return False
+        host = (parts.hostname or "").removeprefix("www.")
+        return host in _GIT_HOSTS or parts.path.rstrip("/").endswith(".git")
+    return lower.removeprefix("www.").startswith(_GIT_HOSTS)
+
+
+def github_repo(ref: str) -> str:
+    """`ref` as the one form the backend clones: https://github.com/<owner>/<repo>.
+
+    Takes http(s)://, www., no scheme, git@github.com:o/r(.git), ssh:// and git:// forms;
+    drops credentials, a port, /tree/… or any path past owner/repo, ?query, #fragment, a
+    trailing / and .git. Any other host raises GITHUB_ONLY (GitHub-only is the backend's
+    rule); a GitHub ref without owner/repo raises "isn't a repository".
+    """
+    ref = _clean(ref.strip())
     if ref.lower().startswith("git@"):
-        _, _, path = ref.partition(":")
-        if path.strip("/"):
-            return ref
-    elif len([s for s in ref.split("/") if s]) >= 3:  # host/owner/repo
-        return ref
-    raise StoreValidationError(f"{ref} isn't a repository — e.g. github.com/acme/app")
+        host, _, path = ref[4:].partition(":")
+    else:
+        parts = _split(ref if "://" in ref else f"https://{ref}")
+        if parts is None or parts.scheme.lower() not in ("http", "https", "ssh", "git"):
+            raise StoreValidationError(GITHUB_ONLY)
+        host, path = parts.hostname or "", parts.path
+    if host.lower().removeprefix("www.") != "github.com":
+        raise StoreValidationError(GITHUB_ONLY)
+    owner, repo = ([s for s in path.split("/") if s] + ["", ""])[:2]
+    repo = repo.removesuffix(".git")
+    if not all(_REPO_PART.fullmatch(p) and p.strip(".") for p in (owner, repo)):
+        raise StoreValidationError(
+            f"{redact(ref)} isn't a repository — e.g. https://github.com/acme/app"
+        )
+    return f"https://github.com/{owner}/{repo}"
 
 
 # --- one finder per template ----------------------------------------------------------------
@@ -231,14 +250,11 @@ def api_target(text: str) -> Optional[ParsedTarget]:
 
 
 def source_target(text: str) -> Optional[ParsedTarget]:
-    ref = GIT_REF.search(text)
-    if ref:
-        return _source(_git_ref(ref.group(0)))
-    for pattern, min_segments in ((GIT_URL, 1), (URL, 2)):  # https needs owner/repo or .git
+    # URL first: GIT_REF also matches inside https://github.com/…, without its scheme.
+    for pattern in (URL, GIT_URL, GIT_REF):
         found = pattern.search(text)
-        repo = _repo_url(found.group(0), min_segments) if found else None
-        if repo:
-            return _source(repo)
+        if found and _is_repo_ref(found.group(0)):
+            return _source(github_repo(found.group(0)))
     path = LOCAL_PATH.search(text)
     if path:
         return _source(_clean(path.group(1)).rstrip("/") or "/")
@@ -306,12 +322,13 @@ TARGET_KINDS = ("URL", "IPV4", "IPV4_RANGE", "GIT_REPO", "LOCAL_PATH", "INVALID"
 MAX_RANGE_ADDRESSES = 2 ** (32 - WIDEST_RANGE)  # 65,536 addresses: a /16
 SUPPORTED_FORMATS = (
     "Supported: a URL (https://app.example.com), an IPv4 address (192.0.2.10), "
-    "a CIDR range (10.0.0.0/24), a git repo (git@github.com:acme/app.git) "
+    "a CIDR range (10.0.0.0/24), a GitHub repo (https://github.com/acme/app) "
     "or a folder (~/code/app)."
 )
 
 _SCHEME = re.compile(r"^([a-z][a-z0-9+.-]*):", re.IGNORECASE)
 _NO_SLASH_SCHEMES = ("javascript", "file", "data", "mailto", "vbscript", "about")
+# Recognized as repo hosts only so a non-GitHub repo is refused with GITHUB_ONLY.
 _GIT_HOSTS = ("github.com", "gitlab.com", "bitbucket.org")
 _IPV4_TOKEN = re.compile(r"\d+(?:\.\d+)+(?:/\d+)?")
 _DASH_RANGE = re.compile(r"(\d+(?:\.\d+){3})-(\d+(?:\.\d+){3}|\d+)")
@@ -381,31 +398,13 @@ def validate_target(text: str) -> TargetCheck:
 
 
 def _check_git(value: str) -> Optional[TargetCheck]:
-    """git@host:owner/repo, ssh:// or git:// URLs, and https URLs of a repository."""
-    lower = value.lower()
-    if lower.startswith("git@") or lower.startswith(_GIT_HOSTS):
-        try:
-            return TargetCheck("GIT_REPO", _git_ref(value))
-        except StoreValidationError as exc:
-            return _invalid(str(exc))
-    if lower.startswith(("ssh://", "git://")):
-        repo = _repo_url(value, 1)
-    elif lower.startswith(("http://", "https://")):
-        parts = _split(value)
-        if parts is None:
-            return None  # _check_url refuses it
-        on_git_host = (parts.hostname or "").lower() in _GIT_HOSTS
-        if not on_git_host and not parts.path.rstrip("/").endswith(".git"):
-            return None  # an ordinary web URL
-        repo = _repo_url(value, 2)
-    else:
-        return None
-    if repo is None:
-        return _invalid(
-            f"{_shown(value)} isn't a repository — e.g. "
-            "https://github.com/acme/app or git@github.com:acme/app.git"
-        )
-    return TargetCheck("GIT_REPO", repo)
+    """A repository ref, normalized to https://github.com/<owner>/<repo>; other hosts refused."""
+    if not _is_repo_ref(value):
+        return None  # an ordinary web URL, an address or a path
+    try:
+        return TargetCheck("GIT_REPO", github_repo(value))
+    except StoreValidationError as exc:
+        return _invalid(str(exc))
 
 
 def _check_url(value: str) -> Optional[TargetCheck]:
@@ -495,6 +494,8 @@ __all__ = [
     "web_target",
     "api_target",
     "source_target",
+    "github_repo",
+    "GITHUB_ONLY",
     "FINDERS",
     "needs",
     "check_target",
