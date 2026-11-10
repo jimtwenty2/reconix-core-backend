@@ -6,10 +6,15 @@ step's purpose fills. A severity the app has no colour for is kept, never droppe
 (an informational result, such as an open port) and UNKNOWN show as they are.
 """
 
+import json
 import shlex
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..models import ApprovalRequest, Finding
+
+# The AI's plain reading of the proof is kept as an evidence row of this kind (see the API's
+# analysis service); every other evidence row is the raw proof.
+SUMMARY_KIND = "analysis_summary"
 
 SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN")
 # finding_status (API) <-> the app's triage words.
@@ -71,29 +76,80 @@ def output_rows(text: str) -> List[tuple]:
     lines = [line.rstrip() for line in (text or "").splitlines() if line.strip()]
     rows = [("", line[:160]) for line in lines[:OUTPUT_LINES]]
     if len(lines) > OUTPUT_LINES:
-        rows.append(("", f"… {len(lines) - OUTPUT_LINES} more lines · Ctrl+O expands the log; "
-                         "the full output is on the finding"))
+        rows.append(
+            (
+                "",
+                f"… {len(lines) - OUTPUT_LINES} more lines · Ctrl+O expands the log; "
+                "the full output is on the finding",
+            )
+        )
     return rows
 
 
+def _label(key: str) -> str:
+    """A JSON proof key as a human label: "matched-at" -> "Matched at"."""
+    return str(key).replace("-", " ").replace("_", " ").strip().capitalize()
+
+
+def _value(value: Any) -> str:
+    """A JSON proof value as one plain string; a list joins, a dict reads as key-value pairs."""
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if str(item))
+    if isinstance(value, dict):
+        return "; ".join(f"{_label(key)}: {item}" for key, item in value.items())
+    return str(value)
+
+
+def humanize_evidence(content: str) -> List[str]:
+    """Turn one stored evidence blob into human lines. A JSON proof dict becomes
+    "Label: value" lines so a reader never sees a JSON blob; a list becomes its items;
+    plain text (a text reader's output) is shown as it is."""
+    try:
+        data = json.loads(content)
+    except (ValueError, TypeError):
+        return [content]
+    if isinstance(data, dict):
+        return [f"{_label(key)}: {_value(item)}" for key, item in data.items() if _value(item)]
+    if isinstance(data, list):
+        return [_value(item) for item in data if _value(item)]
+    return [content]
+
+
 def finding(row: dict, fid: str) -> Finding:
-    """A FindingOut as the app's Finding. The evidence is already masked by the API."""
+    """A FindingOut as the app's Finding. The evidence is already masked by the API; here the
+    raw JSON proof becomes plain lines, the AI's reading of it is pulled out of its own
+    evidence row, and the latest validation's plain reason is carried for the detail view."""
     references = [*row.get("cwe_ids", []), *row.get("owasp_id", []), *row.get("cve_ids", [])]
     tools = row.get("tools") or []
     cvss = row.get("cvss_score")
+    summary = ""
+    proof: List[str] = []
+    for item in row.get("evidence", []):
+        content = str(item.get("content") or "")
+        if not content:
+            continue
+        if str(item.get("kind") or "") == SUMMARY_KIND:
+            summary = content
+        else:
+            proof.extend(humanize_evidence(content))
+    validation = row.get("latest_validation") or {}
     return Finding(
         fid=fid,
         severity=severity(row.get("severity_status")),
         title=str(row.get("title", "")),
         path=str(row.get("target", "")),
         validation=str(row.get("validation_status") or "UNCONFIRMED").upper(),
+        confidence=str(row.get("confidence") or "TENTATIVE").upper(),
         description=str(row.get("description") or ""),
         affected_url=str(row.get("target", "")),
         impact=str(row.get("impact") or ""),
         remediation=str(row.get("remediation") or ""),
         tool=str(tools[0]).lower() if tools else "",
         references=[str(r) for r in references],
-        evidence=[str(e.get("content") or "") for e in row.get("evidence", []) if e.get("content")],
+        evidence=proof,
+        evidence_summary=summary,
+        validation_reason=str(validation.get("reason") or ""),
+        validation_method=str(validation.get("method") or ""),
         cvss_score=float(cvss) if cvss is not None else 0.0,
         category=str(row.get("code", "")),
         status=TRIAGE_FROM_API.get(str(row.get("finding_status") or "OPEN"), "open"),
@@ -105,8 +161,9 @@ def plan_step_for(steps: List[dict], action: dict, position: int) -> Optional[di
     1) when it is the same tool and target, else None (a step the agent chose later)."""
     if 0 < position <= len(steps):
         planned = steps[position - 1].get("action") or {}
-        if (str(planned.get("tool", "")).upper() == str(action.get("tool", "")).upper()
-                and planned.get("target") == action.get("target")):
+        if str(planned.get("tool", "")).upper() == str(
+            action.get("tool", "")
+        ).upper() and planned.get("target") == action.get("target"):
             return steps[position - 1]
     return None
 

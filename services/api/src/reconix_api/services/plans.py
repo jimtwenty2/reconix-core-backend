@@ -517,7 +517,7 @@ def recent_findings(db: Db, assessment_id: UUID) -> list[FindingInput]:
     from reconix_api.services.analysis import finding_input
 
     rows = finding_repo.list_by_assessment(db, assessment_id)
-    return [finding_input(row) for row in rows[:PLAN_FINDINGS]]
+    return [finding_input(db, row) for row in rows[:PLAN_FINDINGS]]
 
 
 def output_block(tool: str, target: str, run: ToolRun) -> str:

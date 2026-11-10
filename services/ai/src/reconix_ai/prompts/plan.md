@@ -64,6 +64,10 @@ Answer with this JSON object:
   flagged: name the exact parameter and URL in the reason, and only when the tool
   is allowed. sqlmap gates at HIGH (the operator types the target); never propose
   sqlmap on a URL with no parameter, as a first step, or to go looking on its own.
+  A blind weakness the scan cannot see in the response (blind SSRF, blind SQLi, an
+  out-of-band RCE) is confirmed with nuclei_dast on that exact parameterised URL — a
+  validation step that uses an out-of-band callback — only when nuclei_dast is allowed
+  and the target is a disposable, in-scope URL; it gates at HIGH. Never for discovery.
 - **Turn candidates into confirmed findings.** A scan flags a candidate (a
   reflected parameter, a service version with a known CVE, a misconfiguration);
   the `## Findings` section shows which are not yet CONFIRMED. Before finishing,

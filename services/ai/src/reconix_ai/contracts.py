@@ -23,11 +23,26 @@ from typing import Any, Literal
 # findings.severity_status, worst first.
 SEVERITY_ORDER = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN")
 
+# findings.confidence, most trustworthy first (the report ranks a confirmed finding above
+# an unverified one of the same severity).
+CONFIDENCE_ORDER = ("CONFIRMED", "FIRM", "TENTATIVE", "INFORMATIONAL")
+
 
 def severity_rank(finding: dict[str, Any]) -> int:
     """For sorting worst first; an unknown value goes last."""
     level = finding.get("severity_status")
     return SEVERITY_ORDER.index(level) if level in SEVERITY_ORDER else len(SEVERITY_ORDER)
+
+
+def confidence_rank(finding: dict[str, Any]) -> int:
+    """For sorting most trustworthy first; an unknown value goes last."""
+    tier = finding.get("confidence")
+    return CONFIDENCE_ORDER.index(tier) if tier in CONFIDENCE_ORDER else len(CONFIDENCE_ORDER)
+
+
+def finding_rank(finding: dict[str, Any]) -> tuple[int, int]:
+    """Sort key: worst severity first, then most trustworthy first within a severity."""
+    return (severity_rank(finding), confidence_rank(finding))
 
 
 @dataclass(frozen=True)
@@ -85,6 +100,8 @@ class FindingInput:
     cwe_ids: list[str] = field(default_factory=list)
     owasp_id: list[str] = field(default_factory=list)
     cve_ids: list[str] = field(default_factory=list)
+    # Derived trust tier: CONFIRMED, FIRM, TENTATIVE or INFORMATIONAL.
+    confidence: str = "TENTATIVE"
 
 
 @dataclass(frozen=True)
@@ -157,6 +174,7 @@ class FindingAnalysis:
     severity_status: str  # suggested
     cvss_score: float | None
     evidence: str  # copied from the tool output
+    evidence_summary: str  # plain-language reading of the evidence; the AI's words
     impact: str
     remediation: str
     cwe_ids: list[str]

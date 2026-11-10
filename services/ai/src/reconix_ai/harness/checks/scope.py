@@ -52,7 +52,7 @@ OWN_PORT_OPTIONS = {"--top-ports", "-F", "-p-"}
 # (-O, -A), and scripts that connect on their own (-sC, --script).
 OTHER_PORT_PROBES = {"-O", "-A", "-sC", "--script"}
 DEFAULT_PORTS = {"http": 80, "https": 443}
-WEB_TOOLS = {"nuclei", "zap_scan"}  # catalog names
+WEB_TOOLS = {"nuclei", "nuclei_dast", "zap_scan"}  # catalog names
 # Tools that reach only a fixed, known set of service ports (never scanning others like
 # masscan/rustscan, and with no option that can reach an arbitrary port). With allowed
 # ports in the scope, such a tool may target a host only when EVERY port it can reach is
@@ -115,6 +115,7 @@ class TargetKind(StrEnum):
 TOOL_TARGET_KINDS = {
     "nmap": {TargetKind.IP, TargetKind.NETWORK, TargetKind.DOMAIN},
     "nuclei": {TargetKind.URL, TargetKind.DOMAIN},
+    "nuclei_dast": {TargetKind.URL},  # DAST fuzzes a concrete URL, never a bare domain
     "zap_scan": {TargetKind.URL},
     "semgrep": {TargetKind.PATH},
     "gitleaks": {TargetKind.PATH},

@@ -46,8 +46,14 @@ def _kv(doc, rows: List[Tuple[str, str]], text_width) -> None:
     _widths(table, KV_WIDTHS, text_width)
 
 
-def _grid(doc, head: Sequence[str], rows: List[List[str]], empty: str, text_width,
-          shares: Optional[Sequence[float]] = None) -> None:
+def _grid(
+    doc,
+    head: Sequence[str],
+    rows: List[List[str]],
+    empty: str,
+    text_width,
+    shares: Optional[Sequence[float]] = None,
+) -> None:
     """A table with a header row, or the `empty` line when there are no rows."""
     if not rows:
         doc.add_paragraph(empty)
@@ -101,19 +107,28 @@ def _summary(doc, data: Dict[str, Any], text_width) -> None:
     for text, bold in view.summary(data):
         para.add_run(text).bold = bold
     columns = view.count_columns(findings)
-    _grid(doc, [label for label, _n in columns], [[str(n) for _label, n in columns]], "",
-          text_width)
+    _grid(
+        doc, [label for label, _n in columns], [[str(n) for _label, n in columns]], "", text_width
+    )
     spread = view.distribution(findings)
     if spread:
-        doc.add_paragraph("Severity distribution: " + " · ".join(
-            f"{n} {sev.title()} ({pct}%)" for sev, n, pct in spread))
+        doc.add_paragraph(
+            "Severity distribution: "
+            + " · ".join(f"{n} {sev.title()} ({pct}%)" for sev, n, pct in spread)
+        )
 
 
 def _findings_summary(doc, data: Dict[str, Any], text_width) -> None:
     findings = view.ordered(data["findings"])
     _heading(doc, "2", counted(len(findings), "finding"))
-    _grid(doc, view.FINDINGS_HEAD, [view.finding_row(f) for f in findings],
-          view.NO_FINDINGS_ROW, text_width, FINDINGS_WIDTHS)
+    _grid(
+        doc,
+        view.FINDINGS_HEAD,
+        [view.finding_row(f) for f in findings],
+        view.NO_FINDINGS_ROW,
+        text_width,
+        FINDINGS_WIDTHS,
+    )
 
 
 def _retest(doc, data: Dict[str, Any], text_width) -> None:
@@ -123,9 +138,13 @@ def _retest(doc, data: Dict[str, Any], text_width) -> None:
     counts = retest["counts"]
     doc.add_heading(view.RETEST_HEADING, level=1)
     _note(doc, f"vs {retest['previous_label']}")
-    _grid(doc, ["New", "Resolved", "Recurring"],
-          [[str(counts["new"]), str(counts["resolved"]), str(counts["recurring"])]], "",
-          text_width)
+    _grid(
+        doc,
+        ["New", "Resolved", "Recurring"],
+        [[str(counts["new"]), str(counts["resolved"]), str(counts["recurring"])]],
+        "",
+        text_width,
+    )
     if retest["new"]:
         doc.add_paragraph("New this run: " + ", ".join(i["title"] for i in retest["new"]) + ".")
 
@@ -139,15 +158,24 @@ def _scope(doc, data: Dict[str, Any], text_width) -> None:
 def _finding(doc, finding: Dict[str, Any], text_width) -> None:
     doc.add_heading(f"{finding['id']} · {finding['title']}", level=2)
     score = view.cvss(finding)
-    doc.add_paragraph(" · ".join(
-        [finding["severity"].title(), finding["validation"].title(), view.status_label(finding)]
-        + ([f"CVSS {score}"] if score != "—" else [])))
+    doc.add_paragraph(
+        " · ".join(
+            [finding["severity"].title(), finding["validation"].title(), view.status_label(finding)]
+            + ([f"CVSS {score}"] if score != "—" else [])
+        )
+    )
     _kv(doc, view.finding_meta(finding), text_width)
     doc.add_heading("Description", level=3)
     doc.add_paragraph(finding.get("description") or "—")
     doc.add_heading("Evidence & validation (masked)", level=3)
-    evidence = doc.add_paragraph("\n".join(str(line) for line in finding.get("evidence", []))
-                                 or "—")
+    if finding.get("evidence_summary"):
+        doc.add_paragraph(finding["evidence_summary"])
+    validation = view.validation_line(finding)
+    if validation:
+        doc.add_paragraph(validation)
+    evidence = doc.add_paragraph(
+        "\n".join(str(line) for line in finding.get("evidence", [])) or "—"
+    )
     evidence.style = "Intense Quote"
     doc.add_heading("Impact", level=3)
     doc.add_paragraph(finding.get("impact") or "—")
@@ -185,7 +213,7 @@ def _build(data: Dict[str, Any], path) -> None:
 
     doc = Document()
     page = doc.sections[0]
-    page.page_width, page.page_height = Cm(21), Cm(29.7)            # A4, like the PDF
+    page.page_width, page.page_height = Cm(21), Cm(29.7)  # A4, like the PDF
     for side in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
         setattr(page, side, Cm(2))
     text_width = page.page_width - page.left_margin - page.right_margin
@@ -198,7 +226,7 @@ def _build(data: Dict[str, Any], path) -> None:
     _scope(doc, data, text_width)
     _note(doc, f"{view.FOOTER_TOOL} · {first_foot}")
 
-    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)        # the PDF's second sheet
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)  # the PDF's second sheet
     _heading(doc, "4")
     findings = view.ordered(data["findings"])
     for finding in findings:
@@ -220,5 +248,5 @@ def write_docx(data: Dict[str, Any], path) -> None:
         _build(data, path)
     except ValueError as exc:
         raise StoreValidationError(
-            "The Word report couldn't be written: a value holds characters a .docx can't "
-            "store.") from exc
+            "The Word report couldn't be written: a value holds characters a .docx can't store."
+        ) from exc

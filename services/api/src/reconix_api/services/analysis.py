@@ -24,14 +24,16 @@ from reconix_api.core.interfaces import (
     Operator,
 )
 from reconix_api.core.masking import MaskSecrets
-from reconix_api.models import AgentRun, Finding
+from reconix_api.models import AgentRun, Evidence, Finding
 from reconix_api.models.enums import AgentRunStatus, FindingStatus
 from reconix_api.repositories import findings as findings_repo
 from reconix_api.schemas.agent_runs import AnalysisOut
+from reconix_api.schemas.findings import confidence_of
 from reconix_api.services import actions, agent_runs, plans
 
 GROUP_SIZE = 10  # the agent analyzes at most 10 findings in one ask
 TOOL_OUTPUTS = 3  # the agent reads the newest 3 outputs; evidence must come from them
+SUMMARY_KIND = "analysis_summary"  # the AI's plain reading of the evidence, kept as evidence
 
 
 async def analyze(
@@ -89,14 +91,14 @@ async def analyze_in_groups(
                 provider=provider,
                 model=model,
                 scope=scope,
-                findings=[finding_input(finding) for finding in group],
+                findings=[finding_input(db, finding) for finding in group],
                 tool_results=outputs,
             ),
         )
         summaries.append(mask(response.analysis_summary)[0])
         analysis.extend(masked(item, mask) for item in response.analysis)
     summary = "\n\n".join(text for text in summaries if text)
-    apply_analysis(findings, analysis)
+    apply_analysis(db, findings, analysis)
     run.plan = {
         "task": "ANALYZE",
         "summary": summary,
@@ -108,11 +110,13 @@ async def analyze_in_groups(
     return AnalysisOut(agent_run=agent_runs.agent_run_out(run), summary=summary, analysis=analysis)
 
 
-def apply_analysis(findings: list[Finding], analysis: list[FindingAnalysis]) -> None:
+def apply_analysis(db: Db, findings: list[Finding], analysis: list[FindingAnalysis]) -> None:
     """Write the agent's analysis onto each finding, matched by code. The texts are already
     masked (see `masked`). Only the explanatory fields a reader needs are set — the plain
     explanation, the impact and the remediation — plus a CVSS score when the finding has
-    none. The status and severity, which a person owns, are left untouched."""
+    none. The status and severity, which a person owns, are left untouched. The plain reading
+    of the evidence is kept as an `analysis_summary` evidence row (see `save_evidence_summary`),
+    so a reader sees prose beside the raw proof instead of a JSON blob."""
     by_code = {finding.code: finding for finding in findings}
     for item in analysis:
         finding = by_code.get(item.code)
@@ -126,11 +130,36 @@ def apply_analysis(findings: list[Finding], analysis: list[FindingAnalysis]) -> 
             finding.remediation = item.remediation
         if item.cvss_score is not None and finding.cvss_score is None:
             finding.cvss_score = Decimal(str(item.cvss_score))
+        if item.evidence_summary:
+            save_evidence_summary(db, finding, item.evidence_summary)
+
+
+def save_evidence_summary(db: Db, finding: Finding, summary: str) -> None:
+    """Keep the AI's plain reading of the evidence as one `analysis_summary` evidence row,
+    replacing any earlier one so a re-analysis never stacks up duplicates. It hangs off the
+    finding's own source tool run (the proof it reads from), so no new column is needed."""
+    for row in findings_repo.list_evidence(db, finding.finding_id):
+        if row.kind == SUMMARY_KIND:
+            row.content = summary
+            return
+    sources = findings_repo.sources(db, finding.finding_id)
+    if not sources:  # a finding always comes from a tool run, but never guess one if it does not
+        return
+    tool_run_id, _ = sources[0]
+    findings_repo.add(
+        db,
+        Evidence(
+            kind=SUMMARY_KIND,
+            content=summary,
+            finding_id=finding.finding_id,
+            tool_run_id=tool_run_id,
+        ),
+    )
 
 
 def masked(item: FindingAnalysis, mask: MaskSecrets) -> FindingAnalysis:
     """Every text the agent wrote, masked again before it is saved or returned."""
-    texts = ("explanation", "evidence", "impact", "remediation", "unsure")
+    texts = ("explanation", "evidence", "evidence_summary", "impact", "remediation", "unsure")
     update = {name: mask(getattr(item, name))[0] for name in texts}
     step = item.next_step
     if step is not None:
@@ -143,7 +172,11 @@ def masked(item: FindingAnalysis, mask: MaskSecrets) -> FindingAnalysis:
     return item.model_copy(update=update)
 
 
-def finding_input(finding: Finding) -> FindingInput:
+def finding_input(db: Db, finding: Finding) -> FindingInput:
+    tools = [tool for _, tool in findings_repo.sources(db, finding.finding_id)]
+    confidence = confidence_of(
+        finding.validation_status, finding.finding_status, finding.severity_status, tools
+    )
     return FindingInput(
         code=finding.code,
         title=finding.title,
@@ -155,4 +188,5 @@ def finding_input(finding: Finding) -> FindingInput:
         cwe_ids=finding.cwe_ids,
         owasp_id=finding.owasp_id,
         cve_ids=finding.cve_ids,
+        confidence=str(confidence),
     )

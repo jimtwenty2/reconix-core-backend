@@ -185,7 +185,7 @@ def locked_copy(db: Db, assessment_id: UUID, mask: MaskSecrets) -> ReportInput:
     """What the report says, frozen: every finding but FALSE_POSITIVE, the counts made
     here (never by the model), and each tool run with how it was approved. Masked."""
     findings = [
-        masked_finding(analysis.finding_input(finding), mask)
+        masked_finding(analysis.finding_input(db, finding), mask)
         for finding in findings_repo.list_by_assessment(db, assessment_id)
         if finding.finding_status != FindingStatus.FALSE_POSITIVE
     ]

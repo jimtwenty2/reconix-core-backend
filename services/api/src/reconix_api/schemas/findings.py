@@ -2,9 +2,10 @@
 
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from reconix_api.models.enums import FindingStatus, SeverityStatus, ValidationStatus
 
@@ -37,6 +38,47 @@ class ValidationRunIn(BaseModel):
     tool_run_id: UUID  # the COMPLETED PoC run whose output the AI judges
 
 
+class Confidence(StrEnum):
+    """How trustworthy a finding is, derived at read time (never stored, like the code
+    Verdict). It ranks a report so confirmed and firm findings sit above tentative guesses.
+
+    - CONFIRMED:     a validation run confirmed it (an OOB callback, sqlmap, a dalfox verify).
+    - FIRM:          strong deterministic signal with no validation yet — a verifying tool
+                     (sqlmap/dalfox/commix/schemathesis/nuclei -dast), or two or more tools agree.
+    - TENTATIVE:     a single scanner's unvalidated match.
+    - INFORMATIONAL: a fact, not a weakness (NONE severity: ports, stack, paths, hidden
+                     parameters), or a finding a person marked a false positive.
+    """
+
+    CONFIRMED = "CONFIRMED"
+    FIRM = "FIRM"
+    TENTATIVE = "TENTATIVE"
+    INFORMATIONAL = "INFORMATIONAL"
+
+
+# Tools whose own output is a confirmation/exploitation attempt, not a passive match.
+VERIFIER_TOOLS = frozenset({"SQLMAP", "DALFOX", "COMMIX", "SCHEMATHESIS", "NUCLEI_DAST"})
+
+
+def confidence_of(
+    validation_status: ValidationStatus,
+    finding_status: FindingStatus,
+    severity_status: SeverityStatus,
+    tools: list[str],
+) -> Confidence:
+    """Derive the confidence tier. A validation and a person's verdict count first; then
+    deterministic evidence (a verifier tool or agreement between tools); a bare fact or a
+    dismissed finding is informational."""
+    if validation_status == ValidationStatus.CONFIRMED:
+        return Confidence.CONFIRMED
+    if finding_status == FindingStatus.FALSE_POSITIVE or severity_status == SeverityStatus.NONE:
+        return Confidence.INFORMATIONAL
+    upper = {tool.upper() for tool in tools}
+    if upper & VERIFIER_TOOLS or len(upper) >= 2:
+        return Confidence.FIRM
+    return Confidence.TENTATIVE
+
+
 class FindingOut(BaseModel):
     finding_id: UUID
     code: str
@@ -60,6 +102,13 @@ class FindingOut(BaseModel):
     tools: list[str] = Field(default_factory=list)  # their tools, e.g. ["NMAP"]
     evidence: list[EvidenceOut] = Field(default_factory=list)
     latest_validation: ValidationRunOut | None = None  # the newest check, if any
+
+    @computed_field  # derived, not stored
+    @property
+    def confidence(self) -> Confidence:
+        return confidence_of(
+            self.validation_status, self.finding_status, self.severity_status, self.tools
+        )
 
 
 class FindingReview(BaseModel):

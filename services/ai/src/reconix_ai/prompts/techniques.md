@@ -48,7 +48,7 @@ nothing new.
 | http_methods | HTTP method testing | Unexpected methods enabled | nuclei, httpx_probe | partial | NUCLEI {url} -tags jwt,auth,default-login,sqli,nosqli,injection,exposure,api,swagger,graphql,cors,ssrf | Covered by the one nuclei run. Never send PUT or DELETE to find out. |
 | cors | CORS testing | Unsafe cross-origin access | nuclei | auto | NUCLEI {url} -tags jwt,auth,default-login,sqli,nosqli,injection,exposure,api,swagger,graphql,cors,ssrf | Covered by the one nuclei run. |
 | schema_validation | Schema validation | Incorrect request/response validation | schemathesis | auto | SCHEMATHESIS {schema} --checks all | Only when the API has an OpenAPI document. |
-| ssrf | SSRF testing | Unsafe server-side URL fetching | nuclei | partial | NUCLEI {url} -tags jwt,auth,default-login,sqli,nosqli,injection,exposure,api,swagger,graphql,cors,ssrf | Covered by the one nuclei run. Finds only what needs no outside callback. |
+| ssrf | SSRF testing | Unsafe server-side URL fetching | nuclei, nuclei_dast | partial | NUCLEI {url} -tags jwt,auth,default-login,sqli,nosqli,injection,exposure,api,swagger,graphql,cors,ssrf | Covered by the one nuclei run, which finds only what needs no outside callback. When a parameter takes a URL or host and the plain run shows nothing, confirm BLIND SSRF with NUCLEI_DAST on that exact parameterised URL: a validation-phase, HIGH, operator-approved step on a disposable target that uses an out-of-band callback. |
 | api_versions | API version testing | Old or deprecated endpoints | ffuf, katana | auto | FFUF {url}FUZZ -mc 200,301,302,401,403; KATANA {url} -d 3 -jc | |
 
 ## network

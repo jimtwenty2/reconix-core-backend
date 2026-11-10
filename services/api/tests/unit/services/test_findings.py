@@ -20,6 +20,14 @@ def test_parse_run_picks_the_reader_by_tool_name():
     assert len(found) == 3
 
 
+def test_nuclei_dast_reuses_the_nuclei_reader():
+    # nuclei_dast emits the same JSONL as nuclei, so it parses to the same findings.
+    output = (FIXTURES / "nuclei" / "juice_shop.jsonl").read_text()
+    dast, _ = parse_run("nuclei_dast", output)
+    plain, _ = parse_run("NUCLEI", output)
+    assert [f.dedupe_key for f in dast] == [f.dedupe_key for f in plain]
+
+
 def test_every_reader_is_named_like_its_kali_tool():
     assert all(name == name.lower() for name in READERS)
     assert {"nmap", "nuclei", "semgrep", "gitleaks"} <= READERS.keys()

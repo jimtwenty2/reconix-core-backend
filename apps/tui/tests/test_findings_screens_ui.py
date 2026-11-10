@@ -15,12 +15,14 @@ from reconix.store.findings_view import FINDING_FILTERS, FINDING_SORTS
 
 from .support import SIZE, TEST_PASSWORD, add_finding, run_to, screen_text, settle, show
 
+
 def _api_finding(code: str, title: str, path: str, severity: str, cwe: str, owasp: str) -> dict:
     from .fakes.fake_api import finding_row
 
     row = finding_row(code, title, path, severity, "NMAP", evidence=f"{path}: seen in the scan")
     row.update(
-        cwe_ids=[cwe], owasp_id=[owasp],
+        cwe_ids=[cwe],
+        owasp_id=[owasp],
         description=f"{title}: the scan saw it on {path}, answering without any sign-in.",
         impact="An attacker could learn about the service and plan a targeted attack on it.",
         remediation="Restrict it to the admin network or turn it off where it isn't needed.",
@@ -32,14 +34,29 @@ def _api_finding(code: str, title: str, path: str, severity: str, cwe: str, owas
 def three_findings(fake_api):
     """The API's run gives three findings, in this order: two MEDIUM, then one LOW (so the
     list, sorted by severity, reads 001, 002, 003)."""
-    fake_api.findings_for = {"NMAP": [
-        _api_finding("NMAP-ADMIN", "Exposed admin panel", "/admin", "MEDIUM", "CWE-284",
-                     "OWASP A01:2021"),
-        _api_finding("NMAP-OLD-TLS", "Deprecated TLS offered", "/login", "MEDIUM", "CWE-327",
-                     "OWASP A02:2021"),
-        _api_finding("NMAP-BANNER", "Server banner shows its version", "/", "LOW", "CWE-200",
-                     "OWASP A05:2021"),
-    ]}
+    fake_api.findings_for = {
+        "NMAP": [
+            _api_finding(
+                "NMAP-ADMIN", "Exposed admin panel", "/admin", "MEDIUM", "CWE-284", "OWASP A01:2021"
+            ),
+            _api_finding(
+                "NMAP-OLD-TLS",
+                "Deprecated TLS offered",
+                "/login",
+                "MEDIUM",
+                "CWE-327",
+                "OWASP A02:2021",
+            ),
+            _api_finding(
+                "NMAP-BANNER",
+                "Server banner shows its version",
+                "/",
+                "LOW",
+                "CWE-200",
+                "OWASP A05:2021",
+            ),
+        ]
+    }
 
 
 # A secret shaped so `redact` recognizes it in every field: a bare word would (correctly) not be
@@ -50,7 +67,9 @@ SECRET = TEST_PASSWORD
 def _plant_secret_finding(severity: str = "CRITICAL") -> str:
     """Add one revealed finding whose every shown field hides the test password. Returns its id."""
     add_finding(
-        f"Leak token={SECRET}", path=f"/p?password={SECRET}", severity=severity,
+        f"Leak token={SECRET}",
+        path=f"/p?password={SECRET}",
+        severity=severity,
         description=f"Authorization: Bearer {SECRET}",
         evidence=[f"Set-Cookie: session={SECRET}", f"https://admin:{SECRET}@evil.example.com/x"],
     )
@@ -121,7 +140,7 @@ async def test_the_two_empty_states_show_the_right_message(app):
         run_to(None)
         app.refresh_view()
         await settle(pilot)
-        await _pick_filter(app, pilot, "high_up")                # nothing is CRITICAL/HIGH here
+        await _pick_filter(app, pilot, "high_up")  # nothing is CRITICAL/HIGH here
         empty = app.screen.query_one("#findings-empty", Static)
         assert not _table(app).display
         assert "No findings match this filter" in str(empty.render())
@@ -151,8 +170,8 @@ async def test_sort_cycles_through_every_option_and_wraps(app):
             seen.append(app.findings_sort)
             await pilot.press("s")
             await settle(pilot)
-        assert [store.sort_label(s) for s in seen] == labels     # every option, in order
-        assert app.findings_sort == FINDING_SORTS[0][0]          # wrapped back to the first
+        assert [store.sort_label(s) for s in seen] == labels  # every option, in order
+        assert app.findings_sort == FINDING_SORTS[0][0]  # wrapped back to the first
 
 
 # --- c. triage updates the row, the detail badge and the note -------------------------------
@@ -160,28 +179,28 @@ async def test_triage_updates_row_and_detail_and_note(app):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        await pilot.press("down", "t")                           # 002
+        await pilot.press("down", "t")  # 002
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
-        await pilot.press("2")                                   # Fixed
+        await pilot.press("2")  # Fixed
         await settle(pilot)
         assert store.get_finding("002").status == "fixed"
-        assert "Fixed" in _table_text(app)                       # row STATUS cell
+        assert "Fixed" in _table_text(app)  # row STATUS cell
         # A note set on the finding shows in the detail (masked).
         store.triage_finding("002", note=f"accepted — see token={SECRET}")
         app.open_finding("002")
         await settle(pilot)
         assert isinstance(app.screen, FindingDetailScreen)
         text = screen_text(app.screen)
-        assert "Fixed" in text and "Triage note" in text        # badge + the note heading
-        assert SECRET not in text                                # the note is masked
+        assert "Fixed" in text and "Triage note" in text  # badge + the note heading
+        assert SECRET not in text  # the note is masked
 
 
 async def test_escape_on_the_triage_dialog_changes_nothing(app):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        await pilot.press("t")                                   # 001
+        await pilot.press("t")  # 001
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
         await pilot.press("escape")
@@ -198,13 +217,13 @@ async def test_prev_next_ring_the_bell_at_both_ends(app):
         app.bell = lambda: bells.append(1)
         app.open_finding("001")
         await settle(pilot)
-        await pilot.press("left_square_bracket")                 # at the first: bell, no move
+        await pilot.press("left_square_bracket")  # at the first: bell, no move
         await settle(pilot)
         assert app.selected_finding == "001" and len(bells) == 1
-        await pilot.press("right_square_bracket", "right_square_bracket")   # 002, 003
+        await pilot.press("right_square_bracket", "right_square_bracket")  # 002, 003
         await settle(pilot)
         assert app.selected_finding == "003"
-        await pilot.press("right_square_bracket")                # at the last: bell, no move
+        await pilot.press("right_square_bracket")  # at the last: bell, no move
         await settle(pilot)
         assert app.selected_finding == "003" and len(bells) == 2
 
@@ -212,13 +231,13 @@ async def test_prev_next_ring_the_bell_at_both_ends(app):
 async def test_prev_next_step_in_the_filter_order(app):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
-        app.findings_filter = "medium"                           # 001, 002 only
+        app.findings_filter = "medium"  # 001, 002 only
         app.open_finding("001")
         await settle(pilot)
         await pilot.press("right_square_bracket")
         await settle(pilot)
         assert app.selected_finding == "002"
-        await pilot.press("right_square_bracket")                # 003 is out of the filter: bell
+        await pilot.press("right_square_bracket")  # 003 is out of the filter: bell
         await settle(pilot)
         assert app.selected_finding == "002"
 
@@ -229,31 +248,31 @@ async def test_the_list_and_detail_never_show_a_secret(app):
     fid = _plant_secret_finding()
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        assert SECRET not in _table_text(app)                    # list rows
+        assert SECRET not in _table_text(app)  # list rows
         app.open_finding(fid)
         await settle(pilot)
-        assert SECRET not in screen_text(app.screen)             # detail header + panels
+        assert SECRET not in screen_text(app.screen)  # detail header + panels
 
 
 async def test_the_triage_dialog_and_chat_draft_never_show_a_secret(app):
     from reconix.widgets import PromptBox
 
     run_to(None)
-    fid = _plant_secret_finding()                                # CRITICAL -> top row
+    fid = _plant_secret_finding()  # CRITICAL -> top row
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        await pilot.press("t")                                   # triage the top (secret) row
+        await pilot.press("t")  # triage the top (secret) row
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
-        assert SECRET not in screen_text(app.screen)             # dialog subtitle
+        assert SECRET not in screen_text(app.screen)  # dialog subtitle
         await pilot.press("escape")
         await settle(pilot)
         app.open_finding(fid)
         await settle(pilot)
-        await pilot.press("c")                                   # chat about the finding
+        await pilot.press("c")  # chat about the finding
         await settle(pilot)
         draft = app.screen.query_one(PromptBox).input.value
-        assert fid in draft and SECRET not in draft             # draft names it, masked
+        assert fid in draft and SECRET not in draft  # draft names it, masked
 
 
 # --- live refill: the cursor stays on the same finding by id --------------------------------
@@ -261,29 +280,29 @@ async def test_the_cursor_stays_on_the_same_finding_when_rows_arrive_above(app):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        await pilot.press("down")                                # cursor on 002
+        await pilot.press("down")  # cursor on 002
         assert _cursor_id(app) == "002"
-        add_finding("New critical", "/c", severity="CRITICAL")   # sorts to the top, above 002
+        add_finding("New critical", "/c", severity="CRITICAL")  # sorts to the top, above 002
         app.refresh_view()
         await settle(pilot)
-        assert _row_ids(app)[0].startswith("AI-")                # the new row is above
-        assert _cursor_id(app) == "002"                          # cursor kept its finding
+        assert _row_ids(app)[0].startswith("AI-")  # the new row is above
+        assert _cursor_id(app) == "002"  # cursor kept its finding
 
 
 async def test_the_cursor_falls_back_when_the_filter_hides_it(app):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        assert _cursor_id(app) == "001"                          # a MEDIUM finding
-        await _pick_filter(app, pilot, "low")                    # hides 001 and 002, leaves 003
+        assert _cursor_id(app) == "001"  # a MEDIUM finding
+        await _pick_filter(app, pilot, "low")  # hides 001 and 002, leaves 003
         assert _row_ids(app) == ["003"]
-        assert _cursor_id(app) == "003"                          # fell back sensibly, no crash
+        assert _cursor_id(app) == "003"  # fell back sensibly, no crash
 
 
 KEY_COLUMNS = {"ID", "SEVERITY", "TITLE", "STATUS", "VALIDATION"}
 
 # A 50-char title fits at 120x36 (stays full) but not at 80x24 (gets cut), so it exercises the cap.
-MED_TITLE = "Insecure direct object reference on account data ok"   # 50 chars
+MED_TITLE = "Insecure direct object reference on account data ok"  # 50 chars
 LONG_TITLE = "X" * 70
 
 
@@ -307,12 +326,12 @@ async def test_the_findings_list_keeps_status_visible(app, size, scrolls_right):
         # strip + view line + rows are visible together: the body never scrolls vertically here
         assert app.screen.query_one("#body").max_scroll_y == 0
         columns = _fully_visible_columns(table)
-        assert KEY_COLUMNS <= set(columns)                       # STATUS/VALIDATION never hidden
+        assert KEY_COLUMNS <= set(columns)  # STATUS/VALIDATION never hidden
         assert table.scroll_offset.x == 0
-        if scrolls_right:                                        # 80x24: PATH/TOOL/CVE scroll off
+        if scrolls_right:  # 80x24: PATH/TOOL/CVE scroll off
             assert table.max_scroll_x > 0
             assert "CVE / CWE" not in columns
-        else:                                                    # 120x36: every column fits
+        else:  # 120x36: every column fits
             assert table.max_scroll_x == 0
             assert len(columns) == len(table.ordered_columns)
 
@@ -323,8 +342,8 @@ async def test_a_long_title_is_cut_but_status_stays_visible_at_80x24(app):
     async with app.run_test(size=(80, 24)) as pilot:
         await show(app, pilot, "findings")
         table = _table(app)
-        fid = _row_ids(app)[0]                                   # the CRITICAL finding, on top
-        assert "…" in _title_cell(app, fid)                     # the title cell is cut
+        fid = _row_ids(app)[0]  # the CRITICAL finding, on top
+        assert "…" in _title_cell(app, fid)  # the title cell is cut
         columns = _fully_visible_columns(table)
         assert KEY_COLUMNS <= set(columns) and table.scroll_offset.x == 0
 
@@ -333,15 +352,15 @@ async def test_triage_status_is_visible_in_the_row_without_scrolling(app):
     run_to(None)
     async with app.run_test(size=(80, 24)) as pilot:
         await show(app, pilot, "findings")
-        await pilot.press("down", "t")                           # triage 002
+        await pilot.press("down", "t")  # triage 002
         await settle(pilot)
-        await pilot.press("4")                                   # False positive
+        await pilot.press("4")  # False positive
         await settle(pilot)
         assert store.get_finding("002").status == "false-positive"
         table = _table(app)
         assert "STATUS" in _fully_visible_columns(table) and table.scroll_offset.x == 0
         key = table.coordinate_to_cell_key((_row_ids(app).index("002"), 3)).column_key
-        assert table.get_cell("002", key).plain == "False positive"    # the new status, in the row
+        assert table.get_cell("002", key).plain == "False positive"  # the new status, in the row
 
 
 async def test_the_full_title_shows_at_120x36(app):
@@ -350,7 +369,7 @@ async def test_the_full_title_shows_at_120x36(app):
     async with app.run_test(size=(120, 36)) as pilot:
         await show(app, pilot, "findings")
         fid = _row_ids(app)[0]
-        assert _title_cell(app, fid) == MED_TITLE               # shown in full, not cut
+        assert _title_cell(app, fid) == MED_TITLE  # shown in full, not cut
 
 
 async def test_the_title_refits_on_resize(app):
@@ -359,10 +378,10 @@ async def test_the_title_refits_on_resize(app):
     async with app.run_test(size=(80, 24)) as pilot:
         await show(app, pilot, "findings")
         fid = _row_ids(app)[0]
-        assert "…" in _title_cell(app, fid)                     # cut at 80 wide
+        assert "…" in _title_cell(app, fid)  # cut at 80 wide
         await pilot.resize_terminal(120, 36)
         await settle(pilot)
-        assert _title_cell(app, fid) == MED_TITLE               # full again once there is room
+        assert _title_cell(app, fid) == MED_TITLE  # full again once there is room
 
 
 @pytest.mark.parametrize("size,body_scrolls", [((80, 24), True), ((120, 36), False)])
@@ -384,25 +403,113 @@ async def test_the_finding_detail_header_is_visible(app, size, body_scrolls):
 
 
 # --- a live refill while a dialog is open leaves it alone, then restores the table -----------
-@pytest.mark.parametrize("dialog_key", ["t", "f"])     # triage, filter
+@pytest.mark.parametrize("dialog_key", ["t", "f"])  # triage, filter
 async def test_a_live_refill_under_a_dialog_keeps_it_and_restores_focus(app, dialog_key):
     run_to(None)
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "findings")
-        await pilot.press("down")                                # cursor on 002
+        await pilot.press("down")  # cursor on 002
         assert _cursor_id(app) == "002"
         await pilot.press(dialog_key)
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
         menu = app.screen.query_one("#dialog-menu")
         assert app.focused is menu
-        add_finding("New critical live", "/c", severity="CRITICAL")   # a refill arrives above 002
+        add_finding("New critical live", "/c", severity="CRITICAL")  # a refill arrives above 002
         app.refresh_view()
         await settle(pilot)
-        assert isinstance(app.screen, ChoiceScreen)             # the dialog did not close
-        assert app.focused is menu                              # and did not lose focus
+        assert isinstance(app.screen, ChoiceScreen)  # the dialog did not close
+        assert app.focused is menu  # and did not lose focus
         await pilot.press("escape")
         await settle(pilot)
         assert isinstance(app.screen, FindingsListScreen)
-        assert app.focused is _table(app)                       # the table has focus again
-        assert _cursor_id(app) == "002"                         # still on the same finding
+        assert app.focused is _table(app)  # the table has focus again
+        assert _cursor_id(app) == "002"  # still on the same finding
+
+
+async def test_the_confidence_tier_shows_in_the_list_and_detail(app):
+    """The derived confidence tier reaches the table (glyph) and the detail header (word).
+    The three NMAP findings are single-scanner, non-verifier matches, so TENTATIVE."""
+    run_to(None)
+    async with app.run_test(size=(120, 36)) as pilot:
+        await show(app, pilot, "findings")
+        assert "CONF" in {c.label.plain for c in _table(app).columns.values()}
+        assert "◐" in _table_text(app)  # the TENTATIVE glyph is in a row
+        app.open_finding("001")
+        await settle(pilot)
+        assert "TENTATIVE" in screen_text(app.screen)  # the full word in the detail header
+
+
+def test_the_adapter_reads_the_confidence_tier():
+    from reconix.core_api import adapt
+
+    assert adapt.finding({"confidence": "firm"}, "001").confidence == "FIRM"
+    assert adapt.finding({}, "002").confidence == "TENTATIVE"  # defaulted when absent
+
+
+def test_the_adapter_turns_json_proof_into_plain_lines():
+    """A JSON proof blob becomes 'Label: value' lines; the analysis_summary row becomes the
+    prose summary; the latest validation's reason and method are carried for the detail view.
+    No JSON blob survives into what a reader sees."""
+    from reconix.core_api import adapt
+
+    row = {
+        "severity_status": "HIGH",
+        "title": "Reflected XSS",
+        "target": "http://lab:3000/search",
+        "evidence": [
+            {
+                "kind": "nuclei_match",
+                "content": '{"matched-at":"http://lab/s?q=x","template-id":"reflected-xss"}',
+            },
+            {
+                "kind": "analysis_summary",
+                "content": "The q parameter is reflected unescaped, so a script runs.",
+            },
+        ],
+        "latest_validation": {
+            "reason": "dalfox replayed the payload and it executed.",
+            "method": "dalfox",
+        },
+    }
+    f = adapt.finding(row, "001")
+    assert f.evidence_summary.startswith("The q parameter is reflected")
+    assert f.validation_reason.startswith("dalfox replayed")
+    assert f.validation_method == "dalfox"
+    # the proof is readable lines, never a raw JSON blob
+    assert "Matched at: http://lab/s?q=x" in f.evidence
+    assert "Template id: reflected-xss" in f.evidence
+    assert not any("{" in line for line in f.evidence)
+
+
+def test_plain_text_evidence_is_left_as_it_is():
+    """A text reader's output (not JSON) is shown unchanged, not mangled."""
+    from reconix.core_api import adapt
+
+    row = {"evidence": [{"kind": "TOOL_OUTPUT", "content": "3000/tcp open ppp"}]}
+    assert adapt.finding(row, "001").evidence == ["3000/tcp open ppp"]
+
+
+async def test_the_detail_shows_the_evidence_in_plain_language(app):
+    """The Finding detail shows the AI's plain reading of the evidence and a validation line,
+    not a JSON blob."""
+    run_to(None)
+    add_finding(
+        "Reflected XSS",
+        "/search",
+        severity="HIGH",
+        evidence_summary="The q parameter is reflected unescaped, so a script runs.",
+        validation="CONFIRMED",
+        validation_reason="dalfox replayed it and it executed.",
+        validation_method="dalfox",
+    )
+    fid = next(f.fid for f in store.list_findings() if f.fid.startswith("AI-"))
+    async with app.run_test(size=(120, 48)) as pilot:
+        await show(app, pilot, "findings")
+        app.open_finding(fid)
+        await settle(pilot)
+        text = screen_text(app.screen)
+        assert "What the evidence shows" in text
+        assert "reflected unescaped" in text  # the AI's plain reading
+        assert "Confirmed during the run by dalfox" in text  # the validation line
+        assert "dalfox replayed it" in text  # the AI's validation reason
