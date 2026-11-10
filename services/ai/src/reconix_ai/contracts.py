@@ -200,6 +200,9 @@ class AgentAnswer:
     risk: str | None = None  # the harness risk of proposed_action: LOW, MEDIUM or HIGH
     blocked: list[BlockedStep] = field(default_factory=list)
     references: list[str] = field(default_factory=list)  # knowledge ids used, e.g. CWE-89
+    # The run's own ReflAct observations (masked), so the next step keeps the leads this one
+    # spotted instead of re-reading them from the raw output each time.
+    reflections: list[str] = field(default_factory=list)
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = field(default_factory=list)  # ANALYZE
     # VALIDATE: the verdict on one finding, read from the real (masked) PoC tool output.

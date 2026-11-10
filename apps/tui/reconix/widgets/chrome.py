@@ -8,11 +8,20 @@ from textual.widgets import Static
 from .. import store, theme
 from ..flow import phase_style
 
-PHASE_COLOR = {"cyan": theme.CYAN, "amber": theme.MEDIUM, "green": theme.GREEN,
-               "red": theme.CRITICAL, "muted": theme.MUTED}
+PHASE_COLOR = {
+    "cyan": theme.CYAN,
+    "amber": theme.MEDIUM,
+    "green": theme.GREEN,
+    "red": theme.CRITICAL,
+    "muted": theme.MUTED,
+}
 # The phase's short form, for a narrow bar (the long phase labels; the rest are short already)
-PHASE_SHORT = {"scope_pending": "Scope pending", "plan_pending": "Plan ready",
-               "waiting_account": "Login needed", "awaiting_approval": "Awaiting you"}
+PHASE_SHORT = {
+    "scope_pending": "Scope pending",
+    "plan_pending": "Plan ready",
+    "waiting_account": "Login needed",
+    "awaiting_approval": "Awaiting you",
+}
 
 
 class SessionBar(Static):
@@ -22,12 +31,12 @@ class SessionBar(Static):
     never overflows. The run's phase and the active model always stay, in their short forms
     when space is tight ("● Scope pending", `llm: <model> ●`); the assessment id stays whole
     and the target gets the rest, cut with "…". Spare width then buys the long forms and the
-    optional parts (demo data, template, policy) by priority.
-    "demo data" is shown (not "backend") because execution is simulated.
+    optional parts (the Core API status, template, policy) by priority.
+    The Core API part shows whether the backend is reachable (polled in the background).
     """
 
     GAP = "   "
-    MODEL_WIDTH = 18          # the short form cuts a longer model name with "…"
+    MODEL_WIDTH = 18  # the short form cuts a longer model name with "…"
 
     def on_mount(self) -> None:
         self.refresh_line()
@@ -45,16 +54,26 @@ class SessionBar(Static):
             color = PHASE_COLOR.get(style.tone, theme.MUTED)
             labels = [style.label] + ([PHASE_SHORT[phase]] if phase in PHASE_SHORT else [])
             parts.append((0, True, [Text(f"{glyph} {label}", style=color) for label in labels]))
-        parts.append((2, False, [Text.assemble(("◆ ", theme.MEDIUM),
-                                               ("demo data", theme.MUTED))]))
+        parts.append((2, False, [self._core_api_form()]))
         parts.append((1, True, self._llm_forms()))
         template = store.selected_template()
         if template:
-            parts.append((3, False, [Text.assemble(("template: ", theme.DIM),
-                                                   (template.name, theme.MUTED))]))
-        parts.append((4, False, [Text.assemble(("policy: ", theme.DIM),
-                                               ("enforced", theme.CYAN))]))
+            parts.append(
+                (3, False, [Text.assemble(("template: ", theme.DIM), (template.name, theme.MUTED))])
+            )
+        parts.append((4, False, [Text.assemble(("policy: ", theme.DIM), ("enforced", theme.CYAN))]))
         return parts
+
+    @staticmethod
+    def _core_api_form() -> Text:
+        """The Core API's reachability: `● Core API` up, `● Core API offline` down, or
+        `◆ Core API …` before the first health check lands."""
+        online = store.api_online()
+        if online is None:
+            return Text.assemble(("◆ ", theme.MEDIUM), ("Core API …", theme.MUTED))
+        if online:
+            return Text.assemble(("● ", theme.GREEN), ("Core API", theme.MUTED))
+        return Text.assemble(("● ", theme.CRITICAL), ("Core API offline", theme.CRITICAL))
 
     @staticmethod
     def _llm_part() -> Text:
@@ -68,21 +87,26 @@ class SessionBar(Static):
         if active is None:
             return [Text.assemble(("llm: ", theme.DIM), ("off", theme.MUTED))]
         color = {"REACHABLE": theme.GREEN, "UNREACHABLE": theme.CRITICAL}.get(
-            store.get_provider(active.provider_id).status, theme.MUTED)
+            store.get_provider(active.provider_id).status, theme.MUTED
+        )
         model = active.model
         if len(model) > cls.MODEL_WIDTH:
-            model = model[:cls.MODEL_WIDTH - 1] + "…"
+            model = model[: cls.MODEL_WIDTH - 1] + "…"
         return [
-            Text.assemble(("llm: ", theme.DIM), (f"{active.label} · {active.model} ", theme.MUTED),
-                          ("●", color)),
+            Text.assemble(
+                ("llm: ", theme.DIM),
+                (f"{active.label} · {active.model} ", theme.MUTED),
+                ("●", color),
+            ),
             Text.assemble(("llm: ", theme.DIM), (f"{model} ", theme.MUTED), ("●", color)),
         ]
 
     def refresh_line(self) -> None:
         width = self.size.width or 120
         assessment = store.get_assessment()
-        head = Text.assemble(("◆ ", theme.CYAN), ("reconix", f"bold {theme.CYAN}"),
-                             ("  │  ", theme.BORDER))
+        head = Text.assemble(
+            ("◆ ", theme.CYAN), ("reconix", f"bold {theme.CYAN}"), ("  │  ", theme.BORDER)
+        )
         parts = self._parts()
         # 1. The parts that must show (phase, model), in their shortest form.
         chosen = {i: forms[-1] for i, (_, required, forms) in enumerate(parts) if required}
@@ -103,8 +127,9 @@ class SessionBar(Static):
         self.update(Text.assemble(left, Text(" " * pad), right))
 
     def _status_width(self, chosen: dict) -> int:
-        return (sum(form.cell_len for form in chosen.values())
-                + len(self.GAP) * max(0, len(chosen) - 1))
+        return sum(form.cell_len for form in chosen.values()) + len(self.GAP) * max(
+            0, len(chosen) - 1
+        )
 
     @classmethod
     def _context_line(cls, label: str, target: str, room: int) -> str:
@@ -116,7 +141,7 @@ class SessionBar(Static):
         left_for_target = room - len(label) - 3
         if left_for_target < 4:
             return label
-        return f"{label} · {target[:left_for_target - 1]}…"
+        return f"{label} · {target[: left_for_target - 1]}…"
 
 
 class FlowProgress(Static):
@@ -129,7 +154,7 @@ class FlowProgress(Static):
     says it is done (`store.step_states`), never because you moved past it.
     """
 
-    SUB_STEPS = {"detail": "findings"}    # screens shown under another step
+    SUB_STEPS = {"detail": "findings"}  # screens shown under another step
 
     def __init__(self, flow_name: str) -> None:
         super().__init__()

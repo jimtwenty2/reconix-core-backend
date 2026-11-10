@@ -66,8 +66,10 @@ Answer with this JSON object:
   an open SMB share plus a leaked credential -> a credentialed enumeration; a
   parameter plus a stack fingerprint -> the injection that stack is prone to.
 - If a "Techniques to cover" section is given, say which techniques the results
-  cover so far and which one comes next. Never propose repeating a tool on a target
-  it has already run on. The automated work is done only when every technique is
+  cover so far and which one comes next. A technique in that section's "Already
+  tested (do not repeat these)" line has had one of its tools finish — it is
+  covered; name the next uncovered technique or a lead, never a repeat. Never
+  propose repeating a tool on a target it has already run on. The automated work is done only when every technique is
   covered or "not possible", no unconfirmed HIGH or MEDIUM candidate still has an
   allowed validation step, and no lead above is left to follow; a single finished
   tool does not "cover" a technique that surfaced a lead you can still pursue.

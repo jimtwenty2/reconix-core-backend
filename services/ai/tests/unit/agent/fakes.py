@@ -53,6 +53,8 @@ class Request:
     chat_scope: object | None = None
     plan: list[str] = field(default_factory=list)
     recent_reasoning: list[str] = field(default_factory=list)
+    recent_observations: list[str] = field(default_factory=list)
+    tools_run: list[str] = field(default_factory=list)
 
 
 @dataclass

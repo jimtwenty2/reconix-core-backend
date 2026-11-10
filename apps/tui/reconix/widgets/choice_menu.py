@@ -9,7 +9,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 
 from rich.text import Text
 from textual import events
-from textual._time import get_time   # the clock Textual stamps every event with
+from textual._time import get_time  # the clock Textual stamps every event with
 from textual.binding import Binding
 from textual.message import Message
 from textual.widgets import OptionList
@@ -41,9 +41,9 @@ class ChoiceMenu(OptionList):
     an input row. Prompts are Rich Text, so labels are never parsed as markup.
     """
 
-    COMPACT = False                 # one line per choice (used by the slash menu)
-    NUMBERED = True                 # show numbers and let 1-9 pick
-    ACTIVE_WITHOUT_FOCUS = False    # bright pointer even without focus (slash menu)
+    COMPACT = False  # one line per choice (used by the slash menu)
+    NUMBERED = True  # show numbers and let 1-9 pick
+    ACTIVE_WITHOUT_FOCUS = False  # bright pointer even without focus (slash menu)
     # A pick pressed before this many seconds after the menu appeared (or its choices
     # changed) is ignored: a repeated or held Enter meant for the screen before must not
     # decide a gate. Keys are judged by when they were pressed, not when they are handled.
@@ -84,24 +84,30 @@ class ChoiceMenu(OptionList):
             return self.menu
 
     def __init__(
-        self, choices: Sequence[Choice] = (), *, default: int = 0,
-        numbered: Optional[bool] = None, inline: bool = False, type_out: bool = False,
-        id: Optional[str] = None, classes: Optional[str] = None,
+        self,
+        choices: Sequence[Choice] = (),
+        *,
+        default: int = 0,
+        numbered: Optional[bool] = None,
+        inline: bool = False,
+        type_out: bool = False,
+        id: Optional[str] = None,
+        classes: Optional[str] = None,
     ) -> None:
         self._choices: List[Choice] = list(choices)
         self._default = default
         self._numbered = self.NUMBERED if numbered is None else numbered
         if type_out:
-            self._numbered = False      # digits type there, so no number would pick
-        self._inline = inline           # keep each choice on one line (hint beside the label)
+            self._numbered = False  # digits type there, so no number would pick
+        self._inline = inline  # keep each choice on one line (hint beside the label)
         # `type_out`: typed keys (digits too) leave as `TypedOut`, so a typed line never picks
         # a choice; ↑/↓, Space and Enter still work the menu.
         self._type_out = type_out
-        self._typed_out = False         # a key already left: the input is taking over
+        self._typed_out = False  # a key already left: the input is taking over
         self._pointer: Optional[int] = None
-        self._draft = ""                # text typed into the input row
-        self._armed_at = 0.0            # when picks start to count (see ARM_DELAY)
-        self._width = 0                 # the width hints wrap to (0 until laid out)
+        self._draft = ""  # text typed into the input row
+        self._armed_at = 0.0  # when picks start to count (see ARM_DELAY)
+        self._width = 0  # the width hints wrap to (0 until laid out)
         super().__init__(*self._build_options(), id=id, classes=classes)
 
     # --- public API -----------------------------------------------------------------
@@ -110,7 +116,7 @@ class ChoiceMenu(OptionList):
         self._pointer = None
         self._draft = ""
         self._arm()
-        self.set_options(self._build_options())   # resets `highlighted` to None
+        self.set_options(self._build_options())  # resets `highlighted` to None
         first = self._first_enabled(0)
         if first is not None:
             self.highlighted = first
@@ -145,9 +151,9 @@ class ChoiceMenu(OptionList):
 
     def _activate(self, index: int) -> None:
         if get_time() < self._armed_at:
-            return                   # a click or Enter before the person could read the choices
+            return  # a click or Enter before the person could read the choices
         choice = self._choices[index]
-        if choice.disabled:          # also guards the screen's Enter fallback
+        if choice.disabled:  # also guards the screen's Enter fallback
             return
         if choice.kind != "input":
             self.post_message(self.Chosen(self, choice.id))
@@ -160,7 +166,7 @@ class ChoiceMenu(OptionList):
 
     def check_action(self, action: str, parameters: Tuple[Any, ...]) -> Optional[bool]:
         if action == "pick":
-            return self._numbered   # unnumbered menus leave digits alone
+            return self._numbered  # unnumbered menus leave digits alone
         return True
 
     def action_pick(self, number: int) -> None:
@@ -168,10 +174,10 @@ class ChoiceMenu(OptionList):
         if not 0 <= index < len(self._choices):
             return
         if self._choices[index].disabled or self._choices[index].tone == "danger":
-            self.app.bell()          # dead end, or destructive: never on a digit
+            self.app.bell()  # dead end, or destructive: never on a digit
             return
         self.highlighted = index
-        if self._choices[index].kind != "input":   # the input row just takes the cursor
+        if self._choices[index].kind != "input":  # the input row just takes the cursor
             self._activate(index)
 
     # --- rendering --------------------------------------------------------------------
@@ -179,17 +185,24 @@ class ChoiceMenu(OptionList):
         options: List[Optional[Option]] = []
         for i, choice in enumerate(self._choices):
             if choice.separated and options:
-                options.append(None)   # OptionList draws a rule under the previous option
-            options.append(Option(self._render_choice(i, choice, i == self._pointer),
-                                  id=choice.id, disabled=choice.disabled))
+                options.append(None)  # OptionList draws a rule under the previous option
+            options.append(
+                Option(
+                    self._render_choice(i, choice, i == self._pointer),
+                    id=choice.id,
+                    disabled=choice.disabled,
+                )
+            )
         return options
 
     def _render_choice(self, index: int, choice: Choice, highlighted: bool) -> Text:
         active = highlighted and (self.has_focus or self.ACTIVE_WITHOUT_FOCUS)
         accent = theme.CRITICAL if choice.tone == "danger" else theme.CYAN
         line = Text()
-        line.append(f"{POINTER} " if highlighted else "  ",
-                    style=f"bold {theme.CYAN if active else theme.DIM}")
+        line.append(
+            f"{POINTER} " if highlighted else "  ",
+            style=f"bold {theme.CYAN if active else theme.DIM}",
+        )
         if self.COMPACT:
             line.append(choice.label, style=f"bold {accent}" if highlighted else theme.TEXT)
             if choice.hint:
@@ -197,10 +210,11 @@ class ChoiceMenu(OptionList):
             return line
         number = f"{index + 1}. " if self._numbered else ""
         if choice.tone == "danger":
-            number = " " * len(number)              # destructive: no digit picks it
-        if choice.disabled:                         # dead end: visible but not pickable
+            number = " " * len(number)  # destructive: no digit picks it
+        if choice.disabled:  # dead end: visible but not pickable
             line.append(number + choice.label, style=theme.DIM)
-            line.append(f"  ({choice.reason or 'not in demo'})", style=f"italic {theme.DIM}")
+            why = choice.reason or choice.hint or "unavailable"
+            line.append(f"  ({why})", style=f"italic {theme.DIM}")
             return line
         line.append(number, style=accent if highlighted else theme.DIM)
         if choice.kind == "input":
@@ -220,7 +234,7 @@ class ChoiceMenu(OptionList):
             line.append("  ")
             line.append_text(theme.chip(choice.tag, "cyan"))
         if choice.hint:
-            if self._inline:        # one line per choice: the hint sits beside the label
+            if self._inline:  # one line per choice: the hint sits beside the label
                 line.append(f"  {choice.hint}", style=theme.MUTED)
             else:
                 indent = " " * (2 + len(number))
@@ -244,14 +258,16 @@ class ChoiceMenu(OptionList):
         self._width = width
         for i, choice in enumerate(self._choices):
             self.replace_option_prompt_at_index(
-                i, self._render_choice(i, choice, i == self._pointer))
+                i, self._render_choice(i, choice, i == self._pointer)
+            )
 
     def _move_pointer(self, index: Optional[int]) -> None:
         old, self._pointer = self._pointer, index
         for i in {old, index}:
             if i is not None and 0 <= i < len(self._choices):
                 self.replace_option_prompt_at_index(
-                    i, self._render_choice(i, self._choices[i], i == index),
+                    i,
+                    self._render_choice(i, self._choices[i], i == index),
                 )
 
     # --- events -----------------------------------------------------------------------
@@ -278,11 +294,11 @@ class ChoiceMenu(OptionList):
             self.post_message(self.TypedOut(self, event.character or ""))
             return
         if self._typed_out and event.key == "enter":
-            event.stop()             # the typed line's Enter, before the input has the focus:
+            event.stop()  # the typed line's Enter, before the input has the focus:
             event.prevent_default()  # it must never choose the highlighted row
             return
         if event.time < self._armed_at and (event.key == "enter" or event.key.isdigit()):
-            event.stop()             # pressed before the menu was armed: typed ahead
+            event.stop()  # pressed before the menu was armed: typed ahead
             event.prevent_default()
             return
         # On the input row, keys type text instead of reaching menu or screen shortcuts.
@@ -296,7 +312,7 @@ class ChoiceMenu(OptionList):
         elif event.key == "escape" and self._draft:
             self._draft = ""
         elif event.key in ("left", "right") and self._draft:
-            pass                     # a typed draft is kept: ←/→ never leave the screen with it
+            pass  # a typed draft is kept: ←/→ never leave the screen with it
         else:
             return
         event.stop()
@@ -332,7 +348,7 @@ class ChoiceMenu(OptionList):
             self.scroll_visible(animate=False)
 
     def _on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        event.stop()   # screens listen for Chosen / Typed, never the raw OptionList message
+        event.stop()  # screens listen for Chosen / Typed, never the raw OptionList message
         self._activate(event.option_index)
 
 
@@ -341,5 +357,5 @@ class SuggestionMenu(ChoiceMenu, can_focus=False):
 
     COMPACT = True
     NUMBERED = False
-    ARM_DELAY = 0.0                 # driven by typing: a click on a suggestion counts at once
+    ARM_DELAY = 0.0  # driven by typing: a click on a suggestion counts at once
     ACTIVE_WITHOUT_FOCUS = True

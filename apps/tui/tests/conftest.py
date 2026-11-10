@@ -50,13 +50,14 @@ def instant_ui(monkeypatch, tmp_path):
     """Steps play at once, menus take a pick at once (tests press keys on purpose); reports,
     saved assessments and the web link live in temp."""
     monkeypatch.setattr(RunController, "SPEED", 0)
-    monkeypatch.setattr(ReconixApp, "ASK_PROVIDER_ON_START", False)   # tests opt in
+    monkeypatch.setattr(ReconixApp, "ASK_PROVIDER_ON_START", False)  # tests opt in
     monkeypatch.setattr(ReconixApp, "SUGGEST_SCOPE_ON_REVIEW", False)  # tests opt in
+    monkeypatch.setattr(ReconixApp, "CHECK_CORE_API_ON_START", False)  # tests opt in
     monkeypatch.setattr(ChoiceMenu, "ARM_DELAY", 0)
     monkeypatch.setattr(report, "REPORTS_DIR", tmp_path / "reports")
     monkeypatch.setattr(persist, "DATA_DIR", tmp_path / "assessments")
     monkeypatch.setattr(persist, "WEB_URL_FILE", tmp_path / "web.url")
-    monkeypatch.setattr(persist, "ENABLED", True)   # tests save to the tmp dir above
+    monkeypatch.setattr(persist, "ENABLED", True)  # tests save to the tmp dir above
     monkeypatch.setattr(persist, "_written", {})
 
 
@@ -106,10 +107,12 @@ def stream_via_complete(monkeypatch):
 
 @pytest.fixture
 def model_active(reachable):
-    """A configured, tested and active model, so /assess takes the agent path."""
-    store.set_provider("openai", api_key="sk-x-1234", models=["gpt-4o-mini"])
+    """A configured, tested and active model on the Core API."""
+    store.set_provider("openai", api_key="sk-1234", models=["gpt-4o-mini"])
     store.test_provider("openai")
     store.activate("openai", "gpt-4o-mini")
+    if store.core_api_needs_ok():  # a model off this computer: approve it
+        store.core_api_approve()
 
 
 @pytest.fixture(autouse=True)

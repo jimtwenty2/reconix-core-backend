@@ -20,10 +20,10 @@ from ...core_api.scope_map import api_tool
 AUTO, PARTIAL, MANUAL = "auto", "partial", "manual"
 
 # Coverage of one technique after a run.
-TESTED = "TESTED"      # a tool of the technique finished on this assessment
+TESTED = "TESTED"  # a tool of the technique finished on this assessment
 PARTIAL_DONE = "PARTIAL"  # a partial technique's tool finished: finish it by hand
-NOT_RUN = "NOT_RUN"    # an auto or partial technique none of whose tools finished
-MANUAL_CHECK = "MANUAL"   # a manual technique: the tester checks it by hand
+NOT_RUN = "NOT_RUN"  # an auto or partial technique none of whose tools finished
+MANUAL_CHECK = "MANUAL"  # a manual technique: the tester checks it by hand
 
 STATUS_TEXT = {
     TESTED: "Tested",
@@ -46,8 +46,8 @@ class Technique:
     key: str
     name: str
     investigates: str
-    tools: Tuple[str, ...]   # Kali catalog names (lowercase)
-    mode: str                # auto, partial or manual
+    tools: Tuple[str, ...]  # Kali catalog names (lowercase)
+    mode: str  # auto, partial or manual
 
 
 def _t(key: str, name: str, investigates: str, tools: str, mode: str) -> Technique:
@@ -55,22 +55,52 @@ def _t(key: str, name: str, investigates: str, tools: str, mode: str) -> Techniq
 
 
 WEB: Tuple[Technique, ...] = (
-    _t("fingerprint", "Technology fingerprinting", "Web server, framework, CMS, libraries",
-       "whatweb httpx_probe", AUTO),
-    _t("versions", "Version detection", "Outdated Apache, Nginx, PHP, etc.",
-       "nuclei whatweb nikto", AUTO),
-    _t("directories", "Directory discovery", "Hidden directories and files",
-       "katana ffuf gobuster", AUTO),
-    _t("authentication", "Authentication testing", "Weak login, broken authentication",
-       "nuclei", PARTIAL),
+    _t(
+        "fingerprint",
+        "Technology fingerprinting",
+        "Web server, framework, CMS, libraries",
+        "whatweb httpx_probe",
+        AUTO,
+    ),
+    _t(
+        "versions",
+        "Version detection",
+        "Outdated Apache, Nginx, PHP, etc.",
+        "nuclei whatweb nikto",
+        AUTO,
+    ),
+    _t(
+        "directories",
+        "Directory discovery",
+        "Hidden directories and files",
+        "katana ffuf gobuster",
+        AUTO,
+    ),
+    _t(
+        "authentication",
+        "Authentication testing",
+        "Weak login, broken authentication",
+        "nuclei",
+        PARTIAL,
+    ),
     _t("authorization", "Authorization testing", "IDOR, privilege escalation", "", MANUAL),
-    _t("input_validation", "Input validation", "SQL injection, XSS, command injection",
-       "dalfox nuclei", PARTIAL),
+    _t(
+        "input_validation",
+        "Input validation",
+        "SQL injection, XSS, command injection",
+        "dalfox nuclei",
+        PARTIAL,
+    ),
     _t("headers", "Security headers", "CSP, HSTS, X-Frame-Options", "nuclei nikto", AUTO),
     _t("tls", "TLS assessment", "Weak protocols and certificates", "testssl", AUTO),
     _t("file_upload", "File upload testing", "Unrestricted file uploads", "", MANUAL),
-    _t("configuration", "Configuration testing", "Debug mode, exposed secrets, default pages",
-       "nuclei nikto", AUTO),
+    _t(
+        "configuration",
+        "Configuration testing",
+        "Debug mode, exposed secrets, default pages",
+        "nuclei nikto",
+        AUTO,
+    ),
 )
 
 NETWORK: Tuple[Technique, ...] = (
@@ -79,50 +109,93 @@ NETWORK: Tuple[Technique, ...] = (
     _t("services", "Service detection", "Identify running services", "nmap", AUTO),
     _t("versions", "Version detection", "Detect outdated service versions", "nmap", AUTO),
     _t("os_fingerprint", "OS fingerprinting", "Identify operating systems", "nmap", PARTIAL),
-    _t("cve_matching", "CVE matching", "Compare detected versions against known CVEs",
-       "nuclei", AUTO),
-    _t("misconfiguration", "Misconfiguration checks", "Default credentials, insecure services",
-       "nuclei enum4linux onesixtyone", PARTIAL),
+    _t(
+        "cve_matching",
+        "CVE matching",
+        "Compare detected versions against known CVEs",
+        "nuclei",
+        AUTO,
+    ),
+    _t(
+        "misconfiguration",
+        "Misconfiguration checks",
+        "Default credentials, insecure services",
+        "nuclei enum4linux onesixtyone",
+        PARTIAL,
+    ),
     _t("tls", "SSL/TLS testing", "Weak ciphers and protocols", "testssl", AUTO),
     _t("firewall", "Firewall assessment", "Unexpectedly exposed services", "nmap", PARTIAL),
-    _t("segmentation", "Network segmentation", "Unauthorized access between network zones",
-       "", MANUAL),
+    _t(
+        "segmentation",
+        "Network segmentation",
+        "Unauthorized access between network zones",
+        "",
+        MANUAL,
+    ),
 )
 
 API: Tuple[Technique, ...] = (
-    _t("endpoints", "Endpoint discovery", "Find undocumented API endpoints",
-       "katana ffuf arjun", AUTO),
+    _t(
+        "endpoints",
+        "Endpoint discovery",
+        "Find undocumented API endpoints",
+        "katana ffuf arjun",
+        AUTO,
+    ),
     _t("authentication", "Authentication testing", "JWT, API keys, OAuth", "nuclei", PARTIAL),
     _t("authorization", "Authorization testing", "BOLA / IDOR", "", MANUAL),
-    _t("rate_limit", "Rate-limit testing", "Brute-force and request abuse protections", "",
-       MANUAL),
-    _t("input_validation", "Input validation", "SQL injection, NoSQL injection",
-       "schemathesis nuclei", PARTIAL),
-    _t("mass_assignment", "Mass assignment", "Unauthorized modification of fields", "",
-       MANUAL),
-    _t("data_exposure", "Data exposure", "Sensitive information in API responses",
-       "nuclei schemathesis", PARTIAL),
-    _t("http_methods", "HTTP method testing", "Unexpected methods enabled",
-       "nuclei httpx_probe", PARTIAL),
+    _t("rate_limit", "Rate-limit testing", "Brute-force and request abuse protections", "", MANUAL),
+    _t(
+        "input_validation",
+        "Input validation",
+        "SQL injection, NoSQL injection",
+        "schemathesis nuclei",
+        PARTIAL,
+    ),
+    _t("mass_assignment", "Mass assignment", "Unauthorized modification of fields", "", MANUAL),
+    _t(
+        "data_exposure",
+        "Data exposure",
+        "Sensitive information in API responses",
+        "nuclei schemathesis",
+        PARTIAL,
+    ),
+    _t(
+        "http_methods",
+        "HTTP method testing",
+        "Unexpected methods enabled",
+        "nuclei httpx_probe",
+        PARTIAL,
+    ),
     _t("cors", "CORS testing", "Unsafe cross-origin access", "nuclei", AUTO),
-    _t("schema_validation", "Schema validation", "Incorrect request/response validation",
-       "schemathesis", AUTO),
+    _t(
+        "schema_validation",
+        "Schema validation",
+        "Incorrect request/response validation",
+        "schemathesis",
+        AUTO,
+    ),
     _t("ssrf", "SSRF testing", "Unsafe server-side URL fetching", "nuclei", PARTIAL),
-    _t("api_versions", "API version testing", "Old or deprecated endpoints", "ffuf katana",
-       AUTO),
+    _t("api_versions", "API version testing", "Old or deprecated endpoints", "ffuf katana", AUTO),
 )
 
 SOURCE: Tuple[Technique, ...] = (
-    _t("static_analysis", "Static analysis", "Injection, unsafe code patterns", "semgrep",
-       AUTO),
-    _t("secrets", "Secret scanning", "Keys, tokens and passwords in the code", "gitleaks",
-       AUTO),
-    _t("dependencies", "Dependency scanning", "Known-vulnerable packages",
-       "trivy grype osv_scanner", AUTO),
+    _t("static_analysis", "Static analysis", "Injection, unsafe code patterns", "semgrep", AUTO),
+    _t("secrets", "Secret scanning", "Keys, tokens and passwords in the code", "gitleaks", AUTO),
+    _t(
+        "dependencies",
+        "Dependency scanning",
+        "Known-vulnerable packages",
+        "trivy grype osv_scanner",
+        AUTO,
+    ),
 )
 
 TECHNIQUES: Dict[str, Tuple[Technique, ...]] = {
-    "web_url": WEB, "api": API, "network": NETWORK, "source": SOURCE,
+    "web_url": WEB,
+    "api": API,
+    "network": NETWORK,
+    "source": SOURCE,
 }
 
 
@@ -136,8 +209,9 @@ def tool_key(name: str) -> str:
     return api_tool(name).lower()
 
 
-def coverage(template_id: str, finished_tools: Iterable[str],
-             scope_tools: Optional[Iterable[str]] = None) -> List[Dict[str, object]]:
+def coverage(
+    template_id: str, finished_tools: Iterable[str], scope_tools: Optional[Iterable[str]] = None
+) -> List[Dict[str, object]]:
     """One row per technique: its name, what it investigates, status and the tools that ran.
 
     `finished_tools` are the tools whose runs completed on this assessment, in any spelling
@@ -146,8 +220,7 @@ def coverage(template_id: str, finished_tools: Iterable[str],
     `possible` (its NOT_RUN reads "not possible with this scope"). None: not checked.
     """
     finished = {tool_key(name) for name in finished_tools if name}
-    in_scope = (None if scope_tools is None
-                else {tool_key(name) for name in scope_tools if name})
+    in_scope = None if scope_tools is None else {tool_key(name) for name in scope_tools if name}
     rows: List[Dict[str, object]] = []
     for tech in techniques_for(template_id):
         ran = [tool for tool in tech.tools if tool in finished]
@@ -158,9 +231,17 @@ def coverage(template_id: str, finished_tools: Iterable[str],
         else:
             status = TESTED if tech.mode == AUTO else PARTIAL_DONE
         possible = in_scope is None or any(tool in in_scope for tool in tech.tools)
-        rows.append({"key": tech.key, "name": tech.name, "investigates": tech.investigates,
-                     "mode": tech.mode, "status": status, "tools": ran,
-                     "possible": possible})
+        rows.append(
+            {
+                "key": tech.key,
+                "name": tech.name,
+                "investigates": tech.investigates,
+                "mode": tech.mode,
+                "status": status,
+                "tools": ran,
+                "possible": possible,
+            }
+        )
     return rows
 
 
@@ -170,3 +251,32 @@ def grouped(template_id: str) -> Dict[str, List[str]]:
     for tech in techniques_for(template_id):
         groups[tech.mode].append(tech.name)
     return groups
+
+
+def coverage_preview(
+    template_id: str, scope_tools: Iterable[str]
+) -> Dict[str, List[Dict[str, object]]]:
+    """Before any run: which techniques this scope's chosen tools can and cannot cover.
+
+    Groups the template's techniques by what the chosen tools allow, so the operator sees
+    what the scope can and cannot find before approving it. Informational only: the operator
+    still approves, and the harness still enforces scope at run time.
+    - "can": an auto technique a scope tool tests.
+    - "partial": a partial technique a scope tool partly tests (a person finishes it).
+    - "gap": an auto/partial technique no scope tool covers, with the tools that would.
+    - "manual": a technique a person checks by hand.
+    """
+    in_scope = {tool_key(name) for name in scope_tools if name}
+    out: Dict[str, List[Dict[str, object]]] = {"can": [], "partial": [], "gap": [], "manual": []}
+    for tech in techniques_for(template_id):
+        if tech.mode == MANUAL:
+            out["manual"].append({"name": tech.name, "needs": []})
+            continue
+        covered = any(tool_key(tool) in in_scope for tool in tech.tools)
+        if not covered:
+            out["gap"].append({"name": tech.name, "needs": list(tech.tools)})
+        elif tech.mode == PARTIAL:
+            out["partial"].append({"name": tech.name, "needs": []})
+        else:
+            out["can"].append({"name": tech.name, "needs": []})
+    return out
