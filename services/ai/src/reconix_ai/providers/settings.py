@@ -16,11 +16,22 @@ DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 RECONIX_MODEL_NAME = "reconix"
 # A reasoning model writes ~80-90 tokens a second, so a long think needs minutes.
 DEFAULT_TIMEOUT_SECONDS = 300
-# The longest answer one call may write. A reasoning model (e.g. Qwen3) counts its
-# thinking in it too: a plan took 1,600 to 5,000 tokens with a Qwen3.6 model and once
-# ran past 8,000, so a lower limit cut it off before it wrote the answer. A plan's JSON
-# alone fits well under it.
-DEFAULT_MAX_TOKENS = 16_000
+# The longest answer one call may write. A reasoning model (Qwen3, Claude 5) counts its
+# thinking in it too, and a low limit starved it: the thinking used it all and no answer
+# came. Anthropic needs a finite limit, so every call sends one: RECONIX_MAX_OUTPUT_TOKENS,
+# or the ceiling, never above it. The client lowers it to a model's own known limit.
+MAX_OUTPUT_TOKENS_CEILING = 128_000
+
+
+def max_output_tokens() -> int:
+    """RECONIX_MAX_OUTPUT_TOKENS kept between 1 and the ceiling; the ceiling when unset."""
+    value = os.environ.get("RECONIX_MAX_OUTPUT_TOKENS", "").strip()
+    if not value:
+        return MAX_OUTPUT_TOKENS_CEILING
+    try:
+        return max(1, min(int(value), MAX_OUTPUT_TOKENS_CEILING))
+    except ValueError:
+        raise ValueError("RECONIX_MAX_OUTPUT_TOKENS must be a whole number.") from None
 
 
 class ProviderType(StrEnum):
@@ -41,7 +52,7 @@ class ProviderConfig:
     base_url: str | None = None  # empty for the built-in provider
     api_key: str | None = field(default=None, repr=False)  # never printed
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
-    max_tokens: int = DEFAULT_MAX_TOKENS
+    max_tokens: int = field(default_factory=max_output_tokens)
 
 
 def reconix_provider() -> ProviderConfig:
