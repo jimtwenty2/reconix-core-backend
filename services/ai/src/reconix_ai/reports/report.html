@@ -16,6 +16,9 @@
   .sev { font-weight: bold; }
   .CRITICAL { color: #8b0000; } .HIGH { color: #c0392b; } .MEDIUM { color: #b9770e; }
   .LOW { color: #1f618d; } .NONE, .UNKNOWN { color: #555; }
+  .confidence { font-weight: bold; text-transform: lowercase; font-variant: small-caps; }
+  .CONFIRMED { color: #1e8449; } .FIRM { color: #239b56; }
+  .TENTATIVE { color: #b9770e; } .INFORMATIONAL { color: #777; }
   p { margin: 1mm 0 2mm; white-space: pre-wrap; }
   .missing { color: #c0392b; font-weight: bold; }
 </style>
@@ -46,7 +49,9 @@
 {% for finding in findings %}
 <h3>{{ finding.code }} {{ finding.title }}</h3>
 {% set level = finding.severity_status if finding.severity_status in levels else "UNKNOWN" %}
-<p><span class="sev {{ level }}">{{ finding.severity_status }}</span> &middot; {{ finding.target }}</p>
+<p><span class="sev {{ level }}">{{ finding.severity_status }}</span>
+   &middot; <span class="confidence {{ finding.confidence }}">{{ finding.confidence }}</span>
+   &middot; {{ finding.target }}</p>
 <p>{{ finding.description }}</p>
 {% set ids = finding.cwe_ids + finding.owasp_id + finding.cve_ids %}
 {% if ids %}<p>References: {{ ids | join(", ") }}</p>{% endif %}

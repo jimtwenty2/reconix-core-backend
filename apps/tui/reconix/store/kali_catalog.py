@@ -57,6 +57,7 @@ KALI_TOOLS: Dict[str, KaliTool] = {
     'nikto': KaliTool('nikto', 'MEDIUM', 'web', False),
     'nmap': KaliTool('nmap', 'LOW', 'network', False),
     'nuclei': KaliTool('nuclei', 'MEDIUM', 'web', False),
+    'nuclei_dast': KaliTool('nuclei_dast', 'HIGH', 'web', True),
     'onesixtyone': KaliTool('onesixtyone', 'MEDIUM', 'network', False),
     'openvas': KaliTool('openvas', 'HIGH', 'openvas', False),
     'osv_scanner': KaliTool('osv_scanner', 'LOW', 'source', False),

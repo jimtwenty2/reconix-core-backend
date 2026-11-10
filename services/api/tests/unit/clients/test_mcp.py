@@ -226,3 +226,20 @@ def test_schemathesis_base_url_is_the_schema_origin():
 def test_schemathesis_schema_with_a_port_and_path_keeps_the_origin_only():
     _, args = tool_call(job("schemathesis", "https://api.example.com:8443/v1/openapi.json", []))
     assert args["base_url"] == "https://api.example.com:8443"
+
+
+def test_nuclei_dast_gets_the_configured_interactsh_server(monkeypatch):
+    import reconix_api.clients.mcp as mcp
+
+    monkeypatch.setattr(mcp, "INTERACTSH_SERVER", "https://oob.reconix.internal")
+    name, args = mcp.tool_call(job("nuclei_dast", "http://juice-shop:3000/rest/x?q=1", []))
+    assert name == "nuclei_dast"
+    assert args["interactsh_server"] == "https://oob.reconix.internal"
+
+
+def test_nuclei_dast_without_a_configured_server_injects_nothing(monkeypatch):
+    import reconix_api.clients.mcp as mcp
+
+    monkeypatch.setattr(mcp, "INTERACTSH_SERVER", "")
+    _, args = mcp.tool_call(job("nuclei_dast", "http://juice-shop:3000/rest/x?q=1", []))
+    assert "interactsh_server" not in args  # falls back to nuclei's default

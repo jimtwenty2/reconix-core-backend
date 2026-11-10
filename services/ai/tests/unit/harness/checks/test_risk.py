@@ -21,6 +21,7 @@ def risk_of(tool: str, arguments: list[str], is_validation: bool = False) -> Ris
     [
         ("NMAP", LOW),
         ("NUCLEI", MEDIUM),
+        ("NUCLEI_DAST", HIGH),  # DAST fuzzing is destructive
         ("ZAP", HIGH),
         ("SEMGREP", LOW),
         ("GITLEAKS", LOW),
@@ -36,6 +37,12 @@ def test_tool_name_case_does_not_matter() -> None:
 
 def test_unknown_tool_is_high() -> None:
     assert risk_of("METASPLOIT", []) == HIGH
+
+
+def test_nuclei_dast_is_blocked_above_a_medium_scope() -> None:
+    # A disposable/HIGH tool cannot run under a scope that caps risk at MEDIUM.
+    outcome = check_risk("NUCLEI_DAST", [], False, max_risk=MEDIUM)
+    assert outcome.decision == Decision.BLOCKED
 
 
 # --- options ---------------------------------------------------------------

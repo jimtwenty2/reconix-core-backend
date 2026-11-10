@@ -52,6 +52,21 @@ DEFAULT_STEPS: List[Tuple[str, str, str, List[str], str, str]] = [
 ]
 
 
+_VERIFIER_TOOLS = {"SQLMAP", "DALFOX", "COMMIX", "SCHEMATHESIS", "NUCLEI_DAST"}
+
+
+def _confidence(validation: str, finding_status: str, severity: str, tools: list) -> str:
+    """Mirror the API's derived FindingOut.confidence so the fake stays faithful."""
+    if validation == "CONFIRMED":
+        return "CONFIRMED"
+    if finding_status == "FALSE_POSITIVE" or severity == "NONE":
+        return "INFORMATIONAL"
+    upper = {t.upper() for t in tools}
+    if upper & _VERIFIER_TOOLS or len(upper) >= 2:
+        return "FIRM"
+    return "TENTATIVE"
+
+
 def finding_row(
     code: str,
     title: str,
@@ -63,6 +78,7 @@ def finding_row(
 ) -> dict:
     """A FindingOut without its ids (the fake fills them in)."""
     return {
+        "confidence": _confidence("UNCONFIRMED", "OPEN", severity, [tool]),
         "code": code,
         "title": title,
         "target": target,
@@ -569,6 +585,24 @@ class FakeApi:
         )
         self.findings[finding_id] = finding
 
+    def _set_summary_evidence(self, finding: dict, summary: str) -> None:
+        """Keep the AI's plain reading as one analysis_summary evidence row, as the real API
+        does, replacing any earlier one."""
+        for row in finding.get("evidence", []):
+            if row.get("kind") == "analysis_summary":
+                row["content"] = summary
+                return
+        finding.setdefault("evidence", []).append(
+            {
+                "evidence_id": self._id("ev"),
+                "kind": "analysis_summary",
+                "content": summary,
+                "location": None,
+                "created_at": now(),
+                "tool_run_id": None,
+            }
+        )
+
     def _analyze(self, assessment_id: str, body=None) -> dict:
         assessment = self._assessment(assessment_id)
         run_id = self._id("r")
@@ -594,6 +628,8 @@ class FakeApi:
             f["description"] = f"In plain terms: {f['title']}."
             f["impact"] = f"An attacker could abuse {f['title']}."
             f["remediation"] = f["remediation"] or "Close what is not needed."
+            summary_text = f"The evidence shows {f['title']} plainly."
+            self._set_summary_evidence(f, summary_text)
             analysis.append(
                 {
                     "code": f["code"],
@@ -602,6 +638,7 @@ class FakeApi:
                     "severity_status": f["severity_status"],
                     "cvss_score": None,
                     "evidence": "",
+                    "evidence_summary": summary_text,
                     "impact": f["impact"],
                     "remediation": f["remediation"],
                     "cwe_ids": [],

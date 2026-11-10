@@ -6,24 +6,28 @@ from typing import List
 
 @dataclass
 class Finding:
-    fid: str               # "001"
-    severity: str          # CRITICAL | HIGH | MEDIUM | LOW
+    fid: str  # "001"
+    severity: str  # CRITICAL | HIGH | MEDIUM | LOW
     title: str
-    path: str              # e.g. "/api/orders/{id}"
-    validation: str        # CONFIRMED | UNCONFIRMED | INCONCLUSIVE
+    path: str  # e.g. "/api/orders/{id}"
+    validation: str  # CONFIRMED | UNCONFIRMED | INCONCLUSIVE
+    confidence: str  # CONFIRMED | FIRM | TENTATIVE | INFORMATIONAL (derived by the API)
     description: str
     affected_url: str
     impact: str
     remediation: str
     tool: str
     references: List[str] = field(default_factory=list)
-    evidence: List[str] = field(default_factory=list)   # already masked
-    cvss_score: float = 0.0        # CVSS v3.1 base score; 0.0 means "not scored"
-    cvss_vector: str = ""          # e.g. "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
-    category: str = ""             # Web App | API | Network | Secret | Dependency | …
-    status: str = "open"           # open | fixed | accepted | false-positive (analyst triage)
-    severity_override: str = ""    # analyst-set severity; "" means use the detected one
-    triage_note: str = ""          # justification for the status or severity override
+    evidence: List[str] = field(default_factory=list)  # proof, masked and in plain lines
+    evidence_summary: str = ""  # the AI's plain reading of the proof (no JSON)
+    validation_reason: str = ""  # the AI's plain line on the validation result
+    validation_method: str = ""  # how it was validated, e.g. dalfox or manual_review
+    cvss_score: float = 0.0  # CVSS v3.1 base score; 0.0 means "not scored"
+    cvss_vector: str = ""  # e.g. "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"
+    category: str = ""  # Web App | API | Network | Secret | Dependency | …
+    status: str = "open"  # open | fixed | accepted | false-positive (analyst triage)
+    severity_override: str = ""  # analyst-set severity; "" means use the detected one
+    triage_note: str = ""  # justification for the status or severity override
 
     @property
     def needs_review(self) -> bool:

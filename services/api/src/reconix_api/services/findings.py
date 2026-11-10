@@ -22,6 +22,7 @@ from reconix_api.core.interfaces import (
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets, mask_output
+from reconix_api.findings import arjun as arjun_findings
 from reconix_api.findings import code_notes, json_mapping, paths, web_fingerprint
 from reconix_api.findings import dalfox as dalfox_findings
 from reconix_api.findings import enum4linux as enum4linux_findings
@@ -66,6 +67,7 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     # ZAP's report is SARIF (zap_report, template sarif-json). Core's "ZAP" is zap_scan.
     "zap_scan": partial(sarif_findings.read, "zap_alert"),
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
+    "nuclei_dast": partial(json_mapping.read, json_mapping.MAPPINGS["nuclei"]),
     "trivy": json_mapping.read_trivy,  # the manifest file is the target
     "grype": json_mapping.read_grype,
     "syft": code_notes.read_syft,  # a package list: no findings, a note in the code scan
@@ -79,6 +81,7 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     "testssl": testssl_findings.read,
     "nikto": nikto_findings.read,
     "dalfox": dalfox_findings.read,
+    "arjun": arjun_findings.read,
     "schemathesis": schemathesis_findings.read,
     "enum4linux": enum4linux_findings.read,
     "onesixtyone": onesixtyone_findings.read,
@@ -296,7 +299,7 @@ async def check_finding(
                 provider=provider,
                 model=model,
                 scope=scope,
-                findings=[finding_input(finding)],
+                findings=[finding_input(db, finding)],
                 tool_results=[tool_run.output_masked or ""],
             ),
         )

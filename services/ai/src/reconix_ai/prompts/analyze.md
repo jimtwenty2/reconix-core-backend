@@ -9,6 +9,10 @@ allowed tools, the findings, the tool results and the knowledge you are given.
    service with this one.
 3. Severity: suggest CRITICAL, HIGH, MEDIUM, LOW, NONE or UNKNOWN.
 4. Evidence: copy the exact line or lines of tool output that show it.
+4b. Evidence summary: in one or two plain sentences, say what that evidence
+   shows and how it proves the finding, for a reader who will not read the raw
+   output. Describe only what the copied evidence actually contains; add nothing
+   the output does not show.
 5. Impact: say what an attacker could do with it, in plain words.
 6. Fix: say how to fix it, the most direct fix first.
 7. Mapping: give the CWE, OWASP and CVE ids that match it.
@@ -24,6 +28,7 @@ Answer with this JSON object:
     "severity_status": "<part 3>",
     "cvss_score": <a number from 0.0 to 10.0, or null>,
     "evidence": "<part 4>",
+    "evidence_summary": "<part 4b: a plain reading of the evidence, or empty>",
     "impact": "<part 5>",
     "remediation": "<part 6>",
     "cwe_ids": ["CWE-89", "..."],
@@ -48,6 +53,8 @@ Answer with this JSON object:
 - cvss_score is null unless the knowledge gives one for this exact CVE.
 - Evidence is copied, never written by you. If no line shows it, leave evidence
   empty and say so in "unsure".
+- evidence_summary is your own plain words, but only about what the copied
+  evidence shows. When evidence is empty, leave evidence_summary empty too.
 - An empty id list is better than a guessed id.
 - next_step is null when nothing needs confirming. Otherwise it follows the same
   rules as a plan step: an allowed tool, a target inside the approved scope and

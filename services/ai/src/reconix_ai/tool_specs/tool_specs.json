@@ -1,6 +1,6 @@
 {
   "server": "kali-mcp",
-  "tool_count": 74,
+  "tool_count": 75,
   "_note": "Machine-readable mirror of the live tool catalog (ALL_TOOLS); name/description/inputSchema/annotations regenerate from code, keep in sync with TOOLS.md. The MCP server no longer carries risk — the backend owns all risk classification: the per-tool `risk` baseline here is hand-maintained (source of truth) and per-call escalation lives in risk_ops.json.",
   "tools": [
     {
@@ -299,6 +299,37 @@
           "opts": {
             "type": "string",
             "description": "nuclei options; REPLACES the default '-severity medium,high,critical' when set. E.g. '-severity critical,high -tags cve'."
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Per-call timeout in seconds"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "name": "nuclei_dast",
+      "risk": "high",
+      "read_only": null,
+      "destructive": true,
+      "description": "nuclei in DAST / fuzzing mode. Actively fuzzes request parameters and CONFIRMS blind vulnerabilities (blind SSRF, blind SQL injection, out-of-band RCE, Log4Shell-class) via an out-of-band Interactsh callback the target makes back. Use to validate a blind lead a scan surfaced, not for discovery. It SENDS crafted payloads and may create, modify or delete data, so run it only on an authorised, disposable target. `target` is a single URL. Returns one JSON object per finding.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "description": "Single target URL (e.g. http://juice-shop:3000/rest/products/search?q=1)"
+          },
+          "opts": {
+            "type": "string",
+            "description": "Extra nuclei options (e.g. '-tags ssrf,sqli'). Template-loading flags are ignored in DAST mode."
+          },
+          "interactsh_server": {
+            "type": "string",
+            "description": "A Reconix-controlled Interactsh server for OOB callbacks; set by the backend."
           },
           "timeout": {
             "type": "integer",

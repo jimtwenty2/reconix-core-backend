@@ -14,7 +14,7 @@ from typing import Any
 from docx import Document
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from reconix_ai.contracts import SEVERITY_ORDER, severity_rank
+from reconix_ai.contracts import SEVERITY_ORDER, finding_rank
 from reconix_ai.harness import mask_secrets
 
 TEMPLATE_DIR = Path(__file__).resolve().parent
@@ -38,7 +38,7 @@ def report_document(
         "executive_summary": executive_summary,
         "methodology": methodology,
         "severity_counts": {level: counts.get(level, 0) for level in SEVERITY_ORDER},
-        "findings": sorted(report["findings"], key=severity_rank),
+        "findings": sorted(report["findings"], key=finding_rank),
         "tool_runs": report["tool_runs"],
     }
     return masked(document)
@@ -110,7 +110,11 @@ def to_docx(document: dict[str, Any]) -> bytes:
 
 def add_finding(doc: Any, finding: dict[str, Any]) -> None:
     doc.add_heading(f"{finding['code']} {finding['title']}", level=2)
-    doc.add_paragraph(f"Severity: {finding['severity_status']}   Target: {finding['target']}")
+    doc.add_paragraph(
+        f"Severity: {finding['severity_status']}   "
+        f"Confidence: {finding.get('confidence', 'TENTATIVE')}   "
+        f"Target: {finding['target']}"
+    )
     doc.add_paragraph(finding["description"])
     ids = finding["cwe_ids"] + finding["owasp_id"] + finding["cve_ids"]
     if ids:
