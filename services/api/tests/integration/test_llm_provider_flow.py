@@ -390,7 +390,7 @@ def test_removing_a_provider_closes_its_open_approval(db_client, db_app):
     assert event_types(db_app)[-2:] == ["APPROVAL_EXPIRED", "LLM_PROVIDER_REMOVED"]
 
 
-def test_a_provider_that_agent_runs_used_stays(db_client, session_factory):
+def test_a_provider_that_agent_runs_used_is_archived(db_client, session_factory, db_app):
     headers = open_session(db_client)
     provider_id = add(db_client, headers, OLLAMA)["llm_provider_id"]
     session_id = db_client.get("/operator", headers=headers).json()["session_id"]
@@ -400,12 +400,16 @@ def test_a_provider_that_agent_runs_used_stays(db_client, session_factory):
         )
         db.commit()
 
-    refused = db_client.delete(f"/llm-providers/{provider_id}", headers=headers)
+    archived = db_client.delete(f"/llm-providers/{provider_id}", headers=headers)
 
-    assert refused.status_code == 409
-    assert refused.json()["code"] == "PROVIDER_IN_USE"
+    assert archived.status_code == 204
+    assert db_client.get(f"/llm-providers/{provider_id}", headers=headers).status_code == 404
+    listed = db_client.get("/llm-providers", headers=headers).json()
+    assert provider_id not in [row["llm_provider_id"] for row in listed]
     with session_factory() as db:
-        assert db.scalar(select(LlmProvider).where(LlmProvider.llm_provider_id == provider_id))
+        row = db.scalar(select(LlmProvider).where(LlmProvider.llm_provider_id == provider_id))
+        assert row is not None and row.archived is True
+    assert event_types(db_app)[-1] == "LLM_PROVIDER_ARCHIVED"
 
 
 def test_moving_a_provider_drops_its_key(db_client, session_factory):

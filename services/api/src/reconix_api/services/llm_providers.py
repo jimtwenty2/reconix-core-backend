@@ -51,7 +51,7 @@ DISPLAY_NAME_LENGTH = 100  # llm_providers.display_name is VARCHAR(100)
 
 
 def list_providers(db: Db) -> list[LlmProviderOut]:
-    return [provider_out(provider) for provider in provider_repo.list_all(db)]
+    return [provider_out(provider) for provider in provider_repo.list_visible(db)]
 
 
 def read_provider(db: Db, llm_provider_id: UUID) -> LlmProviderOut:
@@ -138,16 +138,21 @@ def update_provider(
 def delete_provider(
     db: Db, write_audit: WriteAudit, operator: Operator, llm_provider_id: UUID
 ) -> None:
-    """A provider that agent runs used stays, so their history keeps its model. Its open
-    activation approval, if any, is closed as EXPIRED."""
+    """A provider no agent run used is deleted. One that runs used is archived instead: it
+    leaves the lists and its key is removed, but its row stays, so their history keeps its
+    model. Its open activation approval, if any, is closed as EXPIRED."""
     open_approval = provider_repo.activation_approval(db, llm_provider_id, ACTIVATE, lock=True)
     provider = _get(db, llm_provider_id, lock=True)
     _ensure_editable(provider)
-    if provider_repo.run_count(db, llm_provider_id):
-        raise ApiError(
-            409, "PROVIDER_IN_USE", "Agent runs used this provider, so it stays for their history."
-        )
     expired = _expire(open_approval)
+    if provider_repo.run_count(db, llm_provider_id):
+        provider.archived = True
+        provider.api_key_encrypted = None
+        provider.api_key_last4 = None
+        db.commit()
+        _audit_expired(write_audit, operator, provider, expired)
+        _audit(write_audit, "LLM_PROVIDER_ARCHIVED", operator, provider)
+        return
     provider_repo.delete(db, provider)
     db.commit()
     _audit_expired(write_audit, operator, provider, expired)
@@ -443,9 +448,9 @@ async def test_provider(
 
 
 async def list_models(db: Db, settings: Settings, llm_provider_id: UUID) -> LlmProviderModelsOut:
-    """The models a provider on this computer has: an Ollama's, or an OpenAI-compatible
-    server's (LM Studio...). Cloud providers, RECONIX and servers off this computer are not
-    asked."""
+    """The models a provider has: an Ollama's or an OpenAI-compatible server's on this
+    computer (LM Studio...), or a cloud service's for its saved key. RECONIX and custom
+    servers off this computer are not asked."""
     provider = _get(db, llm_provider_id)
     local = is_local(provider.provider_type, provider.base_url)
     if provider.provider_type in OLLAMA_TYPES and local:
@@ -457,16 +462,23 @@ async def list_models(db: Db, settings: Settings, llm_provider_id: UUID) -> LlmP
         key = provider_config(settings, provider, provider.model_name).api_key
         db.rollback()
         return LlmProviderModelsOut(models=await provider_checks.compatible_models(base_url, key))
+    if provider.provider_type.value in provider_checks.CLOUD_MODEL_LISTS:
+        provider_type = provider.provider_type.value
+        key = provider_config(settings, provider, provider.model_name).api_key
+        db.rollback()
+        return LlmProviderModelsOut(models=await provider_checks.cloud_models(provider_type, key))
     raise ApiError(
         422,
         "MODEL_LIST_NOT_SUPPORTED",
-        "Only an Ollama or an OpenAI-compatible server on this computer can list its models.",
+        "Only Ollama, a cloud service or an OpenAI-compatible server on this computer "
+        "can list its models.",
     )
 
 
 def _get(db: Db, llm_provider_id: UUID, lock: bool = False) -> LlmProvider:
     provider = provider_repo.get(db, llm_provider_id, lock=lock)
-    if provider is None:
+    # An archived provider is gone for every change; agent runs read it through the repository.
+    if provider is None or provider.archived:
         raise ApiError(404, "LLM_PROVIDER_NOT_FOUND", "No AI provider with this id.")
     return provider
 

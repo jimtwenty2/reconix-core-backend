@@ -6752,7 +6752,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}": {
       "delete": {
-        "description": "Deletes a provider.\n\nBusiness Rules:\n- You cannot delete the built-in provider, the active provider, or a provider that agent runs\n  have used.\n\nState Changes:\n- Deletes the provider.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Deletes a provider, or archives it when agent runs used it.\n\nBusiness Rules:\n- You cannot delete the built-in provider or the active provider.\n- A provider that agent runs used is archived: it leaves the lists and its API key is\n  removed, but its row stays so the runs keep their history.\n\nState Changes:\n- Deletes the provider, or archives it (its key is removed).\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_provider_api_v1_llm_providers__llm_provider_id__delete",
         "parameters": [
           {
@@ -6947,7 +6947,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/models": {
       "get": {
-        "description": "Lists the models a provider on this computer has.\n\nBusiness Rules:\n- An OLLAMA provider lists its Ollama's models; an OPENAI_API_COMPATIBLE provider on\n  this computer (LM Studio, for example) lists what its server returns at /models.\n- RECONIX, cloud providers and servers off this computer return 422\n  MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.\n- The saved API key is sent only to the provider's own address on this computer.",
+        "description": "Lists the models a provider has.\n\nBusiness Rules:\n- An OLLAMA provider lists its Ollama's models; an OPENAI_API_COMPATIBLE provider on\n  this computer (LM Studio, for example) lists what its server returns at /models.\n- An OPENAI, ANTHROPIC or DEEPSEEK provider lists the models its service offers for\n  the saved key; without a saved key it returns 422 PROVIDER_KEY_MISSING.\n- RECONIX and OpenAI-compatible servers off this computer return 422\n  MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.\n- The saved API key is sent only to the provider's own address: the server on this\n  computer, or the cloud service's fixed address (never a typed one).",
         "operationId": "list_models_api_v1_llm_providers__llm_provider_id__models_get",
         "parameters": [
           {

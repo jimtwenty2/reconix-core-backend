@@ -283,6 +283,29 @@ def test_an_ollama_provider_lists_its_models(db_client, monkeypatch):
     assert listed == {"models": ["bge-m3:latest", "llama3.1:8b"]}
 
 
+def test_a_cloud_provider_lists_its_models_with_its_saved_key(db_client, monkeypatch):
+    headers = open_session(db_client)
+    openai = {
+        "provider_type": "OPENAI",
+        "display_name": "OpenAI",
+        "model_name": "gpt-4o-mini",
+        "api_key": "sk-fake-cloud-key-0000",
+    }
+    added = db_client.post("/llm-providers", json=openai, headers=headers)
+    assert added.status_code == 201, added.json()
+    seen = {}
+
+    async def models(provider_type, api_key):
+        seen.update(provider_type=provider_type, api_key=api_key)
+        return ["gpt-4o", "gpt-4o-mini"]
+
+    monkeypatch.setattr(provider_checks, "cloud_models", models)
+    listed = get(db_client, headers, f"/llm-providers/{added.json()['llm_provider_id']}/models")
+
+    assert listed == {"models": ["gpt-4o", "gpt-4o-mini"]}
+    assert seen == {"provider_type": "OPENAI", "api_key": "sk-fake-cloud-key-0000"}
+
+
 def test_the_built_in_provider_lists_no_models(db_client):
     # RECONIX is the Reconix team's server, not an Ollama on this computer.
     headers = open_session(db_client)
