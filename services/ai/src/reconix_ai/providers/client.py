@@ -45,7 +45,6 @@ import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
 from reconix_ai.harness import StreamMasker, mask_secrets, mask_value  # noqa: E402
-from reconix_ai.providers import debug_log  # noqa: E402  (LOCAL debug tool, do not commit)
 from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
@@ -124,16 +123,6 @@ async def complete(
     }
 
     def fail(code: str, message: str) -> ProviderError:
-        # Every failed call is recorded for the local debug log before it is raised, so an
-        # empty or cut-off answer is visible there too, not only a provider/network error.
-        debug_log.record(
-            config.provider_type,
-            config.model_name,
-            masked_messages,
-            ok=False,
-            error_code=code,
-            error_message=message,
-        )
         return ProviderError(code, message)
 
     failure = None
@@ -165,15 +154,6 @@ async def complete(
     usage = getattr(response, "usage", None)
     prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
     completion_tokens = getattr(usage, "completion_tokens", 0) or 0
-    debug_log.record(
-        config.provider_type,
-        config.model_name,
-        masked_messages,
-        ok=True,
-        response=text,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-    )
     return Completion(
         text=text,
         provider_type=config.provider_type,
