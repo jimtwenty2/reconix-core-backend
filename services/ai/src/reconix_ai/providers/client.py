@@ -9,6 +9,7 @@ import os
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any
 
 # LiteLLM reads these once, when it is imported, so they are forced here and
 # litellm must not be imported anywhere before this module.
@@ -158,6 +159,109 @@ async def complete(
     )
 
 
+@dataclass(frozen=True)
+class ToolCall:
+    call_id: str
+    name: str
+    arguments: str  # the model's JSON text, masked value by value
+
+
+@dataclass(frozen=True)
+class ToolReply:
+    text: str  # already masked; may be empty when the model only called tools
+    tool_calls: list[ToolCall]
+    prompt_tokens: int
+    completion_tokens: int
+    masked_count: int
+
+
+async def complete_with_tools(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    config: ProviderConfig,
+    on_piece: OnPiece | None = None,
+    on_thinking: OnPiece | None = None,
+) -> ToolReply:
+    """One step of a tool-using agent: masked messages and OpenAI-style tool definitions
+    in, the masked answer and the tools it wants to call out.
+
+    messages are OpenAI chat messages: role "system", "user", "assistant" (with
+    "tool_calls") or "tool" (with "tool_call_id"). Every content and every tool call's
+    arguments are masked before they leave, and the answer's text and arguments are
+    masked before they come back. With on_piece / on_thinking the answer and the model's
+    reasoning are streamed in masked pieces, for showing only. Errors are the same
+    ProviderError codes as complete()."""
+    model = litellm_model(config)
+    base_url = checked_base_url(config)
+    check_key(config)
+    masked_messages, masked_count = mask_chat(messages)
+    request = {
+        "model": model,
+        "messages": masked_messages,
+        "tools": tools,
+        "api_base": base_url,
+        "api_key": config.api_key or NO_KEY,
+        "timeout": config.timeout_seconds,
+        "max_tokens": config.max_tokens,
+    }
+    failure = None
+    try:
+        if on_piece is None and on_thinking is None:
+            response = await litellm.acompletion(**request)
+        else:
+            response = await streamed(request, on_piece, on_thinking)
+    except openai.OpenAIError as error:
+        failure = provider_error(error, config)
+    if failure is not None:
+        raise failure  # outside the except block: the original error is not attached
+
+    if response is None or not response.choices:
+        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+    choice = response.choices[0]
+    text, answer_count = mask_secrets(choice.message.content or "")
+    calls = []
+    for call in getattr(choice.message, "tool_calls", None) or []:
+        arguments, count = mask_json(call.function.arguments or "{}")
+        answer_count += count
+        calls.append(ToolCall(call.id or "", call.function.name or "", arguments))
+    if not text.strip() and not calls:
+        if choice.finish_reason == "length":
+            raise ProviderError(
+                "ANSWER_CUT_OFF",
+                f"The model reached its {config.max_tokens}-token limit before it answered.",
+            )
+        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+    usage = getattr(response, "usage", None)
+    return ToolReply(
+        text=text,
+        tool_calls=calls,
+        prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+        completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        masked_count=masked_count + answer_count,
+    )
+
+
+def mask_chat(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Chat messages with tool calls, masked: every content and every call's arguments."""
+    masked, total = [], 0
+    for message in messages:
+        out = dict(message)
+        content, count = mask_secrets(str(message.get("content") or ""))
+        out["content"] = content
+        total += count
+        if message.get("tool_calls"):
+            out["tool_calls"] = []
+            for call in message["tool_calls"]:
+                function = call["function"]
+                arguments, count = mask_json(function.get("arguments") or "{}")
+                total += count
+                out["tool_calls"].append(
+                    {**call, "function": {"name": function["name"], "arguments": arguments}}
+                )
+        masked.append(out)
+    return masked, total
+
+
 def mask_json(text: str) -> tuple[str, int]:
     """A JSON answer masked value by value (and whole under a secret key name), then
     written out again. Masking the whole text can eat a closing quote (password = ?"
@@ -170,15 +274,22 @@ def mask_json(text: str) -> tuple[str, int]:
     return json.dumps(data, ensure_ascii=False), count
 
 
-async def streamed(request: dict, on_piece: OnPiece) -> litellm.ModelResponse | None:
-    """The answer as it arrives, built back into one response (None when nothing came)."""
-    masker = StreamMasker()
+async def streamed(
+    request: dict, on_piece: OnPiece | None, on_thinking: OnPiece | None = None
+) -> litellm.ModelResponse | None:
+    """The answer as it arrives, built back into one response (None when nothing came).
+    on_thinking gets the model's reasoning, when it sends any, masked the same way."""
+    masker, thinking_masker = StreamMasker(), StreamMasker()
     chunks = []
     async for chunk in await litellm.acompletion(**request, stream=True):
         chunks.append(chunk)
-        piece = chunk.choices[0].delta.content if chunk.choices else None
-        if piece and (shown := masker.feed(piece)):
+        delta = chunk.choices[0].delta if chunk.choices else None
+        piece = delta.content if delta else None
+        if on_piece and piece and (shown := masker.feed(piece)):
             await on_piece(shown)
+        thought = getattr(delta, "reasoning_content", None) if delta else None
+        if on_thinking and thought and (shown := thinking_masker.feed(thought)):
+            await on_thinking(shown)
     return litellm.stream_chunk_builder(chunks, messages=request["messages"])
 
 

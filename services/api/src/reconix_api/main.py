@@ -16,6 +16,7 @@ from reconix_api.api import (
     assessments,
     chat,
     code,
+    code_fixes,
     code_scans,
     evidence,
     findings,
@@ -48,6 +49,7 @@ from reconix_api.core.rate_limit import RateLimitMiddleware
 from reconix_api.core.security import HostCheckMiddleware
 from reconix_api.core.session_tokens import SessionTokens
 from reconix_api.core.wiring import build_interfaces, build_mask_secrets
+from reconix_api.services import code_fixes as code_fix_service
 from reconix_api.services import code_scans as code_scan_service
 
 API_PREFIX = "/api/v1"  # every route lives under it
@@ -210,6 +212,7 @@ def create_app(
         sessions,
         code,
         code_scans,
+        code_fixes,
         messages,
         chat,
         vscode_chat,
@@ -246,6 +249,7 @@ async def _startup() -> None:
     await prepare_checkpoints(_settings.database_url)
     with get_session_factory()() as db:
         code_scan_service.recover_interrupted(db, _settings.code_dir)
+        code_fix_service.recover_interrupted(db)
 
 
 app = create_app(

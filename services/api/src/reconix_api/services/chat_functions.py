@@ -194,7 +194,10 @@ def start_scan(context: FunctionContext, args: StartScanArgs) -> Outcome:
 
 
 def propose_fix(context: FunctionContext, args: ProposeFixArgs) -> Outcome:
-    """There is no fix endpoint yet: VS Code prepares the fix itself and shows the diff."""
+    """VS Code starts it with POST /sessions/{session_id}/code-fixes {finding_ids}, follows
+    GET /code-fixes/{id}/events, reads the line edits from GET /code-fixes/{id} and shows
+    them as a diff; nothing changes until the person applies it. The ids are checked here
+    against the latest finished scan, as that endpoint checks them."""
     findings = context.findings()
     if not findings:
         return Outcome("There are no findings to fix yet. Scan the project first.", None)
@@ -275,7 +278,7 @@ FUNCTIONS: dict[FunctionName, ChatFunction] = {
         ),
         ChatFunction(
             FunctionName.PROPOSE_FIX,
-            "Prepare fixes in VS Code for the given findings; the person reviews the changes.",
+            "Fix the given findings with the AI fix agent; the person reviews the changes.",
             ProposeFixArgs,
             RunsOn.CLIENT,
             True,

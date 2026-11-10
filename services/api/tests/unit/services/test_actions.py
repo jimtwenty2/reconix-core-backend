@@ -90,3 +90,57 @@ def test_a_saved_catalog_tool_becomes_an_action():
 @pytest.mark.parametrize(("sent", "saved"), [("masscan", "MASSCAN"), ("NMAP", "NMAP")])
 def test_action_in_saves_the_tool_uppercase(sent, saved):
     assert ActionIn(tool=sent, target="172.20.0.5").tool == saved
+
+
+# ---------------------------------------------------------------------------
+# The server-approved code folder scope (_fits_auto_scope)
+# ---------------------------------------------------------------------------
+
+
+class _Approval:
+    def __init__(self, reason):
+        self.reason = reason
+
+
+class _Run:
+    def __init__(self, task):
+        self.plan = {"task": task} if task else None
+
+
+def _fits(monkeypatch, reason, task, tool, arguments=()):
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from reconix_api.services import actions
+
+    monkeypatch.setattr(
+        actions.approval_repo, "latest_for_manifest", lambda db, _: _Approval(reason)
+    )
+    monkeypatch.setattr(actions.agent_run_repo, "get", lambda db, _: _Run(task))
+    manifest = SimpleNamespace(manifest_id=uuid4())
+    body = ActionIn(tool=tool, target="/workspace/code/s", arguments=list(arguments))
+    return actions._fits_auto_scope(None, manifest, body, uuid4())
+
+
+@pytest.mark.parametrize(
+    ("task", "tool", "arguments", "fits"),
+    [
+        ("CODE_SCAN", "TRIVY", (), True),
+        ("CODE_SCAN", "SEMGREP", ("--config", "x"), False),  # never an option
+        ("CODE_FIX", "SEMGREP", (), True),  # a fix's recheck
+        ("CODE_FIX", "semgrep", (), True),  # any spelling of the tool
+        ("CODE_FIX", "GITLEAKS", (), False),  # a fix rechecks with SEMGREP only
+        ("CODE_FIX", "SONAR_SCAN", (), False),
+        ("CODE_FIX", "SEMGREP", ("--config", "x"), False),
+        ("PLAN", "SEMGREP", (), False),
+        (None, "SEMGREP", (), False),  # a person's own action
+    ],
+)
+def test_the_code_folder_scope_takes_only_scans_and_fix_rechecks(
+    monkeypatch, task, tool, arguments, fits
+):
+    assert _fits(monkeypatch, "CODE_SESSION_FOLDER", task, tool, arguments) is fits
+
+
+def test_a_scope_a_person_approved_takes_any_action(monkeypatch):
+    assert _fits(monkeypatch, None, None, "NMAP", ("-sV",)) is True
