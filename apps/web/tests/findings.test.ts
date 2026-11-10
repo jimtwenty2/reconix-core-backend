@@ -147,11 +147,11 @@ describe("findingsHeadline", () => {
     expect(findingsHeadline(1, 1)).toBe("1 finding across 1 assessment · select one to see its evidence and remediation.");
     expect(findingsHeadline(3, null)).toBe("3 findings · select one to see its evidence and remediation.");
     expect(findingsHeadline(0, null)).toBe("No findings in this assessment yet.");
-    expect(findingsHeadline(0, 4)).toBe("No findings in any saved assessment yet.");
+    expect(findingsHeadline(0, 4)).toBe("No findings in any Core API assessment yet.");
     // false positives are never in the count
     expect(findingsHeadline(3, null, 1)).toBe("3 findings · select one to see its evidence and remediation.");
     expect(findingsHeadline(0, null, 1)).toBe("No findings in this assessment, only 1 false positive.");
-    expect(findingsHeadline(0, 2, 2)).toBe("No findings in any saved assessment, only 2 false positives.");
+    expect(findingsHeadline(0, 2, 2)).toBe("No findings in any Core API assessment, only 2 false positives.");
   });
 });
 

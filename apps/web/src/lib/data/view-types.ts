@@ -6,6 +6,9 @@ import type { StreamItem } from "./thinking";
 
 export type { Severity, Status };
 
+/** A finding's severity: the four levels, plus the Core API's UNKNOWN and NONE (shown, never dropped). */
+export type FindingSeverity = Severity | "UNKNOWN" | "NONE";
+
 /** What a log line is about; it picks the line's chip, colour and chart height. */
 export type LogKind = "scope" | "policy" | "tool" | "finding" | "mask" | "gate" | "user" | "info";
 

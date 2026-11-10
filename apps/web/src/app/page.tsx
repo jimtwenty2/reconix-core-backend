@@ -1,25 +1,29 @@
 /* The Local Assessment Viewer at `/`, rendered per request from the assessments the Reconix
    TUI saved (src/lib/data/store.ts). With no `?uid=` the Overview totals every saved run
-   (derive-overall.ts), Findings lists them all, and Reports sums them up (derive-report.ts);
-   `?uid=` opens one run (derive.ts). `?view=` is
+   (derive-overall.ts) and Reports sums them up (derive-report.ts);
+   `?uid=` opens one run (derive.ts). The Findings view reads the Core API instead
+   (components/dashboard/api-findings.tsx, `?assessment=`). `?view=` is
    the open view, read by the client Viewer. There are no roles: signed in (src/proxy.ts and
    loadLibrary check), every view renders. The AI Assistant learns what it is about, which model answers
    (lib/assistant/models/resolve.ts) and what to suggest, from the data in scope
    (lib/assistant/prompts.ts). */
+import { Suspense } from "react";
+
 import type { AssistantInfo } from "@/components/assistant/types";
 import { deriveDashboard } from "@/components/dashboard/derive";
 import { deriveOverall } from "@/components/dashboard/derive-overall";
 import { assessmentsCards, overallReportCards, reportCards, runRow } from "@/components/dashboard/derive-report";
 import { runLogData } from "@/components/dashboard/derive-run-log";
+import { ApiFindings, FindingsLoading } from "@/components/dashboard/api-findings";
 import { AssessmentsView } from "@/components/dashboard/assessments-view";
 import { EmptyView } from "@/components/dashboard/empty-view";
-import { FindingsView } from "@/components/dashboard/findings-view";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { ReportsView } from "@/components/dashboard/reports-view";
 import { RunLogView } from "@/components/dashboard/run-log-view";
 import { TopBar } from "@/components/dashboard/top-bar";
 import { Viewer } from "@/components/dashboard/viewer";
 import { KnowledgeView } from "@/components/knowledge/knowledge-view";
+import { isAssessmentId } from "@/lib/api/findings";
 import { retentionDays } from "@/lib/assistant/history-store";
 import { activeModelSummary } from "@/lib/assistant/models/resolve";
 import { runRef, scopedViews, scopeOf } from "@/lib/assistant/insights";
@@ -34,6 +38,8 @@ export default async function Home({ searchParams }: Props) {
   const [params, library] = await Promise.all([searchParams, loadLibrary()]);
   const wanted = typeof params.uid === "string" && UID.test(params.uid) ? params.uid : null;
   const views = library.assessments.map(assessmentView);
+  // Findings come from the Core API, for its own assessment (`?assessment=<uuid>`), not `?uid=`.
+  const apiAssessment = isAssessmentId(params.assessment) ? params.assessment : null;
   const chosen = views.find((v) => v.uid === wanted) ?? null;
   const dash = chosen ? deriveDashboard(chosen) : null;
   const overall = !chosen && views.length ? deriveOverall(views) : null;
@@ -84,13 +90,11 @@ export default async function Home({ searchParams }: Props) {
       }
       assessments={runs.length ? <AssessmentsView data={assessmentsCards(runs)} /> : empty}
       findings={
-        dash ? (
-          <FindingsView key={dash.assessment.uid} findings={dash.findings} />
-        ) : overall ? (
-          <FindingsView key="all" findings={overall.findings} across={overall.runs} />
-        ) : (
-          empty
-        )
+        // streamed: the other views never wait on the API (a view switch is client-side only, so
+        // every pane is rendered with the page)
+        <Suspense fallback={<FindingsLoading />}>
+          <ApiFindings assessmentId={apiAssessment} savedRun={apiAssessment ? null : wanted} />
+        </Suspense>
       }
       log={views.length ? <RunLogView key={chosen?.uid ?? "all"} data={chosen ? runLogData(chosen) : null} /> : empty}
       reports={report ? <ReportsView key={chosen?.uid ?? "all"} data={report} /> : empty}

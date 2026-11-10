@@ -11,6 +11,7 @@ import { expect, test } from "./fixtures";
 
 import { MOTION } from "../src/components/assistant/motion";
 import { clickMoving, counted, newest, sample as savedRuns, signIn } from "./support";
+import { apiId } from "./core-api-ids.mjs";
 
 /** When a MOTION tween ends, in ms from its timeline's start (a staggered one: its last piece). */
 const ends = (t: { at: number; duration: number; stagger?: number }, pieces = 1) => Math.round((t.at + t.duration + (t.stagger ?? 0) * (pieces - 1)) * 1000);
@@ -335,14 +336,14 @@ test("open and close keep the address (run and filters), the scroll position and
   const marked = () => page.evaluate(() => (window as unknown as { kept?: number }).kept);
   // one run with Findings filters: the address comes back exactly, without a reload
   const run = [...savedRuns()].sort((a, b) => counted(b).length - counted(a).length)[0];
-  await page.goto(`/?uid=${run.uid}&view=findings&sev=HIGH,MEDIUM&val=review&q=api`);
+  await page.goto(`/?assessment=${apiId(run.uid)}&view=findings&sev=HIGH,MEDIUM&val=review&q=api`);
   await expect(page.getByRole("heading", { name: "Findings", level: 1 })).toBeVisible();
   await page.evaluate(() => ((window as unknown as { kept: number }).kept = 7));
   const url = page.url();
   await tab(page).click();
   await settled(page);
   await expect(page).toHaveURL(/view=assistant/);
-  await expect(page).toHaveURL(new RegExp(`uid=${run.uid}`)); // the run stays chosen
+  await expect(page).toHaveURL(new RegExp(`assessment=${apiId(run.uid)}`)); // the assessment stays chosen
   await expect(page).toHaveURL(/sev=HIGH%2CMEDIUM|sev=HIGH,MEDIUM/);
   await minimize(page);
   await closed(page);
