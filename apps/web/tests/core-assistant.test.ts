@@ -238,7 +238,7 @@ describe("the model picker", () => {
     const id = view.providers[0].id;
     const chosen = await active.PUT(request("/api/assistant/models/active", { method: "PUT", body: JSON.stringify({ providerId: id, model: "gpt-4o" }) }));
     expect(chosen.status).toBe(409);
-    expect((await chosen.json()).detail).toMatch(/approval/);
+    expect((await chosen.json()).detail).toMatch(/^Approve this model in the TUI first/);
     expect(core.providers[0].is_active).toBe(false);
   });
 
@@ -288,11 +288,17 @@ describe("the model picker", () => {
     expect(core.providers).toHaveLength(0);
   });
 
-  it("a cloud service is tested with its key and offers its built-in models", async () => {
+  it("a cloud service is tested with its key and offers the chat models it lists", async () => {
     const out = await (await connect({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-test-0123456789abcdef" })).json();
-    expect(out).toMatchObject({ models: ["gpt-4o-mini", "gpt-4o"], created: true });
+    expect(out).toMatchObject({ models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1"], created: true }); // no whisper, embeddings, images
     expect(out.detail).toMatch(/^Connected: gpt-4o-mini answered in \d+ ms\.$/);
     expect(JSON.stringify(out)).not.toContain("0123456789abcdef");
+  });
+
+  it("a cloud service that can't list its models offers its built-in ones", async () => {
+    core.listFails = true;
+    const view = await (await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", models: ["gpt-4o-mini"], apiKey: "sk-test-0123456789abcdef" }) }))).json();
+    expect(view.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o"]);
   });
 
   it("a saved provider is tested as saved, without saving another", async () => {
@@ -305,7 +311,7 @@ describe("the model picker", () => {
   it("one provider has many models: choosing another adds its row (key copied) and makes it active", async () => {
     const view = await (await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", models: ["gpt-4o-mini"], apiKey: "sk-test-0123456789abcdef" }) }))).json();
     const id = view.providers[0].id;
-    expect(view.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o"]); // built in: all of them
+    expect(view.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o", "gpt-4.1"]); // what the service lists for chat
 
     core.calls.length = 0;
     const res = await active.PUT(request("/api/assistant/models/active", { method: "PUT", body: JSON.stringify({ providerId: id, model: "gpt-4o" }) }));
@@ -315,7 +321,7 @@ describe("the model picker", () => {
     expect(res.status).toBe(409); // a cloud model waits for its own approval
     const after = await (await models.GET(request("/api/assistant/models", { origin: null }))).json();
     expect(after.providers).toHaveLength(1); // still one provider, with both models saved
-    expect(after.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o"]);
+    expect(after.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o", "gpt-4.1"]);
   });
 
   it("lists only models that can chat: embedding models are left out", async () => {

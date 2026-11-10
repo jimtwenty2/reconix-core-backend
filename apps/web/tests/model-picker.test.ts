@@ -92,7 +92,7 @@ describe("the list: your models", () => {
   it("lists a remote model as usable as any other (cloud allowed by default), marked remote", () => {
     const openai = provider({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", local: false, keySaved: true, models: ["gpt-4o-mini"] });
     const [row] = modelRows(view({ providers: [openai] }));
-    expect(row).toEqual({ key: `${ID}/gpt-4o-mini`, providerId: ID, model: "gpt-4o-mini", provider: "OpenAI", where: "remote", checked: false, first: true });
+    expect(row).toEqual({ key: `${ID}/gpt-4o-mini`, providerId: ID, model: "gpt-4o-mini", provider: "OpenAI", where: "remote", preset: "openai", checked: false, first: true });
   });
   it("is empty with nothing saved (no Environment row any more)", () => {
     expect(modelRows(view())).toEqual([]);
@@ -299,17 +299,43 @@ describe("the list with many models", () => {
   const other = provider({ id: ID2, name: "Other", models: ["qwen:7b", "llama3.2"] });
   const v = view({ providers: [many, other], active: { providerId: ID2, model: "llama3.2" } });
 
-  it("groups the models provider by provider, in order", async () => {
-    const { groupsOf } = await import("@/components/assistant/model-list");
-    const groups = groupsOf(modelRows(v));
-    expect(groups.map((g) => [g.provider, g.rows.length])).toEqual([["Stub", 14], ["Other", 2]]);
+  it("lists every provider the TUI offers, in its order, with what its menu says", async () => {
+    const { providersOf } = await import("@/components/assistant/model-list");
+    const providers = providersOf(modelRows(v));
+    expect(providers.map((p) => [p.preset.id, p.status])).toEqual([
+      ["reconix", "Not set up"],
+      ["openai", "Not set up"],
+      ["anthropic", "Not set up"],
+      ["deepseek", "Not set up"],
+      ["ollama", "Not set up"],
+      ["custom", "16 models · in use"], // both saved providers are custom ones
+    ]);
+    expect(providers.find((p) => p.preset.id === "custom")?.active).toBe(true);
   });
-  it("filters a group by any part of the name, any case; more than FILTER_AT models get the field", async () => {
-    const { groupsOf, matching, FILTER_AT } = await import("@/components/assistant/model-list");
-    const [stub] = groupsOf(modelRows(v));
-    expect(stub.rows.length).toBeGreaterThan(FILTER_AT);
-    expect(matching(stub.rows, " MODEL-1").map((r) => r.model)).toEqual(["model-1", "model-10", "model-11", "model-12", "model-13"]);
-    expect(matching(stub.rows, "")).toHaveLength(14);
-    expect(matching(stub.rows, "nope")).toEqual([]);
+  it("names each provider's kind and short name", async () => {
+    const { kindLabel, shortLabel } = await import("@/components/assistant/provider-look");
+    expect(PRESETS.map((p) => [shortLabel(p), kindLabel(p)])).toEqual([
+      ["Reconix", "Built in"],
+      ["OpenAI", "Cloud"],
+      ["Anthropic", "Cloud"],
+      ["DeepSeek", "Cloud"],
+      ["Ollama", "Local"],
+      ["Custom", "Any server"],
+    ]);
+  });
+  it("tells how to set up a provider in the TUI's words", async () => {
+    const { setupHint } = await import("@/components/assistant/model-list");
+    expect(setupHint(presetOf("openai"))).toMatch(/API key/);
+    expect(setupHint(presetOf("ollama"))).toMatch(/no key/);
+  });
+  it("searches every model by any part of its or its provider's name, any case, or one provider's", async () => {
+    const { shownRows } = await import("@/components/assistant/model-list");
+    const rows = modelRows(v);
+    expect(shownRows(rows, " MODEL-1").map((r) => r.model)).toEqual(["model-1", "model-10", "model-11", "model-12", "model-13"]);
+    expect(shownRows(rows, "")).toHaveLength(16);
+    expect(shownRows(rows, "OTHER").map((r) => r.model)).toEqual(["qwen:7b", "llama3.2"]);
+    expect(shownRows(rows, "", "openai")).toEqual([]);
+    expect(shownRows(rows, "qwen", "custom").map((r) => r.model)).toEqual(["qwen:7b"]);
+    expect(shownRows(rows, "nope")).toEqual([]);
   });
 });

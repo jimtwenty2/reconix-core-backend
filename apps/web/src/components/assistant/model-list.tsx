@@ -1,132 +1,181 @@
 "use client";
 
-/* The model picker's list, "Model": one group per provider (model-picker-rules.ts
-   `modelRows`), so a provider with many models never floods it. A group's heading shows the
-   provider, where it runs and how many models it has, and opens or closes the group; only the
-   provider that answers next starts open (else the first). An open group lists its models, ✓ on
-   the one that answers next, in a box that scrolls on its own; with more than FILTER_AT models
-   a filter field comes first. One click, Enter or Space uses a model and closes the picker (the
-   ✓ one just closes it). The heading's bin asks inline ("Remove <provider>? Its models … go with
-   it."), focused on No; Escape there keeps it. One tab stop for the headings, bins and models
-   (use-roving.ts); the filter field is its own. + Model, at the bottom, opens Set the provider.
-   The first time it opens the models are on their way ("Loading the models…"); once they are
-   there, focus goes to the model that answers next (else the first heading, else + Model), or
-   to + Model when it comes back from the form. */
+/* The model picker's list, "Model". A switch on top chooses what it shows:
+
+   - Models: a search field ("Search a model", any part of the model's or the provider's name)
+     and one flat list of every saved model, as in Open WebUI's model selector. A row shows its
+     provider's avatar, the model's name, the provider and where it runs, and ✓ on the model that
+     answers next. One click, Enter or Space uses it and closes the picker (the ✓ one just
+     closes it); Enter in the search field uses the first match, Down moves into the list.
+   - Providers: every provider the TUI's /provider offers, in its order (Reconix, OpenAI,
+     Anthropic, DeepSeek, Ollama, Custom), each with its kind and what the TUI's menu says about
+     it (not set up, its models, in use). One opens its page: back to Providers, its status, Set
+     up (opens Set the provider on it) or, once saved, its models with Update and a bin that asks
+     inline ("Remove <provider>? Its models … go with it."), focused on No; Escape keeps it.
+
+   A model off this computer waits for the TUI's OK: its row says how to give it. What the switch
+   showed last is remembered per browser (model-tab.ts). + Model, at the bottom, opens Set the
+   provider (on the provider whose page is open). While the models are on their way it shows
+   placeholder rows; then focus goes to the search field, or to + Model back from the form. */
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, Loader, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Hourglass, Loader, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { IconButton } from "@/components/ui/icon-button";
-import { type ModelRow, modelRows, removeQuestion, removeRequest } from "./model-picker-rules";
+import { type Preset, type PresetId, PRESET_IDS, PRESETS, presetOf } from "@/lib/assistant/models/presets";
+import { NEEDS_APPROVAL, type ProviderView } from "@/lib/assistant/models/view";
+import { rememberedTab, rememberTab } from "./model-tab";
+import { type ModelRow, modelRows, presetFor, removeQuestion, removeRequest, savedName } from "./model-picker-rules";
+import { kindLabel, ProviderAvatar, shortLabel } from "./provider-look";
 import { choiceKey, type Models } from "./use-models";
 import { useRoving } from "./use-roving";
 
-/** A provider with more models than this gets a filter field. */
-export const FILTER_AT = 8;
+export { shortLabel } from "./provider-look";
 
-const rowKey = (key: string) => `row:${key}`;
-const headKey = (providerId: string) => `head:${providerId}`;
-const binKey = (providerId: string) => `remove:${providerId}`;
 const ADD = '[data-focus="add"]';
+const SEARCH = '[data-focus="search"]';
+const FIRST = '[data-rove][tabindex="0"]';
 
-interface Group {
-  providerId: string;
-  provider: string;
-  where: "local" | "remote";
-  rows: ModelRow[];
+/** What the list shows: every model, every provider, or one provider's page. */
+export type Tab = "models" | "providers" | PresetId;
+
+const isTab = (tab: string | null): tab is Tab => tab === "models" || tab === "providers" || (PRESET_IDS as readonly string[]).includes(tab ?? "");
+
+export interface ProviderSummary {
+  preset: Preset;
+  count: number; // its models (0: not set up)
+  active: boolean; // holds the model that answers next
+  status: string; // "Not set up", "2 models · in use"
 }
 
-/** The rows, provider by provider, in their order. */
-export function groupsOf(rows: readonly ModelRow[]): Group[] {
-  const groups: Group[] = [];
-  for (const row of rows) {
-    const last = groups.at(-1);
-    if (last && last.providerId === row.providerId) last.rows.push(row);
-    else groups.push({ providerId: row.providerId, provider: row.provider, where: row.where, rows: [row] });
-  }
-  return groups;
+/** Every provider the TUI's /provider offers, in its order, with what its menu says. */
+export function providersOf(rows: readonly ModelRow[]): ProviderSummary[] {
+  return PRESETS.map((preset) => {
+    const mine = rows.filter((r) => r.preset === preset.id);
+    const active = mine.some((r) => r.checked);
+    const status = mine.length ? `${mine.length} model${mine.length === 1 ? "" : "s"}${active ? " · in use" : ""}` : "Not set up";
+    return { preset, count: mine.length, active, status };
+  });
 }
 
-/** A group's models that match the filter (any part of the name, any case). */
-export const matching = (rows: readonly ModelRow[], filter: string) => {
-  const f = filter.trim().toLowerCase();
-  return f ? rows.filter((r) => r.model.toLowerCase().includes(f)) : [...rows];
-};
+/** The models a search shows (any part of the model's or the provider's name, any case),
+    within one provider when `only` is given. */
+export function shownRows(rows: readonly ModelRow[], query: string, only?: PresetId): ModelRow[] {
+  const q = query.trim().toLowerCase();
+  return rows.filter((r) => (!only || r.preset === only) && (!q || r.model.toLowerCase().includes(q) || r.provider.toLowerCase().includes(q)));
+}
+
+/** What setting a provider up asks, in the TUI's words. */
+export function setupHint(preset: Preset): string {
+  if (preset.kind === "reconix") return "Uses the Core API's own model (RECONIX_MODEL_* in .env).";
+  if (preset.kind === "cloud") return "Needs only an API key: its models are listed for you.";
+  if (preset.kind === "local") return "Needs its address and a model it has pulled; no key.";
+  return "Needs its address, a model and, if it asks for one, an API key.";
+}
+
+/** The same, short enough for a provider's row. */
+export function shortHint(preset: Preset): string {
+  if (preset.kind === "cloud") return "Not set up · just an API key";
+  if (preset.kind === "local") return "Not set up · address and a model";
+  if (preset.kind === "custom") return "Not set up · address, model, optional key";
+  return "Not set up";
+}
+
+/** The name with the searched part marked. */
+function Marked({ text, query }: { text: string; query: string }) {
+  const q = query.trim().toLowerCase();
+  const at = q ? text.toLowerCase().indexOf(q) : -1;
+  if (at < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="ai-picker-mark">{text.slice(at, at + q.length)}</mark>
+      {text.slice(at + q.length)}
+    </>
+  );
+}
 
 interface Props {
   models: Models;
   /** Back from Set the provider: focus goes to + Model. */
   fromForm: boolean;
   onChosen: () => void;
-  onAdd: () => void;
+  /** Opens Set the provider (on `preset`, when one was picked). */
+  onAdd: (preset?: PresetId) => void;
 }
 
 export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const focused = useRef(false);
-  const focusNext = useRef<string | null>(null); // a roving key (or ADD) to focus once drawn
-  const [confirm, setConfirm] = useState<string | null>(null); // the provider asked about
+  const focusNext = useRef<string | null>(null); // a selector to focus once drawn
+  const [confirm, setConfirm] = useState<string | null>(null); // the saved provider asked about
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<ReadonlySet<string> | null>(null); // null: not chosen yet
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState("");
+  const [waiting, setWaiting] = useState<string | null>(null); // a remote model waiting for the TUI's OK
+  const [tab, setTab] = useState<Tab>(() => {
+    const kept = rememberedTab();
+    return isTab(kept) ? kept : "models";
+  });
   const { view, status, error: loadError } = models.state;
   const rows = view ? modelRows(view) : [];
-  const groups = groupsOf(rows);
-  const checked = rows.find((r) => r.checked);
-  // until the person opens or closes one: the provider that answers next, else the first
-  const opened = open ?? new Set(checked ? [checked.providerId] : groups[0] ? [groups[0].providerId] : []);
-  const shown = (g: Group) => (opened.has(g.providerId) ? matching(g.rows, filters[g.providerId] ?? "") : []);
+  const providers = providersOf(rows);
+  const page = tab !== "models" && tab !== "providers" ? presetOf(tab) : null;
+  const list = tab === "models" ? shownRows(rows, query) : page ? shownRows(rows, "", page.id) : [];
+  const saved: ProviderView[] = view && page ? view.providers.filter((p) => presetFor(p).id === page.id) : [];
+  const checked = list.find((r) => r.checked);
   const roving = useRoving(
-    groups.flatMap((g) => [headKey(g.providerId), ...(g.providerId !== confirm ? [binKey(g.providerId)] : []), ...shown(g).map((r) => rowKey(r.key))]),
-    checked ? rowKey(checked.key) : groups[0] ? headKey(groups[0].providerId) : null,
+    tab === "providers" ? providers.map((p) => `prov:${p.preset.id}`) : list.map((r) => `row:${r.key}`),
+    tab === "providers" ? `prov:${(providers.find((p) => p.active) ?? providers[0]).preset.id}` : checked ? `row:${checked.key}` : null,
   );
   const ready = view !== null || status === "error";
+  const setUp = providers.filter((p) => p.count > 0).length;
 
   useEffect(() => {
     if (focused.current || !ready) return;
     focused.current = true;
     const at = (selector: string) => root.current?.querySelector<HTMLElement>(selector);
-    const el = (fromForm && at(ADD)) || at('[data-rove][tabindex="0"]') || at(ADD) || at("button");
+    const el = (fromForm && at(ADD)) || at(SEARCH) || at(FIRST) || at(ADD) || at("button");
     el?.focus({ preventScroll: true });
   }, [ready, fromForm]);
 
-  // after a confirm closes, focus goes back to its bin (or, removed, to the next heading, else
-  // + Model)
+  // after a step changes, focus goes where it said (a bin, the back button, a provider…)
   useEffect(() => {
-    const key = focusNext.current;
-    if (!key) return;
+    const selector = focusNext.current;
+    if (!selector) return;
     focusNext.current = null;
-    const el = key === ADD ? root.current?.querySelector<HTMLElement>(ADD) : root.current?.querySelector<HTMLElement>(`[data-rove="${key}"]`);
-    el?.focus({ preventScroll: true });
+    root.current?.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
   });
 
-  const toggle = (providerId: string) => {
-    const next = new Set(opened);
-    if (next.has(providerId)) next.delete(providerId);
-    else next.add(providerId);
-    setOpen(next);
+  const go = (next: Tab, focus?: string) => {
+    setTab(next);
+    rememberTab(next);
+    setConfirm(null);
+    setError(null);
+    setWaiting(null);
+    if (focus) focusNext.current = focus;
   };
   const pick = async (row: ModelRow) => {
     if (models.pending) return;
     if (row.checked) return onChosen();
     setError(null);
+    setWaiting(null);
     const problem = await models.choose(row.providerId, row.model);
-    if (problem) setError(problem);
+    if (problem === NEEDS_APPROVAL) setWaiting(row.key);
+    else if (problem) setError(problem);
     else onChosen();
   };
   const keep = (providerId: string) => {
     setConfirm(null);
     setError(null);
-    focusNext.current = binKey(providerId);
+    focusNext.current = `[data-remove="${providerId}"]`;
   };
-  const remove = async (g: Group) => {
-    const request = view && removeRequest(view, g);
-    if (!request) return keep(g.providerId);
+  const remove = async (providerId: string) => {
+    const request = view && removeRequest(view, { providerId });
+    if (!request) return keep(providerId);
     setError(null);
-    const problem = await models.remove(g.providerId, request);
+    const problem = await models.remove(providerId, request);
     if (problem) return setError(problem);
-    const after = groups.find((x) => x.providerId !== g.providerId);
-    focusNext.current = after ? headKey(after.providerId) : ADD;
     setConfirm(null);
+    focusNext.current = '[data-focus="back"]';
   };
 
   if (!view) {
@@ -140,153 +189,305 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
             </button>
           </div>
         ) : (
-          <p className="ai-menu-state" role="status">
-            <Loader className="mr-1.5 inline size-3.5 animate-spin" aria-hidden /> Loading the models…
-          </p>
+          <div role="status" className="ai-picker-skeleton">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="ai-picker-skeleton-row" style={{ "--i": i } as React.CSSProperties}>
+                <span className="ai-picker-skeleton-avatar" />
+                <span className="ai-picker-skeleton-lines">
+                  <span style={{ width: `${70 - i * 9}%` }} />
+                  <span style={{ width: "34%" }} />
+                </span>
+              </div>
+            ))}
+            <span className="sr-only">Loading the models…</span>
+          </div>
         )}
       </div>
     );
   }
 
+  const modelList = (items: ModelRow[], q: string) => (
+    <ul key={tab} aria-label="Your models" onKeyDown={roving.onKeyDown} className="ai-picker-list">
+      {items.map((row, i) => {
+        const busy = models.pending === choiceKey(row.providerId, row.model);
+        return (
+          <li key={row.key} className="ai-picker-row" style={{ "--i": Math.min(i, 10) } as React.CSSProperties}>
+            <button
+              type="button"
+              aria-current={row.checked ? "true" : undefined}
+              title={row.checked ? "Answers your next question" : `Use ${row.model}`}
+              onClick={() => void pick(row)}
+              className="ai-picker-model"
+              data-first={q.trim() && i === 0 ? "true" : undefined}
+              data-pending={busy ? "true" : undefined}
+              {...roving.item(`row:${row.key}`)}
+            >
+              <ProviderAvatar preset={row.preset} />
+              <span className="ai-picker-text">
+                <span className="ai-picker-model-name">
+                  <Marked text={row.model} query={q} />
+                </span>
+                <span className="ai-picker-badges">
+                  <span className="ai-picker-badge">
+                    <Marked text={row.provider} query={q} />
+                  </span>
+                  <span className="ai-picker-badge" data-where={row.where}>
+                    {row.where}
+                  </span>
+                </span>
+              </span>
+              <span className="ai-picker-tick" aria-hidden>
+                {busy ? (
+                  <Loader className="size-3.5 animate-spin" />
+                ) : row.checked ? (
+                  <Check className="ai-picker-check-pop size-4" strokeWidth={2.5} />
+                ) : q.trim() && i === 0 ? (
+                  <kbd className="ai-picker-kbd">↵</kbd>
+                ) : null}
+              </span>
+            </button>
+            {waiting === row.key && (
+              <div role="status" className="ai-picker-waiting">
+                <Hourglass className="ai-picker-waiting-icon" aria-hidden />
+                <div className="min-w-0">
+                  <p className="ai-picker-waiting-title">Approve {row.model} in the TUI first</p>
+                  <p className="ai-picker-waiting-text">
+                    It runs off this computer ({row.provider}), so the Core API asks a person before sending it your scope, plans and chat. In the TUI, run{" "}
+                    <code className="ai-picker-code">/model</code>, pick <span className="text-foreground">{row.model}</span> and answer <span className="text-foreground">Approve</span>.
+                  </p>
+                  <button type="button" onClick={() => void pick(row)} disabled={models.pending !== null} className="ai-btn ai-btn-small ai-btn-outline mt-2">
+                    <RefreshCw className={`size-3.5 ${busy ? "animate-spin" : ""}`} aria-hidden />I approved it, use it
+                  </button>
+                </div>
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
   return (
     <div ref={root} className="ai-picker-form">
+      {/* Models | Providers: what the list shows (a provider's page belongs to Providers) */}
+      <div role="tablist" aria-label="Show" className="ai-picker-switch">
+        {(["models", "providers"] as const).map((t) => {
+          const on = t === "models" ? tab === "models" : tab !== "models";
+          return (
+            <button key={t} type="button" role="tab" aria-selected={on} onClick={() => go(t, t === "models" ? SEARCH : FIRST)} className="ai-picker-switch-btn">
+              {t === "models" ? "Models" : "Providers"}
+              <span className="ai-picker-pill-count" aria-hidden>
+                {t === "models" ? rows.length : `${setUp}/${providers.length}`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "models" && rows.length > 0 && (
+        <div className="ai-picker-search">
+          <Search className="ai-picker-search-icon" aria-hidden />
+          <input
+            type="search"
+            data-focus="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && list[0]) {
+                e.preventDefault();
+                void pick(list[0]);
+              } else if (e.key === "ArrowDown" && list[0]) {
+                e.preventDefault();
+                root.current?.querySelector<HTMLElement>(FIRST)?.focus();
+              }
+            }}
+            placeholder="Search a model"
+            aria-label="Search your models"
+            spellCheck={false}
+            autoComplete="off"
+            className="ai-picker-search-input"
+          />
+        </div>
+      )}
+
+      {page && (
+        <div className="ai-picker-page-head">
+          <IconButton label="Back to providers" data-focus="back" onClick={() => go("providers", `[data-rove="prov:${page.id}"]`)} className="size-7 [&_svg]:size-3.5">
+            <ArrowLeft aria-hidden />
+          </IconButton>
+          <ProviderAvatar preset={page.id} size={30} />
+          <span className="ai-picker-text">
+            <span className="ai-picker-page-title">{page.label}</span>
+            <span className="ai-picker-meta">
+              {kindLabel(page)} · {providers.find((p) => p.preset.id === page.id)?.status}
+            </span>
+          </span>
+        </div>
+      )}
+
       <div className="ai-picker-body" aria-busy={models.pending !== null}>
         {status === "error" && (
           <p className="ai-error-text ai-picker-error" role="alert">
             {loadError}
           </p>
         )}
-        {groups.length > 0 ? (
-          <ul aria-label="Your models" onKeyDown={roving.onKeyDown} className="ai-picker-list">
-            {groups.map((g) => {
-              const isOpen = opened.has(g.providerId);
-              const list = shown(g);
-              const listId = `models-${g.providerId}`;
-              const count = `${g.rows.length} model${g.rows.length === 1 ? "" : "s"}`;
-              const q = removeQuestion(view, g);
+
+        {/* Models */}
+        {tab === "models" &&
+          (rows.length === 0 ? (
+            <div className="ai-picker-setup">
+              <p className="ai-picker-setup-title">No model yet.</p>
+              <p className="ai-picker-meta">Choose a provider to set one up, as with /provider in the TUI.</p>
+              <button type="button" onClick={() => go("providers", FIRST)} className="ai-btn ai-btn-small ai-picker-add mt-2">
+                Choose a provider
+                <ChevronRight className="size-3.5" aria-hidden />
+              </button>
+            </div>
+          ) : list.length === 0 ? (
+            <div className="ai-picker-empty">
+              <p>No model matches “{query.trim()}”.</p>
+              <button type="button" onClick={() => onAdd()} className="ai-btn ai-btn-small ai-btn-outline mt-2">
+                <Plus className="size-3.5" aria-hidden />
+                Add “{query.trim()}”
+              </button>
+            </div>
+          ) : (
+            modelList(list, query)
+          ))}
+
+        {/* Providers: the TUI's /provider menu */}
+        {tab === "providers" && (
+          <ul aria-label="Providers" onKeyDown={roving.onKeyDown} className="ai-picker-list">
+            {providers.map((p, i) => {
+              // not set up yet: straight to Set the provider on it (no page in between)
+              const fresh = p.count === 0 && p.preset.kind !== "reconix";
               return (
-                <li key={g.providerId}>
-                  {g.providerId === confirm ? (
-                    <div
-                      role="group"
-                      aria-label={q.title}
-                      className="ai-menu-confirm"
-                      onKeyDown={(e) => {
-                        if (e.key !== "Escape") return;
-                        e.preventDefault(); // keeps it; the picker stays open
-                        e.stopPropagation();
-                        keep(g.providerId);
-                      }}
-                    >
-                      <p className="text-foreground">
-                        Remove <span className="font-medium">{g.provider}</span>? {q.detail}
-                      </p>
-                      {error && (
-                        <p className="ai-error-text mt-1" role="alert">
-                          {error}
-                        </p>
-                      )}
-                      {/* No on the right, under the bin: a double-click on the bin keeps it */}
-                      <div className="mt-2 flex justify-end gap-1.5">
-                        <button type="button" onClick={() => void remove(g)} disabled={models.pending !== null} className="ai-btn ai-btn-small ai-btn-danger-solid">
-                          {models.pending === `remove:${g.providerId}` && <Loader className="size-3.5 animate-spin" aria-hidden />}
-                          Remove
-                        </button>
-                        <button type="button" autoFocus onClick={() => keep(g.providerId)} className="ai-btn ai-btn-small ai-btn-outline">
-                          No
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="ai-picker-row">
-                      <button
-                        type="button"
-                        aria-expanded={isOpen}
-                        aria-controls={listId}
-                        onClick={() => toggle(g.providerId)}
-                        title={isOpen ? `Hide ${g.provider}'s models` : `Show ${g.provider}'s models`}
-                        className="ai-picker-head"
-                        {...roving.item(headKey(g.providerId))}
-                      >
-                        <span className="ai-picker-chevron" aria-hidden>
-                          <ChevronRight className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`} strokeWidth={2.5} />
-                        </span>
-                        <span className="ai-picker-text">
-                          <span className="ai-picker-head-name">{g.provider}</span>
-                          <span className="ai-picker-meta">
-                            {g.where} · {count}
-                            {!isOpen && g.rows.some((r) => r.checked) ? " · in use" : ""}
-                          </span>
-                        </span>
-                      </button>
-                      <IconButton
-                        label={`Remove ${g.provider}`}
-                        onClick={() => {
-                          setError(null);
-                          setConfirm(g.providerId);
-                        }}
-                        className="ai-picker-remove size-7 hover:text-danger [&_svg]:size-3.5"
-                        {...roving.item(binKey(g.providerId))}
-                      >
-                        <Trash2 aria-hidden />
-                      </IconButton>
-                    </div>
-                  )}
-                  {isOpen && (
-                    <div id={listId} className="pl-5">
-                      {g.rows.length > FILTER_AT && (
-                        <input
-                          type="search"
-                          value={filters[g.providerId] ?? ""}
-                          onChange={(e) => setFilters((f) => ({ ...f, [g.providerId]: e.target.value }))}
-                          placeholder={`Filter ${count}…`}
-                          aria-label={`Filter ${g.provider}'s models`}
-                          spellCheck={false}
-                          autoComplete="off"
-                          className="ai-input ai-mono my-1 h-7 text-xs"
-                        />
-                      )}
-                      <ul aria-label={`${g.provider}'s models`} className="max-h-56 overflow-y-auto">
-                        {list.map((row) => (
-                          <li key={row.key} className="ai-picker-row">
-                            <button
-                              type="button"
-                              aria-current={row.checked ? "true" : undefined}
-                              title={row.checked ? "Answers your next question" : `Use ${row.model}`}
-                              onClick={() => void pick(row)}
-                              className="ai-picker-model"
-                              {...roving.item(rowKey(row.key))}
-                            >
-                              <span className="ai-picker-check" aria-hidden>
-                                {models.pending === choiceKey(row.providerId, row.model) ? <Loader className="size-3 animate-spin" /> : row.checked ? <Check className="size-3" strokeWidth={3} /> : null}
-                              </span>
-                              <span className="ai-picker-text">
-                                <span className="ai-picker-model-name">{row.model}</span>
-                              </span>
-                            </button>
-                          </li>
-                        ))}
-                        {list.length === 0 && <li className="ai-picker-empty px-2 py-1">No model matches.</li>}
-                      </ul>
-                    </div>
-                  )}
+                <li key={p.preset.id} className="ai-picker-row" style={{ "--i": i } as React.CSSProperties}>
+                  <button
+                    type="button"
+                    title={fresh ? `Set up ${p.preset.label}` : `Open ${p.preset.label}`}
+                    onClick={() => (fresh ? onAdd(p.preset.id) : go(p.preset.id, '[data-focus="back"]'))}
+                    className="ai-picker-model ai-picker-provider-row"
+                    data-setup={p.count === 0 ? "none" : undefined}
+                    {...roving.item(`prov:${p.preset.id}`)}
+                  >
+                    <ProviderAvatar preset={p.preset.id} />
+                    <span className="ai-picker-text">
+                      <span className="ai-picker-provider-name">
+                        {p.preset.label}
+                        {p.active && <span className="ai-picker-pill-dot" aria-label="in use" />}
+                      </span>
+                      <span className="ai-picker-meta">{fresh ? shortHint(p.preset) : p.status}</span>
+                    </span>
+                    <span className="ai-picker-badge ai-picker-kind" data-kind={p.preset.kind}>
+                      {kindLabel(p.preset)}
+                    </span>
+                    {fresh ? (
+                      <span className="ai-picker-setup-go" aria-hidden>
+                        <Plus className="size-3" strokeWidth={2.5} />
+                        Set up
+                      </span>
+                    ) : (
+                      <ChevronRight className="ai-picker-chevron-go" aria-hidden />
+                    )}
+                  </button>
                 </li>
               );
             })}
           </ul>
-        ) : (
-          <p className="ai-picker-empty">No model yet.</p>
         )}
+
+        {/* One provider's page */}
+        {page && saved.length === 0 && (
+          <div className="ai-picker-setup">
+            <p className="ai-picker-setup-title">{shortLabel(page)} isn&apos;t set up yet.</p>
+            <p className="ai-picker-meta">{setupHint(page)}</p>
+            <button type="button" onClick={() => onAdd(page.id)} className="ai-btn ai-btn-small ai-picker-add mt-2">
+              <Plus className="size-3.5" aria-hidden />
+              Set up {shortLabel(page)}
+            </button>
+          </div>
+        )}
+        {page &&
+          saved.map((p) => {
+            const q = removeQuestion(view, {
+              providerId: p.id,
+              provider: savedName(p),
+            });
+            return confirm === p.id ? (
+              <div
+                key={p.id}
+                role="group"
+                aria-label={q.title}
+                className="ai-menu-confirm mb-1"
+                onKeyDown={(e) => {
+                  if (e.key !== "Escape") return;
+                  e.preventDefault(); // keeps it; the picker stays open
+                  e.stopPropagation();
+                  keep(p.id);
+                }}
+              >
+                <p className="text-foreground">
+                  Remove <span className="font-medium">{savedName(p)}</span>? {q.detail}
+                </p>
+                {error && (
+                  <p className="ai-error-text mt-1" role="alert">
+                    {error}
+                  </p>
+                )}
+                {/* No on the right, under the bin: a double-click on the bin keeps it */}
+                <div className="mt-2 flex justify-end gap-1.5">
+                  <button type="button" onClick={() => void remove(p.id)} disabled={models.pending !== null} className="ai-btn ai-btn-small ai-btn-danger-solid">
+                    {models.pending === `remove:${p.id}` && <Loader className="size-3.5 animate-spin" aria-hidden />}
+                    Remove
+                  </button>
+                  <button type="button" autoFocus onClick={() => keep(p.id)} className="ai-btn ai-btn-small ai-btn-outline">
+                    No
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div key={p.id} className="ai-picker-provider">
+                <span className="ai-picker-meta">
+                  {savedName(p)} · {p.local ? "on this computer" : "off this computer"}
+                  {p.keySaved ? " · key saved" : ""}
+                </span>
+                {page.kind !== "reconix" && (
+                  <span className="flex items-center">
+                    <IconButton label={`Update ${savedName(p)}`} onClick={() => onAdd(page.id)} className="size-7 [&_svg]:size-3.5">
+                      <Pencil aria-hidden />
+                    </IconButton>
+                    <IconButton
+                      label={`Remove ${savedName(p)}`}
+                      data-remove={p.id}
+                      onClick={() => {
+                        setError(null);
+                        setConfirm(p.id);
+                      }}
+                      className="size-7 hover:text-danger [&_svg]:size-3.5"
+                    >
+                      <Trash2 aria-hidden />
+                    </IconButton>
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        {page && list.length > 0 && modelList(list, "")}
+
         {error && confirm === null && (
           <p className="ai-error-text ai-picker-error" role="alert">
             {error}
           </p>
         )}
       </div>
-      <div className="ai-picker-foot">
-        <button type="button" data-focus="add" aria-label="+ Model" onClick={onAdd} className="ai-btn ai-picker-add">
+      <div className="ai-picker-foot ai-picker-foot-list">
+        <span className="ai-picker-keys" aria-hidden>
+          <kbd className="ai-picker-kbd">↑↓</kbd> move <kbd className="ai-picker-kbd">↵</kbd> {tab === "providers" ? "open or set up" : "use"} <kbd className="ai-picker-kbd">esc</kbd> close
+        </span>
+        <button type="button" data-focus="add" aria-label="+ Model" onClick={() => onAdd(page?.id)} className="ai-btn ai-btn-small ai-picker-add">
           <Plus className="size-3.5" aria-hidden />
-          Add a provider or model
+          {page && page.kind !== "reconix" ? `Add to ${shortLabel(page)}` : "Add model"}
         </button>
       </div>
     </div>

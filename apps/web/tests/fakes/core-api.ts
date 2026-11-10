@@ -10,6 +10,9 @@ type Session = { session_id: string; interface: string; session_status: string; 
 type Message = { message_id: string; sequence_no: number; role: string; content_masked: string; created_at: string; session_id: string };
 type Provider = Record<string, unknown> & { llm_provider_id: string; provider_type: string; base_url: string | null; model_name: string; is_active: boolean; is_local: boolean };
 
+/** What a cloud provider's GET /llm-providers/{id}/models answers. */
+export const CLOUD_MODELS = ["gpt-4.1", "gpt-4o", "gpt-4o-mini", "whisper-1", "text-embedding-3-small", "dall-e-3", "omni-moderation-latest"];
+
 export interface FakeCore {
   url: string;
   sessions: Map<string, Session>;
@@ -184,6 +187,8 @@ export async function startFakeCore(): Promise<FakeCore> {
       if (m === "POST" && rest === "/test") return send(res, 200, { ok: true, model_name: row.model_name, latency_ms: 42, code: null, message: null });
       if (m === "GET" && rest === "/models") {
         if (fake.listFails) return refuse(res, 503, "MODEL_UNAVAILABLE", "The server did not answer with its models.");
+        // a cloud service lists everything it has for the key, chat or not (as OpenAI does)
+        if (["OPENAI", "ANTHROPIC", "DEEPSEEK"].includes(row.provider_type)) return send(res, 200, { models: CLOUD_MODELS });
         return send(res, 200, { models: ["llama3.2", "qwen:7b"] });
       }
     }
