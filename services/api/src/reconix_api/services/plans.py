@@ -18,6 +18,8 @@ The next step (SUGGEST) goes the same way, with the newest masked tool outputs: 
 agent reflects on them (ReflAct) and suggests what to run next.
 """
 
+import json
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
@@ -43,7 +45,7 @@ from reconix_api.core.interfaces import (
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import Action as ActionRow
 from reconix_api.models import AgentRun, Approval, ToolRun
-from reconix_api.models.enums import ActionStatus, AgentRunStatus, ApprovalStatus
+from reconix_api.models.enums import ActionStatus, AgentRunStatus, ApprovalStatus, ToolRunStatus
 from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import approvals as approval_repo
@@ -61,12 +63,32 @@ Decision = Literal["APPROVED", "REJECTED"]
 # plan's model calls usually take; one that answers later saves nothing (see
 # ensure_still_running).
 STALE_MINUTES = 30
-TOOL_OUTPUTS = 3  # the next step reads the newest 3 tool outputs, masked when saved
+TOOL_OUTPUTS = 5  # the next step reads the newest tool outputs (+ a run summary), masked when saved
 RUN_LINES = 40  # the list of every finished tool run the next step reads, newest kept
 TARGET_CHARS = 60  # a target in that list or an output's header line, cut to this length
 PLAN_FINDINGS = 40  # the findings the planner reads, so it can follow leads in the evidence
 ERROR_CHARS = 200  # a failed run's masked error, cut to this on its header and the summary
+OUTPUT_CHARS = 4000  # the trimmed masked output one finished run adds to the next step
+# JSON finding fields that are huge and the planner never needs: the full HTTP exchange. The
+# match itself (template, severity, matched-at, host) is kept.
+HEAVY_JSON_FIELDS = ("request", "response", "curl-command", "curl_command", "raw", "body")
+# A nuclei match also carries chrome — template url/path, author, tags, metadata, timestamps.
+# Only these signal fields are kept, so the structure the agent reads is the finding itself.
+NUCLEI_KEEP = ("template-id", "matched-at", "host", "url", "type", "matcher-name")
+NUCLEI_INFO_KEEP = ("name", "severity", "description", "classification")
+# Lines a scanner prints around its real output — its banner, version and template counts.
+NOISE_MARKERS = (
+    "projectdiscovery.io",
+    "current nuclei version",
+    "nuclei-templates",
+    "templates loaded",
+    "templates clustered",
+)
+NOISE_PREFIXES = ("[inf]", "[dbg]", "[ver]", "[ftl]")
+# Leftover ANSI escapes (the ESC byte is stripped upstream, leaving e.g. "[2K" / "[0m").
+ANSI_REMNANT = re.compile(r"\[(?:[0-9;]+m|[0-9]+[KJ])")
 PLAN_REASONING = 6  # the agent's own recent reasoning lines fed back, oldest first
+PLAN_OBSERVATIONS = 8  # the agent's own recent ReflAct observation lines fed back, oldest first
 
 
 async def start_plan(
@@ -123,10 +145,13 @@ async def plan_and_send(
         tool_results=tool_results or [],
         findings=recent_findings(db, run.assessment_id),
         recent_reasoning=recent_reasoning(db, run.assessment_id),
+        recent_observations=recent_observations(db, run.assessment_id),
+        tools_run=completed_tools(db, run.assessment_id),
     )
     response = await agent_runs.ask_agent(db, interfaces, request)
     ensure_still_running(db, run)
     text = mask(response.text)[0]
+    reflections = [mask(line)[0] for line in response.reflections]
     plan = [masked_step(mask, step) for step in response.plan]
     step = response.proposed_action
     # A draft with nothing to send has nothing to keep; only a PLAN is drafted.
@@ -134,6 +159,7 @@ async def plan_and_send(
     run.plan = {
         "task": task.value,
         "text": text,
+        "reflections": reflections,
         "steps": [step.model_dump(mode="json") for step in plan],
         "blocked": [step.model_dump(mode="json") for step in response.blocked],
         "draft": keep,
@@ -521,15 +547,70 @@ def recent_findings(db: Db, assessment_id: UUID) -> list[FindingInput]:
 
 
 def output_block(tool: str, target: str, run: ToolRun) -> str:
-    """One tool run's masked output for the next step: a header line, then its error (when
-    it did not finish cleanly) and its output, so the agent can tell a timeout from a parse
-    failure from an auth problem rather than seeing only "FAILED"."""
+    """One tool run's masked output for the next step: a header line, then its error (when it
+    did not finish cleanly) and its output, trimmed to the signal — so the agent can tell a
+    timeout from a parse failure from an auth problem, and does not read the tool's ASCII-art
+    banner or a finding's full HTTP request/response."""
     lines = [output_header(tool, target, str(run.tool_run_status), run.exit_code)]
     if run.error:
-        lines.append(f"error: {short_error(run.error)}")
+        error = clean_output(short_error(run.error))  # a banner on a clean run drops out
+        if error:
+            lines.append(f"error: {error}")
     if run.output_masked:
-        lines.append(run.output_masked)
+        trimmed = clean_output(run.output_masked)
+        if trimmed:
+            lines.append(trimmed)
     return "\n".join(lines)
+
+
+def clean_output(text: str) -> str:
+    """Strip tool chrome — ASCII-art logos, version and progress lines — and the heavy HTTP
+    request/response bodies of JSON findings, then cap, so the next step reads the signal and
+    not the banner. A line it cannot classify is kept; masking already ran before this."""
+    kept: list[str] = []
+    for raw_line in text.splitlines():
+        line = ANSI_REMNANT.sub("", raw_line)
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("{") and stripped.endswith("}"):
+            kept.append(_slim_json(stripped))
+        elif not _is_noise(stripped):
+            kept.append(line.rstrip())
+    out = "\n".join(kept).strip()
+    return out if len(out) <= OUTPUT_CHARS else out[: OUTPUT_CHARS - 1] + "…"
+
+
+def _is_noise(line: str) -> bool:
+    """A banner, version or progress line a scanner prints around its real output."""
+    low = line.lower()
+    if low.startswith(NOISE_PREFIXES) or any(marker in low for marker in NOISE_MARKERS):
+        return True
+    art = sum(ch in "_/\\|()=+*~.-<> " for ch in line)  # ASCII-art / box drawing
+    letters = sum(ch.isalnum() for ch in line)
+    return len(line) >= 12 and letters < art and letters < 0.35 * len(line)
+
+
+def _slim_json(line: str) -> str:
+    """One JSON finding slimmed to its signal. A nuclei match is cut to its id, name,
+    severity, target and classification; any other JSON object just loses the heavy HTTP
+    exchange. A line that is not a JSON object is kept (capped)."""
+    try:
+        data = json.loads(line)
+    except ValueError:  # JSONDecodeError subclasses it; keep the line, capped
+        return line if len(line) <= OUTPUT_CHARS else line[: OUTPUT_CHARS - 1] + "…"
+    if not isinstance(data, dict):
+        return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    if "template-id" in data and "matched-at" in data:  # a nuclei match
+        slim = {key: data[key] for key in NUCLEI_KEEP if key in data}
+        info = data.get("info")
+        if isinstance(info, dict):
+            slim["info"] = {key: info[key] for key in NUCLEI_INFO_KEEP if key in info}
+        data = slim
+    else:
+        for field in HEAVY_JSON_FIELDS:
+            data.pop(field, None)
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
 def output_header(tool: str, target: str, status: str, exit_code: int | None = None) -> str:
@@ -555,6 +636,28 @@ def recent_reasoning(db: Db, assessment_id: UUID) -> list[str]:
     runs = agent_run_repo.recent_plan_runs(db, assessment_id, PLAN_REASONING)
     texts = [(run.plan or {}).get("text", "") for run in runs]
     return [text for text in reversed(texts) if text]
+
+
+def recent_observations(db: Db, assessment_id: UUID) -> list[str]:
+    """The agent's own recent ReflAct observations (masked when stored), oldest first: the
+    leads earlier steps spotted, so a SUGGEST step keeps following them instead of re-reading
+    the raw output. Flattened across the recent plan runs and capped."""
+    runs = agent_run_repo.recent_plan_runs(db, assessment_id, PLAN_REASONING)
+    lines: list[str] = []
+    for run in reversed(runs):  # oldest run first
+        lines.extend((run.plan or {}).get("reflections", []))
+    return lines[-PLAN_OBSERVATIONS:]
+
+
+def completed_tools(db: Db, assessment_id: UUID) -> list[str]:
+    """The distinct tools whose runs have COMPLETED in this assessment, for the coverage map:
+    a technique counts as covered when one of its tools is here, so the planner covers what
+    remains and does not re-run a tool. A fact from the tool runs, never the model's claim."""
+    seen: list[str] = []
+    for run, action in action_repo.tool_runs_in_assessment(db, assessment_id):
+        if run.tool_run_status == ToolRunStatus.COMPLETED and action.tool not in seen:
+            seen.append(action.tool)
+    return seen
 
 
 def runs_summary(rows: list[tuple[str, str, str, int, str]]) -> str:
