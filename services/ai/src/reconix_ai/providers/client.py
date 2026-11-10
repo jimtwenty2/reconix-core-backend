@@ -45,6 +45,7 @@ import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
 from reconix_ai.harness import StreamMasker, mask_secrets, mask_value  # noqa: E402
+from reconix_ai.providers import debug_log  # noqa: E402  (LOCAL debug tool, do not commit)
 from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
@@ -121,6 +122,20 @@ async def complete(
         "max_tokens": config.max_tokens,
         "response_format": {"type": "json_object"} if json_answer else None,
     }
+
+    def fail(code: str, message: str) -> ProviderError:
+        # Every failed call is recorded for the local debug log before it is raised, so an
+        # empty or cut-off answer is visible there too, not only a provider/network error.
+        debug_log.record(
+            config.provider_type,
+            config.model_name,
+            masked_messages,
+            ok=False,
+            error_code=code,
+            error_message=message,
+        )
+        return ProviderError(code, message)
+
     failure = None
     try:
         if on_piece is None:
@@ -132,28 +147,39 @@ async def complete(
     if failure is not None:
         # Raised outside the except block, so the original error (which may
         # carry the request and its key) is not attached to it at all.
-        raise failure
+        raise fail(failure.code, failure.message)
 
     if response is None or not response.choices:
-        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+        raise fail("EMPTY_RESPONSE", "The model sent back an empty answer.")
     choice = response.choices[0]
     raw = choice.message.content or ""
     text, answer_count = mask_json(raw) if json_answer else mask_secrets(raw)
     if not text.strip():
         if choice.finish_reason == "length":
             # A reasoning model can spend the whole length on thinking.
-            raise ProviderError(
+            raise fail(
                 "ANSWER_CUT_OFF",
                 f"The model reached its {config.max_tokens}-token limit before it answered.",
             )
-        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+        raise fail("EMPTY_RESPONSE", "The model sent back an empty answer.")
     usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+    debug_log.record(
+        config.provider_type,
+        config.model_name,
+        masked_messages,
+        ok=True,
+        response=text,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
     return Completion(
         text=text,
         provider_type=config.provider_type,
         model_name=config.model_name,
-        prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-        completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
         masked_count=masked_count + answer_count,
     )
 
@@ -161,9 +187,13 @@ async def complete(
 def mask_json(text: str) -> tuple[str, int]:
     """A JSON answer masked value by value (and whole under a secret key name), then
     written out again. Masking the whole text can eat a closing quote (password = ?"
-    inside a value) and break the JSON. An answer that is not JSON is masked as text."""
+    inside a value) and break the JSON. An answer that is not JSON is masked as text.
+    A model may wrap the object in ```json fences or a sentence, so the outer braces
+    are taken first (as json_object does) before parsing."""
+    start, end = text.find("{"), text.rfind("}")
+    snippet = text[start : end + 1] if 0 <= start < end else text
     try:
-        data = json.loads(text)
+        data = json.loads(snippet)
     except json.JSONDecodeError:
         return mask_secrets(text)
     data, count = mask_value(data)
