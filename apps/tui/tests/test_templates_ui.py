@@ -9,7 +9,7 @@ from textual.widgets import DataTable
 from reconix import store
 from reconix.screens import ChoiceScreen, FindingsListScreen, ReportScreen
 
-from .support import SIZE, TEST_PASSWORD, pass_gate, run_ui_to, settle, toasts, wait_for_run
+from .support import SIZE, TEST_PASSWORD, pass_gate, run_ui_to, settle, wait_for_run
 
 # (request, template, the host the API's findings are on)
 CASES = [
@@ -48,13 +48,14 @@ async def test_template_runs_through_the_ui_to_an_exported_report(
         assert TEST_PASSWORD not in saved and "fake-session-token" not in saved
 
 
-async def test_a_source_scope_is_refused_until_the_api_takes_code(app, fake_api):
+async def test_a_source_repo_url_shows_the_apis_clone_error(app, fake_api):
     async with app.run_test(size=SIZE) as pilot:
         await run_ui_to(app, pilot, "scope", request="Review https://git.example.com/acme/app.git")
         assert store.get_assessment().template_id == "source"
         await pass_gate(app, pilot)  # Approve the scope
         await wait_for_run(pilot)
-        assert store.get_scope().status == "DRAFT"  # nothing approved
-        assert any("source-code scope" in t for t in toasts(app))
+        assert store.get_scope().status == "APPROVED"
+        assert any(p.endswith("/code/clone") for p in fake_api.paths())
+        assert store.get_assessment().live.failed.startswith("GIT_NOT_FOUND")  # as the API said
         assert not any(p.endswith("/submit") for p in fake_api.paths())
         assert fake_api.tool_runs() == []

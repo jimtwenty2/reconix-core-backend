@@ -38,14 +38,11 @@ def sync_scope(assessment: Assessment) -> Optional[str]:
     """Send the assessment's scope (create, update, or submit and approve). Returns the
     API's assessment id once the scope is approved there, else None."""
     scope = assessment.scope
-    if scope is None:
-        return None
+    if scope is None or scope.kind == "source":
+        return None  # a source scope has no manifest: the API approves its own on a code scan
     draft = scope_draft(scope, _spec_doc_url(assessment))
     key = assessment.planned_id
-    if _owner.get("planned_id") not in (None, key):
-        connect.reset()  # another assessment: a new API session for it
-    session_id = connect.session_id()
-    _owner["planned_id"] = key
+    session_id = session_for(assessment)
     entry = _scopes.get(key)
     if entry is None:
         made = connect.request("POST", f"/sessions/{session_id}/scope-manifests", draft)
@@ -70,6 +67,17 @@ def sync_scope(assessment: Assessment) -> Optional[str]:
         connect.request("POST", f"/approvals/{submitted['approval_id']}/approve", {})
         entry["assessment_id"] = submitted["assessment"]["assessment_id"]
     return entry["assessment_id"]
+
+
+def session_for(assessment: Assessment) -> str:
+    """The API session of `assessment` (the API keeps one assessment per session, so another
+    assessment in the app gets a new one)."""
+    key = assessment.planned_id
+    if _owner.get("planned_id") not in (None, key):
+        connect.reset()
+    session_id = connect.session_id()
+    _owner["planned_id"] = key
+    return session_id
 
 
 def _spec_doc_url(assessment: Assessment) -> Optional[str]:

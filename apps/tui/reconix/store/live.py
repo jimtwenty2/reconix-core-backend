@@ -22,8 +22,9 @@ the decision is taken back and the gate asks again with the API's reason.
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from ..core_api import adapt, run_api
+from ..core_api import adapt, code_scan, run_api, sync
 from ..core_api.client import CoreApiError
+from ..core_api.scope_map import api_tools
 from ..models import GATE_APPROVAL_PREFIX, Assessment, LiveRun, RunStep
 from . import lists
 from .activity import log_event
@@ -41,6 +42,18 @@ class Job:
     assessment: Assessment
     fetch: Callable[[], Any]
     on_result: Callable[[Assessment, Any], None]
+    # A slow job (the code scan) reports what it is doing: the host sets this to hand the
+    # line to the UI thread (`progress` there), and the worker calls `report`.
+    on_progress: Optional[Callable[[str], None]] = None
+
+    def report(self, text: str) -> None:
+        """From the worker: a progress line, handed to the UI thread when the host listens."""
+        if self.on_progress is not None:
+            self.on_progress(text)
+
+    def progress(self, text: str) -> None:
+        """UI thread: show one progress line of the job in the run's log."""
+        _append(self.assessment, [_log("SYS", text)])
 
     def apply(self, result: Any) -> None:
         live = self.assessment.live
@@ -79,7 +92,7 @@ def next_job(assessment: Optional[Assessment] = None) -> Optional[Job]:
     assessment = assessment or lists.current()
     live, run = assessment.live, assessment.run
     if (live.busy or live.failed or not run.plan_started or run.stopped or run.completed
-            or not live.assessment_id):
+            or not (live.assessment_id or _is_source(assessment))):
         return None  # (after a failure the run waits for you: retry())
     from .scope import time_limit_pending
 
@@ -93,7 +106,14 @@ def next_job(assessment: Optional[Assessment] = None) -> Optional[Job]:
     return job
 
 
+def _is_source(assessment: Assessment) -> bool:
+    """A source-code scope: its run is a code scan (upload, scan, findings), no plan."""
+    return assessment.scope is not None and assessment.scope.kind == "source"
+
+
 def _job_for(assessment: Assessment, live: LiveRun) -> Optional[Job]:
+    if _is_source(assessment):
+        return None if live.code_scan_done else _code_scan_job(assessment)
     aid = live.assessment_id
     if not live.sent:
         if not live.agent_run_id:
@@ -125,6 +145,58 @@ def _job_for(assessment: Assessment, live: LiveRun) -> Optional[Job]:
         # Every step's findings were analyzed as they came in; close the run.
         return Job("finish", assessment, lambda: None, _on_finish)
     return None
+
+
+def _code_scan_job(assessment: Assessment) -> Job:
+    """Upload the local code (or have the API clone a repo), scan it, read the findings."""
+    scope = assessment.scope
+    tools = list(api_tools(scope))
+    add_activity("SYS", "Code scan: uploading the code to the Core API…")
+
+    def fetch() -> Any:
+        return code_scan.run_scan(
+            scope.target_url, scope.excluded_paths, tools,
+            lambda: sync.session_for(assessment), job.report,
+        )
+
+    job = Job("code_scan", assessment, fetch, _on_code_scan)
+    return job
+
+
+def _on_code_scan(assessment: Assessment, out: Dict[str, Any]) -> None:
+    """The finished code scan and its findings: shown, then the run is complete."""
+    live = assessment.live
+    scan = out.get("scan") or {}
+    live.code_scan_done = True
+    live.code_scan_id = str(scan.get("agent_run_id", ""))
+    steps = [_log("SYS", f"Code scan {scan.get('stage', 'DONE').title()}", "ok")]
+    for note in scan.get("notes") or []:
+        bad = any(word in str(note) for word in ("FAILED", "BLOCKED"))
+        steps.append(_log("SYS", str(note), "warn" if bad else "default"))
+    steps += _new_code_findings(assessment, out.get("findings") or [])
+    steps += [RunStep("progress", name=bar, value=100, pause=0.0)
+              for bar in ("discovery", "scanning", "validation", "analysis")]
+    steps += _completion_steps(assessment)
+    _append(assessment, steps)
+    log_event("run.finished", live.code_scan_id)
+
+
+def _new_code_findings(assessment: Assessment, rows: List[dict]) -> List[RunStep]:
+    """The scan's findings, added and revealed (the API's own review is on each row)."""
+    live = assessment.live
+    known = set(live.finding_ids.values())
+    steps: List[RunStep] = []
+    for row in rows:
+        finding_id = str(row.get("finding_id", ""))
+        if not finding_id or finding_id in known:
+            continue
+        fid = f"{len(live.finding_ids) + 1:03d}"
+        live.finding_ids[fid] = finding_id
+        assessment.findings.append(adapt.code_finding(row, fid))
+        steps.append(RunStep("reveal", name=fid, pause=0.1))
+        steps.append(_log("AI", f"Finding {fid} · {adapt.severity(row.get('severity_status'))} "
+                                f"· {row.get('title', '')}", "warn"))
+    return steps
 
 
 def failed_reason() -> str:

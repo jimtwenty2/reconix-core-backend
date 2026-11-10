@@ -67,11 +67,11 @@ def test_each_template_runs_on_the_core_api(template_id, fake_api):
     assert store.get_scope().kind == template_id
 
 
-def test_a_source_scope_waits_for_the_code_scan_flow():
+def test_a_source_scope_is_approved_for_the_code_scan_flow():
     store.start_run(REQUESTS["source"])
     assert play_until_gate() == "scope"
-    with pytest.raises(store.StoreValidationError, match="source-code scope"):
-        store.approve_scope()
+    store.approve_scope()
+    assert store.get_scope().status == "APPROVED" and store.is_plan_started()
 
 
 def test_network_blocks_other_hosts_and_ports_but_allows_in_range():

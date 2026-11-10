@@ -112,12 +112,12 @@ def _source_scope_approved_here():
     lists.current().run.started_at = utc_now()
 
 
-def test_a_source_scope_is_refused_by_the_core_api_for_now():
+def test_a_source_scope_is_approved_and_runs_as_a_code_scan(fake_api):
     store.start_run("review repo https://git.example.com/acme/app.git")
     assert play_until_gate() == "scope"
-    with pytest.raises(store.StoreValidationError, match="source-code scope"):
-        store.approve_scope()
-    assert store.get_scope().status == "DRAFT"
+    store.approve_scope()
+    assert store.get_scope().status == "APPROVED"
+    assert not any("/scope-manifests" in p for p in fake_api.paths())  # no manifest for source
 
 
 @pytest.mark.parametrize("target", [

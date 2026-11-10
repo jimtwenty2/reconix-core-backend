@@ -156,6 +156,30 @@ def finding(row: dict, fid: str) -> Finding:
     )
 
 
+def code_finding(row: dict, fid: str) -> Finding:
+    """A CodeFindingOut as the app's Finding: where it is (path:line), the rule, the masked
+    first line as proof, and the AI review's verdict, explanation and fix. A CONFIRMED
+    verdict (only a validation gives it) is shown as validated; every other stays as the API
+    says it (UNCONFIRMED), never upgraded here."""
+    found = finding(row, fid)
+    path, line = str(row.get("path") or ""), row.get("line")
+    where = f"{path}:{line}" if path and line else path or found.path
+    verdict = str(row.get("verdict") or "UNVERIFIED").upper()
+    snippet = str(row.get("snippet") or "")
+    rule = str(row.get("rule_id") or "")
+    found.title = found.title or rule
+    found.path = found.affected_url = where
+    found.category = "Source Code"
+    found.evidence = [line_ for line_ in (f"Rule: {rule}" if rule else "", snippet) if line_] \
+        or found.evidence
+    found.evidence_summary = str(row.get("explanation") or found.evidence_summary)
+    found.validation_reason = f"AI review: {verdict}"
+    found.remediation = str(row.get("fix_recommendation") or found.remediation)
+    if verdict == "CONFIRMED":
+        found.validation = "CONFIRMED"
+    return found
+
+
 def plan_step_for(steps: List[dict], action: dict, position: int) -> Optional[dict]:
     """The plan row an action came from: the row at its place in the run (`position`, from
     1) when it is the same tool and target, else None (a step the agent chose later)."""

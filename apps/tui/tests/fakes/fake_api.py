@@ -99,6 +99,17 @@ def finding_row(
     }
 
 
+def code_finding_row() -> dict:
+    """A CodeFindingOut (a finding with its place in the uploaded code and the AI review)."""
+    return {
+        **finding_row("SEMGREP-SQLI", "SQL injection", "/workspace/code/s", "HIGH", "SEMGREP"),
+        "path": "app/db.py", "line": 12, "end_line": 12,
+        "rule_id": "python.lang.security.audit.sqli", "snippet": "cur.execute(q + user)",
+        "file_sha256": "0" * 64, "verdict": "LIKELY_TRUE_POSITIVE",
+        "explanation": "User input reaches the query.", "fix_recommendation": "Use parameters.",
+    }
+
+
 class FakeApi:
     """Answers the calls the app makes, and records them (method, path, body, auth)."""
 
@@ -145,6 +156,12 @@ class FakeApi:
         self.findings: Dict[str, dict] = {}
         self.reports: Dict[str, dict] = {}
         self.messages: List[dict] = []
+        self.uploads: List[bytes] = []  # the tar.gz bodies PUT to /code
+        self.code_files: Dict[str, str] = {}  # relative path -> sha256 the "API" holds
+        self.code_polls = 1  # a code scan answers RUNNING this many times before COMPLETED
+        self.code_findings: List[dict] = [code_finding_row()]
+        self.code_notes = ["SYFT 12 packages"]
+        self.scans: Dict[str, dict] = {}
 
     # --- helpers for tests ------------------------------------------------------------------
     def paths(self) -> List[str]:
@@ -162,7 +179,13 @@ class FakeApi:
         if self.down:
             raise CoreApiError("UNREACHABLE", NOT_RUNNING)
         path = request.full_url.split("/api/v1", 1)[1]
-        body = json.loads(request.data) if request.data else None
+        gzipped = request.headers.get("Content-type") == "application/gzip"
+        body = (
+            {"gzip_bytes": len(request.data)} if gzipped
+            else json.loads(request.data) if request.data else None
+        )
+        if gzipped:
+            self.uploads.append(request.data)
         auth = request.headers.get("Authorization", "")
         method = request.get_method()
         self.calls.append((method, path, body, auth))
@@ -223,6 +246,8 @@ class FakeApi:
                 for a in self.approvals.values()
                 if "status=PENDING" not in full or a["approval_status"] == "PENDING"
             ]
+        if "/code" in path or parts[0] == "code-scans":
+            return self._code(method, parts, body)
         if path.endswith("/chat"):
             return {"reply": {"content_masked": self.reply}}
         if path.endswith("/messages"):
@@ -251,6 +276,50 @@ class FakeApi:
         if path.endswith("/analyze"):
             return self._analyze(parts[1], body)
         raise AssertionError(f"the fake API has no route for {method} {path}")
+
+    # --- code scans (a source scope) ---------------------------------------------------------
+    def _code(self, method: str, parts: List[str], body: Any) -> Any:  # noqa: C901
+        if parts[0] == "sessions" and parts[2] == "code":
+            if parts[3:] == ["sync"]:
+                held = {f["path"]: f["sha256"] for f in body["files"]}
+                missing = [p for p, h in held.items() if self.code_files.get(p) != h]
+                self._listed = held
+                self.code_files = {p: h for p, h in self.code_files.items() if p in held}
+                return {"missing": missing, "target": f"/workspace/code/{parts[1]}"}
+            if method == "PUT":
+                self.code_files = dict(self._listed)
+                return {"files": 0, "size_bytes": body["gzip_bytes"],
+                        "target": f"/workspace/code/{parts[1]}"}
+            if parts[3:] == ["clone"]:
+                raise self.error(503, "GIT_NOT_FOUND", "git is not installed on this computer")
+        if parts[0] == "sessions" and parts[2] == "code-scans":
+            run_id = self._id("scan")
+            self.scans[run_id] = {"polls": 0, "tools": body.get("tools"), "session": parts[1]}
+            return self._code_scan_out(run_id)
+        if parts[0] == "code-scans" and len(parts) == 2:
+            self.scans[parts[1]]["polls"] += 1
+            return self._code_scan_out(parts[1])
+        if parts[0] == "code-scans" and parts[2] == "findings":
+            return [{**row, "finding_id": f"cf-{i}"} for i, row in enumerate(self.code_findings)]
+        raise AssertionError(f"the fake API has no code route for {method} {parts}")
+
+    def _code_scan_out(self, run_id: str) -> dict:
+        scan = self.scans[run_id]
+        running = scan["polls"] < self.code_polls
+        counts = {} if running else {"HIGH": len(self.code_findings)}
+        return {
+            "agent_run_id": run_id,
+            "agent_runs_status": "RUNNING" if running else "COMPLETED",
+            "stage": "SCANNING" if running else "DONE",
+            "progress": 40 if running else 100,
+            "started_at": now(),
+            "finished_at": None if running else now(),
+            "session_id": scan["session"],
+            "assessment_id": "a-code",
+            "counts": counts,
+            "notes": [] if running else self.code_notes,
+            "error": None,
+        }
 
     # --- providers ---------------------------------------------------------------------------
     def _add_provider(self, body: dict) -> dict:
