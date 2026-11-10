@@ -54,7 +54,7 @@ class FakeApi:
     def bodies(self, method: str, start: str) -> List[Any]:
         return [body for m, path, body, _ in self.calls if m == method and path.startswith(start)]
 
-    def send(self, request) -> Any:
+    def send(self, request, timeout=None) -> Any:
         if self.down:
             raise client.CoreApiError(
                 "UNREACHABLE", "the Core API is not running (start it with reconix-api)"
@@ -84,6 +84,9 @@ class FakeApi:
             row.pop("api_key", None)
             self.providers.append(row)
             return row
+        if path.endswith("/test") and path.startswith("/llm-providers/"):
+            row = next(r for r in self.providers if path.split("/")[2] == r["llm_provider_id"])
+            return {"ok": True, "model_name": row["model_name"], "latency_ms": 5}
         if path.endswith("/activate"):
             row = next(r for r in self.providers if path.split("/")[2] == r["llm_provider_id"])
             if row["is_local"]:
@@ -179,63 +182,12 @@ def test_a_question_is_answered_by_the_api(api, approved, no_direct_model):
     assert chat_call[3] == f"Bearer {TOKEN}"
 
 
-def test_the_api_uses_the_model_you_chose(api, approved, no_direct_model):
-    store.llm_answer("hello")
-    store.llm_answer("again")
-
-    [added] = [body for m, p, body, _ in api.calls if (m, p) == ("POST", "/llm-providers")]
-    assert (added["provider_type"], added["model_name"]) == ("OPENAI", "gpt-4o-mini")
-    assert added["api_key"] == "sk-x-1234"
-    assert "POST /approvals/a-cfg/approve" in api.paths()
-    assert api.paths().count("GET /llm-providers") == 1  # synced once
-    assert any("Core API uses" in a.message for a in store.list_activity())
-
-
-def test_a_remote_model_is_not_approved_without_your_ok(api, model_active, no_direct_model):
-    store.llm_answer("hello")
-
-    assert not any(p.endswith("/activate") or p.startswith("POST /approvals") for p in api.paths())
-    assert not any(p.endswith("/chat") for p in api.paths())
-    assert "needs your OK" in last_reply() and "/provider" in last_reply()
-
-
-def test_a_model_on_this_computer_needs_no_ok(api, reachable, no_direct_model):
-    store.set_provider("ollama", base_url="http://127.0.0.1:11434", models=["llama3.2"])
-    store.test_provider("ollama")
-    store.activate("ollama", "llama3.2")
-
-    store.llm_answer("hello")
-
-    assert any(p.endswith("/activate") for p in api.paths())
-    assert not any(p.startswith("POST /approvals") for p in api.paths())
-    assert last_reply() == "The API's answer."
-
-
-def test_an_earlier_waiting_approval_is_the_one_approved(api, model_active, no_direct_model):
-    api.pending_activation = True
-
-    store.core_api_approve()
-
-    assert "POST /approvals/a-old/approve" in api.paths()
-
-
-def test_only_a_remote_model_in_core_api_mode_asks(api, monkeypatch, model_active, reachable):
-    assert store.core_api_needs_ok()
-    store.set_provider("ollama", base_url="http://127.0.0.1:11434", models=["llama3.2"])
-    store.test_provider("ollama")
-    store.activate("ollama", "llama3.2")
-    assert not store.core_api_needs_ok()
-    store.activate("openai", "gpt-4o-mini")
-    monkeypatch.delenv(client.ENV_URL)  # the default address: the API is still used
-    assert store.core_api_needs_ok()
-
-
 def test_the_token_and_key_never_show(api, approved):
     store.llm_answer("hello")
 
     shown = " ".join(e.text for e in store.get_assessment().chat)
     shown += " ".join(a.message for a in store.list_activity())
-    assert TOKEN not in shown and "sk-x-1234" not in shown
+    assert TOKEN not in shown and "sk-1234" not in shown
 
 
 def test_an_api_that_is_down_is_said_plainly(api, approved, no_direct_model):
@@ -414,8 +366,11 @@ def test_the_spec_doc_url_comes_from_an_attached_spec():
     assert sync._spec_doc_url(_Holder()) is None
     holder = _Holder()
     holder.api_spec = ApiSpec(
-        title="x", version="1", spec_version="3.0.3",
-        file_name="api.example/v3/api-docs", source_url="http://api.example/v3/api-docs",
+        title="x",
+        version="1",
+        spec_version="3.0.3",
+        file_name="api.example/v3/api-docs",
+        source_url="http://api.example/v3/api-docs",
     )
     assert sync._spec_doc_url(holder) == "http://api.example/v3/api-docs"
 
@@ -425,15 +380,15 @@ async def test_choosing_a_remote_model_asks_for_the_core_apis_ok(api, app, reach
 
     from .support import SIZE, settle, screen_text
 
-    store.set_provider("openai", api_key="sk-x-1234", models=["gpt-4o-mini"])
+    store.set_provider("openai", api_key="sk-1234", models=["gpt-4o-mini"])
     store.test_provider("openai")
     async with app.run_test(size=SIZE) as pilot:
         app.activate_model("openai/gpt-4o-mini")
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
         shown = screen_text(app.screen)
-        assert "Core API will send your scope" in shown and "sk-x-1234" not in shown
-        assert "sk-…1234" in shown  # only the key's hint
+        assert "Core API will send your scope" in shown and "sk-1234" not in shown
+        assert "…1234" in shown  # only the key's last 4
         await pilot.press("enter")  # Approve (recommended, the default)
         await app.workers.wait_for_complete()
         await settle(pilot)
@@ -443,11 +398,12 @@ async def test_choosing_a_remote_model_asks_for_the_core_apis_ok(api, app, reach
 async def test_not_now_approves_nothing(api, app, reachable):
     from .support import SIZE, settle
 
-    store.set_provider("openai", api_key="sk-x-1234", models=["gpt-4o-mini"])
+    store.set_provider("openai", api_key="sk-1234", models=["gpt-4o-mini"])
     store.test_provider("openai")
     async with app.run_test(size=SIZE) as pilot:
         app.activate_model("openai/gpt-4o-mini")
         await settle(pilot)
         await pilot.press("down", "enter")  # Not now
         await settle(pilot)
-    assert api.calls == []
+    assert not any("/approve" in p for p in api.paths())  # nothing approved
+    assert store.core_api_needs_ok()  # the model stays pending

@@ -180,7 +180,7 @@ async def test_the_high_confirmation_hash_fits_one_line(app, size, whole):
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
         text = screen_text(app.screen)
-        assert (digest in text) is whole                # whole when it fits on one line
+        assert (digest in text) is whole  # whole when it fits on one line
         if not whole:
             assert "View details" in text and digest[-8:] in text
 
@@ -213,12 +213,13 @@ async def test_disabled_provider_choices_say_why(app):
 
 
 async def test_a_tested_provider_becomes_active_when_none_is(app, reachable):
-    store.set_provider("openai", api_key=FAKE_KEY, models=["gpt-4o-mini"])
+    # A model on this computer (Ollama) is active at once; a cloud model would ask for your OK.
+    store.set_provider("ollama", base_url="http://127.0.0.1:11434", models=["llama3.2"])
     assert store.active_model() is None
     async with app.run_test(size=SIZE) as pilot:
-        app.test_provider_async("openai")
+        app.test_provider_async("ollama")
         await wait_until(pilot, lambda: store.active_model() is not None, what="active")
-        assert store.active_model().provider_id == "openai"
+        assert store.active_model().provider_id == "ollama"
 
 
 async def test_the_provider_list_shows_its_first_row_when_it_fits(app, reachable):

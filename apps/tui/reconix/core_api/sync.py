@@ -90,42 +90,20 @@ def first_message(assessment: Assessment) -> str:
     return "\n".join(lines)
 
 
-def use_active_model(approved: bool = False) -> List[str]:
-    """Make the API use the app's active model; the activity lines to show."""
-    from ..store.llm_chat import credentials
-    from ..store.providers import active_model
-
-    active = active_model()
-    key, base = credentials(active) if active is not None else (None, None)
-    note = connect.ensure_provider(active, key, base, approved)
-    return [note] if note else []
-
-
-def approve_active_model() -> List[str]:
-    """You said yes in /provider: the API may use the active model (off this computer).
-    Raises CoreApiError."""
-    return use_active_model(approved=True)
-
-
-
 def ask_model(prompt: str) -> str:
     """One structured ask to the API's model (no scope sync, no app-step line): used for the
-    scope suggestion. Returns the masked reply. Raises CoreApiError."""
-    from ..store.providers import active_model
-
-    if active_model() is not None:
-        use_active_model()
+    scope suggestion. Returns the masked reply. Raises CoreApiError. The API uses whatever
+    provider is active on it (chosen in /provider)."""
     answered = connect.request(
         "POST", f"/sessions/{connect.session_id()}/chat", {"content": prompt}
     )
     return answered["reply"]["content_masked"]
 
+
 def chat_reply(text: str, assessment: Assessment) -> Tuple[str, List[str]]:
     """The API's answer to `text`, and notes for the activity log. Raises CoreApiError.
-    With no model of your own (/provider), the API answers with its own (.env)."""
-    from ..store.providers import active_model
-
-    notes = use_active_model() if active_model() is not None else []
+    The API answers with whatever provider is active on it (chosen in /provider)."""
+    notes: List[str] = []
     try:
         sync_scope(assessment)
     except CoreApiError as exc:
@@ -143,5 +121,7 @@ def app_step_line() -> str:
     from ..store.progress import step_status
 
     status = step_status()
-    return (f"(Reconix app: step {status.step}: {status.state}. The operator moves on only "
-            f"with the app's menu: {status.choices}.)")
+    return (
+        f"(Reconix app: step {status.step}: {status.state}. The operator moves on only "
+        f"with the app's menu: {status.choices}.)"
+    )

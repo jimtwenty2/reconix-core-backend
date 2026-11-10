@@ -36,16 +36,17 @@ async def test_provider_form_saves_through_the_store(app):
         app.screen.query_one("#submit").press()
         await settle(pilot)
         view = store.get_provider("openai")
-        assert view.configured and view.models == ("gpt-4o-mini", "gpt-4o")   # built-in
+        assert view.configured and view.models == ("gpt-4o-mini", "gpt-4o")  # built-in
 
 
 async def test_status_bar_shows_active_model(app, reachable):
     async with app.run_test(size=SIZE) as pilot:
         await settle(pilot)
-        assert "off" in _bar_text(app)                 # nothing active yet
-        store.set_provider("openai", api_key="sk-x-1234", models=["gpt-4o-mini"])
+        assert "off" in _bar_text(app)  # nothing active yet
+        store.set_provider("openai", api_key="sk-1234", models=["gpt-4o-mini"])
         store.test_provider("openai")
         store.activate("openai", "gpt-4o-mini")
+        store.core_api_approve()  # a remote model: your OK makes it active
         text = _bar_text(app)
         assert "OpenAI" in text and "gpt-4o-mini" in text
 
@@ -56,6 +57,6 @@ async def test_unset_dialog_defaults_to_keep(app, reachable):
         app.confirm_unset("ollama")
         await settle(pilot)
         assert isinstance(app.screen, ChoiceScreen)
-        await pilot.press("enter")                      # the default is "No, keep it"
+        await pilot.press("enter")  # the default is "No, keep it"
         await settle(pilot)
-        assert store.get_provider("ollama").configured   # still there
+        assert store.get_provider("ollama").configured  # still there
