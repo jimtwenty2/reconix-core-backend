@@ -27,6 +27,16 @@ test.describe("with live refresh on (every second)", () => {
   test.use({ baseURL: `http://127.0.0.1:${LIVE_PORT}` });
 
   test("the pill is Live, the page re-reads by itself, and a click pauses it", async ({ page }) => {
+    // refreshes still on their way (one asked for just before the click may land after it)
+    let inflight = 0;
+    page.on("request", (r) => {
+      if (isRefresh(r)) inflight += 1;
+    });
+    const landed = (r: import("@playwright/test").Request) => {
+      if (isRefresh(r)) inflight -= 1;
+    };
+    page.on("requestfinished", landed);
+    page.on("requestfailed", landed);
     await page.goto("/");
     await hydrated(page);
     await expect(pill(page)).toHaveAttribute("data-live-refresh", "on");
@@ -39,6 +49,7 @@ test.describe("with live refresh on (every second)", () => {
     await expect(pill(page)).toHaveAttribute("data-live-refresh", "paused");
     await expect(pill(page)).toHaveAttribute("aria-pressed", "false");
     await expect(pill(page)).toContainText("Paused");
+    await expect.poll(() => inflight, { message: "the refresh asked for before the pause has landed" }).toBe(0);
     // paused: two intervals go by (the one deliberate wait: nothing happening cannot be polled for)
     // and the server is not asked again
     const paused = (await pill(page).textContent())!;

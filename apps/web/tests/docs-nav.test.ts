@@ -223,7 +223,7 @@ describe("the DOCS link map", () => {
 
   it("gives every dashboard panel its own section, and a shape-only anchor is not enough", () => {
     const panels = Object.entries(DOCS).filter(([key]) => key.startsWith("panel"));
-    expect(panels.length).toBe(13); // 9 cards, plus the 4 views that are one panel (QAL-009)
+    expect(panels.length).toBe(8); // 4 cards (the Report view has one: its versions), plus the 4 views that are one panel (QAL-009)
     const headings = docsSearchIndex().find((e) => e.group === "reports" && e.anchor === "panels")!.headings;
     for (const [key, href] of panels) {
       const anchor = href.split("#", 2)[1];
