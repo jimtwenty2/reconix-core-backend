@@ -115,6 +115,13 @@ def approve_active_model() -> List[str]:
     return use_active_model(approved=True)
 
 
+def fetch_kali_status() -> dict:
+    """The Core API's view of the Kali MCP tool container: the raw JSON
+    `{"connected": bool, "host": str|None, "checked_at": iso8601}` from GET /system/kali.
+    Raises CoreApiError (UNREACHABLE when the API itself is down)."""
+    return connect.request("GET", "/system/kali")
+
+
 
 def ask_model(prompt: str) -> str:
     """One structured ask to the API's model (no scope sync, no app-step line): used for the

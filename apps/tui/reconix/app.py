@@ -73,9 +73,28 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
         # The stylesheet's $variables come from theme.py, the one place colors are defined.
         return {**super().get_css_variables(), **theme.CSS_TOKENS}
 
+    KALI_POLL_SECONDS = 15   # how often the top bar's kali chip refreshes from the Core API
+
     def on_mount(self) -> None:
         self.push_screen(StartScreen())
         self.call_after_refresh(self.ask_provider_on_start)   # until a model is active
+        self.set_interval(self.KALI_POLL_SECONDS, self._poll_kali)
+        self._poll_kali()   # populate the kali chip promptly, not only after the first interval
+
+    def _poll_kali(self) -> None:
+        """Refresh the Kali MCP status off the UI thread; a failed poll just yields UNKNOWN."""
+        self.run_worker(self._kali_worker, thread=True, group="kali", exclusive=True,
+                        exit_on_error=False)
+
+    def _kali_worker(self) -> None:
+        store.refresh_kali()               # never raises (Core API down → UNKNOWN)
+        self.from_worker(self._refresh_kali_chip)
+
+    def _refresh_kali_chip(self) -> None:
+        from .widgets.chrome import SessionBar
+
+        for bar in self.screen.query(SessionBar):
+            bar.refresh_line()
 
     def on_unmount(self) -> None:
         # Quitting ends the session: mark the saved copies so the web dashboard shows an

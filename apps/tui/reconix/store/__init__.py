@@ -30,6 +30,7 @@ from .findings_view import (
     severity_counts, sort_label,
 )
 from .history import add_history, list_history
+from .kali import kali_host, kali_status, refresh_kali, set_kali_status
 from .llm_chat import (
     Draft, begin_reply, build_draft, drop_pending_replies, preview_reply, record_draft,
 )
@@ -170,6 +171,8 @@ __all__ = [
     "list_providers", "get_provider", "set_provider", "unset_provider", "test_provider",
     "activate", "active_model", "active_llm_settings", "active_remote_label",
     "core_api_approve", "core_api_needs_ok",
+    # Kali MCP reachability: the session bar's kali chip (fed from the Core API)
+    "kali_status", "kali_host", "set_kali_status", "refresh_kali",
     "Draft", "build_draft", "record_draft", "begin_reply", "preview_reply",
     "drop_pending_replies",
     # the saved copy the web dashboard reads

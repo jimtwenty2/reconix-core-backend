@@ -48,6 +48,7 @@ class SessionBar(Static):
         parts.append((2, False, [Text.assemble(("◆ ", theme.MEDIUM),
                                                ("demo data", theme.MUTED))]))
         parts.append((1, True, self._llm_forms()))
+        parts.append((2, False, self._kali_forms()))   # Kali MCP reachability, next to the llm chip
         template = store.selected_template()
         if template:
             parts.append((3, False, [Text.assemble(("template: ", theme.DIM),
@@ -76,6 +77,23 @@ class SessionBar(Static):
             Text.assemble(("llm: ", theme.DIM), (f"{active.label} · {active.model} ", theme.MUTED),
                           ("●", color)),
             Text.assemble(("llm: ", theme.DIM), (f"{model} ", theme.MUTED), ("●", color)),
+        ]
+
+    @staticmethod
+    def _kali_forms() -> List[Text]:
+        """The Kali MCP part, longest first: `kali: <host> ●`, then `kali ●` (dot by status).
+
+        REACHABLE→green, UNREACHABLE→red, else muted — the same mapping the llm chip uses.
+        """
+        color = {"REACHABLE": theme.GREEN, "UNREACHABLE": theme.CRITICAL}.get(
+            store.kali_status(), theme.MUTED)
+        short = Text.assemble(("kali ", theme.DIM), ("●", color))
+        host = store.kali_host()
+        if not host:
+            return [short]
+        return [
+            Text.assemble(("kali: ", theme.DIM), (f"{host} ", theme.MUTED), ("●", color)),
+            short,
         ]
 
     def refresh_line(self) -> None:

@@ -450,4 +450,7 @@ async def test_not_now_approves_nothing(api, app, reachable):
         await settle(pilot)
         await pilot.press("down", "enter")  # Not now
         await settle(pilot)
-    assert api.calls == []
+    # "Not now" syncs nothing to the API; the only calls are the top bar's kali-status poll
+    # (open a session, then GET /system/kali), which is unrelated to activating the model.
+    synced = [p for p in api.paths() if p != "POST /sessions" and "/system/kali" not in p]
+    assert synced == []

@@ -145,6 +145,9 @@ class FakeApi:
         }
         self.analysis_summary = "Two issues found; the admin panel is the one to fix first."
         self.pending_activation = False
+        # GET /system/kali: tests flip `kali_connected` / `kali_host` to shape the status chip.
+        self.kali_connected = True
+        self.kali_host: Optional[str] = "reconix-kali-container:8000"
         self.n = 0
         self.sessions: Dict[str, str] = {}  # token -> session id
         self.providers: List[dict] = []
@@ -210,6 +213,12 @@ class FakeApi:
     # --- the routes --------------------------------------------------------------------------
     def answer(self, method: str, path: str, body: Any, full: str) -> Any:  # noqa: C901
         parts = path.strip("/").split("/")
+        if path == "/system/kali" and method == "GET":
+            return {
+                "connected": self.kali_connected,
+                "host": self.kali_host if self.kali_connected else None,
+                "checked_at": now(),
+            }
         if path == "/sessions" and method == "POST":
             token, session_id = TOKEN_PREFIX + self._id("t"), self._id("s")
             self.sessions[token] = session_id
