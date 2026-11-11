@@ -16,7 +16,7 @@ from reconix_api.models import Session
 from reconix_api.models.enums import SessionStatus
 from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.sessions import SessionRead
-from reconix_api.services import code_scans
+from reconix_api.services import code_fixes, code_scans
 from reconix_api.services.audit import audit
 
 FALLBACK_USER = "operator"  # when the OS gives no user name
@@ -102,6 +102,7 @@ def close_session(
     db.commit()
     tokens.revoke_session(session_id)
     code_scans.cancel_for_session(db, write_audit, operator, session_id)
+    code_fixes.cancel_for_session(db, write_audit, operator, session_id)
     code_files.remove(code_files.session_folder(code_dir, session_id))
     audit(write_audit, "SESSION_CLOSED", operator)
     return SessionRead.model_validate(session, from_attributes=True)
