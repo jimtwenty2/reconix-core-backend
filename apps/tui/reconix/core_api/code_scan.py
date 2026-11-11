@@ -12,6 +12,8 @@ own CoreApiError; nothing is faked.
 import hashlib
 import io
 import os
+import shutil
+import subprocess
 import tarfile
 import time
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
@@ -143,9 +145,20 @@ def findings(agent_run_id: str) -> List[dict]:
 
 
 def repo_token() -> Optional[str]:
-    """A GitHub token for cloning a private repo, read from this computer's environment
-    (GH_TOKEN or GITHUB_TOKEN). It is forwarded to the Core API only; never stored or logged."""
-    return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+    """A GitHub token for cloning a private repo. From GH_TOKEN or GITHUB_TOKEN if set,
+    otherwise from the `gh` CLI's own login (`gh auth token`) so a normal run clones private
+    repos with no environment setup. Forwarded to the Core API only; never stored or logged."""
+    env = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if env:
+        return env
+    gh = shutil.which("gh")
+    if gh is None:
+        return None
+    try:
+        done = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() or None
 
 
 def clone(session_id: str, url: str, token: Optional[str] = None) -> int:

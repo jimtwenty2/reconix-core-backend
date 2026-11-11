@@ -134,3 +134,20 @@ def test_progress_lines_reach_the_log(fake_api, code_dir, monkeypatch):
     assert any(t.startswith("Uploading 1 files") for t in seen)
     assert any("Scanning · 40%" in t for t in seen)
     assert drive_live() is False
+
+
+def test_repo_token_uses_env_first_then_the_gh_login(monkeypatch):
+    import types
+
+    monkeypatch.setenv("GH_TOKEN", "env-tok")
+    assert code_scan.repo_token() == "env-tok"  # env wins
+
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(code_scan.shutil, "which", lambda _name: "/usr/bin/gh")
+    monkeypatch.setattr(code_scan.subprocess, "run",
+                        lambda *a, **k: types.SimpleNamespace(stdout="gh-tok\n"))
+    assert code_scan.repo_token() == "gh-tok"  # falls back to `gh auth token`
+
+    monkeypatch.setattr(code_scan.shutil, "which", lambda _name: None)
+    assert code_scan.repo_token() is None  # no env, no gh -> no token
