@@ -5,20 +5,22 @@ from ...models.parser import ParsedTarget
 from .base import RunBundle, RunProfile, run_bundle
 
 SCOPE_PROMPT = (
-    "You scope an authorized static review of a source repository. The default tools are "
-    "Semgrep (static analysis), gitleaks (secrets) and trivy (dependencies); grype and "
-    "osv-scanner also scan dependencies, and syft builds an SBOM. All read the code only; "
-    "never suggest tools that reach the network or run the code. Respect excluded folders "
-    "like node_modules and .git."
+    "You scope an authorized static review of a source repository. Use every code tool: "
+    "Semgrep (static analysis), gitleaks (secrets), and trivy, grype and osv-scanner "
+    "(dependencies), plus syft (SBOM). All read the code only; never suggest tools that "
+    "reach the network or run the code. Respect excluded folders like node_modules and .git."
 )
 SUGGEST_CATEGORIES = ["source"]
 SPEC = Template("source", "Source Code", "Static review of a repository",
                 target_hint="a GitHub repo URL or a local path",
                 example="https://github.com/acme/app")
 
-TOOLS = ["Semgrep", "gitleaks", "trivy"]
+# All the code scanners the backend runs out of the box (schemas/code.py CODE_TOOLS), so a
+# scan uses every one, not just three. SONAR_SCAN is left out of the default: it needs a
+# SonarQube server, so add it to a scope by hand when one is configured.
+TOOLS = ["Semgrep", "gitleaks", "trivy", "grype", "osv-scanner", "syft"]
 # the scope tools each phase uses (the plan shows those still in the approved scope)
-PHASE_TOOLS = {"scanning": ("Semgrep", "gitleaks", "trivy"),
+PHASE_TOOLS = {"scanning": ("Semgrep", "gitleaks", "trivy", "grype", "osv-scanner", "syft"),
                "validation": ("Semgrep",)}
 
 

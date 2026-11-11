@@ -48,7 +48,8 @@ def test_a_local_folder_is_uploaded_scanned_and_its_findings_shown(fake_api, cod
     with tarfile.open(fileobj=io.BytesIO(fake_api.uploads[0])) as tar:
         assert tar.getnames() == ["app/db.py"]
     scan_body = fake_api.bodies("POST", "/sessions/s-0002/code-scans")[0]
-    assert scan_body["analyze"] is True and scan_body["tools"] == ["SEMGREP", "GITLEAKS", "TRIVY"]
+    assert scan_body["analyze"] is True and scan_body["tools"] == [
+        "SEMGREP", "GITLEAKS", "TRIVY", "GRYPE", "OSV_SCANNER", "SYFT"]
     found = store.list_findings()
     assert [f.severity for f in found] == ["HIGH"]
     assert found[0].path == "app/db.py:12" and found[0].remediation == "Use parameters."
