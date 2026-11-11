@@ -20,6 +20,7 @@ from reconix_api.models import Action as ActionRow
 from reconix_api.models import Approval, ToolRun
 from reconix_api.models.enums import ActionStatus, ToolRunStatus
 from reconix_api.repositories import actions as action_repo
+from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.services.approvals import approval_state, ensure_can_use
 from reconix_api.services.audit import audit
 from reconix_api.services.findings import CONTROL, KeptValues, parse_run, save_findings
@@ -47,6 +48,13 @@ def _should_parse(run: ToolRun, action: Action) -> bool:
         and run.tool_run_status in (ToolRunStatus.FAILED, ToolRunStatus.TIMED_OUT)
         and bool(run.output_masked)
     )
+
+
+def _is_fix_check(db: Db, row: ActionRow) -> bool:
+    """A code fix's recheck runs on edited code that is only a proposal: its masked
+    output is kept on the run (the fix reads it), but it saves no findings."""
+    agent_run = agent_run_repo.get(db, row.agent_run_id) if row.agent_run_id else None
+    return agent_run is not None and (agent_run.plan or {}).get("task") == "CODE_FIX"
 
 
 async def run_action(
@@ -112,7 +120,7 @@ async def run_action(
     else:
         _save_result(run, row, mask, result)
     finding_count = 0
-    if result is not None and _should_parse(run, action):
+    if result is not None and _should_parse(run, action) and not _is_fix_check(db, row):
         vault = vault_for_tool_runs(settings)
         finding_count = _save_findings(db, mask, vault, run, row, action, result)
         # A find-on-nonzero-exit tool (schemathesis, sqlmap, dalfox) comes back FAILED

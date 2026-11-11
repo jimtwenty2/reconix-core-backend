@@ -331,7 +331,7 @@ def ensure_own_open_session(db: Db, operator: Operator, session_id: UUID) -> Non
 
 
 def ensure_not_scanning(db: Db, session_id: UUID) -> None:
-    """The code cannot change while a scan reads it. Holds the session row (and the
+    """The code cannot change while a scan or a fix reads it. Holds the session row (and the
     assessment row) until the caller commits, so no scan starts while the code changes,
     also the session's first one (start_scan locks the session row too)."""
     session_repo.get_for_update(db, session_id)
@@ -341,6 +341,8 @@ def ensure_not_scanning(db: Db, session_id: UUID) -> None:
     assessment_repo.lock(db, assessment.assessment_id)
     if agent_run_repo.running_code_scan(db, assessment.assessment_id):
         raise ApiError(409, "SCAN_RUNNING", "Wait for the code scan to end, or cancel it.")
+    if agent_run_repo.running_code_fix(db, assessment.assessment_id):
+        raise ApiError(409, "FIX_RUNNING", "Wait for the code fix to end, or cancel it.")
 
 
 def excluded_folders(db: Db, session_id: UUID) -> list[str]:

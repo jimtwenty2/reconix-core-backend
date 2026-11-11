@@ -125,6 +125,25 @@ def running_code_scans(db: Db) -> list[AgentRun]:
     return list(db.scalars(query))
 
 
+def running_code_fix(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """A CODE_FIX run of this assessment still fixing findings."""
+    query = select(AgentRun).where(
+        AgentRun.assessment_id == assessment_id,
+        AgentRun.plan["task"].astext == "CODE_FIX",
+        AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
+    )
+    return db.scalar(query.limit(1))
+
+
+def running_code_fixes(db: Db) -> list[AgentRun]:
+    """Every CODE_FIX run still marked RUNNING, of any assessment."""
+    query = select(AgentRun).where(
+        AgentRun.plan["task"].astext == "CODE_FIX",
+        AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
+    )
+    return list(db.scalars(query))
+
+
 def running_chat(db: Db, session_id: UUID) -> AgentRun | None:
     """A CHAT run of this session still asking the agent."""
     query = select(AgentRun).where(

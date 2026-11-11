@@ -95,8 +95,8 @@ async def start_code_scan(
     - Returns 503 NO_ACTIVE_PROVIDER if no AI provider is active (even without analyze:
       a scan is an agent run), 422 NO_CODE if no code was sent, 422 PATH_NOT_FOUND if a
       path holds no file, 422 NO_CODE_TOOLS if the scope allows none of the tools, 422
-      CODE_EXCLUDED if the scope excludes the whole code folder, or 409 SCAN_RUNNING if a
-      scan is already running.
+      CODE_EXCLUDED if the scope excludes the whole code folder, 409 SCAN_RUNNING if a
+      scan is already running, or 409 FIX_RUNNING while a code fix runs.
 
     Execution Behavior:
     - Runs each tool through the same safety checks as any action.

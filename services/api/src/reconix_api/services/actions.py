@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_ai.harness.catalog import canonical
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import (
@@ -25,6 +26,7 @@ from reconix_api.core.interfaces import (
     Operator,
     RecentRun,
     RiskLevel,
+    ToolName,
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets
@@ -213,14 +215,17 @@ def _fits_auto_scope(
     db: Db, manifest: ScopeManifest, body: ActionIn, agent_run_id: UUID | None
 ) -> bool:
     """A scope the server approved on its own (only the session's code folder) takes only
-    a code scan's own tool calls, with no options: no person looked at anything else, and
-    an option such as -Dsonar.host.url could send the code away."""
+    a code scan's own tool calls, and a code fix's SEMGREP rechecks, with no options: no
+    person looked at anything else, and an option such as -Dsonar.host.url could send the
+    code away. The target is still held to the scope by the checks."""
     approval = approval_repo.latest_for_manifest(db, manifest.manifest_id)
     if approval is None or approval.reason != scopes.CODE_SESSION_FOLDER:
         return True
     run = agent_run_repo.get(db, agent_run_id) if agent_run_id else None
-    is_code_scan = run is not None and (run.plan or {}).get("task") == "CODE_SCAN"
-    return is_code_scan and not body.arguments
+    task = (run.plan or {}).get("task") if run is not None else None
+    is_code_scan = task == "CODE_SCAN"
+    is_fix_check = task == "CODE_FIX" and canonical(body.tool) == canonical(ToolName.SEMGREP)
+    return (is_code_scan or is_fix_check) and not body.arguments
 
 
 def ensure_can_act(db: Db, assessment_id: UUID) -> ScopeManifest:

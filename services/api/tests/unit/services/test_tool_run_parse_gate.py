@@ -45,3 +45,19 @@ def test_failed_ordinary_tool_is_not_parsed() -> None:
 
 def test_the_set_holds_only_find_on_nonzero_tools() -> None:
     assert FINDINGS_ON_NONZERO_EXIT == {"schemathesis", "sqlmap", "dalfox"}
+
+
+def test_a_code_fix_recheck_saves_no_findings(monkeypatch) -> None:
+    # Its code is only a proposal: the output stays on the run, no finding is saved.
+    from types import SimpleNamespace
+
+    from reconix_api.services import tool_runs
+
+    plans = {"fix": {"task": "CODE_FIX"}, "scan": {"task": "CODE_SCAN"}, "person": None}
+    monkeypatch.setattr(
+        tool_runs.agent_run_repo, "get", lambda db, run_id: SimpleNamespace(plan=plans[run_id])
+    )
+    assert tool_runs._is_fix_check(None, SimpleNamespace(agent_run_id="fix")) is True
+    assert tool_runs._is_fix_check(None, SimpleNamespace(agent_run_id="scan")) is False
+    assert tool_runs._is_fix_check(None, SimpleNamespace(agent_run_id="person")) is False
+    assert tool_runs._is_fix_check(None, SimpleNamespace(agent_run_id=None)) is False

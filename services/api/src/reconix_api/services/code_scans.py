@@ -114,7 +114,8 @@ async def start_scan(
 ) -> CodeScanOut:
     """Scans the code sent to the assessment's session. Files in the scope's excluded
     folders are deleted from the stored code first, so the tools never read them.
-    409 SCAN_RUNNING while another scan of it runs; 422 NO_CODE when no code is left
+    409 SCAN_RUNNING while another scan of it runs, 409 FIX_RUNNING while a code fix
+    runs; 422 NO_CODE when no code is left
     to scan; 422 CODE_EXCLUDED when the scope excludes the whole code folder; 422
     PATH_NOT_FOUND when a path holds no stored file; 422 NO_CODE_TOOLS when the scope
     allows none of the code scan tools."""
@@ -130,6 +131,8 @@ async def start_scan(
     assessment_repo.lock(db, assessment_id)
     if agent_run_repo.running_code_scan(db, assessment_id) is not None:
         raise ApiError(409, "SCAN_RUNNING", "A code scan of this assessment is still running.")
+    if agent_run_repo.running_code_fix(db, assessment_id) is not None:
+        raise ApiError(409, "FIX_RUNNING", "Wait for the code fix to end, or cancel it.")
     folder = code_files.session_folder(settings.code_dir, session_id)
     removed = code_files.remove_excluded(folder, skip)
     stored = code_files.scan_files(folder, [])

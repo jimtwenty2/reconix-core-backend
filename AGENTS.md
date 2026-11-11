@@ -174,6 +174,29 @@ SonarQube project name, and the changed files in `changed/`; removed afterwards)
   `start_code_scan`, `get_code_scan`, `watch_code_scan` (progress each change, 10 s heartbeat),
   `cancel_code_scan`, `list_code_findings`, `get_code_scan_log`. The upload itself stays REST
   `PUT /sessions/{id}/code`. Errors are `CODE: message`.
+- **Code fixes** (VS Code, `services/code_fixes.py`, agent in `reconix_ai/agent/code_fix.py`):
+  `POST /sessions/{id}/code-fixes {finding_ids}` (202 `{agent_run_id}`; ids of the session's
+  latest COMPLETED scan, 1 to 200; 409 `NO_FINISHED_SCAN`, `SCAN_RUNNING`, `FIX_RUNNING`; 422
+  `FINDING_NOT_IN_SCAN`), `GET /code-fixes/{id}` (`agent_runs_status`, `error`, and `result {files,
+  summary, results}` once COMPLETED), `GET /code-fixes/{id}/events` (SSE `FIX_EVENT {agent_run_id, seq,
+  file, kind, text}` (kind `START THINKING TEXT TOOL RESULT STATUS DONE HEARTBEAT`) from the
+  start or `?after=`, then `FIX_ENDED {agent_run_id, agent_runs_status}`) and
+  `POST /code-fixes/{id}/cancel`. Own session only (403 `NOT_YOUR_SESSION`). One agent per file
+  (3 at once, `TOKEN_BUDGET` 400k per fix), each limited to reading and editing its own file in
+  memory: neither the stored code nor the person's files change, and VS Code applies the line
+  edits only after the person says so. The model sees the file masked, with the lines of
+  secret-like findings as `[MASKED]`; an edit can never write a mask back. Rechecks are SEMGREP
+  actions of the fix run on `<session>/_reconix_scan_<hex8>/changed/` (the auto code scope takes
+  them, with no options) and save no findings. GITLEAKS and dependency findings, a file that
+  changed since the scan, and any code when the scan's GITLEAKS did not run, end `NOT_FIXED`
+  without a model call. The whole file is masked at once (a multi-line key hides every line),
+  an edit may not add a scanner-silencing comment (`nosemgrep`, `noqa`, ...), edits a mask
+  would change are dropped, and the summary and notes lose links, images and HTML. Agents get
+  15 rechecks per fix (each is a tool run against the session's 200-run cap); scans and code
+  changes wait while a fix runs (409 `FIX_RUNNING`). FIXED means SEMGREP no longer matches,
+  not that a person verified it. The transcript lives in memory
+  (`core/fix_events.py`); audit is `CODE_FIX_STARTED` and the run's end, ids and counts only.
+  Model calls with tools go through `providers.complete_with_tools`.
 - **Kali for code scans** is `reconix-kali-container` in `deploy/docker-compose.yml`. With the
   API on the host, run it standalone instead (`deploy/kali-standalone.yml`, see
   `deploy/AGENTS.md`): `RECONIX_KALI_MCP_URL=http://127.0.0.1:8096/mcp` and an absolute
@@ -399,6 +422,12 @@ Keep this list true; remove an item in the PR that closes it.
   the TUI inside the API, and the API image (`services/api/Dockerfile`) does not include it, so
   the terminal closes with `1011 TERMINAL_APP_MISSING`. It works when the API runs on the host
   (`services/api/README.md`, "Run it manually") with `uv tool install ./apps/tui`.
+- **The fix agent cannot write some correct fixes.** Tool-call arguments are masked, so a line
+  such as `password = os.environ["DB_PASSWORD"]` reaches the agent as
+  `password = [MASKED:password]...` and its edit is refused. Dependency findings are always
+  `NOT_FIXED` (no manifest edits), and only SEMGREP rechecks a fix (others end `NOT_VERIFIED`).
+- **A fix's live transcript is lost on an API restart** (it is kept in memory). The run ends
+  FAILED `INTERRUPTED` at the next start.
 - **A code scan left RUNNING by an API restart stays RUNNING** (the scan is an in-process task).
   Cancel it with `POST /code-scans/{id}/cancel`.
 
