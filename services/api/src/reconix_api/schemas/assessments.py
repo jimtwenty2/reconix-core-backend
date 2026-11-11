@@ -25,6 +25,11 @@ class AssessmentRowOut(AssessmentOut):
     # CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN, NONE, worst first. None: no findings yet.
     worst_severity: SeverityStatus | None
     pending_approval_count: int  # PENDING and not expired yet
+    plan_step_count: int  # steps in the newest plan; 0 without a plan
+    plan_step_done_count: int  # COMPLETED actions of that plan
+    # The newest of: the assessment's own update, an action asked for, a tool run started or
+    # finished. An ACTIVE assessment quiet for a long time can be shown as interrupted.
+    last_activity_at: datetime
 
 
 class AssessmentOverviewOut(BaseModel):

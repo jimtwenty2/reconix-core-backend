@@ -34,7 +34,8 @@
         "tool_run_id": "e0000000-0000-4000-8000-000000000001"
       }
     ],
-    "latest_validation": null
+    "latest_validation": null,
+    "confidence": "INFORMATIONAL"
   },
   {
     "finding_id": "f0000000-0000-4000-8000-000000000001",
@@ -85,7 +86,8 @@
       "created_at": "2026-11-02T09:25:00Z",
       "finding_id": "f0000000-0000-4000-8000-000000000001",
       "tool_run_id": null
-    }
+    },
+    "confidence": "CONFIRMED"
   },
   {
     "finding_id": "f0000000-0000-4000-8000-000000000002",
@@ -126,7 +128,8 @@
         "tool_run_id": "e0000000-0000-4000-8000-000000000002"
       }
     ],
-    "latest_validation": null
+    "latest_validation": null,
+    "confidence": "TENTATIVE"
   },
   {
     "finding_id": "f0000000-0000-4000-8000-000000000003",
@@ -158,6 +161,7 @@
       "NUCLEI"
     ],
     "evidence": [],
-    "latest_validation": null
+    "latest_validation": null,
+    "confidence": "TENTATIVE"
   }
 ]
