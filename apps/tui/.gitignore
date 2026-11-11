@@ -9,6 +9,7 @@ htmlcov/
 
 # generated reports (the TUI's exports)
 /reports/
+/reconix/reports/
 
 # local runtime data (encrypted keys, databases, logs)
 .reconix/
