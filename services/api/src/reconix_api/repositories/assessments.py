@@ -41,10 +41,14 @@ def latest_engagement_code(db: Db, prefix: str) -> str | None:
     )
 
 
-def list_all(db: Db, status: AssessmentStatus | None = None) -> list[Assessment]:
+def list_all(
+    db: Db, status: AssessmentStatus | None = None, type_: str | None = None
+) -> list[Assessment]:
     query = select(Assessment).order_by(Assessment.created_at.desc())
     if status is not None:
         query = query.where(Assessment.assessment_status == status)
+    if type_ is not None:
+        query = query.where(Assessment.type == type_)
     return list(db.scalars(query))
 
 
