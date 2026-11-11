@@ -145,6 +145,9 @@ class FakeApi:
         }
         self.analysis_summary = "Two issues found; the admin panel is the one to fix first."
         self.pending_activation = False
+        # GET /system/kali: tests flip these to shape the status chip.
+        self.kali_connected = True
+        self.kali_host = "reconix-kali-container:8000"
         self.provider_test_ok = True  # POST /llm-providers/{id}/test answers ok
         self.n = 0
         self.sessions: Dict[str, str] = {}  # token -> session id

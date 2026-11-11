@@ -20,7 +20,7 @@ from .support import decide, play_until_gate
         ("port scan 192.0.2.10", "network", "192.0.2.10"),
         ("test the API at https://api.example.com/v1", "api", "api.example.com"),
         ("check the rest api on svc.example.com", "api", "svc.example.com"),
-        ("review repo github.com/acme/app", "source", "github.com/acme/app"),
+        ("review repo github.com/acme/app", "source", "https://github.com/acme/app"),
         ("static review of /home/me/project", "source", "/home/me/project"),
     ],
 )

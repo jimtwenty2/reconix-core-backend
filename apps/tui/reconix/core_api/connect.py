@@ -10,7 +10,7 @@ The provider the API uses for the model is chosen in /provider and kept by the A
 
 import getpass
 import socket
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from .client import CoreApiError, call
 
@@ -30,7 +30,7 @@ def request(method: str, path: str, body: Any = None, gzip_body: Optional[bytes]
     opened again once; the call is not repeated, because the caller's ids are stale."""
     session_id()
     try:
-        return call(method, path, body, _session["token"], gzip_body)
+        return call(method, path, body, _session["token"], gzip_body=gzip_body)
     except CoreApiError as exc:
         if exc.status == 401:
             reset()

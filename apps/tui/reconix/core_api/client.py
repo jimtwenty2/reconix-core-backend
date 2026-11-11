@@ -72,6 +72,7 @@ def call(
     body: Any = None,
     token: str = "",
     timeout: int = TIMEOUT_SECONDS,
+    gzip_body: Optional[bytes] = None,
 ) -> Any:
     """One API call: the decoded JSON answer (None for 204). Raises CoreApiError with the
     API's own code and message, which are safe to show (the API masks them).

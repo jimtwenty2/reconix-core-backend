@@ -7,7 +7,7 @@ the app shows what it answers. `client` makes the calls (loopback only, token in
 """
 
 from .client import CoreApiError, enabled
-from .sync import chat_reply, sync_scope
+from .sync import chat_reply, fetch_kali_status, sync_scope
 
 __all__ = [
     "CoreApiError",

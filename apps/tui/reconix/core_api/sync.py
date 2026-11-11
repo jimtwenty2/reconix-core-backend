@@ -133,3 +133,10 @@ def app_step_line() -> str:
         f"(Reconix app: step {status.step}: {status.state}. The operator moves on only "
         f"with the app's menu: {status.choices}.)"
     )
+
+
+def fetch_kali_status() -> dict:
+    """The Core API's view of the Kali MCP tool container: the raw JSON
+    `{"connected": bool, "host": str|None, "checked_at": iso8601}` from GET /system/kali.
+    Raises CoreApiError (UNREACHABLE when the API itself is down)."""
+    return connect.request("GET", "/system/kali")
