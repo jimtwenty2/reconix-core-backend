@@ -1,39 +1,26 @@
-/* One answer as the NDJSON stream the page reads (protocol.ts), server only: `meta` (with the
-   names of the /add-on files the model was given, kept with the reply too), the cards,
-   the model's text as it arrives, an `error` if the model fails, then `done`. When it ends the
-   reply is saved after its question with the cards that were shown (history-store.ts): "done",
-   "error" with what went wrong, or "stopped" with the part that arrived when the operator
-   pressed Stop (the request is aborted, which cancels this stream and the model's). While it
-   runs the question is marked as being answered (a Retry of it is refused). The rate slot is
-   handed back at the very end. Nothing here logs the question or the answer. */
+/* One answer as the NDJSON stream the page reads (protocol.ts), server only: `meta`, the cards,
+   the agent's text as the Core API streams it (`PIECE` events), `final` with the reply the API
+   saved (its `DONE` event: the last words arrive only there), an `error` if the API could not
+   answer, then `done`. The API saves the question and the reply itself, even when the page
+   stops (Stop aborts the request to the API too). The rate slot is handed back at the very
+   end. Nothing here logs the question or the answer. */
 import "server-only";
 
-import type { ModelConfig } from "./config";
-import type { Conversation, ReplyState, UserMessage } from "./history-schema";
-import { markStreaming, saveReply } from "./history-store";
-import { ModelError, streamReply, type Turn } from "./llm";
+import { createEventReader } from "../api/assistant";
+import type { ScopeRef } from "./protocol";
 import { type Card, encodeFrame, type Frame } from "./protocol";
 
 export interface ReplyInput {
-  config: ModelConfig;
-  turns: Turn[];
-  conversation: Conversation;
-  asked: UserMessage;
+  body: ReadableStream<Uint8Array>; // the API's SSE answer
+  meta: { conversationId: string; title: string; scope: ScopeRef };
   cards: Card[];
-  knowledge?: string[]; // the /add-on files whose passages went to the model (their names)
-  signal: AbortSignal; // the request's: aborted when the page stops or leaves
+  abort: AbortController; // aborts the request to the API
   release: () => void; // the rate slot
 }
 
-export function replyStream({ config, turns, conversation, asked, cards, knowledge = [], signal, release }: ReplyInput): ReadableStream<Uint8Array> {
-  const used = knowledge.length ? { knowledge } : {};
+export function replyStream({ body, meta, cards, abort, release }: ReplyInput): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const abort = new AbortController();
-  const onAbort = () => abort.abort();
-  signal.addEventListener("abort", onAbort, { once: true });
-  if (signal.aborted) abort.abort();
   let open = true;
-  const done = markStreaming(asked.id);
 
   const run = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
     const send = (frame: Frame) => {
@@ -44,47 +31,37 @@ export function replyStream({ config, turns, conversation, asked, cards, knowled
         open = false; // the page went away
       }
     };
-    send({ t: "meta", conversationId: conversation.id, title: conversation.title, scope: conversation.scope, ...used });
+    send({ t: "meta", ...meta });
     for (const card of cards) send({ t: "card", card });
 
-    let reply = "";
-    let state: ReplyState = "done";
-    let detail: string | undefined;
+    let ended = false;
+    const events = createEventReader((event) => {
+      if (event.event === "PIECE") send({ t: "text", delta: event.text.slice(0, 20_000) });
+      else if (event.event === "DONE") {
+        ended = true;
+        const text = event.chat.reply.content_masked.slice(0, 20_000);
+        if (text.trim()) send({ t: "final", text });
+        else send({ t: "error", detail: "The model sent an empty answer." }); // empty-reply.ts
+      } else {
+        ended = true;
+        send({ t: "error", detail: event.message });
+      }
+    });
     try {
-      const body = await streamReply(config, turns, abort.signal);
       const reader = body.getReader();
       const decoder = new TextDecoder();
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
-        const text = decoder.decode(value, { stream: true });
-        if (text) {
-          reply += text;
-          send({ t: "text", delta: text });
-        }
+        events.push(decoder.decode(value, { stream: true }));
       }
-      if (abort.signal.aborted) state = "stopped";
-      else if (!reply.trim()) {
-        state = "error";
-        detail = "The model sent an empty answer.";
-      }
-    } catch (error) {
-      if (abort.signal.aborted) state = "stopped";
-      else {
-        state = "error";
-        detail = error instanceof ModelError ? error.message : "The AI model stopped answering.";
-      }
-    }
-    if (detail) send({ t: "error", detail });
-    try {
-      const kept = await saveReply(conversation.id, { replyTo: asked.id, content: reply, cards, state, ...(detail ? { detail } : {}), ...used });
-      if (!kept) send({ t: "error", detail: "The reply was not saved: the conversation was deleted meanwhile." });
+      events.push(decoder.decode());
+      events.end();
+      if (!ended) send({ t: "error", detail: "The answer broke off before it ended." });
     } catch {
-      send({ t: "error", detail: "The reply could not be saved." });
+      if (!abort.signal.aborted) send({ t: "error", detail: "The Core API stopped answering." });
     }
-    done();
     send({ t: "done" });
-    signal.removeEventListener("abort", onAbort);
     release();
     if (open) {
       open = false;

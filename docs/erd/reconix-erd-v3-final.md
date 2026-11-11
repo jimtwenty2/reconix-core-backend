@@ -128,6 +128,7 @@ The AI model settings.
 | | api_key_last4 | VARCHAR(4) | | | For display |
 | | model_name | VARCHAR(100) | Y | | |
 | | is_active | BOOLEAN | Y | false | Only one active provider |
+| | archived | BOOLEAN | Y | false | Removed from the lists; kept for agent runs' history (key cleared) |
 | | created_by | VARCHAR(100) | Y | | |
 | | created_at | TIMESTAMPTZ | Y | now() | |
 | | updated_at | TIMESTAMPTZ | Y | now() | |

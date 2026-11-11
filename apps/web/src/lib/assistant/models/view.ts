@@ -57,3 +57,9 @@ export const FetchResultSchema = z.union([
   z.object({ listed: z.literal(false), detail: z.string().max(400) }).strict(),
 ]);
 export type FetchResult = z.infer<typeof FetchResultSchema>;
+
+/** What switching to a model off this computer answers until a person approves it in the TUI
+    (the Core API's `configuration` approval: the web never approves it). The model list
+    recognises it and shows how to approve instead. */
+export const NEEDS_APPROVAL =
+  "Approve this model in the TUI first. It runs off this computer, so the Core API asks a person before sending it your scope, plans and chat. In the TUI, choose it with /model and answer Approve; it is then used here too.";

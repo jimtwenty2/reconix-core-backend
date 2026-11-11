@@ -167,6 +167,9 @@ def test_the_dashboard_runs_its_knowledge_cli_with_this_python(monkeypatch, tmp_
     monkeypatch.setattr(web_server, "LOG_FILE", tmp_path / "web.log")
     real_start(tmp_path / "data", tmp_path / "web.url")
     assert seen["RECONIX_PYTHON"] == sys.executable
+    # it signs in to the Core API with a one-time code, never this app's token
+    assert seen["RECONIX_WEB_SIGN_IN_CODE"].startswith("fake-web-code-")
+    assert not any("fake-session-token-" in str(value) for value in seen.values())
 
 
 async def test_a_stale_link_is_not_opened(app, opened, web_launches):

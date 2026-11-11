@@ -90,7 +90,12 @@ export function useModels(setModel: (model: ModelSummary) => void) {
     [run, take],
   );
 
-  return { state, pending, load, choose, remove, save };
+  /** Takes a view the form got itself ("Test connection" saved a provider). */
+  const accept = useCallback((view: ModelsView) => take(view), [take]);
+  /** Removes a provider "Test connection" saved and the form then left (Cancel). */
+  const discard = useCallback((id: string) => run(`remove:${id}`, () => api.removeModelProvider(id)), [run]);
+
+  return { state, pending, load, choose, remove, save, accept, discard };
 }
 
 export type Models = ReturnType<typeof useModels>;

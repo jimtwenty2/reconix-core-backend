@@ -2746,6 +2746,18 @@
             ],
             "title": "Base Url"
           },
+          "copy_key_from": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copy Key From"
+          },
           "display_name": {
             "maxLength": 100,
             "minLength": 1,
@@ -7222,7 +7234,7 @@
         ]
       },
       "post": {
-        "description": "Adds an LLM provider. It is saved inactive.\n\nBusiness Rules:\n- OPENAI, ANTHROPIC, and DEEPSEEK require an API key; OPENAI_API_COMPATIBLE requires a base_url.\n\nState Changes:\n- Creates the provider. Its API key is encrypted and shown only as its last 4 characters.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Adds an LLM provider. It is saved inactive.\n\nBusiness Rules:\n- OPENAI, ANTHROPIC, and DEEPSEEK require an API key; OPENAI_API_COMPATIBLE requires a base_url.\n- Another model of a saved provider can reuse its key: send `copy_key_from` (that\n  provider's id) instead of `api_key`. Only from the same provider_type at the same\n  base_url (422 KEY_NOT_COPYABLE); not together with `api_key` (422 KEY_GIVEN_TWICE).\n\nState Changes:\n- Creates the provider. Its API key is encrypted and shown only as its last 4 characters.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "create_provider_api_v1_llm_providers_post",
         "requestBody": {
           "content": {
@@ -7269,7 +7281,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}": {
       "delete": {
-        "description": "Deletes a provider.\n\nBusiness Rules:\n- You cannot delete the built-in provider, the active provider, or a provider that agent runs\n  have used.\n\nState Changes:\n- Deletes the provider.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Deletes a provider, or archives it when agent runs used it.\n\nBusiness Rules:\n- You cannot delete the built-in provider or the active provider.\n- A provider that agent runs used is archived: it leaves the lists and its API key is\n  removed, but its row stays so the runs keep their history.\n\nState Changes:\n- Deletes the provider, or archives it (its key is removed).\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_provider_api_v1_llm_providers__llm_provider_id__delete",
         "parameters": [
           {
@@ -7464,7 +7476,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/models": {
       "get": {
-        "description": "Lists the models that an OLLAMA provider's Ollama has on this computer.\n\nBusiness Rules:\n- RECONIX and cloud providers return 422 MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Lists the models a provider has.\n\nBusiness Rules:\n- An OLLAMA provider lists its Ollama's models; an OPENAI_API_COMPATIBLE provider on\n  this computer (LM Studio, for example) lists what its server returns at /models.\n- An OPENAI, ANTHROPIC or DEEPSEEK provider lists the models its service offers for\n  the saved key; without a saved key it returns 422 PROVIDER_KEY_MISSING.\n- RECONIX and OpenAI-compatible servers off this computer return 422\n  MODEL_LIST_NOT_SUPPORTED.\n\nSecurity:\n- Requires a valid session token.\n- The saved API key is sent only to the provider's own address: the server on this\n  computer, or the cloud service's fixed address (never a typed one).",
         "operationId": "list_models_api_v1_llm_providers__llm_provider_id__models_get",
         "parameters": [
           {
@@ -8828,6 +8840,55 @@
         "summary": "Add Message",
         "tags": [
           "messages"
+        ]
+      }
+    },
+    "/api/v1/sessions/{session_id}/resume": {
+      "post": {
+        "description": "Gives a new token for an open web session, so its chat can go on after a restart.\n\nBusiness Rules:\n- The API keeps tokens in memory only, so a restart of the API, or of the web server that\n  held the token, leaves an open web session without one. This gives it a new token.\n- Returns 403 NOT_A_WEB_SESSION for a cli or vscode session, 409 SESSION_CLOSED for a\n  closed one, and 404 SESSION_NOT_FOUND for an unknown id.\n- The resumed session takes the caller's operator name.\n\nState Changes:\n- Issues a new token for the session. Tokens it had before keep working.\n\nSecurity:\n- Requires a valid session token. It gives no new rights: any valid token may do\n  everything already.",
+        "operationId": "resume_session_api_v1_sessions__session_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Resume Session",
+        "tags": [
+          "sessions"
         ]
       }
     },

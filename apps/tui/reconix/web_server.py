@@ -125,9 +125,15 @@ def start(data_dir: Path, url_file: Path) -> subprocess.Popen:
     """`npm run dev` in the background, reading `data_dir` and writing its link to `url_file`
     (the places the TUI saves to and reads from). It opens the browser when it's ready.
     Its Security knowledge page runs the knowledge CLI with this same Python
-    (RECONIX_PYTHON)."""
+    (RECONIX_PYTHON). It signs in to the Core API with a one-time code from this app's
+    session (RECONIX_WEB_SIGN_IN_CODE, never a token), traded as the server starts."""
+    from .core_api.connect import web_sign_in_code   # lazy: the launcher works without the API
+
     env = {**os.environ, "RECONIX_DATA_DIR": str(data_dir),
            "RECONIX_WEB_URL_FILE": str(url_file), "RECONIX_PYTHON": sys.executable}
+    code = web_sign_in_code()
+    if code:
+        env["RECONIX_WEB_SIGN_IN_CODE"] = code
     url_file.unlink(missing_ok=True)      # a link left by a dashboard that died is stale
     with _log() as out:
         return subprocess.Popen(

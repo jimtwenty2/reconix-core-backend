@@ -44,6 +44,16 @@ def reset() -> None:
         hook()
 
 
+def web_sign_in_code() -> str:
+    """A one-time code (valid 2 minutes) the web dashboard trades for its own Core API
+    session, so it signs in as this app's operator; "" when the API can't give one (the
+    dashboard then opens its own session)."""
+    try:
+        return str(request("POST", "/sessions/web-sign-in-codes").get("code") or "")
+    except CoreApiError:
+        return ""
+
+
 def _operator() -> str:
     """This computer's user@host, the name the API records for this session."""
     try:

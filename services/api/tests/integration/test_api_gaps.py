@@ -287,6 +287,29 @@ def test_an_ollama_provider_lists_its_models(db_client, monkeypatch):
     assert listed == {"models": ["bge-m3:latest", "llama3.1:8b"]}
 
 
+def test_a_cloud_provider_lists_its_models_with_its_saved_key(db_client, monkeypatch):
+    headers = open_session(db_client)
+    openai = {
+        "provider_type": "OPENAI",
+        "display_name": "OpenAI",
+        "model_name": "gpt-4o-mini",
+        "api_key": "sk-fake-cloud-key-0000",
+    }
+    added = db_client.post("/llm-providers", json=openai, headers=headers)
+    assert added.status_code == 201, added.json()
+    seen = {}
+
+    async def models(provider_type, api_key):
+        seen.update(provider_type=provider_type, api_key=api_key)
+        return ["gpt-4o", "gpt-4o-mini"]
+
+    monkeypatch.setattr(provider_checks, "cloud_models", models)
+    listed = get(db_client, headers, f"/llm-providers/{added.json()['llm_provider_id']}/models")
+
+    assert listed == {"models": ["gpt-4o", "gpt-4o-mini"]}
+    assert seen == {"provider_type": "OPENAI", "api_key": "sk-fake-cloud-key-0000"}
+
+
 def test_the_built_in_provider_lists_no_models(db_client):
     # RECONIX is the Reconix team's server, not an Ollama on this computer.
     headers = open_session(db_client)
@@ -342,8 +365,68 @@ def test_testing_refuses_a_private_address_and_is_audited(db_client, db_app, mon
     assert event_types(db_app).count("LLM_PROVIDER_TESTED") == 1
 
 
-def test_a_cloud_provider_cannot_list_models(db_client):
+def test_a_compatible_server_off_this_computer_cannot_list_models(db_client):
     headers = open_session(db_client)
     provider_id = add_compatible(db_client, headers)
     listed = db_client.get(f"/llm-providers/{provider_id}/models", headers=headers)
     assert listed.json()["code"] == "MODEL_LIST_NOT_SUPPORTED"
+
+
+def test_a_compatible_server_on_this_computer_lists_its_models(db_client, monkeypatch):
+    headers = open_session(db_client)
+    provider_id = add_compatible(db_client, headers, base_url="http://127.0.0.1:1234/v1")
+    asked = {}
+
+    async def models(base_url, api_key):
+        asked.update(base_url=base_url, api_key=api_key)
+        return ["google/gemma-4-e4b"]
+
+    monkeypatch.setattr(provider_checks, "compatible_models", models)
+    listed = get(db_client, headers, f"/llm-providers/{provider_id}/models")
+
+    assert listed == {"models": ["google/gemma-4-e4b"]}
+    # its own saved key, sent only to its own address
+    assert asked == {"base_url": "http://127.0.0.1:1234/v1", "api_key": "example-test-key-00000001"}
+
+
+def test_another_model_copies_the_saved_key_without_sending_it(db_client):
+    headers = open_session(db_client)
+    first = add_compatible(db_client, headers)
+    body = {
+        "provider_type": "OPENAI_API_COMPATIBLE",
+        "display_name": "Example",
+        "model_name": "another-model",
+        "base_url": "https://llm.example.com/v1",
+        "copy_key_from": first,
+    }
+    copied = db_client.post("/llm-providers", json=body, headers=headers)
+
+    assert copied.status_code == 201, copied.json()
+    assert copied.json()["api_key_last4"] == "0001"  # the first one's key, never sent again
+
+
+def test_a_key_is_never_copied_to_another_address_or_type(db_client):
+    headers = open_session(db_client)
+    first = add_compatible(db_client, headers)
+    base = {"display_name": "X", "model_name": "m", "copy_key_from": first}
+    elsewhere = {
+        **base,
+        "provider_type": "OPENAI_API_COMPATIBLE",
+        "base_url": "https://evil.example/v1",
+    }
+    other_type = {**base, "provider_type": "OPENAI"}
+    both = {
+        **base,
+        "provider_type": "OPENAI_API_COMPATIBLE",
+        "base_url": "https://llm.example.com/v1",
+        "api_key": "example-test-key-00000002",  # a fake
+    }
+
+    for body, code in [
+        (elsewhere, "KEY_NOT_COPYABLE"),
+        (other_type, "KEY_NOT_COPYABLE"),
+        (both, "KEY_GIVEN_TWICE"),
+    ]:
+        refused = db_client.post("/llm-providers", json=body, headers=headers)
+        assert refused.status_code == 422, refused.json()
+        assert refused.json()["code"] == code

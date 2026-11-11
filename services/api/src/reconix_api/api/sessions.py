@@ -131,6 +131,37 @@ def read_session(session_id: UUID, db: Db, _: CurrentOperator) -> SessionRead:
     return sessions.read_session(db, session_id)
 
 
+@router.post("/{session_id}/resume", status_code=status.HTTP_201_CREATED)
+def resume_session(
+    session_id: UUID,
+    db: Db,
+    operator: CurrentOperator,
+    interfaces: CurrentInterfaces,
+    tokens: Annotated[SessionTokens, Depends(get_session_tokens)],
+) -> SessionCreated:
+    """Gives a new token for an open web session, so its chat can go on after a restart.
+
+    Business Rules:
+    - The API keeps tokens in memory only, so a restart of the API, or of the web server that
+      held the token, leaves an open web session without one. This gives it a new token.
+    - Returns 403 NOT_A_WEB_SESSION for a cli or vscode session, 409 SESSION_CLOSED for a
+      closed one, and 404 SESSION_NOT_FOUND for an unknown id.
+    - The resumed session takes the caller's operator name.
+
+    State Changes:
+    - Issues a new token for the session. Tokens it had before keep working.
+
+    Security:
+    - Requires a valid session token. It gives no new rights: any valid token may do
+      everything already.
+    """
+    session, token = sessions.resume_session(
+        db, tokens, interfaces.write_audit, operator, session_id
+    )
+    resumed = SessionRead.model_validate(session, from_attributes=True)
+    return SessionCreated(**resumed.model_dump(), token=token)
+
+
 @router.post("/{session_id}/close")
 def close_session(
     session_id: UUID,

@@ -1,18 +1,12 @@
 /* The page's reading of a reply that ended with nothing (components/assistant/empty-reply.ts):
    the server's "empty answer" error becomes its own friendlier state with Retry, while every other
-   failure keeps its detail. The real replyStream (lib/assistant/reply.ts) is driven with a model
-   that says nothing, so a reword of its message fails here. */
+   failure keeps its detail. The real replyStream (lib/assistant/reply.ts) is driven with a Core API
+   answer that holds nothing, so a reword of its message fails here. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EMPTY_ANSWER, EMPTY_REPLY, isEmptyReply, NO_EXPLANATION } from "@/components/assistant/empty-reply";
 import type { Card, ChatMessage } from "@/components/assistant/types";
 import { parseFrame } from "@/lib/assistant/protocol";
-
-vi.mock("@/lib/assistant/llm", () => ({
-  ModelError: class extends Error {},
-  streamReply: async () => new ReadableStream<Uint8Array>({ start: (c) => c.close() }), // nothing at all
-}));
-vi.mock("@/lib/assistant/history-store", () => ({ markStreaming: () => () => {}, saveReply: async () => true }));
 
 const reply = (over: Partial<ChatMessage>): ChatMessage => ({ id: "r", role: "assistant", content: "", cards: [], state: "error", ...over });
 const findings: Card = { kind: "findings", total: 0, counts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 }, items: [], runs: 0 };
@@ -20,16 +14,10 @@ const findings: Card = { kind: "findings", total: 0, counts: { CRITICAL: 0, HIGH
 /** What the real reply stream says when the model answers with nothing. */
 async function emptyAnswerDetail(cards: Card[]): Promise<string> {
   const { replyStream } = await import("@/lib/assistant/reply");
-  const conversation = { id: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", title: "t", scope: { uid: null, label: "All assessments" } };
-  const stream = replyStream({
-    config: { baseUrl: "http://127.0.0.1:1/v1", model: "m", apiKey: null, local: true },
-    turns: [],
-    conversation: conversation as never,
-    asked: { id: "11111111-1111-4111-8111-111111111111" } as never,
-    cards,
-    signal: new AbortController().signal,
-    release: () => {},
-  });
+  const done = { message: {}, reply: { content_masked: "" }, agent_run_id: "r" };
+  const body = new Response(`event: DONE\ndata: ${JSON.stringify(done)}\n\n`).body!;
+  const meta = { conversationId: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", title: "t", scope: { uid: null, label: "All assessments" } };
+  const stream = replyStream({ body, meta, cards, abort: new AbortController(), release: () => {} });
   const text = await new Response(stream).text();
   const frames = text.split("\n").map(parseFrame).filter((f) => f !== null);
   expect(frames.at(-1)).toEqual({ t: "done" });

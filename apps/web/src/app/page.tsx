@@ -24,8 +24,8 @@ import { TopBar } from "@/components/dashboard/top-bar";
 import { Viewer } from "@/components/dashboard/viewer";
 import { KnowledgeView } from "@/components/knowledge/knowledge-view";
 import { isAssessmentId } from "@/lib/api/findings";
-import { retentionDays } from "@/lib/assistant/history-store";
-import { activeModelSummary } from "@/lib/assistant/models/resolve";
+import { loadApiLibrary } from "@/lib/api/library";
+import { activeModelSummary } from "@/lib/api/models";
 import { runRef, scopedViews, scopeOf } from "@/lib/assistant/insights";
 import { welcomePrompts } from "@/lib/assistant/prompts";
 import { assessmentView, libraryItem } from "@/lib/data/adapt";
@@ -45,12 +45,22 @@ export default async function Home({ searchParams }: Props) {
   const overall = !chosen && views.length ? deriveOverall(views) : null;
   const items = library.assessments.map(libraryItem);
   const dir = shownDir(library.dir);
-  const model = await activeModelSummary(); // its summary only: no API key is read for a page
+  // its summary only (no API key comes back); without the Core API the assistant says so
+  const model = await activeModelSummary().catch((error: unknown) => ({
+    configured: false,
+    name: "",
+    provider: "",
+    local: false,
+    reason: error instanceof Error ? error.message.slice(0, 600) : "The Core API is not running.",
+  }));
+  // the AI Assistant shows the Core API's real assessments, never the saved demo files
+  const apiViews = (await loadApiLibrary().catch(() => ({ assessments: [] }))).assessments.map(assessmentView);
+  const apiChosen = apiViews.find((v) => v.uid === wanted) ?? null;
   const assistant: AssistantInfo = {
-    scope: scopeOf(chosen),
-    runs: scopedViews(views, null).map((v) => ({ ...runRef(v), status: v.status })),
-    prompts: welcomePrompts(scopedViews(views, chosen?.uid ?? null)),
-    retentionDays: retentionDays(),
+    scope: scopeOf(apiChosen),
+    runs: scopedViews(apiViews, null).map((v) => ({ ...runRef(v), status: v.status })),
+    prompts: welcomePrompts(scopedViews(apiViews, apiChosen?.uid ?? null)),
+    retentionDays: 0, // the Core API keeps conversations until they are closed
     model,
   };
   const empty = <EmptyView dir={dir} problems={library.problems} compact />;

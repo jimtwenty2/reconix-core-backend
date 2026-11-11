@@ -59,7 +59,9 @@ async def test_a_big_prompt_is_compacted_and_the_run_goes_on(graph) -> None:
     reflect_prompt, plan_prompt = model.prompts[1], model.prompts[2]
     for prompt in (reflect_prompt, plan_prompt):
         text = prompt[1].content
-        assert nodes.prompt_tokens(prompt) <= nodes.COMPACT_AT_PROMPT_TOKENS + 500
+        # Near the threshold: what compaction may not cut (the instructions, scope, newest
+        # result, the 3 newest hits) sits above it, and grows when the prompt files do.
+        assert nodes.prompt_tokens(prompt) <= nodes.COMPACT_AT_PROMPT_TOKENS + 1_000
         assert newest in text  # the newest result is whole
         assert "OLDER-0" in text and "[compacted:" in text  # older ones are cut, not lost
         assert "172.20.0.0/24" in text  # the scope is kept

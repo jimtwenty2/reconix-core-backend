@@ -110,12 +110,19 @@ export function PhaseRows({ data }: { data: Phases }) {
         </div>
       )}
 
+      {/* two rows at most, whatever the text measures: the badge and its time, then the gate on one
+          line (all of it in the tooltip), so a longer name never pushes the Overview out of its
+          fixed frame */}
       {gate && (
-        <p className="flex flex-wrap items-center gap-2 text-xs">
-          <StatusBadge meaning={gate.meaning} />
-          <span className="min-w-0 text-foreground [overflow-wrap:anywhere]">{gate.text}</span>
-          <span className="font-mono text-[11px] text-muted-foreground">{gate.time}</span>
-        </p>
+        <div className="grid gap-1 text-xs">
+          <p className="flex items-center gap-2">
+            <StatusBadge meaning={gate.meaning} />
+            <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">{gate.time}</span>
+          </p>
+          <p className="min-w-0 truncate text-foreground" title={gate.text}>
+            {gate.text}
+          </p>
+        </div>
       )}
       <Legend items={data.legend} label="Execution Timeline legend" className="mt-auto" />
       <ChartTooltip tip={tip} />

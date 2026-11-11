@@ -28,13 +28,16 @@ def check(base_url: str) -> None:
         raise _not_allowed("Write the address plainly: no spaces, tabs or port 0.")
 
 
+HOST_GATEWAY_NAME = "host.docker.internal"  # this computer, as seen from the API container
+
+
 def is_local_address(url: str) -> bool:
-    """localhost or a loopback IP only."""
+    """localhost, a loopback IP, or this computer's Docker host alias only."""
     try:
         host = urlsplit(url).hostname or ""
     except ValueError:
         return False
-    if host == "localhost":
+    if host in ("localhost", HOST_GATEWAY_NAME):
         return True
     try:
         return ipaddress.ip_address(host).is_loopback

@@ -233,6 +233,8 @@ class FakeApi:
                 "created_at": now(),
                 "closed_at": None,
             }
+        if path == "/sessions/web-sign-in-codes" and method == "POST":
+            return {"code": "fake-web-code-" + self._id("c"), "expires_at": now()}
         if path == "/llm-providers":
             return self.providers if method == "GET" else self._add_provider(body)
         if path.endswith("/activate"):

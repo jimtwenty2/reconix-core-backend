@@ -21,6 +21,7 @@ import {
   firstPreset,
   freeName,
   initialChoice,
+  knownModels,
   modelRows,
   NO_MODEL_YET,
   normalAddress,
@@ -31,6 +32,7 @@ import {
   removeRequest,
   requestsForAdd,
   savedFor,
+  showsKey,
   showsUrl,
   TYPED,
   typeInstead,
@@ -65,7 +67,7 @@ describe("the chip", () => {
     expect(chip.title).toContain("Stub");
     const remote = chipState({ configured: true, name: "claude-sonnet-5-5", provider: "Anthropic", local: false, reason: "" });
     expect(remote.name).toBe("Model: claude-sonnet-5-5 (Anthropic, remote)");
-    expect(remote.title).toContain("sent to it");
+    expect(remote.title).toContain("sends it your questions");
   });
   it("says Choose a model, amber, when none can answer (the reason in the tooltip)", () => {
     const reason = "No AI model is set up yet. Add one with the model chip under the message box (+ Model).";
@@ -90,7 +92,7 @@ describe("the list: your models", () => {
   it("lists a remote model as usable as any other (cloud allowed by default), marked remote", () => {
     const openai = provider({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", local: false, keySaved: true, models: ["gpt-4o-mini"] });
     const [row] = modelRows(view({ providers: [openai] }));
-    expect(row).toEqual({ key: `${ID}/gpt-4o-mini`, providerId: ID, model: "gpt-4o-mini", provider: "OpenAI", where: "remote", checked: false });
+    expect(row).toEqual({ key: `${ID}/gpt-4o-mini`, providerId: ID, model: "gpt-4o-mini", provider: "OpenAI", where: "remote", preset: "openai", checked: false, first: true });
   });
   it("is empty with nothing saved (no Environment row any more)", () => {
     expect(modelRows(view())).toEqual([]);
@@ -101,36 +103,36 @@ describe("the list: your models", () => {
   });
 });
 
-describe("removing a model", () => {
+describe("removing a provider", () => {
   const two = provider({ models: ["stub-model", "stub-model-2"], keySaved: true });
   const v = view({ providers: [two], active: { providerId: ID, model: "stub-model" } });
   const [first, second] = modelRows(v);
 
-  it("PATCHes the provider's list while it keeps other models, DELETEs it with its last one", () => {
-    expect(removeRequest(v, second)).toEqual({ kind: "update", id: ID, body: { models: ["stub-model"] } });
-    const one = view({ providers: [provider()] });
-    expect(removeRequest(one, modelRows(one)[0])).toEqual({ kind: "delete", id: ID });
+  it("groups a provider's models: its heading goes above the first", () => {
+    expect([first.first, second.first]).toEqual([true, false]);
+  });
+  it("removes the whole provider (all its models), from any of its rows", () => {
+    expect(removeRequest(v, second)).toEqual({ kind: "delete", id: ID });
+    expect(removeRequest(v, first)).toEqual({ kind: "delete", id: ID });
     expect(removeRequest(view(), second)).toBeNull(); // gone meanwhile
   });
-  it("asks first, saying what follows", () => {
-    expect(removeQuestion(v, second)).toEqual({ title: "Remove stub-model-2 (Stub)?", detail: "Stub keeps its other models." });
-    expect(removeQuestion(v, first)).toEqual({ title: "Remove stub-model (Stub)?", detail: "Stub keeps its other models; stub-model-2 answers instead." });
-    const one = view({ providers: [provider()], active: { providerId: ID, model: "stub-model" } });
-    expect(removeQuestion(one, modelRows(one)[0]).detail).toBe("It is Stub's last model, so Stub is removed too. No model answers until you add or choose one.");
-    const keyed = view({ providers: [provider({ keySaved: true })] });
-    expect(removeQuestion(keyed, modelRows(keyed)[0]).detail).toBe("It is Stub's last model, so Stub and its saved API key are removed too.");
+  it("asks first, saying what goes with it", () => {
+    expect(removeQuestion(v, first)).toEqual({ title: "Remove Stub?", detail: "Its models and its saved API key go with it. No model answers until you choose another." });
+    const one = view({ providers: [provider()] });
+    expect(removeQuestion(one, modelRows(one)[0])).toEqual({ title: "Remove Stub?", detail: "Its model goes with it." });
   });
 });
 
 describe("Set the provider", () => {
-  it("offers every preset in the plan's order, the cloud ones included; it starts on the first local one", () => {
+  it("offers the TUI's /provider list in its order; it starts on Reconix, the default", () => {
     const options = providerOptions();
-    expect(options.map((o) => o.label)).toEqual(["OpenAI", "Anthropic", "DeepSeek", "OpenRouter", "Groq", "Ollama (local)", "LM Studio (local)", "Custom (OpenAI-compatible)"]);
+    expect(options.map((o) => o.label)).toEqual(["Reconix (default)", "OpenAI", "Anthropic", "DeepSeek", "Ollama", "Custom OpenAI-compatible"]);
     expect(options.every((o) => Object.keys(o).sort().join() === "id,label")).toBe(true); // nothing is disabled
-    expect(firstPreset().id).toBe("ollama");
+    expect(firstPreset().id).toBe("reconix");
   });
-  it("shows the base URL only for Custom and the local presets; a cloud one's address is fixed", () => {
-    expect(PRESETS.filter(showsUrl).map((p) => p.id)).toEqual(["ollama", "lmstudio", "custom"]);
+  it("asks what the TUI's provider form asks: an address for Ollama and Custom, a key unless Reconix or Ollama", () => {
+    expect(PRESETS.filter(showsUrl).map((p) => p.id)).toEqual(["ollama", "custom"]);
+    expect(PRESETS.filter(showsKey).map((p) => p.id)).toEqual(["openai", "anthropic", "deepseek", "custom"]);
     expect(addressOf(anthropic, { baseUrl: "http://evil.example" })).toBe("https://api.anthropic.com/v1");
     expect(addressOf(custom, { baseUrl: ` ${STUB} ` })).toBe(STUB);
     expect(normalAddress(`${STUB}/?x=1#y`)).toBe(STUB);
@@ -209,10 +211,20 @@ describe("Fetch models", () => {
   });
 });
 
+describe("built-in models", () => {
+  it("lists a cloud service's built-in models (the saved one first) and Reconix's from the API; the rest fetch or type", () => {
+    expect(knownModels(presetOf("openai"), null)).toEqual(["gpt-4o-mini", "gpt-4o"]);
+    expect(knownModels(presetOf("deepseek"), provider({ preset: "deepseek", models: ["deepseek-reasoner"] }))).toEqual(["deepseek-reasoner", "deepseek-chat"]);
+    expect(knownModels(presetOf("reconix"), provider({ preset: "reconix", models: ["reconix"] }))).toEqual(["reconix"]);
+    expect(knownModels(presetOf("ollama"), null)).toBeNull();
+    expect(knownModels(custom, null)).toBeNull();
+  });
+});
+
 describe("Add model", () => {
   it("adds a provider not saved yet, named after its preset, with the model, made active", () => {
     const built = requestsForAdd(custom, null, view(), { ...none, baseUrl: ` ${STUB} `, apiKey: " k-1 " }, "stub-model-2");
-    expect(built).toEqual({ ok: true, requests: { kind: "add", body: { name: "Custom", preset: "custom", baseUrl: STUB, models: ["stub-model-2"], apiKey: "k-1", activate: true } } });
+    expect(built).toEqual({ ok: true, requests: { kind: "add", body: { name: "Custom OpenAI-compatible", preset: "custom", baseUrl: STUB, models: ["stub-model-2"], apiKey: "k-1", activate: true } } });
     const cloud = requestsForAdd(anthropic, null, view(), { ...none, apiKey: "sk-ant-0123" }, "claude-x");
     expect(cloud.ok && cloud.requests).toEqual({ kind: "add", body: { name: "Anthropic", preset: "anthropic", baseUrl: "https://api.anthropic.com/v1", models: ["claude-x"], apiKey: "sk-ant-0123", activate: true } });
     const keyless = requestsForAdd(custom, null, view(), { ...none, baseUrl: STUB }, "m");
@@ -279,5 +291,51 @@ describe("the model the assistant shows after a switch", () => {
     expect(liveSwitch({ ...B }, s)).toBeNull();
     expect(liveSwitch(summary("phi4"), s)).toBeNull();
     expect(liveSwitch(A, null)).toBeNull();
+  });
+});
+
+describe("the list with many models", () => {
+  const many = provider({ models: Array.from({ length: 14 }, (_, i) => `model-${i}`) });
+  const other = provider({ id: ID2, name: "Other", models: ["qwen:7b", "llama3.2"] });
+  const v = view({ providers: [many, other], active: { providerId: ID2, model: "llama3.2" } });
+
+  it("lists every provider the TUI offers, in its order, with what its menu says", async () => {
+    const { providersOf } = await import("@/components/assistant/model-list");
+    const providers = providersOf(modelRows(v));
+    expect(providers.map((p) => [p.preset.id, p.status])).toEqual([
+      ["reconix", "Not set up"],
+      ["openai", "Not set up"],
+      ["anthropic", "Not set up"],
+      ["deepseek", "Not set up"],
+      ["ollama", "Not set up"],
+      ["custom", "16 models · in use"], // both saved providers are custom ones
+    ]);
+    expect(providers.find((p) => p.preset.id === "custom")?.active).toBe(true);
+  });
+  it("names each provider's kind and short name", async () => {
+    const { kindLabel, shortLabel } = await import("@/components/assistant/provider-look");
+    expect(PRESETS.map((p) => [shortLabel(p), kindLabel(p)])).toEqual([
+      ["Reconix", "Built in"],
+      ["OpenAI", "Cloud"],
+      ["Anthropic", "Cloud"],
+      ["DeepSeek", "Cloud"],
+      ["Ollama", "Local"],
+      ["Custom", "Any server"],
+    ]);
+  });
+  it("tells how to set up a provider in the TUI's words", async () => {
+    const { setupHint } = await import("@/components/assistant/model-list");
+    expect(setupHint(presetOf("openai"))).toMatch(/API key/);
+    expect(setupHint(presetOf("ollama"))).toMatch(/no key/);
+  });
+  it("searches every model by any part of its or its provider's name, any case, or one provider's", async () => {
+    const { shownRows } = await import("@/components/assistant/model-list");
+    const rows = modelRows(v);
+    expect(shownRows(rows, " MODEL-1").map((r) => r.model)).toEqual(["model-1", "model-10", "model-11", "model-12", "model-13"]);
+    expect(shownRows(rows, "")).toHaveLength(16);
+    expect(shownRows(rows, "OTHER").map((r) => r.model)).toEqual(["qwen:7b", "llama3.2"]);
+    expect(shownRows(rows, "", "openai")).toEqual([]);
+    expect(shownRows(rows, "qwen", "custom").map((r) => r.model)).toEqual(["qwen:7b"]);
+    expect(shownRows(rows, "nope")).toEqual([]);
   });
 });

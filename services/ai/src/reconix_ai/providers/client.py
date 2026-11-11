@@ -46,7 +46,7 @@ import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
 from reconix_ai.harness import StreamMasker, mask_secrets, mask_value  # noqa: E402
-from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
+from reconix_ai.providers.base_url import BaseUrlError, call_address, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
 litellm.suppress_debug_info = True  # no "Give Feedback" banner on every error
@@ -66,6 +66,9 @@ NO_KEY = "none"  # sent instead of an empty key, so LiteLLM never looks one up i
 LOCAL_TYPES = {ProviderType.OLLAMA}
 # The 3 cloud services: their own address unless one is set, and always a key.
 CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
+# Servers that may refuse response_format json_object (LM Studio takes only json_schema or
+# text): asked again without it once, since the caller parses the JSON itself.
+JSON_FORMAT_OPTIONAL = {ProviderType.OPENAI_API_COMPATIBLE, ProviderType.RECONIX}
 
 
 OnPiece = Callable[[str], Awaitable[None]]
@@ -128,10 +131,14 @@ async def complete(
 
     failure = None
     try:
-        if on_piece is None:
-            response = await litellm.acompletion(**request)
-        else:
-            response = await streamed(request, on_piece)
+        try:
+            response = await send(request, on_piece)
+        except openai.BadRequestError:
+            # Some OpenAI-compatible servers (LM Studio) refuse response_format
+            # json_object. The caller parses the JSON itself, so ask once without it.
+            if not (json_answer and config.provider_type in JSON_FORMAT_OPTIONAL):
+                raise
+            response = await send({**request, "response_format": None}, on_piece)
     except openai.OpenAIError as error:
         failure = provider_error(error, config)
     if failure is not None:
@@ -329,6 +336,13 @@ def mask_json(text: str) -> tuple[str, int]:
     return json.dumps(data, ensure_ascii=False), count
 
 
+async def send(request: dict, on_piece: OnPiece | None) -> litellm.ModelResponse | None:
+    """One call: the whole answer, or streamed to on_piece."""
+    if on_piece is None:
+        return await litellm.acompletion(**request)
+    return await streamed(request, on_piece)
+
+
 async def streamed(
     request: dict, on_piece: OnPiece | None, on_thinking: OnPiece | None = None
 ) -> litellm.ModelResponse | None:
@@ -387,7 +401,7 @@ def checked_base_url(config: ProviderConfig) -> str | None:
         check_base_url(base_url)
     except BaseUrlError as error:
         raise ProviderError("PROVIDER_URL_NOT_ALLOWED", str(error)) from None
-    return base_url
+    return call_address(base_url)
 
 
 def check_key(config: ProviderConfig) -> None:

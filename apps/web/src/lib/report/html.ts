@@ -65,11 +65,11 @@ const cvss = (f: Finding) => (f.cvss_score ? f.cvss_score.toFixed(1) : "—");
 export const CSS = `
 *{box-sizing:border-box}
 :root{
-  --paper:#fff; --ink:#141a24; --ink-soft:#434d5c; --muted:#7c8699; --faint:#a4adbd;
+  --paper:#fff; --ink:#141a24; --ink-soft:#434d5c; --muted:#636c7d; --faint:#6b7486;
   --line:#e3e7ec; --zebra:#f6f8fa;
   --navy-1:#17305a; --navy-2:#0e1f3e; --navy-ink:#eaf1fb; --navy-label:#8db0e2;
-  --rule:#2f6fd0; --accent:#1f5fc0; --ok:#1c8650;
-  --crit:#911a3c; --high:#d9492a; --med:#c7920f; --low:#2a9657; --info:#596573;
+  --rule:#2f6fd0; --accent:#1f5fc0; --ok:#1a7b4a;
+  --crit:#911a3c; --high:#d34426; --med:#986f0b; --low:#26864e; --info:#596573;
   --crit-wash:#f8e3ea; --high-wash:#fbe6de; --med-wash:#f8efd5;
   --low-wash:#e3f3ea; --info-wash:#eceff2; --ok-wash:#e1f2e9; --chip-wash:#eaf1fb;
 }
@@ -122,6 +122,7 @@ a{color:var(--accent); text-decoration:none}
 .dist .crit{background:var(--crit)} .dist .high{background:var(--high)} .dist .med{background:var(--med)} .dist .low{background:var(--low)}
 .legend{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
 .tw{overflow-x:auto; border:1px solid var(--line); border-radius:10px}
+.tw:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 table{border-collapse:collapse; width:100%; font-size:11.5px}
 th,td{text-align:left; padding:6px 11px; border-bottom:1px solid var(--line); vertical-align:top}
 thead th{background:var(--zebra); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600}
@@ -244,7 +245,7 @@ function findingsTable(findings: Finding[]): string {
       )
       .join("") || `<tr><td colspan="6">No findings were recorded.</td></tr>`;
   return (
-    `<div class="tw"><table><thead><tr><th>ID</th><th>Finding</th><th>Severity</th><th>CVSS</th>` +
+    `<div class="tw" tabindex="0" role="region" aria-label="Findings table"><table><thead><tr><th>ID</th><th>Finding</th><th>Severity</th><th>CVSS</th>` +
     `<th>Status</th><th>Category</th></tr></thead><tbody>${rows}</tbody></table></div>`
   );
 }
@@ -303,9 +304,9 @@ function governance(a: Assessment): string {
       .join("") || `<tr><td colspan="5">No gated actions were required.</td></tr>`;
   return (
     `<div class="eyebrow" style="margin-bottom:8px">Blocked by policy · ${blocked.length}</div>` +
-    `<div class="tw"><table><thead><tr><th>Request</th><th>Reason</th></tr></thead><tbody>${blockedRows}</tbody></table></div>` +
+    `<div class="tw" tabindex="0" role="region" aria-label="Requests blocked by policy"><table><thead><tr><th>Request</th><th>Reason</th></tr></thead><tbody>${blockedRows}</tbody></table></div>` +
     `<div class="eyebrow" style="margin:14px 0 8px">Human approvals · ${a.decisions.length}</div>` +
-    `<div class="tw"><table><thead><tr><th>Risk</th><th>Action</th><th>Target</th><th>Decision</th><th>Analyst</th></tr></thead>` +
+    `<div class="tw" tabindex="0" role="region" aria-label="Human approval decisions"><table><thead><tr><th>Risk</th><th>Action</th><th>Target</th><th>Decision</th><th>Analyst</th></tr></thead>` +
     `<tbody>${decisionRows}</tbody></table></div>`
   );
 }

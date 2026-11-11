@@ -68,6 +68,7 @@ export function useAsking({
                 if (used?.length) patch(reply.id, (m) => ({ ...m, knowledge: used }));
               } else if (frame.t === "card") patch(reply.id, (m) => ({ ...m, cards: [...(m.cards ?? []), frame.card].slice(0, MAX_CARDS) }));
               else if (frame.t === "text") patch(reply.id, (m) => ({ ...m, content: (m.content + frame.delta).slice(0, MAX_SHOWN) }));
+              else if (frame.t === "final") patch(reply.id, (m) => ({ ...m, content: frame.text.slice(0, MAX_SHOWN) }));
               else if (frame.t === "error") patch(reply.id, (m) => ({ ...m, state: "error", detail: frame.detail }));
             },
             // known before the first frame: a Stop right away still belongs to this conversation

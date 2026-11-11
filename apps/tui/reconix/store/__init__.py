@@ -404,6 +404,11 @@ __all__ = [
     "severity_trend",
     "compare_findings",
     "previous_assessment",
+    # the Kali container the bar shows
+    "kali_host",
+    "kali_status",
+    "refresh_kali",
+    "set_kali_status",
     # transcript, audit, history
     "list_chat",
     "last_exchange",

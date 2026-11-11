@@ -108,6 +108,28 @@ def close_session(
     return SessionRead.model_validate(session, from_attributes=True)
 
 
+def resume_session(
+    db: Db, tokens: SessionTokens, write_audit: WriteAudit, operator: Operator, session_id: UUID
+) -> tuple[Session, str]:
+    """A new token for an open web session whose token is gone (the API or the web server
+    restarted), so its chat can go on. It gives no new rights: any valid token may do
+    everything already. The resumed session takes the caller's name."""
+    session = _get(db, session_id)
+    if session.interface != "web":
+        raise ApiError(403, "NOT_A_WEB_SESSION", "Only a web session can be resumed.")
+    if session.session_status == SessionStatus.CLOSED:
+        raise ApiError(409, "SESSION_CLOSED", "This session is already closed.")
+    resumed = Operator(session_id=session_id, actor=operator.actor)
+    token = tokens.issue(resumed)
+    audit(
+        write_audit,
+        "SESSION_RESUMED",
+        resumed,
+        details={"resumed_by_session": str(operator.session_id)},
+    )
+    return session, token
+
+
 def _get(db: Db, session_id: UUID) -> Session:
     session = session_repo.get(db, session_id)
     if session is None:

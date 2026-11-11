@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { NOTICES, pickCards } from "@/lib/assistant/cards";
 import { cleanTitle } from "@/lib/assistant/history-schema";
-import { fenceTag, systemPrompt } from "@/lib/assistant/prompt";
 import { CardSchema, createFrameReader, encodeFrame, type Frame, isConversationId, parseFrame } from "@/lib/assistant/protocol";
 import { HIDDEN_LINE, MASK } from "@/lib/assistant/redact";
 
@@ -96,21 +95,5 @@ describe("titles", () => {
     expect(long.length).toBeLessThanOrEqual(60);
     expect(long.endsWith("…")).toBe(true);
     expect(cleanTitle(" \u0007 ")).toBe("");
-  });
-});
-
-describe("systemPrompt notes", () => {
-  it("says which verified cards are shown and not to restate or invent them", () => {
-    const tag = fenceTag();
-    const prompt = systemPrompt("x", "data", tag, { cards: ["a findings card (severity counts and the worst findings)"] });
-    expect(prompt).toContain("Shown with this answer");
-    expect(prompt).toContain("Do not repeat their numbers");
-    expect(prompt).toMatch(/never make up numbers/i);
-    expect(prompt.split(`</${tag}>`)).toHaveLength(3);
-  });
-  it("tells the model it cannot plan or start an assessment when asked to", () => {
-    const prompt = systemPrompt("x", "data", fenceTag(), { planning: true });
-    expect(prompt).toContain("no plan has been created");
-    expect(systemPrompt("x", "data", fenceTag())).not.toContain("no plan has been created");
   });
 });

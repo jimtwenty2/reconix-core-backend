@@ -127,6 +127,43 @@
 .ai-typing > span:nth-child(2) { animation-delay: 0.15s; }
 .ai-typing > span:nth-child(3) { animation-delay: 0.3s; }
 @keyframes ai-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+@keyframes ai-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ai-pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .ai-prompts > * { animation: ai-rise 0.45s ease-out backwards; }
+  .ai-prompts > *:nth-child(2) { animation-delay: 0.06s; }
+  .ai-prompts > *:nth-child(3) { animation-delay: 0.12s; }
+  .ai-prompts > *:nth-child(4) { animation-delay: 0.18s; }
+  .ai-prompts > *:nth-child(5) { animation-delay: 0.24s; }
+  .ai-prompts > *:nth-child(6) { animation-delay: 0.3s; }
+  .ai-picker { animation: ai-pop 0.18s ease-out; }
+  /* the model list: rows rise in one after another, ✓ pops, a choice being saved breathes */
+  .ai-picker-row { animation: ai-row-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; animation-delay: calc(var(--i, 0) * 28ms); }
+  .ai-picker-check-pop { animation: ai-check-pop 0.32s cubic-bezier(0.3, 1.5, 0.5, 1); }
+  .ai-picker-model[data-pending="true"] { animation: ai-breathe 1s ease-in-out infinite; }
+  .ai-picker-provider, .ai-menu-confirm { animation: ai-slide-down 0.2s ease-out; }
+  .ai-picker-empty { animation: ai-rise 0.25s ease-out; }
+  .ai-picker-setup { animation: ai-rise 0.25s ease-out; }
+  .ai-picker-waiting { animation: ai-slide-down 0.22s ease-out; }
+  .ai-picker-page-head { animation: ai-slide-down 0.2s ease-out; }
+  .ai-dialog[open] { animation: ai-pop 0.18s ease-out; }
+  .ai-dialog[open]::backdrop { animation: ai-fade 0.18s ease-out; }
+  .ai-connect[data-state="ok"] .ai-connect-icon { animation: ai-check-pop 0.32s cubic-bezier(0.3, 1.5, 0.5, 1); }
+  .ai-connect { animation: ai-rise 0.2s ease-out; }
+  .ai-tile:active { transform: scale(0.96); }
+  .ai-tile[aria-checked="true"] .ai-picker-avatar { animation: ai-check-pop 0.3s ease-out; }
+  .ai-picker-pill-dot { animation: ai-check-pop 0.3s ease-out; }
+  .ai-picker-skeleton-row { animation: ai-rise 0.3s ease-out backwards; animation-delay: calc(var(--i, 0) * 50ms); }
+  .ai-picker-skeleton-avatar, .ai-picker-skeleton-lines > span { animation: ai-shimmer 1.3s ease-in-out infinite; }
+  .ai-picker-add svg { transition: transform 0.2s ease; }
+  .ai-picker-add:hover svg { transform: rotate(90deg); }
+}
+@keyframes ai-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ai-row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes ai-check-pop { 0% { opacity: 0; transform: scale(0.3) rotate(-20deg); } 100% { opacity: 1; transform: none; } }
+@keyframes ai-breathe { 0%, 100% { background-color: color-mix(in oklab, var(--primary) 6%, transparent); } 50% { background-color: color-mix(in oklab, var(--primary) 16%, transparent); } }
+@keyframes ai-slide-down { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes ai-shimmer { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 
 /* ---- Markdown (message-text.tsx) ------------------------------------------------------------ */
 .ai-prose { font-size: 14.5px; line-height: 1.72; color: color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground)); overflow-wrap: anywhere; }
@@ -188,7 +225,10 @@
 .ai-welcome-hero > :not(.ai-globe-slot), .ai-welcome > :not(.ai-welcome-hero) { position: relative; }
 .ai-welcome-title { font-size: clamp(22px, 2.3vw, 30px); font-weight: 600; letter-spacing: -0.02em; line-height: 1.25; color: var(--foreground); }
 .ai-welcome-sub { max-width: 540px; margin-top: 10px; font-size: 14px; line-height: 1.6; color: var(--muted-foreground); }
-.ai-prompts { display: grid; width: 100%; margin-top: 32px; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); text-align: left; }
+.ai-prompts { display: flex; flex-wrap: wrap; justify-content: center; width: 100%; margin-top: 32px; gap: 10px; text-align: left; }
+.ai-prompts > * { flex: 0 0 calc((100% - 20px) / 3); min-width: 0; }
+@media (max-width: 760px) { .ai-prompts > * { flex-basis: calc((100% - 10px) / 2); } }
+@media (max-width: 480px) { .ai-prompts > * { flex-basis: 100%; } }
 .ai-prompt {
   display: flex;
   align-items: flex-start;
@@ -399,22 +439,126 @@
 .ai-picker-empty { padding: 10px 8px; font-size: 12.5px; color: var(--muted-foreground); }
 .ai-picker-error { padding: 4px 8px 0; }
 .ai-picker-refusal { padding: 8px 10px; border-radius: 10px; border: 1px solid color-mix(in oklab, var(--danger) 35%, var(--border)); background: color-mix(in oklab, var(--danger) 6%, transparent); font-size: 12px; line-height: 1.45; color: var(--danger); overflow-wrap: anywhere; }
-/* the list: a row is the model (✓, its name in mono, "<provider> · local|remote") and its bin */
-.ai-picker-row { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-radius: 9px; transition: background-color 0.15s ease; }
+/* the list, Open WebUI-style: a bare search field, filter pills, then one flat list of models;
+   a row is the provider's avatar, the model's name in mono with its badges, and ✓ on the right */
+.ai-picker-search { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; }
+.ai-picker-search-icon { width: 15px; height: 15px; flex-shrink: 0; color: var(--muted-foreground); }
+.ai-picker-search-input { flex: 1 1 auto; min-width: 0; height: 26px; background: transparent; font-size: 13px; color: var(--foreground); outline: none; }
+.ai-picker-search-input::placeholder { color: var(--muted-foreground); }
+.ai-picker-search-input::-webkit-search-cancel-button { cursor: pointer; }
+.ai-picker-search:has(.ai-picker-search-input:focus-visible) .ai-picker-search-icon { color: var(--primary); }
+.ai-picker-pill-count { min-width: 16px; padding: 0 4px; border-radius: 999px; font-size: 10px; line-height: 15px; text-align: center; color: var(--muted-foreground); background: color-mix(in oklab, var(--foreground) 8%, transparent); }
+.ai-picker-mark { border-radius: 3px; color: var(--primary); background: color-mix(in oklab, var(--primary) 18%, transparent); }
+.ai-picker-model[data-first="true"] { background: color-mix(in oklab, var(--primary) 9%, transparent); }
+.ai-picker-kbd { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; border: 1px solid var(--border); border-bottom-width: 2px; font-family: var(--font-mono); font-size: 10px; line-height: 1; color: var(--muted-foreground); background: color-mix(in oklab, var(--foreground) 4%, transparent); }
+.ai-picker-foot-list { justify-content: space-between; }
+/* the confirm dialog (confirm-dialog.tsx): centred in the top layer, the page dimmed behind it */
+.ai-dialog { width: min(360px, calc(100vw - 32px)); margin: auto; padding: 0; border-radius: 16px; border: 1px solid var(--border); color: var(--foreground); background: var(--card); box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.6); }
+.ai-dialog::backdrop { background: rgb(0 0 0 / 0.55); backdrop-filter: blur(2px); }
+.ai-dialog-body { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px 20px 16px; text-align: center; }
+.ai-dialog-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: 999px; color: var(--danger); background: color-mix(in oklab, var(--danger) 14%, transparent); }
+.ai-dialog[data-tone="info"] .ai-dialog-icon { color: var(--warning); background: color-mix(in oklab, var(--warning) 14%, transparent); }
+.ai-dialog-title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.ai-dialog-text { font-size: 12.5px; line-height: 1.5; color: var(--muted-foreground); }
+.ai-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 20px 20px; }
+.ai-dialog-actions > .ai-btn { height: 36px; justify-content: center; font-weight: 500; }
+.ai-dialog-danger { color: #fff; background: color-mix(in oklab, var(--danger) 82%, #000); }
+.ai-dialog-danger:hover:not(:disabled) { color: #fff; background: var(--danger); }
+/* a provider's page: labelled Edit and Remove */
+.ai-page-action { height: 26px; padding: 0 8px; gap: 5px; font-size: 11.5px; }
+.ai-page-action-danger:hover:not(:disabled) { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, var(--border)); background: color-mix(in oklab, var(--danger) 8%, transparent); }
+/* Set the provider: where the connection stands, and the footer's main step */
+.ai-connect { display: flex; align-items: flex-start; gap: 8px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--border); font-size: 12px; line-height: 1.45; color: var(--muted-foreground); background: color-mix(in oklab, var(--foreground) 3%, transparent); transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease; }
+.ai-connect-icon { width: 15px; height: 15px; flex-shrink: 0; margin-top: 1px; color: var(--primary); }
+.ai-connect[data-state="testing"] { border-color: color-mix(in oklab, var(--primary) 35%, var(--border)); background: color-mix(in oklab, var(--primary) 6%, transparent); color: var(--foreground); }
+.ai-connect[data-state="ok"] { border-color: color-mix(in oklab, var(--success) 35%, var(--border)); background: color-mix(in oklab, var(--success) 7%, transparent); color: var(--foreground); }
+.ai-connect[data-state="ok"] .ai-connect-icon { color: var(--success); }
+.ai-btn-go { min-width: 132px; justify-content: center; font-weight: 500; }
+/* Models | Providers: a segmented switch on top of the list */
+.ai-picker-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 10px 12px 2px; padding: 3px; border-radius: 10px; background: color-mix(in oklab, var(--foreground) 6%, transparent); }
+.ai-picker-switch-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; border-radius: 8px; font-size: 12.5px; color: var(--muted-foreground); transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
+.ai-picker-switch-btn:hover { color: var(--foreground); }
+.ai-picker-switch-btn[aria-selected="true"] { color: var(--foreground); font-weight: 500; background: var(--card); box-shadow: 0 1px 2px color-mix(in oklab, var(--background) 60%, transparent), inset 0 0 0 1px var(--border); }
+.ai-picker-switch-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.ai-picker-search { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+/* Providers: the TUI's /provider menu */
+.ai-picker-provider-name { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+.ai-picker-provider-row[data-setup="none"] .ai-picker-provider-name { color: color-mix(in oklab, var(--foreground) 78%, var(--muted-foreground)); }
+.ai-picker-kind { flex-shrink: 0; }
+.ai-picker-kind[data-kind="cloud"] { color: var(--primary); background: color-mix(in oklab, var(--primary) 12%, transparent); }
+.ai-picker-kind[data-kind="local"] { color: var(--success); background: color-mix(in oklab, var(--success) 12%, transparent); }
+.ai-picker-setup-go { display: inline-flex; flex-shrink: 0; align-items: center; gap: 3px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--primary); border: 1px solid color-mix(in oklab, var(--primary) 40%, transparent); transition: background-color 0.15s ease; }
+.ai-picker-provider-row:hover .ai-picker-setup-go, .ai-picker-provider-row:focus-visible .ai-picker-setup-go { background: color-mix(in oklab, var(--primary) 14%, transparent); }
+.ai-picker-provider-row[data-setup="none"] .ai-picker-kind { display: none; }
+.ai-picker-chevron-go { width: 15px; height: 15px; flex-shrink: 0; color: var(--muted-foreground); transition: transform 0.15s ease, color 0.15s ease; }
+.ai-picker-provider-row:hover .ai-picker-chevron-go, .ai-picker-provider-row:focus-visible .ai-picker-chevron-go { color: var(--foreground); transform: translateX(2px); }
+/* a provider's page: back, its avatar, name and status */
+.ai-picker-page-head { display: flex; align-items: center; gap: 10px; margin-top: 6px; padding: 6px 12px 10px 8px; border-bottom: 1px solid var(--border); }
+.ai-picker-page-title { font-size: 13.5px; font-weight: 600; }
+/* Set the provider: the provider tiles */
+.ai-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 420px) { .ai-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ai-tile { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 8px; align-items: center; min-height: 44px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--border); text-align: left; background: color-mix(in oklab, var(--foreground) 2%, transparent); transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.12s ease; }
+.ai-tile > .ai-picker-avatar { grid-row: span 2; }
+.ai-tile:hover { border-color: color-mix(in oklab, var(--primary) 35%, var(--border)); background: color-mix(in oklab, var(--foreground) 5%, transparent); }
+.ai-tile[aria-checked="true"] { border-color: var(--primary); background: color-mix(in oklab, var(--primary) 10%, transparent); box-shadow: inset 0 0 0 1px var(--primary); }
+.ai-tile:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.ai-tile-name { align-self: end; max-width: 100%; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; color: var(--foreground); }
+.ai-tile-kind { align-self: start; font-size: 10.5px; line-height: 1.3; color: var(--muted-foreground); }
+.ai-tile[aria-checked="true"] .ai-tile-kind { color: color-mix(in oklab, var(--primary) 70%, var(--foreground)); }
+.ai-tile-saved { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 999px; background: var(--success); }
+/* a model off this computer that waits for the TUI's OK: a calm notice under its row, not an error */
+.ai-picker-waiting { display: flex; gap: 10px; margin: 2px 4px 6px 46px; padding: 10px 12px; border-radius: 10px; border: 1px solid color-mix(in oklab, var(--warning, #f5b84b) 35%, var(--border)); background: color-mix(in oklab, var(--warning, #f5b84b) 7%, transparent); }
+.ai-picker-waiting-icon { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; color: var(--warning, #f5b84b); }
+.ai-picker-waiting-title { font-size: 12.5px; font-weight: 500; color: var(--foreground); }
+.ai-picker-waiting-text { margin-top: 2px; font-size: 11.5px; line-height: 1.5; color: var(--muted-foreground); }
+.ai-picker-code { padding: 0 4px; border-radius: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--foreground); background: color-mix(in oklab, var(--foreground) 9%, transparent); }
+/* a TUI provider that isn't set up: its pill is quieter, its card says how to set it up */
+.ai-picker-pill-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--success); box-shadow: 0 0 6px color-mix(in oklab, var(--success) 60%, transparent); }
+.ai-picker-setup { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 4px 2px; padding: 14px; border-radius: 12px; border: 1px dashed color-mix(in oklab, var(--primary) 30%, var(--border)); background: color-mix(in oklab, var(--primary) 4%, transparent); }
+.ai-picker-setup .ai-picker-meta { white-space: normal; }
+.ai-picker-setup-title { font-size: 13px; font-weight: 500; color: var(--foreground); }
+.ai-picker-setup .ai-picker-add { width: auto; height: 28px; }
+.ai-picker-skeleton { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; }
+.ai-picker-skeleton-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; }
+.ai-picker-skeleton-avatar { width: 28px; height: 28px; flex-shrink: 0; border-radius: 999px; background: color-mix(in oklab, var(--foreground) 9%, transparent); }
+.ai-picker-skeleton-lines { display: flex; flex: 1 1 auto; flex-direction: column; gap: 6px; }
+.ai-picker-skeleton-lines > span { height: 9px; border-radius: 5px; background: color-mix(in oklab, var(--foreground) 9%, transparent); }
+.ai-picker-skeleton-lines > span + span { height: 7px; }
+.ai-picker-keys { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted-foreground); }
+@media (max-width: 640px) { .ai-picker-keys { display: none; } }
+.ai-picker-model { transition: background-color 0.12s ease; }
+.ai-picker-avatar { transition: transform 0.15s ease; }
+.ai-picker-model:hover .ai-picker-avatar, .ai-picker-model:focus-visible .ai-picker-avatar { transform: scale(1.06); }
+.ai-picker-provider { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 2px 4px 8px; }
+.ai-picker-row { border-radius: 10px; transition: background-color 0.15s ease; }
 .ai-picker-row:hover { background: color-mix(in oklab, var(--foreground) 5%, transparent); }
-.ai-picker-row:has(> [aria-current="true"]) { background: color-mix(in oklab, var(--primary) 10%, transparent); }
-.ai-picker-model { display: flex; flex: 1 1 auto; align-items: center; gap: 10px; min-width: 0; min-height: 40px; padding: 5px 8px; border-radius: 9px; text-align: left; color: var(--foreground); }
+.ai-picker-row:has(> [aria-current="true"]) { background: color-mix(in oklab, var(--foreground) 8%, transparent); }
+.ai-picker-model { display: flex; width: 100%; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 6px 10px 6px 8px; border-radius: 10px; text-align: left; color: var(--foreground); }
 .ai-picker-model:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-.ai-picker-check { display: grid; place-items: center; width: 16px; height: 16px; flex-shrink: 0; border-radius: 999px; border: 1px solid var(--border); color: var(--primary-foreground); }
-.ai-picker-model[aria-current="true"] .ai-picker-check { border-color: var(--primary); background: var(--primary); }
-.ai-picker-text { display: flex; flex-direction: column; min-width: 0; }
+.ai-picker-avatar { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 999px; font-size: 12px; font-weight: 600; color: oklch(0.86 0.09 var(--hue)); background: oklch(0.34 0.07 var(--hue)); }
+.ai-picker-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
 .ai-picker-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 12.5px; }
+.ai-picker-badges { display: flex; gap: 4px; min-width: 0; margin-top: 3px; }
+.ai-picker-badge { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: 5px; font-size: 10.5px; line-height: 16px; color: var(--muted-foreground); background: color-mix(in oklab, var(--foreground) 7%, transparent); }
+.ai-picker-badge[data-where] { flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.ai-picker-badge[data-where="local"] { color: var(--success); background: color-mix(in oklab, var(--success) 12%, transparent); }
+.ai-picker-tick { display: grid; place-items: center; width: 18px; height: 18px; flex-shrink: 0; color: var(--primary); }
 .ai-picker-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--muted-foreground); }
-/* on the checked row's tint the muted grey falls under 4.5:1: lift it toward the text colour */
-.ai-picker-model[aria-current="true"] .ai-picker-meta { color: color-mix(in oklab, var(--foreground) 40%, var(--muted-foreground)); }
-.ai-picker-remove { flex-shrink: 0; }
-.ai-picker-add { width: 100%; justify-content: flex-start; height: 34px; padding: 0 8px; color: var(--foreground); }
+/* + Add a provider: a full-width outlined button in the accent colour, easy to find */
+.ai-picker-add {
+  width: 100%;
+  justify-content: center;
+  height: 34px;
+  padding: 0 10px;
+  font-weight: 500;
+  color: var(--primary);
+  border: 1px dashed color-mix(in oklab, var(--primary) 55%, var(--border));
+  background: color-mix(in oklab, var(--primary) 6%, transparent);
+}
+.ai-picker-add:hover:not(:disabled) { color: var(--primary); background: color-mix(in oklab, var(--primary) 14%, transparent); }
 .ai-picker-add svg { color: var(--primary); }
+.ai-picker-foot-list .ai-picker-add { width: auto; height: 28px; }
 /* Set the provider: native selects, and the Model select beside Fetch models */
 .ai-select {
   width: 100%;
@@ -464,7 +608,7 @@
 .ai-composer textarea:disabled { cursor: not-allowed; }
 .ai-composer-bar { display: flex; align-items: center; gap: 10px; padding: 6px 8px 8px; }
 .ai-composer-end { display: flex; flex-shrink: 0; align-items: center; gap: 10px; margin-left: auto; }
-.ai-composer-hint { font-size: 11.5px; color: var(--muted-foreground); white-space: nowrap; }
+.ai-composer-hint { font-size: 12.5px; color: var(--muted-foreground); white-space: nowrap; }
 @media (max-width: 640px) { .ai-composer-hint { display: none; } }
 .ai-counter { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 .ai-counter[data-tone="warning"] { color: var(--warning); }
@@ -485,7 +629,7 @@
 .ai-send:disabled { cursor: not-allowed; color: var(--muted-foreground); background: color-mix(in oklab, var(--foreground) 10%, transparent); }
 .ai-send[data-stop] { color: var(--background); background: var(--foreground); }
 .ai-send:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-.ai-footnote { margin-top: 8px; padding-inline: 8px; text-align: center; font-size: 11.5px; line-height: 1.5; color: var(--muted-foreground); }
+.ai-footnote { margin-top: 8px; padding-inline: 8px; text-align: center; font-size: 12.5px; line-height: 1.5; color: var(--muted-foreground); }
 .ai-reason {
   display: flex;
   align-items: flex-start;

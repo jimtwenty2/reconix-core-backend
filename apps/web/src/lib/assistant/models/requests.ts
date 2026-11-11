@@ -37,3 +37,10 @@ export const ProbeSchema = z.union([
   z.object({ baseUrl: BaseUrl, model: ModelNameSchema.optional(), apiKey: ApiKey.optional() }).strict(),
 ]);
 export type Probe = z.infer<typeof ProbeSchema>;
+
+/** POST /api/assistant/models/connect ("Test connection"): the form's values, or a saved
+    provider by its id. No model: the models come back. */
+export const ConnectSchema = z
+  .object({ name: Name, preset: PresetSchema, baseUrl: z.string().trim().max(MAX_URL), apiKey: ApiKey.optional(), providerId: ProviderIdSchema.optional() })
+  .strict();
+export type Connect = z.infer<typeof ConnectSchema>;

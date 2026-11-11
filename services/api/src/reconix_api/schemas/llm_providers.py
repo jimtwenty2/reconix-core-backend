@@ -25,6 +25,9 @@ class LlmProviderIn(BaseModel):
     # Empty: the cloud service's own address, or RECONIX_OLLAMA_URL for Ollama.
     base_url: str | None = Field(default=None, max_length=2048)
     api_key: SecretStr | None = Field(default=None, min_length=16, max_length=500)
+    # Another model of a saved provider: its encrypted key is copied, never sent again. Only
+    # from a provider of the same type at the same address (not with api_key).
+    copy_key_from: UUID | None = None
 
     strip_names = field_validator("display_name", "api_key", mode="before")(strip_text)
 
