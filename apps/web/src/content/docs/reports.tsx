@@ -382,13 +382,14 @@ export const reports: GroupContent = {
         </DocSection>
         <DocSection title="Findings list">
           <p>
-            Every finding across the runs this view covers — one run, or all of them — worst severity first, with its
-            ID, severity, title, review state, tool and rating. Choosing a row opens that finding beside the list: its
+            Every finding the local Core API holds — for every assessment, or for the one chosen in the
+            Assessment picker above the list — worst severity first, with its ID, severity, title, review state, tool
+            and rating. When the Core API isn&apos;t running, the view says so. Choosing a row opens that finding beside the list: its
             description, its masked evidence, its remediation and its references.
           </p>
           <p>
             The search box and the severity, review and tool filters narrow the list, and the open finding and the
-            filters live in the address (<Mono>?view=findings&amp;sev=MEDIUM&amp;finding=F-001</Mono>). False positives
+            filters live in the address (<Mono>?view=findings&amp;assessment=&lt;id&gt;&amp;sev=MEDIUM&amp;finding=F-001</Mono>). False positives
             are counted but hidden until you ask for them. Nothing here changes a run: decisions stay in the terminal.
           </p>
         </DocSection>

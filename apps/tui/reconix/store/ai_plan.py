@@ -19,7 +19,6 @@ from ..models import Assessment
 from . import lists
 from .activity import log_event
 from .live import record_plan
-from .providers import active_model
 from .transcript import add_activity, add_chat
 
 
@@ -45,11 +44,8 @@ def plan_draft_request() -> Optional[PlanDraftRequest]:
 
 def fetch_plan_draft(request: PlanDraftRequest) -> Dict[str, Any]:
     """The API's draft plan (PlanOut). Blocks until the model answers, so it runs in a
-    worker. Raises CoreApiError (an LLMError) with the API's own reason."""
-    from ..core_api import sync
-
-    if active_model() is not None:
-        sync.use_active_model()  # the API plans with the model you chose in /provider
+    worker. Raises CoreApiError (an LLMError) with the API's own reason. The API plans with
+    whatever provider is active on it (chosen in /provider)."""
     return run_api.draft_plan(request.assessment_id)
 
 

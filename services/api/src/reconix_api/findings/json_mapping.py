@@ -300,3 +300,42 @@ MAPPINGS: dict[str, JsonMapping] = {
         remediation="Resolution",
     ),
 }
+
+GROUP_EVIDENCE = 100  # matcher lines kept on a grouped nuclei finding
+
+
+def read_nuclei(output: str) -> tuple[list[NewFinding], int]:
+    """nuclei matches, with the many matcher-findings of one info template (e.g. 10
+    missing-security-header matches from a single template) grouped into one finding
+    instead of one per header. Only several NONE (info) matches that share a title are
+    merged; a real vulnerability — its own title, or any severity above NONE — is untouched."""
+    findings, requests = read(MAPPINGS["nuclei"], output)
+    buckets: dict[tuple[str, SeverityStatus], list[NewFinding]] = {}
+    order: list[tuple[str, SeverityStatus]] = []
+    for finding in findings:
+        key = (finding.title.split(" (")[0], finding.severity)
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(finding)
+    merged: list[NewFinding] = []
+    for key in order:
+        group = buckets[key]
+        if len(group) >= 2 and key[1] == SeverityStatus.NONE:
+            merged.append(_merge_nuclei(key[0], group))
+        else:
+            merged.extend(group)
+    return merged, requests
+
+
+def _merge_nuclei(base: str, group: list[NewFinding]) -> NewFinding:
+    first = group[0]
+    evidence = [item for finding in group for item in finding.evidence][:GROUP_EVIDENCE]
+    return NewFinding(
+        title=f"{base} ({len(group)} matches)",
+        target=first.target,
+        description=f"nuclei reported {len(group)} '{base}' matches on {first.target}.",
+        severity=first.severity,
+        dedupe_key=dedupe_key("nuclei_group", first.target, base),
+        evidence=evidence,
+    )

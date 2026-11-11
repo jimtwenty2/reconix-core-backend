@@ -16,7 +16,7 @@
 import { redact } from "@/lib/assistant/redact";
 import { clock, duration, hourMinute, minutesLimit, shortDay } from "@/lib/data/format";
 import { SEVERITIES } from "@/lib/data/schema";
-import type { ApprovalView, AssessmentView, FindingView, PhaseView, ScopeView } from "@/lib/data/view-types";
+import type { ApprovalView, AssessmentView, FindingSeverity, FindingView, PhaseView, ScopeView } from "@/lib/data/view-types";
 
 import { activityCard } from "./derive-activity";
 import { executionCard } from "./derive-execution";
@@ -36,7 +36,10 @@ const TOP_FINDINGS = 8; // the card shows as many as its height allows (3 at lea
 export type FindingIcon = "bug" | "code" | "database";
 /** A finding as listed: `key` is unique in the list (the ID for one run, `<uid>~<ID>` across
     runs) and `run` names the assessment it came from when the list spans several. */
-export type FindingRow = FindingView & { icon: FindingIcon; key: string; run: { uid: string; label: string } | null };
+export type FindingRow = FindingView & { icon: FindingIcon; key: string; run: { uid: string; label: string; href?: string } | null };
+/** A row of the Findings list: a FindingRow whose severity may also be the Core API's UNKNOWN or
+    NONE (the Overview and Reports still read the saved files' four levels). */
+export type ListedFinding = Omit<FindingRow, "severity"> & { severity: FindingSeverity };
 
 export interface Dashboard {
   assessment: {
@@ -68,7 +71,7 @@ export interface Dashboard {
 
 // --- shared helpers (derive-overall.ts uses them too) ------------------------------------
 
-function findingIcon(f: FindingView): FindingIcon {
+export function findingIcon(f: Pick<FindingView, "category" | "title">): FindingIcon {
   const about = `${f.category} ${f.title}`;
   if (/secret|credential|password|database|data|exposure|redis/i.test(about)) return "database";
   if (/inject|xss|script|code|sql/i.test(about)) return "code";

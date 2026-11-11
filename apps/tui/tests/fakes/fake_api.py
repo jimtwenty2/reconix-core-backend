@@ -145,9 +145,7 @@ class FakeApi:
         }
         self.analysis_summary = "Two issues found; the admin panel is the one to fix first."
         self.pending_activation = False
-        # GET /system/kali: tests flip `kali_connected` / `kali_host` to shape the status chip.
-        self.kali_connected = True
-        self.kali_host: Optional[str] = "reconix-kali-container:8000"
+        self.provider_test_ok = True  # POST /llm-providers/{id}/test answers ok
         self.n = 0
         self.sessions: Dict[str, str] = {}  # token -> session id
         self.providers: List[dict] = []
@@ -178,7 +176,7 @@ class FakeApi:
         return [a["tool"] for a in self.actions.values() if a["tool_runs"]]
 
     # --- the transport -----------------------------------------------------------------------
-    def send(self, request) -> Any:
+    def send(self, request, timeout=None) -> Any:
         if self.down:
             raise CoreApiError("UNREACHABLE", NOT_RUNNING)
         path = request.full_url.split("/api/v1", 1)[1]
@@ -192,6 +190,8 @@ class FakeApi:
         auth = request.headers.get("Authorization", "")
         method = request.get_method()
         self.calls.append((method, path, body, auth))
+        if path == "/health":  # open, no token (api/system.py)
+            return {"status": "OK"}
         for key, (status, code, message) in self.fail_on.items():
             want_method, _, prefix = key.partition(" ")
             if method == want_method and path.startswith(prefix):
@@ -234,10 +234,16 @@ class FakeApi:
             return self.providers if method == "GET" else self._add_provider(body)
         if path.endswith("/activate"):
             return self._activate(parts[1])
+        if path.endswith("/test") and parts[0] == "llm-providers":
+            return self._test_provider(parts[1])
+        if path.endswith("/models") and parts[0] == "llm-providers":
+            return self._provider_models(parts[1])
         if parts[0] == "llm-providers" and method == "PATCH":
-            row = next(r for r in self.providers if r["llm_provider_id"] == parts[1])
-            row["api_key_last4"] = (body.get("api_key") or "")[-4:] or None
-            return row
+            return self._patch_provider(parts[1], body)
+        if parts[0] == "llm-providers" and method == "DELETE":
+            return self._delete_provider(parts[1])
+        if parts[0] == "llm-providers" and len(parts) == 2 and method == "GET":
+            return self._provider(parts[1])
         if path.endswith("/scope-manifests") and method == "POST":
             return self._new_manifest(parts[1], body)
         if parts[0] == "scope-manifests" and method == "PATCH":
@@ -331,22 +337,72 @@ class FakeApi:
         }
 
     # --- providers ---------------------------------------------------------------------------
+    def _provider(self, provider_id: str) -> dict:
+        return next(r for r in self.providers if r["llm_provider_id"] == provider_id)
+
     def _add_provider(self, body: dict) -> dict:
         row = {
-            **body,
             "llm_provider_id": self._id("p"),
+            "provider_type": body["provider_type"],
+            "display_name": body.get("display_name", ""),
+            "base_url": body.get("base_url"),
+            "model_name": body["model_name"],
             "is_active": False,
             "is_local": (body.get("base_url") or "").startswith("http://127.0.0.1"),
             "api_key_last4": (body.get("api_key") or "")[-4:] or None,
+            "created_by": "operator",
+            "created_at": now(),
+            "updated_at": now(),
         }
-        row.pop("api_key", None)
         self.providers.append(row)
         return row
 
+    def _patch_provider(self, provider_id: str, body: dict) -> dict:
+        row = self._provider(provider_id)
+        if row["created_by"] == "system":
+            raise self.error(409, "BUILT_IN_PROVIDER", "The built-in provider can't be changed.")
+        if row["is_active"]:
+            raise self.error(409, "PROVIDER_IS_ACTIVE", "The active provider can't be changed.")
+        if body.get("api_key"):
+            row["api_key_last4"] = body["api_key"][-4:]
+        if body.get("base_url"):
+            row["base_url"] = body["base_url"]
+        row["updated_at"] = now()
+        return row
+
+    def _delete_provider(self, provider_id: str) -> None:
+        row = self._provider(provider_id)
+        if row["created_by"] == "system":
+            raise self.error(409, "BUILT_IN_PROVIDER", "The built-in provider can't be deleted.")
+        if row["is_active"]:
+            raise self.error(409, "PROVIDER_IS_ACTIVE", "The active provider can't be deleted.")
+        self.providers.remove(row)
+        return None
+
+    def _test_provider(self, provider_id: str) -> dict:
+        row = self._provider(provider_id)
+        return {
+            "ok": self.provider_test_ok,
+            "model_name": row["model_name"],
+            "latency_ms": 12,
+            "code": None if self.provider_test_ok else "MODEL_UNAVAILABLE",
+            "message": None if self.provider_test_ok else "the model did not answer",
+        }
+
+    def _provider_models(self, provider_id: str) -> dict:
+        row = self._provider(provider_id)
+        if row["provider_type"] != "OLLAMA":
+            raise self.error(422, "MODEL_LIST_NOT_SUPPORTED", "Only Ollama lists its models.")
+        return {"models": [row["model_name"], "bge-m3:latest"]}
+
+    def _make_active(self, provider_id: str) -> None:
+        for row in self.providers:
+            row["is_active"] = row["llm_provider_id"] == provider_id
+
     def _activate(self, provider_id: str) -> dict:
-        row = next(r for r in self.providers if r["llm_provider_id"] == provider_id)
+        row = self._provider(provider_id)
         if row["is_local"]:
-            row["is_active"] = True
+            self._make_active(provider_id)
             return {"llm_provider": row, "approval": None}
         if self.pending_activation:
             raise self.error(409, "APPROVAL_PENDING", "waits", approval_id="a-old")
@@ -439,6 +495,8 @@ class FakeApi:
             self.assessments[self.manifests[row["manifest_id"]]["assessment_id"]].update(
                 status="ACTIVE"
             )
+        if row["kind"] == "configuration":
+            self._make_active(row["subject_snapshot"]["llm_provider_id"])
         if row["action_id"]:
             self._run_tool(self.actions[row["action_id"]])
         return row

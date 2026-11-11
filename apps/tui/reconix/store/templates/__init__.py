@@ -39,7 +39,7 @@ def get_template(template_id: str) -> Template:
     if template is None:
         raise StoreValidationError(f"Unknown template {template_id}.")
     if not template.available:
-        raise StoreValidationError(f"The {template.name} template is not in the demo.")
+        raise StoreValidationError(f"The {template.name} template isn't available.")
     return template
 
 
@@ -69,14 +69,14 @@ def apply_template(template_id: str, *, auto: bool = False) -> Template:
     already known: the operator picked it with /template, or (`auto`) the target's shape
     left no doubt. The Scope Manifest gate follows in every case.
     """
-    get_template(template_id)              # refuses an unknown or unavailable template
+    get_template(template_id)  # refuses an unknown or unavailable template
     assessment = lists.current()
     if assessment.selected_template:
         raise StoreValidationError("This assessment already has a template.")
     spec = MODULES[template_id].SPEC
 
     assessment.selected_template = template_id
-    assessment.template_id = template_id        # so $template shows the chosen one
+    assessment.template_id = template_id  # so $template shows the chosen one
     assessment.template_auto = auto
     bundle: RunBundle = MODULES[template_id].build_run(assessment)
     assessment.scope = bundle.scope
@@ -88,7 +88,8 @@ def apply_template(template_id: str, *, auto: bool = False) -> Template:
     # The activity line is a step, so it plays after "Target parsed" (not before it).
     if auto:
         assessment.script.append(
-            log("AI", f"Template auto-selected: {spec.name} (matched to the target)", pause=0.0))
+            log("AI", f"Template auto-selected: {spec.name} (matched to the target)", pause=0.0)
+        )
         log_event("template.selected", f"{template_id} (auto)")
     else:
         assessment.script.append(log("USER", f"Template selected: {spec.name}", pause=0.0))
@@ -118,10 +119,18 @@ def _with_intent(assessment, script: List[RunStep]) -> List[RunStep]:
         applied.append("port " + ", ".join(str(p) for p in assessment.requested_ports))
     if not applied:
         return script
-    note = log("AI", "From your request, the draft scope uses " + " and ".join(applied)
-               + ". Review and approve it.", tone="warn", pause=0.6)
-    gate_at = next((i for i, step in enumerate(script)
-                    if step.kind == "gate" and step.name == GATE_SCOPE), len(script))
+    note = log(
+        "AI",
+        "From your request, the draft scope uses "
+        + " and ".join(applied)
+        + ". Review and approve it.",
+        tone="warn",
+        pause=0.6,
+    )
+    gate_at = next(
+        (i for i, step in enumerate(script) if step.kind == "gate" and step.name == GATE_SCOPE),
+        len(script),
+    )
     return script[:gate_at] + [note] + script[gate_at:]
 
 
@@ -131,6 +140,14 @@ def template_name(template_id: str) -> str:
 
 
 __all__ = [
-    "MODULES", "CATALOG_ORDER", "catalog", "list_templates", "get_template", "selected_template",
-    "select_template", "apply_template", "template_name", "RunBundle",
+    "MODULES",
+    "CATALOG_ORDER",
+    "catalog",
+    "list_templates",
+    "get_template",
+    "selected_template",
+    "select_template",
+    "apply_template",
+    "template_name",
+    "RunBundle",
 ]

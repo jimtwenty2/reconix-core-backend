@@ -214,6 +214,18 @@ async def test_a_json_answer_that_is_not_json_is_masked_as_text(model: FakeModel
     assert "abc123secret" not in completion.text
 
 
+async def test_a_fenced_json_answer_is_masked_per_value(model: FakeModel) -> None:
+    # Anthropic wraps the object in ```json fences despite response_format; the outer
+    # braces are taken so the per-value path masks by key name and stays valid JSON.
+    model.answer = "```json\n" + json.dumps({"note": "ok", "password": "hunter2-secret"}) + "\n```"
+
+    completion = await complete(QUESTION, reconix_provider(), json_answer=True)
+
+    answer = json.loads(completion.text)  # valid JSON despite the fences
+    assert answer["password"] == "[MASKED:password]"
+    assert "hunter2-secret" not in completion.text
+
+
 async def test_token_counts_are_returned(model: FakeModel) -> None:
     completion = await complete(QUESTION, reconix_provider())
 

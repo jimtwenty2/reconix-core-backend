@@ -19,19 +19,37 @@ from . import store, theme
 from .commands import COMMANDS, Command, CommandCheck, check_command_line, find, parse
 from .screens import ChoiceScreen, CommandBarScreen, HelpScreen, StartScreen
 from .shell import (
-    ActionsMixin, DialogsMixin, KnowledgeMixin, LlmMixin, NavigationMixin,
-    RunHostMixin, WebDashboardMixin,
+    ActionsMixin,
+    DialogsMixin,
+    KnowledgeMixin,
+    LlmMixin,
+    NavigationMixin,
+    RunHostMixin,
+    WebDashboardMixin,
 )
-from .widgets import ActivityStatus, RunLog
+from .widgets import ActivityStatus, RunLog, SessionBar
 
 
-class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
-                 KnowledgeMixin, LlmMixin, WebDashboardMixin, App):
+class ReconixApp(
+    NavigationMixin,
+    RunHostMixin,
+    ActionsMixin,
+    DialogsMixin,
+    KnowledgeMixin,
+    LlmMixin,
+    WebDashboardMixin,
+    App,
+):
     """Reconix — AI-Powered Security Testing Assistant (demo)."""
 
     CSS_PATH = "reconix.tcss"
     TITLE = "reconix"
-    ENABLE_COMMAND_PALETTE = False   # Reconix has its own "/" command system
+    ENABLE_COMMAND_PALETTE = False  # Reconix has its own "/" command system
+
+    # Poll the Core API's health so the header shows whether the backend is reachable.
+    # Tests opt in (see conftest) so they don't spawn background health workers.
+    CHECK_CORE_API_ON_START = True
+    CORE_API_POLL_SECONDS = 15
 
     BINDINGS = [
         Binding("right", "nav_next", "next", show=False),
@@ -60,12 +78,12 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
 
     def __init__(self) -> None:
         super().__init__()
-        self.selected_finding: str = ""          # finding id shown on the Detail screen
-        self.pending_prompt: str = ""            # draft for the Start prompt ("Chat about this")
+        self.selected_finding: str = ""  # finding id shown on the Detail screen
+        self.pending_prompt: str = ""  # draft for the Start prompt ("Chat about this")
         self.template_pick: Optional[str] = None  # template chosen with /template <id>
-        self.findings_filter: str = "all"        # Findings list view (kept across screens)
+        self.findings_filter: str = "all"  # Findings list view (kept across screens)
         self.findings_sort: str = "severity"
-        self.activity_expanded = False           # Ctrl+O: list the steps Reconix finished
+        self.activity_expanded = False  # Ctrl+O: list the steps Reconix finished
         self._init_run_host()
         self._init_web()
 
@@ -77,22 +95,26 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
 
     def on_mount(self) -> None:
         self.push_screen(StartScreen())
-        self.call_after_refresh(self.ask_provider_on_start)   # until a model is active
-        self.set_interval(self.KALI_POLL_SECONDS, self._poll_kali)
-        self._poll_kali()   # populate the kali chip promptly, not only after the first interval
+        self.call_after_refresh(self.ask_provider_on_start)  # until a model is active
+        if self.CHECK_CORE_API_ON_START:
+            self.poll_core_api()
+            if self.CORE_API_POLL_SECONDS > 0:
+                self.set_interval(self.CORE_API_POLL_SECONDS, self.poll_core_api)
 
-    def _poll_kali(self) -> None:
-        """Refresh the Kali MCP status off the UI thread; a failed poll just yields UNKNOWN."""
-        self.run_worker(self._kali_worker, thread=True, group="kali", exclusive=True,
-                        exit_on_error=False)
+    def poll_core_api(self) -> None:
+        """Check the Core API's health in the background and show it in the header."""
 
-    def _kali_worker(self) -> None:
-        store.refresh_kali()               # never raises (Core API down → UNKNOWN)
-        self.from_worker(self._refresh_kali_chip)
+        def work() -> None:
+            from .core_api import client
 
-    def _refresh_kali_chip(self) -> None:
-        from .widgets.chrome import SessionBar
+            self.from_worker(self._core_api_status, client.health())
 
+        self.run_worker(work, thread=True, group="core-api-health", exit_on_error=False)
+
+    def _core_api_status(self, online: bool) -> None:
+        if store.api_online() == online:
+            return
+        store.set_api_online(online)
         for bar in self.screen.query(SessionBar):
             bar.refresh_line()
 
@@ -118,21 +140,22 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
             self.copy_to_clipboard(text)
             self.notify(f"Copied {len(text)} characters.", title="Clipboard", timeout=2)
         else:
-            self.notify("Select text first (drag with the mouse), then Ctrl+Y.", title="Copy",
-                        timeout=3)
+            self.notify(
+                "Select text first (drag with the mouse), then Ctrl+Y.", title="Copy", timeout=3
+            )
 
     def action_toggle_activity(self) -> None:
         self.activity_expanded = not self.activity_expanded
         for status in self.screen.query(ActivityStatus):
             status.set_expanded(self.activity_expanded)
-        for log in self.screen.query(RunLog):          # the live output's thinking blocks
+        for log in self.screen.query(RunLog):  # the live output's thinking blocks
             log.set_expanded(self.activity_expanded)
 
     def action_command_bar(self) -> None:
         self.open_dialog(CommandBarScreen(), self._on_command_bar)
 
     def _on_command_bar(self, line: Optional[str]) -> None:
-        if line:                     # runs after the bar has closed
+        if line:  # runs after the bar has closed
             self.run_command_line(line)
 
     # --- slash commands ------------------------------------------------------------------------
@@ -204,7 +227,8 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
 
         question = command.question or command.description
         self.open_dialog(
-            ChoiceScreen(command.description, question, choices, chip=f"/{command.name}"), chosen,
+            ChoiceScreen(command.description, question, choices, chip=f"/{command.name}"),
+            chosen,
         )
 
 

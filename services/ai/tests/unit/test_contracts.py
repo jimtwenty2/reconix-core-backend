@@ -41,6 +41,7 @@ AGENT_RESPONSE_FIELDS = {
     "risk",
     "blocked",
     "references",
+    "reflections",
     "analysis_summary",
     "analysis",
     "validation_status",

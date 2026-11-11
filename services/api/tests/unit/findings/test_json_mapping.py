@@ -87,6 +87,18 @@ def test_real_nuclei_one_finding_per_missing_header():
     assert len({f.dedupe_key for f in found}) == len(found)  # none merged by mistake
 
 
+def test_nuclei_reader_groups_repeated_info_matches():
+    # The raw mapping keeps one finding per match; the registered reader (read_nuclei)
+    # collapses the 10 missing-header matches of one template into a single finding.
+    from reconix_api.services.findings import parse_run
+
+    found, _ = parse_run("nuclei", (FIXTURES / "nuclei" / "kali_self_scan.jsonl").read_text())
+    headers = [f for f in found if f.title.startswith("HTTP Missing Security Headers")]
+    assert len(headers) == 1
+    assert len(headers[0].evidence) == 10  # the 10 matchers kept as evidence
+    assert headers[0].severity == SeverityStatus.NONE
+
+
 def test_real_nuclei_evidence_leaves_out_request_and_response():
     [first, *_] = findings_of("nuclei", "kali_self_scan.jsonl")
     proof = json.loads(first.evidence[0].content)

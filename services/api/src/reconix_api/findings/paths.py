@@ -19,6 +19,11 @@ MAX_EVIDENCE = 100  # paths kept on the summary finding's evidence
 
 # A path is flagged only when its name alone says it should not be web-reachable.
 SENSITIVE = (
+    (re.compile(r"\.(kdbx|key|pem|p12|pfx|jks|keystore|ppk)(/|$)"), "key or credential store"),
+    (
+        re.compile(r"/(id_rsa|id_dsa|id_ecdsa|id_ed25519)(\.pub)?(/|$)|/\.ssh(/|$)"),
+        "key or credential store",
+    ),
     (re.compile(r"/\.git(/|$)"), "version-control folder"),
     (re.compile(r"/\.svn(/|$)"), "version-control folder"),
     (re.compile(r"/\.env(\.|/|$)|/\.env$"), "environment/secrets file"),
@@ -32,6 +37,24 @@ SENSITIVE = (
     (re.compile(r"/(ftp|backup|backups|dump)(/|$)"), "exposed file store"),
     (re.compile(r"/(swagger|api-docs|openapi)(\.|/|$)"), "API documentation"),
 )
+
+# How bad an exposed path of each kind is by its name alone: a path that leaks a secret, a
+# key or source/data is HIGH; an admin, config, backup or debug surface is MEDIUM; anything a
+# name only hints at stays LOW. Findings are grouped per kind, not per file.
+_SEVERITY = {
+    "key or credential store": SeverityStatus.HIGH,
+    "environment/secrets file": SeverityStatus.HIGH,
+    "web-server secret file": SeverityStatus.HIGH,
+    "database dump": SeverityStatus.HIGH,
+    "version-control folder": SeverityStatus.HIGH,
+    "shell/DB history file": SeverityStatus.MEDIUM,
+    "backup file": SeverityStatus.MEDIUM,
+    "configuration": SeverityStatus.MEDIUM,
+    "admin area": SeverityStatus.MEDIUM,
+    "debug/status endpoint": SeverityStatus.MEDIUM,
+    "exposed file store": SeverityStatus.MEDIUM,
+    "API documentation": SeverityStatus.LOW,
+}
 
 
 def read_katana(output: str) -> tuple[list[NewFinding], int]:
@@ -77,7 +100,7 @@ def _findings(items: list[str], tool: str) -> list[NewFinding]:
         dedupe_key=dedupe_key("paths_found", tool, base),
         evidence=evidence[:MAX_EVIDENCE],
     )
-    sensitive = [_sensitive(item, tool, where) for item in items if _label(item)]
+    sensitive = _grouped_sensitive(items, tool, where)
     return [summary, *sensitive]
 
 
@@ -88,18 +111,41 @@ def _label(item: str) -> str | None:
     return None
 
 
-def _sensitive(item: str, tool: str, where: str) -> NewFinding:
-    label = _label(item) or "sensitive path"
+def _grouped_sensitive(items: list[str], tool: str, where: str) -> list[NewFinding]:
+    """One finding per kind of sensitive path, not one per file: every path that shares a
+    label (a key store, a backup, an exposed /ftp, an admin area) collapses into a single
+    finding with the paths as evidence, so 14 /ftp files are one finding, not 14."""
+    groups: dict[str, list[str]] = {}
+    for item in items:
+        label = _label(item)
+        if label:
+            groups.setdefault(label, []).append(item)
+    return [_group_finding(label, paths, tool, where) for label, paths in groups.items()]
+
+
+def _group_finding(label: str, paths: list[str], tool: str, where: str) -> NewFinding:
+    severity = _SEVERITY.get(label, SeverityStatus.LOW)
+    first = paths[0]
+    target = base_url(first) if first.startswith("http") else where
+    count = len(paths)
+    shown = ", ".join(paths[:5]) + (" …" if count > 5 else "")
+    heading = (
+        f"Potentially sensitive path: {first}"
+        if count == 1
+        else f"{count} potentially sensitive paths ({label}) on {where}"
+    )
     return NewFinding(
-        title=title(f"Potentially sensitive path: {item}"),
-        target=base_url(item) if item.startswith("http") else where,
+        title=title(heading),
+        target=target,
         description=(
-            f"{tool} reported {item}, which looks like a {label}. Confirm whether it is "
-            "reachable and what it exposes."
+            f"{tool} reported {count} path(s) that look like a {label}: {shown}. "
+            "Confirm whether they are reachable and what they expose."
         ),
-        severity=SeverityStatus.LOW,
-        dedupe_key=dedupe_key("sensitive_path", item.lower()),
-        evidence=[NewEvidence(kind=f"{tool}_path", content=item, location=item)],
+        severity=severity,
+        dedupe_key=dedupe_key("sensitive_group", where, label),
+        evidence=[
+            NewEvidence(kind=f"{tool}_path", content=p, location=p) for p in paths[:MAX_EVIDENCE]
+        ],
         owasp_id=["A01:2021"],
         remediation="Remove the path from the web root or restrict who can reach it.",
     )

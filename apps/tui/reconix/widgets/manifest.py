@@ -46,15 +46,16 @@ def manifest_text(scope: ScopeManifest, *, with_suggestions: bool = True) -> Tex
             text.append(tool, style=theme.GREEN)
             if purpose:
                 text.append(f" — {purpose}", style=theme.MUTED)
-    _techniques(text, scope.kind)
+    _techniques(text, scope.kind, list(summary.tools))
     text.append("\nTime limit: ", style=f"bold {theme.TEXT}")
     limit = f"{scope.time_limit_minutes} min" if scope.time_limit_minutes > 0 else "no limit"
     text.append(limit, style=theme.MUTED)
     spec = store.get_api_spec() if scope.kind == "api" else None
     if spec is not None:
         text.append("\n\nAPI spec  ", style=f"bold {theme.TEXT}")
-        text.append(f"{spec.label} · {spec.total} endpoints · {', '.join(spec.methods)}",
-                    style=theme.MUTED)
+        text.append(
+            f"{spec.label} · {spec.total} endpoints · {', '.join(spec.methods)}", style=theme.MUTED
+        )
         outside = store.api_spec_methods_outside()
         if outside:
             text.append("\nIn spec, not allowed  ", style=f"bold {theme.TEXT}")
@@ -65,26 +66,37 @@ def manifest_text(scope: ScopeManifest, *, with_suggestions: bool = True) -> Tex
     return text
 
 
-# The scope card's technique groups: (mode, glyph, color token, label).
-TECHNIQUE_GROUPS = (
-    ("auto", "✓", "GREEN", "tested by the tools"),
+# The scope card's coverage preview: (group key, glyph, color token, label). Scope-aware,
+# so the operator sees what this scope's tools can and cannot find before approving it.
+TECHNIQUE_PREVIEW = (
+    ("can", "✓", "GREEN", "can test"),
     ("partial", "◐", "MEDIUM", "partly; finish by hand"),
+    ("gap", "✗", "CRITICAL", "can't test"),
     ("manual", "○", "DIM", "you check by hand"),
 )
 
 
-def _techniques(text: Text, kind: str) -> None:
-    """What the template tests: one line per group, so the card stays short."""
-    groups = store.technique_groups(kind)
-    if not any(groups.values()):
+def _techniques(text: Text, kind: str, tools: list) -> None:
+    """What this scope can and cannot find: one line per group, so the card stays short.
+
+    A "can't test" line names the tool to add, so a gap is actionable (the operator edits
+    the scope to close it). Informational only: the harness still enforces scope at run time.
+    """
+    preview = store.scope_coverage_preview(kind, tools)
+    if not any(preview.values()):
         return
     text.append("\n\nTechniques", style=f"bold {theme.TEXT}")
-    for mode, glyph, color, label in TECHNIQUE_GROUPS:
-        names = groups.get(mode, [])
-        if names:
-            text.append(f"\n  {glyph} ", style=getattr(theme, color))
-            text.append(f"{label}: ", style=theme.TEXT)
-            text.append(", ".join(names), style=theme.MUTED)
+    for group, glyph, color, label in TECHNIQUE_PREVIEW:
+        items = preview.get(group, [])
+        if not items:
+            continue
+        text.append(f"\n  {glyph} ", style=getattr(theme, color))
+        text.append(f"{label}: ", style=theme.TEXT)
+        if group == "gap":
+            parts = [f"{item['name']} (add {', '.join(item['needs'])})" for item in items]
+            text.append("; ".join(parts), style=theme.MUTED)
+        else:
+            text.append(", ".join(item["name"] for item in items), style=theme.MUTED)
 
 
 class ScopeManifestView(Static):
@@ -104,8 +116,9 @@ class ScopePanel(Vertical):
     The Template screen shows it, and so does the step chat whenever the scope is new or
     changed, so both always draw the same card."""
 
-    def __init__(self, scope: ScopeManifest, *, body_id: str = "",
-                 with_suggestions: bool = True, **kwargs) -> None:
+    def __init__(
+        self, scope: ScopeManifest, *, body_id: str = "", with_suggestions: bool = True, **kwargs
+    ) -> None:
         approved = scope.status == "APPROVED"
         super().__init__(classes="panel success" if approved else "panel accent", **kwargs)
         self.border_title = "⛉ SCOPE"
@@ -115,5 +128,9 @@ class ScopePanel(Vertical):
         self._with_suggestions = with_suggestions
 
     def compose(self) -> ComposeResult:
-        yield ScopeManifestView(self._scope, with_suggestions=self._with_suggestions,
-                                classes="panel-body", id=self._body_id)
+        yield ScopeManifestView(
+            self._scope,
+            with_suggestions=self._with_suggestions,
+            classes="panel-body",
+            id=self._body_id,
+        )
