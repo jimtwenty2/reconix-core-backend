@@ -28,6 +28,20 @@ def package(finding: NewFinding) -> str:
     return finding.evidence[0].location.split("@")[0].split(":")[0]
 
 
+def test_trivy_reads_iac_misconfigurations_alongside_vulnerabilities():
+    misconfig = (FIX / "trivy" / "misconfig.json").read_text()
+    findings, _ = parse_run("trivy", misconfig)
+    kinds = [f.evidence[0].kind for f in findings]
+    # A dependency vuln and an IaC misconfig coexist in one trivy run.
+    assert "trivy_vulnerability" in kinds and "trivy_misconfig" in kinds
+    mis = [f for f in findings if f.evidence[0].kind == "trivy_misconfig"]
+    assert len(mis) == 1  # only the FAILED check, not the PASS one
+    assert mis[0].severity == SeverityStatus.HIGH
+    assert mis[0].target == "/workspace/code/s1/Dockerfile"
+    assert "root" in mis[0].title.lower()
+    assert mis[0].remediation and "USER" in mis[0].remediation
+
+
 def test_trivy_reads_every_vulnerability():
     findings, requests = parse_run("trivy", TRIVY)
     assert len(findings) == 17 and requests == 0
@@ -73,6 +87,18 @@ def test_the_three_tools_find_the_same_vulnerable_packages():
     # flask, pyyaml, jinja2 and requests are all old and vulnerable; every tool sees them.
     for tool, found in packages.items():
         assert {"flask", "pyyaml"} <= found, (tool, found)
+
+
+def test_the_three_tools_share_one_dedupe_key_for_the_same_cve():
+    # The same CVE in the same package+file must collapse to one finding (each tool a source)
+    # at save time, not three — despite GHSA-vs-CVE ids and 5.3-vs-5.3.0 version formats.
+    keys = set()
+    for tool, output in (("trivy", TRIVY), ("grype", GRYPE), ("osv_scanner", OSV)):
+        findings, _ = parse_run(tool, output)
+        hit = [f for f in findings if "CVE-2020-14343" in f.cve_ids]
+        assert hit, f"{tool} did not surface CVE-2020-14343 for pyyaml"
+        keys.update(f.dedupe_key for f in hit)
+    assert len(keys) == 1, keys
 
 
 def test_severity_spread_is_real_not_all_unknown():

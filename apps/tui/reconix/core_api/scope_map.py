@@ -2,8 +2,8 @@
 
 Only what the API knows is sent. A scope tool is named as the Kali catalog names it
 (testssl.sh -> TESTSSL, OWASP ZAP -> ZAP, Postman -> NEWMAN); the API refuses a tool that
-isn't in the catalog, and that refusal is shown as it came. A source-code scope needs its
-code uploaded to the API first (the code-scan flow), so it can't be sent from here yet.
+isn't in the catalog, and that refusal is shown as it came. A source-code scope is not a
+ScopeDraft: its code is uploaded and scanned through the code-scan flow (code_scan.py).
 """
 
 import ipaddress
@@ -47,11 +47,15 @@ def api_tool(name: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in key).upper()
 
 
-def scope_draft(scope: ScopeManifest) -> dict:
-    """The API's ScopeDraft for `scope`. Raises CoreApiError when it can't be sent."""
+def scope_draft(scope: ScopeManifest, api_doc_url: Optional[str] = None) -> dict:
+    """The API's ScopeDraft for `scope`. Raises CoreApiError when it can't be sent.
+
+    `api_doc_url` is the OpenAPI document URL of an attached spec (e.g. .../v3/api-docs);
+    it is sent as an extra in-scope target so the API's schemathesis fuzzes that document,
+    not a guessed <base>/openapi.json."""
     if scope.kind == "source":
         raise CoreApiError(
-            "SCOPE_NOT_SUPPORTED", "a source-code scope can't be sent to the Core API yet"
+            "SCOPE_NOT_SUPPORTED", "a source-code scope has no ScopeDraft: it runs as a code scan"
         )
     tools = list(api_tools(scope))
     if not tools:
@@ -64,7 +68,7 @@ def scope_draft(scope: ScopeManifest) -> dict:
         "allowed_actions": _actions(scope.allowed_actions),
         "allowed_methods": [m.upper() for m in scope.allowed_methods if m.upper() in API_METHODS],
         "limitations": f"Time limit {scope.time_limit_minutes} min (kept by the Reconix app).",
-        "targets": _targets(scope),
+        "targets": _targets(scope, api_doc_url),
     }
     if scope.kind == "network":
         draft["allowed_ports"] = sorted(set(scope.allowed_ports))
@@ -80,7 +84,7 @@ def _actions(actions: List[str]) -> List[str]:
     return found
 
 
-def _targets(scope: ScopeManifest) -> List[dict]:
+def _targets(scope: ScopeManifest, api_doc_url: Optional[str] = None) -> List[dict]:
     if scope.kind == "network":
         targets = [_network_target(scope.target_url)]
         for entry in scope.excluded_paths:
@@ -91,6 +95,10 @@ def _targets(scope: ScopeManifest) -> List[dict]:
         return targets
     base = scope.target_url.rstrip("/")
     targets = [{"type": "url", "value": base + "/"}]
+    # The OpenAPI document URL (e.g. .../v3/api-docs) as its own in-scope target, so the
+    # API fuzzes that exact document instead of a guessed <base>/openapi.json.
+    if api_doc_url and api_doc_url.rstrip("/") != base:
+        targets.append({"type": "url", "value": api_doc_url})
     for path in scope.excluded_paths:
         if path.startswith("/"):
             targets.append({"type": "url", "value": base + path, "excluded": True})

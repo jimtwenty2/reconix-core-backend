@@ -11,6 +11,7 @@ PROMPT_FILES = [
     "validate.md",
     "report.md",
     "chat.md",
+    "techniques.md",
 ]
 # findings.severity_status in ERD V3: NONE, never INFO.
 SEVERITY_VALUES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE", "UNKNOWN"]
@@ -35,6 +36,15 @@ def test_analysis_uses_the_erd_severity_values() -> None:
     for value in SEVERITY_VALUES:
         assert value in text
     assert "INFO" not in text and "NEEDS_REVIEW" not in text
+
+
+def test_system_prompt_forbids_markdown_fences() -> None:
+    # Anthropic ignores response_format json_object and wraps answers in ```json fences;
+    # the prompt must ask for a bare object so parsing and per-value masking stay clean.
+    text = read_markdown(PROMPTS_DIR / "system.md")
+
+    assert "bare JSON object" in text
+    assert "code fences" in text
 
 
 def test_system_prompt_marks_findings_as_data() -> None:

@@ -7,6 +7,7 @@ import pytest
 from reconix import store
 from reconix.store import lists
 from reconix.store.snapshot import snapshot
+from reconix.store.templates import network
 
 from .support import auth_values, decide, event_kinds, play_until_gate, run_to
 
@@ -26,7 +27,7 @@ def test_network_scope_edits_are_checked():
     refused(store.edit_scope, time_limit_minutes=481)
     store.edit_scope(time_limit_minutes=480)                         # the upper bound is fine
     assert store.get_scope().time_limit_minutes == 480
-    assert store.get_scope().allowed_ports == [22, 80, 443, 8080, 8443]   # unchanged
+    assert store.get_scope().allowed_ports == network.ALLOWED_PORTS       # unchanged
 
 
 # --- the target login ------------------------------------------------------------------------

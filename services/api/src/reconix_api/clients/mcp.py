@@ -11,8 +11,10 @@ makes the server use its own default options, which were never checked.
 """
 
 import json
+import os
 import shlex
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -21,6 +23,17 @@ from reconix_api.core.interfaces import CallTool, ToolJob, ToolResult, ToolRunSt
 
 PROTOCOL_VERSION = "2025-06-18"
 NETWORK_MARGIN_SECONDS = 30  # on top of the tool's own timeout
+KALI_CHECK_TIMEOUT_SECONDS = 5.0  # a reachability probe waits only briefly
+
+# The path brute-forcers' wordlist: fixed by Core, never chosen by the model. It ships
+# with the Kali image (wfuzz's general list, about 950 common paths).
+WORDLIST = "/usr/share/wfuzz/wordlist/general/common.txt"
+WORDLIST_TOOLS = ("ffuf", "gobuster", "wfuzz")
+FUZZ_TOOLS = ("ffuf", "wfuzz")  # these need the FUZZ keyword where the word goes
+# A Reconix-controlled Interactsh server for nuclei_dast OOB callbacks. When unset, nuclei
+# uses its public default; deploy SHOULD point this at a self-hosted server so a target's
+# out-of-band interactions are not sent to a third party.
+INTERACTSH_SERVER = os.environ.get("RECONIX_INTERACTSH_SERVER", "")
 
 KALI_STATUS = {
     "ok": ToolRunStatus.COMPLETED,
@@ -57,7 +70,73 @@ def tool_call(job: ToolJob) -> tuple[str, dict[str, Any]]:
         args["opts"] = shlex.join(job.arguments)
     if "timeout" in props:
         args["timeout"] = job.timeout_seconds
+    args.update(_fixed_inputs(name, job.target, props))
+    if primary and name in FUZZ_TOOLS:
+        args[primary] = _with_fuzz(job.target)
     return name, args
+
+
+def _fixed_inputs(name: str, target: str, props: dict[str, Any]) -> dict[str, Any]:
+    """Required inputs other than the target, which the model never supplies: fixed by
+    Core, or read from the approved target itself.
+
+    - ffuf, gobuster, wfuzz: Core's own wordlist.
+    - nikto: the port of the target URL (https without one: 443), so nikto does not
+      scan port 80 of an https or :3000 site.
+    - schemathesis: the base URL is the scheme+host of the schema URL (the target), so
+      the tests hit the API the schema came from and nothing wider.
+    - nuclei_dast: a Reconix-controlled Interactsh server for OOB callbacks, when set.
+    """
+    fixed: dict[str, Any] = {}
+    if name in WORDLIST_TOOLS and "wordlist" in props:
+        fixed["wordlist"] = WORDLIST
+    if name == "nikto" and "port" in props:
+        port = _url_port(target)
+        if port:
+            fixed["port"] = str(port)
+    if name == "schemathesis" and "base_url" in props:
+        base = _origin(target)
+        if base:
+            fixed["base_url"] = base
+    if name == "nuclei_dast" and INTERACTSH_SERVER and "interactsh_server" in props:
+        fixed["interactsh_server"] = INTERACTSH_SERVER
+    return fixed
+
+
+def _origin(url: str) -> str:
+    """The scheme://host[:port] of a URL (no path), or "" when it is not a URL."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return ""
+    if parts.scheme and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}"
+    return ""
+
+
+def _with_fuzz(target: str) -> str:
+    """The URL with FUZZ where each word goes: after the path, at call time only.
+
+    The approved action (its hash and the scope check) keeps the plain URL. A target
+    that already holds FUZZ is sent as it is.
+    """
+    if "FUZZ" in target:
+        return target
+    parts = urlsplit(target)
+    path = parts.path if parts.path.endswith("/") else parts.path + "/"
+    return parts._replace(path=path + "FUZZ", fragment="").geturl()
+
+
+def _url_port(target: str) -> int | None:
+    """The port a URL names, or its scheme's default; None for a bare host."""
+    try:
+        parts = urlsplit(target)
+        port = parts.port
+    except ValueError:
+        return None
+    if port:
+        return port
+    return {"http": 80, "https": 443}.get(parts.scheme.lower())
 
 
 def _primary_param(required: list[str], props: dict[str, Any]) -> str | None:
@@ -168,3 +247,27 @@ def make_call_tool(
         return to_tool_result(text)
 
     return call_tool
+
+
+async def check_kali(
+    url: str,
+    auth_token: str,
+    timeout_seconds: float = KALI_CHECK_TIMEOUT_SECONDS,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> bool:
+    """True when the Kali MCP server answers the initialize handshake. No tool runs and no
+    job token is signed: this only reports reachability. Any network, auth or protocol
+    error is False, never raised, so a status check never breaks the caller. `transport`
+    is only for tests."""
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds, transport=transport) as client:
+            await start_session(client, url, headers)
+    except (httpx.HTTPError, McpError, json.JSONDecodeError):
+        return False
+    return True

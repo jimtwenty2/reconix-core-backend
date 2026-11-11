@@ -20,13 +20,42 @@ def test_parse_run_picks_the_reader_by_tool_name():
     assert len(found) == 3
 
 
+def test_nuclei_dast_reuses_the_nuclei_reader():
+    # nuclei_dast emits the same JSONL as nuclei, so it parses to the same findings.
+    output = (FIXTURES / "nuclei" / "juice_shop.jsonl").read_text()
+    dast, _ = parse_run("nuclei_dast", output)
+    plain, _ = parse_run("NUCLEI", output)
+    assert [f.dedupe_key for f in dast] == [f.dedupe_key for f in plain]
+
+
 def test_every_reader_is_named_like_its_kali_tool():
     assert all(name == name.lower() for name in READERS)
     assert {"nmap", "nuclei", "semgrep", "gitleaks"} <= READERS.keys()
 
 
+def test_a_poc_only_confirms_a_finding_it_actually_hit():
+    match = findings_service._poc_targets_finding
+    # The same target, or a more specific PoC URL for the finding's URL (either direction),
+    # or the same host — all count as hitting the finding.
+    assert match("172.20.0.5", "172.20.0.5")
+    assert match("http://h:3000/rest/user?id=1", "http://h:3000/rest/user")
+    assert match("http://h:3000/x", "http://h:3000/x?q=1")
+    assert match("http://juice-shop:3000/a", "juice-shop:3000")  # same host
+    assert match("172.20.0.5", "172.20.0.5:22/tcp")  # host vs host:port/proto
+    # A run against a different host is not proof, so CONFIRMED must never ride on it.
+    assert not match("http://other:3000/x", "http://h:3000/x")
+    assert not match("10.0.0.9", "10.0.0.5")
+    assert not match("", "10.0.0.5")
+    # Adjacent targets are NOT the same host: a raw-substring match here would be a bypass
+    # of the only CONFIRMED gate (adjacent IP, sub/super-domain, unrelated suffix, port).
+    assert not match("10.0.0.50", "10.0.0.5")
+    assert not match("http://admin.example.com/x", "http://example.com/x")
+    assert not match("http://example.com", "http://notexample.com")
+    assert not match("http://h:8080", "http://h:80")
+
+
 def test_tool_without_a_reader_gives_no_findings():
-    assert parse_run("whatweb", "anything") == ([], 0)
+    assert parse_run("wpscan", "anything") == ([], 0)
 
 
 def reviewed(finding_status: str) -> FindingOut:

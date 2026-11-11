@@ -81,6 +81,18 @@ def source_outputs(db: Db, finding_ids: list[UUID], limit: int) -> list[str]:
     return list(db.scalars(query))
 
 
+def finding_counts(db: Db, tool_run_ids: list[UUID]) -> dict[UUID, int]:
+    """How many findings each of these tool runs found (runs that found none are left out)."""
+    if not tool_run_ids:
+        return {}
+    query = (
+        select(finding_sources.c.tool_run_id, func.count())
+        .where(finding_sources.c.tool_run_id.in_(tool_run_ids))
+        .group_by(finding_sources.c.tool_run_id)
+    )
+    return {run_id: count for run_id, count in db.execute(query)}
+
+
 def list_evidence(db: Db, finding_id: UUID) -> list[Evidence]:
     query = select(Evidence).where(Evidence.finding_id == finding_id).order_by(Evidence.created_at)
     return list(db.scalars(query))

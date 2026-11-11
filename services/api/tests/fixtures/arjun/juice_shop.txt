@@ -1,0 +1,13 @@
+[92m    _
+   /_| _ '
+  (  |/ /(//) v2.2.7
+      _/      [0m
+
+[1;97m[*][0m Scanning 0/1: http://172.20.0.2:3000/rest/products/search
+[1;97m[*][0m Probing the target for stability
+[1;97m[*][0m Analysing HTTP response for anomalies
+[1;97m[*][0m Logicforcing the URL endpoint
+[1;93m[!][0m Processing chunks: 1/2     [1;93m[!][0m Processing chunks: 2/2     [1;93m[!][0m Processing chunks: 1/4     [1;93m[!][0m Processing chunks: 2/4     [1;93m[!][0m Processing chunks: 3/4     [1;93m[!][0m Processing chunks: 4/4     [1;93m[!][0m Processing chunks: 1/4     [1;93m[!][0m Processing chunks: 2/4     [1;93m[!][0m Processing chunks: 3/4     [1;93m[!][0m Processing chunks: 4/4     [1;93m[!][0m Processing chunks: 1/4     [1;93m[!][0m Processing chunks: 2/4     [1;93m[!][0m Processing chunks: 3/4     [1;93m[!][0m Processing chunks: 4/4     [1;93m[!][0m Processing chunks: 1/2     [1;93m[!][0m Processing chunks: 2/2     [1;92m[✓][0m parameter detected: security, based on: param name reflection
+[1;92m[✓][0m parameter detected: q, based on: http headers
+[1;32m[+][0m Parameters found: security, q
+

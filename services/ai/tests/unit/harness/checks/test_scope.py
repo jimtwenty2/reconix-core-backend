@@ -423,3 +423,30 @@ def test_code_scan_tools_keep_the_path_rules(tool: str) -> None:
     assert_blocked("/lab/vuln-repo/.git", "TARGET_EXCLUDED", tool=tool, scope=CODE_SCOPE)
     assert_blocked("/lab/other-repo", "TARGET_OUT_OF_SCOPE", tool=tool, scope=CODE_SCOPE)
     assert_blocked("/lab/vuln-repo", "TOOL_NOT_ALLOWED", tool=tool)  # not in SCOPE's tools
+
+
+# --- a URL on an in-scope host, for nuclei/testssl on a network host (no URL prefixes) ------
+
+# A network scope: hosts/IPs but no URL prefixes. nuclei/testssl need a URL, so a URL on an
+# in-scope host is allowed (the port is enforced by check_ports, tested in test_ports.py).
+NETWORK_SCOPE = Scope(domains=["metasploitable"], url_prefixes=[], excluded_targets=["evil.lab"])
+
+
+def test_nuclei_url_on_an_allowed_network_host_is_in_scope() -> None:
+    assert_allowed("http://metasploitable:80/", tool="NUCLEI", scope=NETWORK_SCOPE)
+
+
+def test_nuclei_url_on_an_allowed_ip_is_in_scope() -> None:
+    assert_allowed("http://172.20.0.5/", tool="NUCLEI", scope=NETWORK_SCOPE)
+
+
+def test_a_url_on_an_out_of_scope_host_is_still_blocked() -> None:
+    assert_blocked(
+        "http://notlisted.lab/", "TARGET_OUT_OF_SCOPE", tool="NUCLEI", scope=NETWORK_SCOPE
+    )
+
+
+def test_a_url_by_host_is_not_allowed_when_the_scope_lists_url_prefixes() -> None:
+    # The default SCOPE lists juice-shop.lab as a domain AND url_prefixes; a URL off every
+    # prefix stays blocked even though the host is an allowed domain.
+    assert_blocked("http://juice-shop.lab:80/", "TARGET_OUT_OF_SCOPE", tool="NUCLEI")

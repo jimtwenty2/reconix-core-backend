@@ -1,0 +1,419 @@
+Schemathesis v4.33.0
+━━━━━━━━━━━━━━━━━━━━
+
+ ✅  Loaded specification from http://vampi:5000/openapi.json (in 0.47s)
+
+     Base URL:         http://vampi:5000
+     Specification:    Open API 3.0.1
+     Operations:       14 selected / 14 total
+
+ ✅  API capabilities:
+
+     Supports NULL byte in headers:                            ✓
+     Accepts backslash and control characters in URL paths:    ✓
+
+ ❌  Examples (in 0.46s)
+
+     ✅  1 passed  ❌  7 failed  ⏭   6 skipped
+
+ ❌  Coverage (in 1.83s)
+
+     ✅  4 passed  ❌ 10 failed
+
+ ❌  Fuzzing (in 0.50s)
+
+     ✅  6 passed  ❌  8 failed
+
+ ❌  Stateful (in 0.56s)
+
+     Scenarios:    9
+     API Links:    5 covered / 9 selected / 9 total (9 inferred)
+
+     ✅ 5 passed  ❌ 4 failed
+
+=================================== FAILURES ===================================
+_________________________ DELETE /users/v1/{username} __________________________
+1. Test Case ID: OmixKL
+
+- ST105 Undocumented Content-Type
+
+    Received: application/problem+json
+    Documented: application/json
+
+[401] Unauthorized:
+
+    `{
+      "detail": "Invalid authorization header",
+      "status": 401,
+      "title": "Unauthorized",
+      "type": "about:blank"
+    }`
+
+Reproduce with:
+
+    curl -X DELETE -H 'Authorization: [Filtered]' http://vampi:5000/users/v1/name1
+
+    st replay OmixKL
+
+________________________________ GET /books/v1 _________________________________
+1. Test Case ID: b3V0l6
+
+- ST101 Server error
+
+- ST103 Undocumented status code
+
+    Received: 500
+    Documented: 200
+
+[500] Internal Server Error:
+
+    `<!doctype html>
+    <html lang=en>
+      <head>
+        <title>sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: books
+    [SQL: SELECT books.id AS books_id, books.book_title AS books_book_title, books.secret_content AS books_secret_content, books.user_id AS books_user_id 
+    FROM books]
+    (Background on this error at: https://sqlalche.me/e/20/e3q8)
+     // Werkzeug Debugger</title>
+        <link rel="stylesheet" href="?__debugger__=yes&amp;cmd=resource&amp;f=style.css">
+        <link rel="shortcut icon"
+            hr // Output truncated...`
+
+Reproduce with:
+
+    curl -X GET http://vampi:5000/books/v1
+
+    st replay b3V0l6
+
+__________________________ GET /books/v1/{book_title} __________________________
+1. Test Case ID: rNzLdi
+
+- ST105 Undocumented Content-Type
+
+    Received: application/problem+json
+    Documented: application/json
+
+[401] Unauthorized:
+
+    `{
+      "detail": "Invalid authorization header",
+      "status": 401,
+      "title": "Unauthorized",
+      "type": "about:blank"
+    }`
+
+Reproduce with:
+
+    curl -X GET -H 'Authorization: [Filtered]' http://vampi:5000/books/v1/bookTitle47
+
+    st replay rNzLdi
+
+___________________________________ GET /me ____________________________________
+1. Test Case ID: BfejDe
+
+- ST105 Undocumented Content-Type
+
+    Received: application/problem+json
+    Documented: application/json
+
+[401] Unauthorized:
+
+    `{
+      "detail": "No authorization token provided",
+      "status": 401,
+      "title": "Unauthorized",
+      "type": "about:blank"
+    }`
+
+Reproduce with:
+
+    curl -X GET http://vampi:5000/me
+
+    st replay BfejDe
+
+___________________________ GET /users/v1/{username} ___________________________
+1. Test Case ID: aw1JF7
+
+- ST101 Server error
+
+- ST103 Undocumented status code
+
+    Received: 500
+    Documented: 200, 404
+
+[500] Internal Server Error:
+
+    `<!doctype html>
+    <html lang=en>
+      <head>
+        <title>sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: users
+    [SQL: SELECT * FROM users WHERE username = 'name1']
+    (Background on this error at: https://sqlalche.me/e/20/e3q8)
+     // Werkzeug Debugger</title>
+        <link rel="stylesheet" href="?__debugger__=yes&amp;cmd=resource&amp;f=style.css">
+        <link rel="shortcut icon"
+            href="?__debugger__=yes&amp;cmd=resource&amp;f=console.png">
+        <script src="?__debugger__=yes&amp;cmd=resource& // Output truncated...`
+
+Reproduce with:
+
+    curl -X GET http://vampi:5000/users/v1/name1
+
+    st replay aw1JF7
+
+___________________________ OPTIONS /users/v1/_debug ___________________________
+1. Test Case ID: oOu0YX
+
+- ST205 Allow header mismatch
+
+    `Allow: HEAD, DELETE, OPTIONS, GET` does not match the schema. Undocumented methods advertised: DELETE
+
+    List exactly the methods this resource supports in `Allow`
+
+[200] OK:
+
+    <EMPTY>
+
+Reproduce with:
+
+    curl -X OPTIONS http://vampi:5000/users/v1/_debug
+
+    st replay oOu0YX
+
+___________________________ OPTIONS /users/v1/login ____________________________
+1. Test Case ID: 17FME2
+
+- ST205 Allow header mismatch
+
+    `Allow: HEAD, POST, DELETE, OPTIONS, GET` does not match the schema. Undocumented methods advertised: DELETE, GET
+
+    List exactly the methods this resource supports in `Allow`
+
+[200] OK:
+
+    <EMPTY>
+
+Reproduce with:
+
+    curl -X OPTIONS -H 'Content-Type: application/json' -d '{"password": "[Filtered]", "username": "name1"}' http://vampi:5000/users/v1/login
+
+    st replay 17FME2
+
+__________________________ OPTIONS /users/v1/register __________________________
+1. Test Case ID: 2aBijX
+
+- ST205 Allow header mismatch
+
+    `Allow: HEAD, POST, DELETE, OPTIONS, GET` does not match the schema. Undocumented methods advertised: DELETE, GET
+
+    List exactly the methods this resource supports in `Allow`
+
+[200] OK:
+
+    <EMPTY>
+
+Reproduce with:
+
+    curl -X OPTIONS -H 'Content-Type: application/json' -d '{"email": "user@tempmail.com", "password": "[Filtered]", "username": "name1"}' http://vampi:5000/users/v1/register
+
+    st replay 2aBijX
+
+________________________________ POST /books/v1 ________________________________
+1. Test Case ID: yFYGDm
+
+- ST105 Undocumented Content-Type
+
+    Received: application/problem+json
+    Documented: application/json
+
+[401] Unauthorized:
+
+    `{
+      "detail": "Invalid authorization header",
+      "status": 401,
+      "title": "Unauthorized",
+      "type": "about:blank"
+    }`
+
+Reproduce with:
+
+    curl -X POST -H 'Authorization: [Filtered]' -H 'Content-Type: application/json' -d '{"book_title": "book99", "secret": "[Filtered]"}' http://vampi:5000/books/v1
+
+    st replay yFYGDm
+
+_____________________________ POST /users/v1/login _____________________________
+1. Test Case ID: ktzRzh
+
+- ST202 Schema-valid request rejected
+
+    Valid data should have been accepted
+    Expected: 2xx, 3xx, 401, 403, 404, 409, 429, 5xx
+
+[400] Bad Request:
+
+    `{ "status": "fail", "message": "'username' is a required property"}`
+
+Reproduce with:
+
+    curl -X POST -H 'Content-Type: application/json' -d '{}' http://vampi:5000/users/v1/login
+
+    st replay ktzRzh
+
+___________________________ POST /users/v1/register ____________________________
+1. Test Case ID: En9TG0
+
+- ST101 Server error
+
+- ST103 Undocumented status code
+
+    Received: 500
+    Documented: 200, 400
+
+[500] Internal Server Error:
+
+    `<!doctype html>
+    <html lang=en>
+      <head>
+        <title>sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: users
+    [SQL: SELECT users.id AS users_id, users.username AS users_username, users.password AS users_password, users.email AS users_email, users.admin AS users_admin 
+    FROM users 
+    WHERE users.username = ?
+     LIMIT ? OFFSET ?]
+    [parameters: ('name1', 1, 0)]
+    (Background on this error at: https://sqlalche.me/e/20/e3q8)
+     // Werkzeug Debugger</title>
+        <link rel="stylesheet" href="?__debugger // Output truncated...`
+
+Reproduce with:
+
+    curl -X POST -H 'Content-Type: application/json' -d '{"email": "user@tempmail.com", "password": "[Filtered]", "username": "name1"}' http://vampi:5000/users/v1/register
+
+    st replay En9TG0
+
+2. Test Case ID: 3I1UIs
+
+- ST202 Schema-valid request rejected
+
+    Valid data should have been accepted
+    Expected: 2xx, 3xx, 401, 403, 404, 409, 429, 5xx
+
+[400] Bad Request:
+
+    `{ "status": "fail", "message": "'username' is a required property"}`
+
+Reproduce with:
+
+    curl -X POST -H 'Content-Type: application/json' -d '{}' http://vampi:5000/users/v1/register
+
+    st replay 3I1UIs
+
+________________________ PUT /users/v1/{username}/email ________________________
+1. Test Case ID: xZb4f8
+
+- ST105 Undocumented Content-Type
+
+    Received: application/problem+json
+    Documented: application/json
+
+[401] Unauthorized:
+
+    `{
+      "detail": "Invalid authorization header",
+      "status": 401,
+      "title": "Unauthorized",
+      "type": "about:blank"
+    }`
+
+Reproduce with:
+
+    curl -X PUT -H 'Authorization: [Filtered]' -H 'Content-Type: application/json' -d '{"email": "mail3@mail.com"}' http://vampi:5000/users/v1/name1/email
+
+    st replay xZb4f8
+
+______________________ PUT /users/v1/{username}/password _______________________
+1. Test Case ID: hYuvUx
+
+- ST105 Undocumented Content-Type
+
+    Received: application/problem+json
+    Documented: application/json
+
+[401] Unauthorized:
+
+    `{
+      "detail": "Invalid authorization header",
+      "status": 401,
+      "title": "Unauthorized",
+      "type": "about:blank"
+    }`
+
+Reproduce with:
+
+    curl -X PUT -H 'Authorization: [Filtered]' -H 'Content-Type: application/json' -d '{"password": "[Filtered]"}' http://vampi:5000/users/v1/name1/password
+
+    st replay hYuvUx
+
+________________________________ Stateful tests ________________________________
+1. Test Case ID: GSkVvc
+
+- ST202 Schema-valid request rejected
+
+    Valid data should have been accepted
+    Expected: 2xx, 3xx, 401, 403, 404, 409, 429, 5xx
+
+[400] Bad Request:
+
+    `{ "status": "fail", "message": "Please provide a proper JSON body."}`
+
+Reproduce with:
+
+    curl -X GET http://vampi:5000/users/v1
+    curl -X GET http://vampi:5000/users/v1/admin
+    curl -X PUT -H 'Authorization: [Filtered]' -H 'Content-Type: application/json' -d '{"\udb62\udcf9": {"": null, "\udac1\udfd6": null, "l": null}, "\u00b4\u00fb": [{"": [], "\u0010\uda68\udec7t\u00a1=PE\u00d4\u00e5": {}, "W\u00b1\u00fe": []}, [], [{"\u0018\u0090\ud910\udec1\u009c\u0012\u009a": -5.206497148776881e+16}, [-2.235271245546045e+16, -3.916517614680555e+16, 278263739]]], "\ud83d\uddc5-\u00de": {"8\u0011\u0000\u00fe?\u0083\u00e6\u00e9%Q\u00ad\uda9c\udedd\u0098\u009b\u0001": null, "\u00f0\ud864\ude9c\u00d6": ["&\u00ea\u00e7\u00e0\u001c\u0010\u001d\u0082D\u0086\u00b8\ud82b\ude18\u00bf\u0013\u00b2\u0082\uda5a\udf9f", null, null], "\u001a\ud895\uddd9\ud938\udd47_": {"9\\\u8162\u001f": "\u0085"}}, "\uadde\u009d\u0082\ud841\udd8d\u00e6\u00db": [null], "\u0089": [true]}' http://vampi:5000/users/v1/admin/email
+
+    st replay GSkVvc
+
+=================================== WARNINGS ===================================
+
+Authentication failed: 6 operations returned only 401/403 responses
+
+401 Unauthorized (6 operations):
+  - DELETE /users/v1/{username}
+  - GET /books/v1/{book_title}
+  - GET /me
+  - POST /books/v1
+  - PUT /users/v1/{username}/email
+  - PUT /users/v1/{username}/password
+
+💡 Ensure valid authentication credentials are set via `--auth` or `-H`
+
+=================================== SUMMARY ====================================
+
+API Operations:
+  Selected: 14/14
+  Tested: 14
+
+Test Phases:
+  ❌ Examples
+  ❌ Coverage
+  ❌ Fuzzing
+  ❌ Stateful
+
+Failures:
+  ❌ ST101 Server error: 3
+  ❌ ST205 Allow header mismatch: 3
+  ❌ ST202 Schema-valid request rejected: 3
+  ❌ ST105 Undocumented Content-Type: 6
+  ❌ ST103 Undocumented status code: 3
+
+For more information, run `st explain <code>` for ST101, ST103, ST105, ST202, ST205.
+
+Warnings:
+  ⚠️ Authentication failed: 6 operations returned only 401/403 responses
+
+Test cases:
+  128 generated, 15 found 18 unique failures
+
+Seed: 265331527535154247945599541906395284819
+
+======================= 18 failures, 1 warning in 3.49s ========================

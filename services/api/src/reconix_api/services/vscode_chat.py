@@ -150,7 +150,7 @@ def providers(db: Db) -> list[ProviderWords]:
             llm_provider_id=row.llm_provider_id,
             words=provider_words(row.display_name, row.model_name, row.provider_type),
         )
-        for row in provider_repo.list_all(db)
+        for row in provider_repo.list_visible(db)
     ]
 
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from reconix_ai.agent.state import AgentState
+from reconix_ai.agent.techniques import techniques_text
 from reconix_ai.contracts import severity_rank
 from reconix_ai.harness.catalog import description, is_known_tool, param_names
 from reconix_ai.providers import Message
@@ -43,27 +44,45 @@ def plan_messages(state: AgentState) -> list[Message]:
         read_markdown(PROMPTS_DIR / "plan.md"),
         scope_text(state["scope"]),
         tools_text(state["scope"]["allowed_tools"]),
+        techniques_text(
+            state["scope"], state.get("messages", []), tuple(state.get("tools_run", []))
+        ),
         "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
     ]
+    if state.get("findings"):
+        parts.append(findings_text(state["findings"]))
     if state.get("tool_results"):
         parts.append(tool_results_text(state["tool_results"]))
     if state.get("reflections"):
         parts.append(reflections_text(state["reflections"]))
-    return [system_message(), Message("user", "\n\n".join(parts))]
+    if state.get("prior_reasoning"):
+        parts.append(prior_reasoning_text(state["prior_reasoning"]))
+    if state.get("prior_observations"):
+        parts.append(prior_observations_text(state["prior_observations"]))
+    return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
 def reflect_messages(state: AgentState) -> list[Message]:
     parts = [
         read_markdown(PROMPTS_DIR / "reflect.md"),
         scope_text(state["scope"]),
+        techniques_text(
+            state["scope"], state.get("messages", []), tuple(state.get("tools_run", []))
+        ),
         "## Goal\n" + fenced("goal", state.get("goal", "")),
         knowledge_text(state.get("knowledge", [])),
         tool_results_text(state["tool_results"]),
     ]
+    if state.get("findings"):
+        parts.append(findings_text(state["findings"]))
     if state.get("reflections"):
         parts.append(reflections_text(state["reflections"]))
-    return [system_message(), Message("user", "\n\n".join(parts))]
+    if state.get("prior_reasoning"):
+        parts.append(prior_reasoning_text(state["prior_reasoning"]))
+    if state.get("prior_observations"):
+        parts.append(prior_observations_text(state["prior_observations"]))
+    return [system_message(), Message("user", "\n\n".join(part for part in parts if part))]
 
 
 def analyze_messages(state: AgentState) -> list[Message]:
@@ -214,6 +233,21 @@ def reflections_text(reflections: list[str]) -> str:
     # The model wrote these from tool output, so they are fenced as data too.
     lines = "\n".join(f"- {line}" for line in reflections)
     return "## Notes on the tool results (untrusted)\n" + fenced("reflections", lines)
+
+
+def prior_reasoning_text(reasoning: list[str]) -> str:
+    """The agent's own earlier per-step reasoning this assessment, oldest first. Its own
+    notes to build on; still fenced, since they were written from untrusted tool output."""
+    lines = "\n".join(f"- {line}" for line in reasoning)
+    return "## Your earlier reasoning this assessment\n" + fenced("earlier_reasoning", lines)
+
+
+def prior_observations_text(observations: list[str]) -> str:
+    """The agent's own earlier ReflAct observations this assessment, oldest first: the leads
+    it spotted in results of earlier steps, so it keeps following them instead of re-reading
+    the raw output. Still fenced, since they were written from untrusted tool output."""
+    lines = "\n".join(f"- {line}" for line in observations)
+    return "## Your earlier observations this assessment\n" + fenced("earlier_observations", lines)
 
 
 def fenced(tag: str, text: str) -> str:

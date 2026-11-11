@@ -1,6 +1,28 @@
 import pytest
 
-from reconix_ai.providers.base_url import BaseUrlError, check_base_url
+from reconix_ai.providers.base_url import BaseUrlError, call_address, check_base_url
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://localhost:1234/v1", "http://host.docker.internal:1234/v1"),
+        ("http://127.0.0.1:11434", "http://host.docker.internal:11434"),
+        ("http://[::1]:11434/api", "http://host.docker.internal:11434/api"),
+        ("https://models.example.com/v1", "https://models.example.com/v1"),
+        ("http://ollama:11434", "http://ollama:11434"),
+    ],
+)
+def test_call_address_in_the_api_container_reaches_this_computer(
+    monkeypatch: pytest.MonkeyPatch, url: str, expected: str
+) -> None:
+    monkeypatch.setenv("RECONIX_IN_CONTAINER", "1")
+    assert call_address(url) == expected
+
+
+def test_call_address_is_unchanged_outside_the_container(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RECONIX_IN_CONTAINER", raising=False)
+    assert call_address("http://localhost:1234/v1") == "http://localhost:1234/v1"
 
 
 @pytest.mark.parametrize(

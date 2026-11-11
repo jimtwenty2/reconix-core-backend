@@ -54,7 +54,7 @@ def test_empty_and_overlong_lines_are_refused():
 
 
 def test_during_a_run_a_line_goes_to_the_core_apis_ai(reachable, fake_api):
-    store.set_provider("openai", api_key="sk-openai-key-1234", models=["gpt-4o-mini"])
+    store.set_provider("openai", api_key="sk-5678", models=["gpt-4o-mini"])
     store.test_provider("openai")
     store.activate("openai", "gpt-4o-mini")
     store.core_api_approve()

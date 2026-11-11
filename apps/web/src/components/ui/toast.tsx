@@ -2,7 +2,9 @@
 
 /* Small toasts: `toast(text, tone)` shows a short note at the bottom right for a few seconds
    (success or error), and <Toaster /> (mounted once, in the root layout) draws them. A screen
-   reader hears each one (role="status", polite). Text only: nothing in a toast is HTML. */
+   reader hears each one: the stack is a polite live region named "Notifications" (not
+   role="status", so it is never mistaken for a page's own status line). Text only: nothing in
+   a toast is HTML. */
 import { useEffect, useState } from "react";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 
@@ -43,7 +45,7 @@ export function Toaster() {
     };
   }, []);
   return (
-    <div role="status" aria-live="polite" className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
+    <section aria-label="Notifications" aria-live="polite" className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
       {shown.map((t) => (
         <div key={t.id} className="pointer-events-auto flex items-start gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-sm text-foreground shadow-lg">
           {t.tone === "success" ? <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> : <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />}
@@ -53,6 +55,6 @@ export function Toaster() {
           </button>
         </div>
       ))}
-    </div>
+    </section>
   );
 }

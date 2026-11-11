@@ -64,6 +64,23 @@ def open_plan_runs(db: Db, assessment_id: UUID) -> list[AgentRun]:
     return list(db.scalars(query))
 
 
+def recent_plan_runs(db: Db, assessment_id: UUID, limit: int) -> list[AgentRun]:
+    """The most recent finished PLAN / SUGGEST runs of the assessment that saved a reasoning
+    `text`, newest first, so the agent can read its own earlier reasoning and build on it."""
+    query = (
+        select(AgentRun)
+        .where(
+            AgentRun.assessment_id == assessment_id,
+            AgentRun.plan["task"].astext.in_(["PLAN", "SUGGEST"]),
+            AgentRun.plan.has_key("text"),
+            AgentRun.agent_runs_status == AgentRunStatus.COMPLETED,
+        )
+        .order_by(AgentRun.started_at.desc())
+        .limit(limit)
+    )
+    return list(db.scalars(query))
+
+
 def running_code_scan(db: Db, assessment_id: UUID) -> AgentRun | None:
     """A CODE_SCAN run of this assessment still scanning its code."""
     query = select(AgentRun).where(
@@ -103,6 +120,25 @@ def running_code_scans(db: Db) -> list[AgentRun]:
     """Every CODE_SCAN run still marked RUNNING, of any assessment."""
     query = select(AgentRun).where(
         AgentRun.plan["task"].astext == "CODE_SCAN",
+        AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
+    )
+    return list(db.scalars(query))
+
+
+def running_code_fix(db: Db, assessment_id: UUID) -> AgentRun | None:
+    """A CODE_FIX run of this assessment still fixing findings."""
+    query = select(AgentRun).where(
+        AgentRun.assessment_id == assessment_id,
+        AgentRun.plan["task"].astext == "CODE_FIX",
+        AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
+    )
+    return db.scalar(query.limit(1))
+
+
+def running_code_fixes(db: Db) -> list[AgentRun]:
+    """Every CODE_FIX run still marked RUNNING, of any assessment."""
+    query = select(AgentRun).where(
+        AgentRun.plan["task"].astext == "CODE_FIX",
         AgentRun.agent_runs_status == AgentRunStatus.RUNNING,
     )
     return list(db.scalars(query))

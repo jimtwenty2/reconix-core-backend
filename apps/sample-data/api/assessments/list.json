@@ -15,6 +15,9 @@
     ],
     "finding_count": 4,
     "worst_severity": "HIGH",
-    "pending_approval_count": 0
+    "pending_approval_count": 0,
+    "plan_step_count": 3,
+    "plan_step_done_count": 2,
+    "last_activity_at": "2026-11-02T09:20:00Z"
   }
 ]

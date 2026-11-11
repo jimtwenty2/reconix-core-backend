@@ -9,7 +9,7 @@
    selection when its row is on that page). */
 import { useEffect, useRef } from "react";
 
-import type { FindingRow } from "@/components/dashboard/derive";
+import type { ListedFinding } from "@/components/dashboard/derive";
 import { FINDING_ICON } from "@/components/dashboard/finding-icon";
 import { Pagination } from "@/components/ui/pagination";
 import { SeverityBadge } from "@/components/ui/status-badge";
@@ -23,7 +23,7 @@ export function FindingsList({
   onOpen,
   onPage,
 }: {
-  rows: FindingRow[];
+  rows: ListedFinding[];
   currentKey: string | null; // the highlighted row (the selection, or the row a phone opened last)
   paging: Paging;
   onOpen: (key: string) => void;

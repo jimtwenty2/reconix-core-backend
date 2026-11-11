@@ -1,12 +1,12 @@
 /* The AI Assistant's routes on the Core API (lib/api/): a question becomes a new web session
    and its chat stream, the conversation list and reads come from the API's sessions and
    messages, delete closes the session, and the model picker drives /llm-providers. A fake
-   Core API (tests/fakes/core-api.ts) runs on a free local port. */
+   Core API (tests/fakes/core-api-server.ts) runs on a free local port. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { COOKIE, sessionValue } from "@/lib/auth/session";
 import { type Frame, parseFrame } from "@/lib/assistant/protocol";
-import { type FakeCore, startFakeCore } from "./fakes/core-api";
+import { type FakeCore, startFakeCore } from "./fakes/core-api-server";
 
 const TOKEN = "route-test-token-0123456789";
 let cookie = "";
@@ -238,7 +238,7 @@ describe("the model picker", () => {
     const id = view.providers[0].id;
     const chosen = await active.PUT(request("/api/assistant/models/active", { method: "PUT", body: JSON.stringify({ providerId: id, model: "gpt-4o" }) }));
     expect(chosen.status).toBe(409);
-    expect((await chosen.json()).detail).toMatch(/approval/);
+    expect((await chosen.json()).detail).toMatch(/^Approve this model in the TUI first/);
     expect(core.providers[0].is_active).toBe(false);
   });
 
@@ -254,6 +254,15 @@ describe("the model picker", () => {
     const unsaved = await (await fetchRoute.POST(request("/api/assistant/models/fetch", { method: "POST", body: JSON.stringify({ baseUrl: "http://127.0.0.1:1234/v1" }) }))).json();
     expect(unsaved.listed).toBe(false);
 
+    // in use: refused before anything is deleted (the API keeps the active row)
+    core.calls.length = 0;
+    const refused = await provider.DELETE(request(`/api/assistant/models/${id}`, { method: "DELETE" }), ctx(id));
+    expect(refused.status).toBe(409);
+    expect((await refused.json()).detail).toMatch(/choose another model first/);
+    expect(core.calls.some((c) => c.method === "DELETE")).toBe(false);
+    expect(core.providers).toHaveLength(1);
+
+    for (const p of core.providers) p.is_active = false; // another model answers now
     const removed = await (await provider.DELETE(request(`/api/assistant/models/${id}`, { method: "DELETE" }), ctx(id))).json();
     expect(removed.providers).toEqual([]);
     expect(removed.summary.configured).toBe(false);
@@ -288,11 +297,17 @@ describe("the model picker", () => {
     expect(core.providers).toHaveLength(0);
   });
 
-  it("a cloud service is tested with its key and offers its built-in models", async () => {
+  it("a cloud service is tested with its key and offers the chat models it lists", async () => {
     const out = await (await connect({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-test-0123456789abcdef" })).json();
-    expect(out).toMatchObject({ models: ["gpt-4o-mini", "gpt-4o"], created: true });
+    expect(out).toMatchObject({ models: ["gpt-4o-mini", "gpt-4o", "gpt-4.1"], created: true }); // no whisper, embeddings, images
     expect(out.detail).toMatch(/^Connected: gpt-4o-mini answered in \d+ ms\.$/);
     expect(JSON.stringify(out)).not.toContain("0123456789abcdef");
+  });
+
+  it("a cloud service that can't list its models offers its built-in ones", async () => {
+    core.listFails = true;
+    const view = await (await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", models: ["gpt-4o-mini"], apiKey: "sk-test-0123456789abcdef" }) }))).json();
+    expect(view.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o"]);
   });
 
   it("a saved provider is tested as saved, without saving another", async () => {
@@ -305,7 +320,7 @@ describe("the model picker", () => {
   it("one provider has many models: choosing another adds its row (key copied) and makes it active", async () => {
     const view = await (await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", models: ["gpt-4o-mini"], apiKey: "sk-test-0123456789abcdef" }) }))).json();
     const id = view.providers[0].id;
-    expect(view.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o"]); // built in: all of them
+    expect(view.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o", "gpt-4.1"]); // what the service lists for chat
 
     core.calls.length = 0;
     const res = await active.PUT(request("/api/assistant/models/active", { method: "PUT", body: JSON.stringify({ providerId: id, model: "gpt-4o" }) }));
@@ -315,7 +330,7 @@ describe("the model picker", () => {
     expect(res.status).toBe(409); // a cloud model waits for its own approval
     const after = await (await models.GET(request("/api/assistant/models", { origin: null }))).json();
     expect(after.providers).toHaveLength(1); // still one provider, with both models saved
-    expect(after.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o"]);
+    expect(after.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o", "gpt-4.1"]);
   });
 
   it("lists only models that can chat: embedding models are left out", async () => {

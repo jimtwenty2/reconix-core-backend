@@ -48,6 +48,7 @@ def test_the_message_never_repeats_the_address():
         ("http://localhost:11434", True),
         ("http://127.0.0.1:11434", True),
         ("http://[::1]:11434", True),
+        ("http://host.docker.internal:1234/v1", True),  # this computer, from the API container
         ("http://ollama:11434", False),  # a name could resolve anywhere
         ("http://localhost.:11434", False),  # not the exact name
         ("https://gpu.example.com", False),

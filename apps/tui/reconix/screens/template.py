@@ -23,21 +23,35 @@ from .base import Decision, ReconixScreen, scope_card
 from .. import store, theme
 from ..models import GATE_SCOPE, GATE_TEMPLATE, Choice
 from ..widgets import (
-    ActivityStatus, Question, ScopeManifestView, ScopePanel, UserMessage, menu_hint,
+    ActivityStatus,
+    Question,
+    ScopeManifestView,
+    ScopePanel,
+    TickList,
+    UserMessage,
+    menu_hint,
 )
+
+READING_GOAL = "reading your goal to suggest the right tools…"
 
 DRAFTING = "reconix is drafting the scope manifest…"
 
 
 def _template_choices(suggested: str = "") -> List[Choice]:
-    return [Choice(t.id, t.name, f"{t.description} · e.g. {t.example}",
-                   recommended=(t.id == suggested), disabled=not t.available)
-            for t in store.list_templates()]
+    return [
+        Choice(
+            t.id,
+            t.name,
+            f"{t.description} · e.g. {t.example}",
+            recommended=(t.id == suggested),
+            disabled=not t.available,
+        )
+        for t in store.list_templates()
+    ]
 
 
 def _ai_label(text: str) -> Static:
-    return Static(Text.assemble(("◆ reconix ", theme.CYAN), (text, theme.DIM)),
-                  classes="ai-label")
+    return Static(Text.assemble(("◆ reconix ", theme.CYAN), (text, theme.DIM)), classes="ai-label")
 
 
 def _steps() -> List[str]:
@@ -62,7 +76,7 @@ class TemplateScreen(ReconixScreen):
 
     def __init__(self) -> None:
         super().__init__()
-        self._picked: Optional[str] = None     # "pick": the template chosen before the target
+        self._picked: Optional[str] = None  # "pick": the template chosen before the target
 
     # --- state -------------------------------------------------------------------------------
     @staticmethod
@@ -82,76 +96,162 @@ class TemplateScreen(ReconixScreen):
         return "busy"
 
     def view_state(self) -> object:
-        # the review menu offers "Replace" and "Remove" once a spec is attached
-        return (self.state(), store.get_api_spec() is not None)
+        # the review menu offers "Replace" and "Remove" once a spec is attached; `_reading`
+        # flips when the AI's goal read lands, so the loading line rebuilds into the card;
+        # the suggested-tool count drops as they are ticked in, which rebuilds the tick list.
+        return (
+            self.state(),
+            store.get_api_spec() is not None,
+            self._reading(),
+            len(store.suggested_tools()),
+        )
+
+    def _reading(self) -> bool:
+        """At the Scope gate, whether to show "reading your goal…" instead of the card: the
+        AI's goal read is running or about to start (False in tests; SUGGEST flag off)."""
+        if self.state() != "review":
+            return False
+        return store.scope_suggest_waiting(self.app.SUGGEST_SCOPE_ON_REVIEW)
 
     # --- layout ------------------------------------------------------------------------------
     def compose_body(self) -> ComposeResult:
         yield from getattr(self, f"_compose_{self.state()}")()
 
     def _compose_pick(self) -> ComposeResult:
-        yield _ai_label("pick the kind of target, then type it · you approve the scope "
-                        "before anything runs")
-        yield Question("Template", "Which kind of target?", _template_choices(),
-                       hint=menu_hint("go back"), typing=False, chat=False,
-                       menu_id="template-menu")
+        yield _ai_label(
+            "pick the kind of target, then type it · you approve the scope before anything runs"
+        )
+        yield Question(
+            "Template",
+            "Which kind of target?",
+            _template_choices(),
+            hint=menu_hint("go back"),
+            typing=False,
+            chat=False,
+            menu_id="template-menu",
+        )
         with Vertical(id="target-row") as row:
             row.display = False
             yield Label("", id="target-label", classes="field-label")
             yield Input(id="target")
             yield Static("", id="target-error")
-            yield Static(Text("Enter to start · Esc to pick another template",
-                              style=theme.DIM), classes="menu-hint")
+            yield Static(
+                Text("Enter to start · Esc to pick another template", style=theme.DIM),
+                classes="menu-hint",
+            )
 
     def _compose_choose(self) -> ComposeResult:
         assessment = store.get_assessment()
         yield from _request_message()
-        yield _ai_label(f"target identified: {assessment.target} ({assessment.target_kind}) "
-                        "· it fits more than one template")
+        yield _ai_label(
+            f"target identified: {assessment.target} ({assessment.target_kind}) "
+            "· it fits more than one template"
+        )
         choices = _template_choices(assessment.template_id)
         default = next((i for i, c in enumerate(choices) if c.recommended), 0)
-        yield Question("Template", "Which kind of target is it?", choices, default=default,
-                       hint=menu_hint("decide later"), typing=False, menu_id="template-menu")
+        yield Question(
+            "Template",
+            "Which kind of target is it?",
+            choices,
+            default=default,
+            hint=menu_hint("decide later"),
+            typing=False,
+            menu_id="template-menu",
+        )
 
     def _compose_busy(self) -> ComposeResult:
         yield from _request_message()
-        yield ActivityStatus(_steps(), DRAFTING, expanded=self.app.activity_expanded,
-                             id="template-activity", classes="activity")
+        yield ActivityStatus(
+            _steps(),
+            DRAFTING,
+            expanded=self.app.activity_expanded,
+            id="template-activity",
+            classes="activity",
+        )
 
-    def _manifest_panel(self) -> ComposeResult:
-        yield ScopePanel(store.get_scope(), body_id="manifest")
+    def _manifest_panel(self, *, with_suggestions: bool = True) -> ComposeResult:
+        yield ScopePanel(store.get_scope(), body_id="manifest",
+                         with_suggestions=with_suggestions)
         yield Static(Text.assemble(("ℹ  ", theme.LOW), (
             "The agent can only act inside this manifest. Anything else is blocked before "
             "a tool runs.", theme.MUTED)), classes="panel-note")
 
     def _compose_review(self) -> ComposeResult:
+        yield from _request_message()
+        if self._reading():
+            # Wait for the AI's goal read before drawing the card, so it appears once, whole
+            # (no template defaults flashing up, then text popping in 1-3s later).
+            yield _ai_label(READING_GOAL)
+            yield ActivityStatus([], READING_GOAL, expanded=self.app.activity_expanded,
+                                 id="template-activity", classes="activity")
+            return
         template = store.selected_template()
         picked = "auto-selected" if store.get_assessment().template_auto else "selected"
-        yield from _request_message()
         yield _ai_label(f"{template.name} template {picked} · drafted a scope manifest for "
                         "your approval")
-        yield from self._manifest_panel()
+        # The card drops its read-only "Suggested for your goal" list; those tools are the
+        # interactive tick list below instead, so they are never shown twice.
+        yield from self._manifest_panel(with_suggestions=False)
+        yield from self._suggestion_ticks()
         decision = self._review_decision()
         yield Question(decision.chip, decision.question, decision.choices,
                        hint=menu_hint("go back"), menu_id="scope-menu")
 
+    def _suggestion_ticks(self) -> ComposeResult:
+        """The AI's suggested tools as an unticked list the operator ticks to add. Only the
+        operator's tick changes the scope; the card's tools stay as they are until then."""
+        choices = store.scope_tick_choices()
+        if choices is None or not choices.suggested_tools:
+            return
+        yield Static(Text.assemble(
+            ("Use these tools for your goal?  ", f"bold {theme.GREEN}"),
+            ("tick the ones to add, then approve the scope", theme.DIM)),
+            classes="panel-note")
+        purposes = dict(store.suggested_tool_notes())
+        tools = [(tool, False) for tool in choices.suggested_tools]
+        yield TickList([], tools, (), choices.suggested_tools,
+                       tool_purposes=purposes, id="scope-suggest-ticks")
+
     def _review_decision(self) -> Decision:
-        return Decision("Scope", "Approve this scope manifest?", [
-            Choice("approve", "Approve scope",
-                   "Lock the manifest; next you review the test plan.", recommended=True),
-            *self._spec_choices(),
-            Choice("edit", "Edit manifest",
-                   "Change methods, excluded paths, ports, tools or the time limit."),
-            Choice("reject", "Reject",
-                   "Discard this draft: nothing is tested and the assessment stops.", "danger"),
-        ])
+        return Decision(
+            "Scope",
+            "Approve this scope manifest?",
+            [
+                Choice(
+                    "approve",
+                    "Approve scope",
+                    "Lock the manifest; next you review the test plan.",
+                    recommended=True,
+                ),
+                *self._spec_choices(),
+                Choice(
+                    "edit",
+                    "Edit manifest",
+                    "Change methods, excluded paths, ports, tools or the time limit.",
+                ),
+                Choice(
+                    "reject",
+                    "Reject",
+                    "Discard this draft: nothing is tested and the assessment stops.",
+                    "danger",
+                ),
+            ],
+        )
 
     @staticmethod
     def _approved_decision() -> Decision:
-        return Decision("Scope", "The scope is locked. Review the test plan?", [
-            Choice("plan", "Review the test plan",
-                   "Every phase, the login it may need, and the risky steps.", recommended=True),
-        ])
+        return Decision(
+            "Scope",
+            "The scope is locked. Review the test plan?",
+            [
+                Choice(
+                    "plan",
+                    "Review the test plan",
+                    "Every phase, the login it may need, and the risky steps.",
+                    recommended=True,
+                ),
+            ],
+        )
 
     @staticmethod
     def _spec_choices() -> List[Choice]:
@@ -159,30 +259,57 @@ class TemplateScreen(ReconixScreen):
         if not store.can_attach_api_spec():
             return []
         attached = store.get_api_spec() is not None
-        choices = [Choice("spec", "Replace OpenAPI spec" if attached else "Attach OpenAPI spec",
-                          "a .json or .yaml OpenAPI 3 / Swagger 2 file or URL; read, never run")]
+        choices = [
+            Choice(
+                "spec",
+                "Replace OpenAPI spec" if attached else "Attach OpenAPI spec",
+                "a .json or .yaml OpenAPI 3 / Swagger 2 file or URL; read, never run",
+            )
+        ]
         if attached:
-            choices.append(Choice("unspec", "Remove OpenAPI spec",
-                                  "go back to the template's endpoints and methods"))
+            choices.append(
+                Choice(
+                    "unspec",
+                    "Remove OpenAPI spec",
+                    "go back to the template's endpoints and methods",
+                )
+            )
         return choices
 
     def _compose_approved(self) -> ComposeResult:
         yield from _request_message()
         yield _ai_label(f"scope approved · assessment {store.assessment_label()} created")
-        yield from self._manifest_panel()
+        yield from self._manifest_panel(with_suggestions=False)
         decision = self._approved_decision()
-        yield Question(decision.chip, decision.question, decision.choices,
-                       hint=menu_hint("go back"), typing=False, menu_id="scope-menu")
+        yield Question(
+            decision.chip,
+            decision.question,
+            decision.choices,
+            hint=menu_hint("go back"),
+            typing=False,
+            menu_id="scope-menu",
+        )
 
     def _compose_stopped(self) -> ComposeResult:
         yield from _request_message()
         yield _ai_label(f"this assessment stopped before testing: {store.get_run().stopped}")
-        yield Question("Template", "Start again?",
-                       [Choice("new", "Start a new assessment",
-                               "Pick a template and type a target.", recommended=True),
-                        Choice("start", "Back to the start")],
-                       hint=menu_hint("go back"), typing=False, chat=False,
-                       menu_id="template-menu")
+        yield Question(
+            "Template",
+            "Start again?",
+            [
+                Choice(
+                    "new",
+                    "Start a new assessment",
+                    "Pick a template and type a target.",
+                    recommended=True,
+                ),
+                Choice("start", "Back to the start"),
+            ],
+            hint=menu_hint("go back"),
+            typing=False,
+            chat=False,
+            menu_id="template-menu",
+        )
 
     # --- focus and live updates -----------------------------------------------------------------
     def on_mount(self) -> None:
@@ -191,20 +318,54 @@ class TemplateScreen(ReconixScreen):
         if self.state() == "pick" and preset:
             self._pick(preset)
             return
+        if self.state() == "review" and self.app.SUGGEST_SCOPE_ON_REVIEW:
+            self.app.suggest_scope()  # the AI reads the goal and suggests tools (once)
+        ticks = self.query(TickList)
+        if ticks:
+            ticks.first().focus_rows()   # the operator picks tools before approving
+            return
         for menu_id in ("template-menu", "scope-menu"):
             self.focus_menu(menu_id, top=True)
-        if self.state() == "review" and self.app.SUGGEST_SCOPE_ON_REVIEW:
-            self.app.suggest_scope()   # the AI reads the goal and suggests tools (once)
 
     def refresh_live(self) -> None:
         if self.state() == "review" and self.app.SUGGEST_SCOPE_ON_REVIEW:
-            self.app.suggest_scope()   # guarded: launches the AI read of the goal once
+            self.app.suggest_scope()  # guarded: launches the AI read of the goal once
         manifests = self.query("#manifest")
         if manifests:
-            manifests.first(ScopeManifestView).show(store.get_scope())   # after an edit
+            manifests.first(ScopeManifestView).show(store.get_scope())  # after an edit
         activity = self.query("#template-activity")
         if activity:
             activity.first(ActivityStatus).show(_steps())
+
+    def on_tick_list_saved(self, event: TickList.Saved) -> None:
+        """The operator ticked suggested tools on the Scope review: add them to the scope
+        (a union, so the template's own tools stay) and rebuild the card and the list. This
+        screen has no step chat, so it stops base's chat-based handler from also running
+        (Textual dispatches an `on_` handler from every class in the MRO). A step-chat tick
+        list (no id) is left to base's handler."""
+        if event.tick_list.id != "scope-suggest-ticks":
+            return
+        event.stop()
+        event.prevent_default()
+        scope = store.get_scope()
+        have = {tool.casefold() for tool in scope.tools}
+        union = list(scope.tools) + [t for t in event.tools if t.casefold() not in have]
+        try:
+            store.edit_scope(tools=union)
+        except store.StoreValidationError as exc:
+            self.notify_error(str(exc))
+            return
+        self.app.reload_screen()   # the added tools move into the card; the list shrinks
+
+    def on_tick_list_cancelled(self, event: TickList.Cancelled) -> None:
+        """Esc on the suggestion list: keep the scope as drafted, focus the approval menu.
+        A step-chat tick list (no id) is left to base's handler."""
+        if event.tick_list.id != "scope-suggest-ticks":
+            return
+        event.stop()
+        event.prevent_default()   # don't also run base's chat-based cancel handler
+        event.tick_list.remove()
+        self.focus_menu("scope-menu", top=True)
 
     # --- choices -----------------------------------------------------------------------------
     def decision(self) -> Optional[Decision]:
@@ -228,9 +389,13 @@ class TemplateScreen(ReconixScreen):
         elif state == "choose":
             self.app.choose_template(choice)
         elif state == "review":
-            {"approve": self.app.approve_scope, "spec": self.app.attach_api_spec,
-             "unspec": self.app.remove_api_spec,
-             "edit": self.app.edit_scope, "reject": self.app.reject_scope}[choice]()
+            {
+                "approve": self.app.approve_scope,
+                "spec": self.app.attach_api_spec,
+                "unspec": self.app.remove_api_spec,
+                "edit": self.app.edit_scope,
+                "reject": self.app.reject_scope,
+            }[choice]()
         elif state == "approved":
             self.app.goto("plan")
         elif state == "stopped" and choice == "new":
@@ -246,7 +411,8 @@ class TemplateScreen(ReconixScreen):
             return
         self._picked = template.id
         self.query_one("#target-label", Label).update(
-            Text(f"Target ▸ {template.name} — {template.target_hint}"))
+            Text(f"Target ▸ {template.name} — {template.target_hint}")
+        )
         target = self.query_one("#target", Input)
         target.placeholder = template.example
         self.query_one("#target-error", Static).update("")
@@ -260,15 +426,14 @@ class TemplateScreen(ReconixScreen):
         try:
             store.check_target(self._picked, event.value)
         except store.StoreValidationError as exc:
-            self.query_one("#target-error", Static).update(
-                Text(str(exc), style=theme.CRITICAL))
+            self.query_one("#target-error", Static).update(Text(str(exc), style=theme.CRITICAL))
             return
         self.app.start_with_template(event.value, self._picked)
 
     def action_back(self) -> None:
         rows = self.query("#target-row")
         if rows and rows.first().display:
-            rows.first().display = False       # Esc in the target: pick another template
+            rows.first().display = False  # Esc in the target: pick another template
             self._picked = None
             self.focus_menu("template-menu")
             return
@@ -280,7 +445,7 @@ class TemplateScreen(ReconixScreen):
     def step_content(self) -> str:
         state = self.state()
         if state == "review":
-            return "The scope manifest, as drafted. Nothing is approved yet."   # + the card
+            return "The scope manifest, as drafted. Nothing is approved yet."  # + the card
         if state == "approved":
             return "The approved scope manifest. It is locked."
         return store.template_text()

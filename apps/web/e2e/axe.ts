@@ -71,7 +71,22 @@ async function withGlobeFrozen<T>(page: Page, run: () => Promise<T>): Promise<T>
   }
 }
 
+/** Wait until every animation that ends has ended (an entrance fade, a slide): with motion on
+    (the axe-motion project), axe would otherwise read a label mid fade-in, at a colour it never
+    rests at. Looping animations (the breathing globe and icons) never end and are not waited for,
+    so the page is still checked as it moves. */
+async function settled(page: Page) {
+  await page
+    .waitForFunction(
+      () => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity),
+      undefined,
+      { timeout: 5000 },
+    )
+    .catch(() => {});
+}
+
 export async function axe(page: Page, name: string) {
+  await settled(page);
   const { violations } = await withGlobeFrozen(page, () => new AxeBuilder({ page }).withTags(WCAG).analyze());
   const known = KNOWN[name] ?? [];
   const found = violations

@@ -571,7 +571,7 @@ test.describe("the composer and its model picker", () => {
   });
 
   test("with no model: Choose a model in amber, the message, and an empty list with + Model", async ({ page }) => {
-    clearModels();
+    await clearModels();
     await page.goto("/?view=assistant");
     await expect(chip(page)).toHaveAccessibleName("Choose a model");
     await expect(chip(page)).toHaveAttribute("data-tone", "warning");

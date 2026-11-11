@@ -44,27 +44,48 @@ WORST_FIRST = (
 
 
 def list_assessments(
-    db: Db, status: AssessmentStatus | None, ttl_minutes: int
+    db: Db,
+    status: AssessmentStatus | None,
+    ttl_minutes: int,
+    type_: str | None = None,
+    q: str | None = None,
 ) -> list[AssessmentRowOut]:
-    """Newest first. The counts come from a few grouped queries, not one per row. False
-    positives are left out of the finding count and the worst severity."""
-    assessments = assessment_repo.list_all(db, status)
+    """Newest first. `q` matches the engagement code, the name or a target, ignoring case.
+    The counts come from a few grouped queries; only the plan progress is read per row.
+    False positives are left out of the finding count and the worst severity."""
+    assessments = assessment_repo.list_all(db, status, type_)
+    targets = scope_repo.approved_targets(db, [row.assessment_id for row in assessments])
+    if q:
+        assessments = [row for row in assessments if matches(row, targets, q)]
     ids = [row.assessment_id for row in assessments]
     if not ids:
         return []
-    targets = scope_repo.approved_targets(db, ids)
     severities = finding_counts(db, Finding.severity_status, ids)
     pending = approval_repo.count_waiting(db, ids, still_open_after(ttl_minutes))
-    return [
-        AssessmentRowOut(
-            **_out(row).model_dump(),
-            targets=targets.get(row.assessment_id, []),
-            finding_count=sum(severities[row.assessment_id].values()),
-            worst_severity=worst(severities[row.assessment_id]),
-            pending_approval_count=pending.get(row.assessment_id, 0),
+    activity = action_repo.last_activity(db, ids)
+    rows = []
+    for row in assessments:
+        step_count, step_done_count = plan_progress(db, row.assessment_id)
+        last_action = activity.get(row.assessment_id)
+        rows.append(
+            AssessmentRowOut(
+                **_out(row).model_dump(),
+                targets=targets.get(row.assessment_id, []),
+                finding_count=sum(severities[row.assessment_id].values()),
+                worst_severity=worst(severities[row.assessment_id]),
+                pending_approval_count=pending.get(row.assessment_id, 0),
+                plan_step_count=step_count,
+                plan_step_done_count=step_done_count,
+                last_activity_at=max(row.updated_at, last_action or row.updated_at),
+            )
         )
-        for row in assessments
-    ]
+    return rows
+
+
+def matches(row: Assessment, targets: dict[UUID, list[str]], q: str) -> bool:
+    """True when q is in the engagement code, the name or one target, ignoring case."""
+    words = [row.engagement_code, row.name, *targets.get(row.assessment_id, [])]
+    return any(q.lower() in word.lower() for word in words)
 
 
 def overview(db: Db, assessment_id: UUID, ttl_minutes: int) -> AssessmentOverviewOut:

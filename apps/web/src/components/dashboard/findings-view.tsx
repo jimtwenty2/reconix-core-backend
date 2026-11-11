@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 
-import type { FindingRow } from "@/components/dashboard/derive";
+import type { ListedFinding } from "@/components/dashboard/derive";
 import { plural } from "@/components/dashboard/derive-shared";
 import { FilterChips, FilterSummary, SearchField } from "@/components/dashboard/filter-bar";
 import { FindingDetail } from "@/components/dashboard/finding-detail";
@@ -69,7 +69,18 @@ const useHydrated = () => useSyncExternalStore(subscribeNever, () => true, () =>
  * the list holds every saved run's findings: each row names its run, and the selection is the
  * row's key (`<uid>~F-001`). The rules (which page, which row) are pure, in filters.ts.
  */
-export function FindingsView({ findings, across = null }: { findings: FindingRow[]; across?: number | null }) {
+export function FindingsView({
+  findings,
+  across = null,
+  picker = null,
+  linkedFromSavedRun = false,
+}: {
+  findings: ListedFinding[];
+  across?: number | null;
+  picker?: React.ReactNode;
+  /** Opened from a saved run's link: its finding can't be here, and the picker's note says why. */
+  linkedFromSavedRun?: boolean;
+}) {
   const [p, update] = useQueryParams(FINDINGS_KEYS);
   const root = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLElement>(null);
@@ -143,6 +154,7 @@ export function FindingsView({ findings, across = null }: { findings: FindingRow
       <div className="mb-3">
         <ViewHeader title="Findings" about={findingsHeadline(counted.length, across, falsePositives)} docsHref={DOCS.panelFindingsList} />
       </div>
+      {picker}
 
       {findings.length > 0 && (
         <div className="dash-findings-filters mb-4 flex flex-col gap-2.5">
@@ -181,8 +193,8 @@ export function FindingsView({ findings, across = null }: { findings: FindingRow
       {findings.length === 0 && (
         <EmptyNote className="dash-findings-empty">
           {across !== null
-            ? "Findings appear here once a saved assessment records some."
-            : "Findings appear here once this assessment's run records some. The Overview shows how far the run has come."}
+            ? "Findings appear here once a Core API assessment records some."
+            : "This assessment has no findings yet."}
         </EmptyNote>
       )}
 
@@ -192,7 +204,7 @@ export function FindingsView({ findings, across = null }: { findings: FindingRow
         </EmptyNote>
       )}
 
-      {page.missing && (
+      {page.missing && !(linkedFromSavedRun && page.missing === "unknown") && (
         <p role="status" className="dash-findings-notice mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
           <span className="min-w-0 break-all">
             {page.missing === "false-positive" ? (
@@ -201,7 +213,7 @@ export function FindingsView({ findings, across = null }: { findings: FindingRow
               <>{named ?? "The finding this link names"} is hidden by the filters.</>
             ) : named ? (
               <>
-                No finding {named} in {across !== null ? "the saved assessments" : "this assessment"}.
+                No finding {named} in {across !== null ? "the Core API’s assessments" : "this assessment"}.
               </>
             ) : (
               "This link names a finding that isn't here."

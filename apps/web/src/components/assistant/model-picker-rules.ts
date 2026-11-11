@@ -48,6 +48,7 @@ export interface ModelRow {
   model: string;
   provider: string; // the provider's name as shown
   where: "local" | "remote";
+  preset: Preset["id"]; // the TUI provider it is shown under
   checked: boolean; // answers the next question
   first: boolean; // its provider's first model: the provider's heading goes above it
 }
@@ -83,6 +84,7 @@ export function modelRows(view: ModelsView): ModelRow[] {
       model,
       provider: savedName(p),
       where: p.local ? ("local" as const) : ("remote" as const),
+      preset: presetFor(p).id,
       checked: active?.providerId === p.id && active.model === model,
     })),
   );

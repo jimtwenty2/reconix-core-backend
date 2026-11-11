@@ -8,7 +8,7 @@ from typing import Tuple
 class ActiveModel:
     provider_id: str
     model: str
-    label: str = ""            # the provider's human label, for the status bar
+    label: str = ""  # the provider's human label, for the status bar
     activated_at: str = ""
 
 
@@ -16,20 +16,21 @@ class ActiveModel:
 class ProviderView:
     id: str
     label: str
-    kind: str                  # reconix | frontier | local
-    configured: bool           # a row exists in the database
-    api_key_hint: str = ""     # e.g. "sk-…3f9a"; safe to show, never the key
+    kind: str  # reconix | frontier | local
+    configured: bool  # a row exists in the database
+    api_key_hint: str = ""  # e.g. "sk-…3f9a"; safe to show, never the key
     base_url: str = ""
     models: Tuple[str, ...] = ()
-    status: str = "UNTESTED"   # UNTESTED | REACHABLE | UNREACHABLE
+    status: str = "UNTESTED"  # UNTESTED | REACHABLE | UNREACHABLE
     status_detail: str = ""
     tested_at: str = ""
-    active_model: str = ""     # the model active for this provider, if any
+    active_model: str = ""  # the model active for this provider, if any
     # Static facts from the catalog, so the form/menus need no llm imports:
-    needs_key: bool = False    # an API key is required
+    needs_key: bool = False  # an API key is required
     key_optional: bool = False  # a key may be given but isn't required
-    base_mode: str = ""        # readonly | optional | default | required
+    base_mode: str = ""  # readonly | optional | default | required
     multi_model: bool = False  # holds a list of models (frontier)
+    built_in: bool = False  # the Core API's own provider: shown, never edited from here
 
     @property
     def reachable(self) -> bool:

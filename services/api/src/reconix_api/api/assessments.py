@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
@@ -20,19 +20,26 @@ CurrentSettings = Annotated[Settings, Depends(get_settings)]
 
 @router.get("")
 def list_assessments(
-    db: Db, _: CurrentOperator, settings: CurrentSettings, status: AssessmentStatus | None = None
+    db: Db,
+    _: CurrentOperator,
+    settings: CurrentSettings,
+    status: AssessmentStatus | None = None,
+    type: Annotated[str | None, Query(max_length=60)] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> list[AssessmentRowOut]:
     """Lists the assessments, newest first.
 
     Business Rules:
-    - Each row includes its approved targets, finding count, worst severity, and pending approvals.
+    - Each row includes its approved targets, finding count, worst severity, pending
+      approvals, plan progress, and the time of its last activity.
     - False positives are excluded from the finding count and the worst severity.
-    - Filter with `status`.
+    - Filter with `status` and `type` (for example `web_url`), and search with `q`: it
+      matches the engagement code, the name, or a target, ignoring case.
 
     Security:
     - Requires a valid session token.
     """
-    return assessments.list_assessments(db, status, settings.approval_ttl_minutes)
+    return assessments.list_assessments(db, status, settings.approval_ttl_minutes, type, q)
 
 
 @router.get("/{assessment_id}")

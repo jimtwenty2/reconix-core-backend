@@ -1,7 +1,5 @@
-/* One saved run as a row of cells, shared by the Assessments view (assessments-rows.tsx: the
-   whole row is a link to the run's Overview) and the Report view's runs table (report-runs.tsx:
-   a table row with a checkbox before and the downloads after). The five cells are the same in
-   both: ID · template with when, the target, the status badge with what the run waits on, the
+/* One saved run as a row of cells, for the Assessments view (assessments-rows.tsx: the whole
+   row is a link to the run's Overview). The five cells: ID · template with when, the target, the status badge with what the run waits on, the
    findings with the worst severity, and plan steps done of total. The caller supplies the cell
    element (`Cell`: a <span> on the link, a <th>/<td> in the table), what wraps the run's name
    (`name`: a link to its report, or nothing) and the slots before and after the five. */

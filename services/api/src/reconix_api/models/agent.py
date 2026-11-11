@@ -42,6 +42,8 @@ class LlmProvider(Base):
     api_key_last4: Mapped[str | None] = mapped_column(String(4))
     model_name: Mapped[str] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=false())
+    # Removed from the list; kept (without its key) because agent runs used it.
+    archived: Mapped[bool] = mapped_column(Boolean, server_default=false())
     created_by: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = created_at()
     updated_at: Mapped[datetime] = updated_at()

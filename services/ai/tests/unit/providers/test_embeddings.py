@@ -28,11 +28,13 @@ def model(monkeypatch: pytest.MonkeyPatch) -> FakeEmbeddingModel:
     return fake
 
 
-async def test_uses_bge_m3_on_the_embedding_server(model: FakeEmbeddingModel) -> None:
+async def test_uses_the_configured_model_on_the_embedding_server(
+    model: FakeEmbeddingModel,
+) -> None:
     vectors = await embed_texts(["sql injection"])
 
     assert vectors == [[0.0, 0.0]]
-    assert model.calls[0]["model"] == "openai/bge-m3"
+    assert model.calls[0]["model"] == "openai/bge-small-en-v1.5"
     assert model.calls[0]["api_base"] == "http://127.0.0.1:8081/v1"
 
 

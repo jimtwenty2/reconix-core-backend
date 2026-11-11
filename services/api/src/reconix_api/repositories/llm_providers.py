@@ -22,6 +22,14 @@ def list_all(db: Db) -> list[LlmProvider]:
     return list(db.scalars(select(LlmProvider).order_by(LlmProvider.created_at)))
 
 
+def list_visible(db: Db) -> list[LlmProvider]:
+    """What the lists show: every provider that is not archived."""
+    query = (
+        select(LlmProvider).where(LlmProvider.archived.is_(False)).order_by(LlmProvider.created_at)
+    )
+    return list(db.scalars(query))
+
+
 def delete(db: Db, provider: LlmProvider) -> None:
     db.delete(provider)
 

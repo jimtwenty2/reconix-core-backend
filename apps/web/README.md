@@ -6,12 +6,29 @@ reads the assessments the TUI saves to `~/.reconix/assessments/` and shows them 
 Findings, Run log (one run's messages, its work folded into thinking blocks), Reports, AI Assistant and Security knowledge views, all
 switched in-page (`?view=`; each view's
 own address keys and every run link live in `components/dashboard/view-url.ts`). By default the
-Overview totals **every saved run** (`derive-overall.ts`) and Findings lists them all, each
-naming its run; the Assessment switcher in the top bar opens one run instead (`?uid=`) and
-searches every saved run. With every run shown, Reports lists every run and combines them. The
+Overview totals **every saved run** (`derive-overall.ts`); the Assessment switcher in the top bar opens one run instead (`?uid=`) and
+searches every saved run. The
 page re-reads the files every 10 s (`RECONIX_LIVE_REFRESH_MS`; `0` turns it off). (The Scope
 view was removed: an old `?view=scope` opens the Overview; the scope stays in the saved files,
 the reports and the TUI.)
+
+**Findings come from the local Core API**, not the saved files (`components/dashboard/api-findings.tsx`,
+`lib/api/`). The view lists every Core API assessment's findings, each naming its assessment, or
+one assessment's, chosen in its own picker (`?view=findings&assessment=<uuid>`). The server opens
+a `web` session (`POST /api/v1/sessions`) and keeps the token in its memory; the browser never
+sees it. When the API is down or refuses, the view shows what it said and nothing else (no
+fallback to the files). A saved run has no Core API id, so a link from its Overview (`?uid=`)
+opens every Core API assessment with a note saying so. The view is streamed (`<Suspense>`), so
+the other views never wait on the API.
+
+**Reports come from the Core API too** (`components/dashboard/api-reports.tsx`), for the
+assessment the same picker names (`?view=reports&assessment=<uuid>`, shared with Findings):
+its summary strip (`GET /assessments/{id}/overview`) and its report versions
+(`GET /assessments/{id}/reports`, combined ones included), each with its build status and
+review sign-off. A READY, signed-off version's files download through
+`/api/core-reports/<id>/download?format=PDF|DOCX|JSON`, which fetches them with the server's
+session. With none picked, the view lists the API's assessments. Read-only: making, combining
+and reviewing reports stay in the TUI.
 
 - **Overview:** a summary strip (Findings with the worst severity, Assessment progress with its
   state, Tool execution, Duration with a meter against the time limit) over the globe hero with
@@ -41,12 +58,8 @@ the reports and the TUI.)
   numbers); the **False positives · Show** chip (`?fp=1`) lists them, beside the total
   ("Showing 41 of 40 findings + 1 false positive"), and a link naming one while they are hidden
   says so, with **Show it**.
-- **Reports:** the Overview's summary strip and Findings by Severity, its top list cut to the top
-  3 CVSS findings (`derive-report.ts` `REPORT_TOP_FINDINGS`; the Overview's card shows more).
-  With every run shown, the **Targets** card beside it lists every target, the most findings
-  first, 7 a page with Previous / Next (`?tpage=`, `report-targets-paging.ts`): the two cards are
-  the same height, and the list keeps room for a whole page, so a shorter last page moves neither
-  the card nor the pager at its foot.
+- **Reports:** the Core API's report versions of one assessment (above), each saying why its
+  files are locked until it is READY and signed off; a refused download says what the API said.
 - **Drill-down:** the Findings card opens every finding, a severity row opens Findings filtered
   to it, a top finding opens itself.
 - **The top bar** holds the live-refresh pill, the switcher, the run's (or every run's) chips
@@ -88,6 +101,7 @@ npm start -- --no-open             # don't open a browser
 | `RECONIX_STALE_AFTER_HOURS` | `12` | an unfinished run whose file has not changed for this long reads as Interrupted (its TUI was killed before it could say so); `0` turns this off, e.g. for the old sample data |
 | `RECONIX_LIVE_REFRESH_MS` | `10000` | how often the page re-reads the saved files; `0` turns the live refresh off (the e2e server does) |
 | `RECONIX_CHROME` | the usual names on PATH, then the common install paths | the Chrome/Chromium that prints the PDF exports; without one the PDF routes answer 501 |
+| `RECONIX_CORE_API` | `http://127.0.0.1:8000` | the Core API the Findings view reads (the TUI's setting); only a loopback address is accepted |
 | `RECONIX_WEB_PORT` | `3100` | port on 127.0.0.1 |
 | `RECONIX_PYTHON` | repo `.venv`, else `python3` (`python` on Windows) | the Python that runs the knowledge CLI |
 | `RECONIX_KNOWLEDGE_DIR` | `~/.reconix/knowledge` | the TUI's `/add-on` folder, which the AI Assistant's route reads |
@@ -249,7 +263,7 @@ need the page's Origin):
 ```bash
 npm run dev          # hot reload, same sign-in flow
 npm test             # vitest: data reader, schema, stats, session, dashboard numbers, filters
-                     #   and paging, the docs structure and redirects, the combined report
+                     #   and paging, the docs structure and redirects, the Core API client
 npm run check:data   # print everything derive.ts computes from a saved file (default: the
                      #   newest in sample-data/, or pass a path)
 npm run globe:points # rebuild public/globe/land.bin (dev only; the build doesn't run it)
@@ -287,7 +301,10 @@ expected failures that fail with "remove this entry" once fixed. The specs wait 
 at least a dozen runs across the four templates through the real TUI store (every severity,
 runs with no findings, a run stopped before its scope was approved, one still running, one
 with more than a page of findings), so it always matches the saved format; the specs read their
-counts from it (`e2e/support.ts`), never from literals.
+counts from it (`e2e/support.ts`), never from literals. The Findings view reads a stand-in Core
+API (`e2e/core-api-stub.mjs`, on the dashboard's port − 6) that serves the same sample runs in the
+API's shapes; `e2e/core-api-ids.mjs` gives each run the fixed id the specs open
+(`?assessment=<id>`). Unit tests use the fake in `tests/fakes/core-api.ts`.
 
 ## Layout
 
@@ -302,7 +319,7 @@ src/
 │   ├── assistant/           # /assistant → /?view=assistant
 │   ├── login/               # sign-in (token from the link's #fragment) → the Overview
 │   └── api/                 # session (sign-in), assessments/[uid] (JSON), assessments/[uid]/export,
-│                            #   reports/combined (1–5 runs as one PDF / DOCX),
+│                            #   core-reports/[id]/download (a Core API report file),
 │                            #   assistant, assistant/conversations and assistant/models (+ [id], active,
 │                            #   test, fetch: the model picker), knowledge (+ [id], [id]/original: the
 │                            #   Security knowledge page)
@@ -311,9 +328,7 @@ src/
 │   │                        #   adapt.ts (a saved run → the viewer's terms), view-types.ts, format.ts,
 │   │                        #   thinking.ts (the timeline as messages + thinking blocks; port of store/thinking.py)
 │   ├── report/              # formats.ts (the export registry), html.ts (report), pdf.ts (Chrome), render.ts,
-│   │                        #   combined/ (query.ts validates ?uids=&format=&evidence=&low=&appendix=,
-│   │                        #   select.ts merges the runs, html.ts renders, options.ts names the file),
-│   │                        #   docx/ (zip.ts, ooxml.ts, report.ts and combined.ts: the Word documents)
+│   │                        #   docx/ (zip.ts, ooxml.ts, report.ts: the Word document)
 │   ├── auth/                # session.ts (launch token, signed cookie, hosts), csp.ts, guard.ts,
 │   │                        #   origin.ts (same-origin check)
 │   ├── assistant/           # config.ts (the rules every model passes), request.ts
@@ -347,9 +362,10 @@ src/
 │   │                        #   event-kinds.ts, legend.tsx, hint.tsx, chart-tooltip.tsx, mark-details.tsx;
 │   │                        #   view-url.ts (?view=, each view's keys, run links), live-refresh.tsx,
 │   │                        #   intro.tsx (GSAP, by data-motion); the Assessments view (assessments-*.ts(x)),
-│   │                        #   Findings (findings-view/-list.tsx, finding-detail.tsx, filters.ts, filter-bar.tsx),
-│   │                        #   Reports (reports-view.tsx, report-selection/-runs/-preview/-downloads/-file.tsx,
-│   │                        #   use-file-download.ts: fetch then save, with a status line; derive-report.ts),
+│   │                        #   Findings (api-findings.tsx, api-assessment-picker.tsx, findings-view/-list.tsx,
+│   │                        #   finding-detail.tsx, filters.ts, filter-bar.tsx),
+│   │                        #   Reports (api-reports.tsx, api-report-list.tsx; use-file-download.ts: fetch
+│   │                        #   then save),
 │   │                        #   run-cells.tsx (the one run row of Assessments and Reports), view-header.tsx,
 │   │                        #   view-link.tsx and run-link.tsx (drill-downs), docs-search.tsx;
 │   │                        #   the Run log (run-log-view.tsx, thinking-block.tsx, derive-run-log.ts)
@@ -379,26 +395,14 @@ public/globe/land.bin        # the globe's land dots (scripts/build-globe-points
 
 ## Exports
 
-The Reports view's **Download** row offers PDF, JSON and DOCX (the same three the TUI saves),
-from `/api/assessments/<uid>/export?format=…`, and so does each row of the runs table. Each
-button fetches the whole file, then saves it (`use-file-download.ts`, shared with the combined
-report), so a refusal is shown, never saved as a file: the status line under the buttons (under
-the table, naming the run) says "Downloaded …", offers **Retry** on a failure, and offers
-**Download DOCX** when the PDF can't be printed. The PDF is printed by a Chrome/Chromium
-on the dashboard machine (`RECONIX_CHROME` names one); without a browser the route says so and
-links the Word document. Every format is a download, and no route may be framed. The DOCX is
-written by `lib/report/docx/` (no dependency: a stored ZIP of the document and its styles, every
-value XML-escaped, one run per value and a size cap). All formats come from the saved,
-already-masked data; `lib/report/formats.ts` is the single list of formats.
-
-With every run shown, the Reports view's **Combine runs** panel picks up to five saved runs,
-previews them as one report (the same HTML the PDF prints, in a sandboxed frame: a preview, never
-a download) and generates one PDF or one DOCX from
-`/api/reports/combined?uids=a,b&format=pdf|docx|preview&evidence=1&low=1&appendix=1` (without a
-printer the PDF answers 501 and the panel offers the DOCX; a Word document past `DOCX_MAX_MIB` of
-text answers 413, on the single export too)
-(`lib/report/combined/`). A finding with the same title, CWE and target in several runs counts
-once, with each run as an occurrence; what a run lacks is listed under Limitations.
+The Reports view downloads the Core API's own report files (above); the dashboard builds none
+for it. The saved-run export, `/api/assessments/<uid>/export?format=pdf|json|docx`, stays for
+the AI Assistant's report card: built from the saved, already-masked data
+(`lib/report/formats.ts` is the single list of formats), the PDF printed by a Chrome/Chromium on
+the dashboard machine (`RECONIX_CHROME`; without one the route answers 501 and links the Word
+document), the DOCX written by `lib/report/docx/`. Every format is a download, and no route may
+be framed. (The web's own combined report, `/api/reports/combined`, was removed: combined
+reports are made through the Core API from the TUI.)
 
 ## Rules
 
@@ -409,7 +413,9 @@ once, with each run as an occurrence; what a run lacks is listed under Limitatio
   data leaves the machine, and only to the model you chose (the model picker's test and
   fetch send no assessment data). The PDF exports (single and combined) start a headless Chrome on a
   temp file the server wrote (`lib/report/pdf.ts`), never on anything the request said.
-- **One data source.** Pages read through `lib/data/store.ts` only; it accepts regular files
+- **One data source each.** The Findings view reads the Core API through `lib/api/` only
+  (server-only: `client.ts` with the session, `findings.ts` checking each answer, `adapt.ts`).
+  The other pages read through `lib/data/store.ts` only; it accepts regular files
   named `<YYYYMMDD-HHMMSS-xxxx>_<id>.json` up to 5 MB that pass `AssessmentSchema`.
   Change `schema.ts` together with `reconix/store/snapshot.py`.
 - **Access.** No roles: one local user. Every page and route but the sign-in page and route

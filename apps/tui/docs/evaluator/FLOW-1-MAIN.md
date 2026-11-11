@@ -24,8 +24,8 @@ A URL like https://shop.example.com picks Web URL at once. A bare hostname asks 
 
 | What this template sets up | |
 |---|---|
-| Scope | methods GET and POST; never touches /admin; tools Nuclei and OWASP ZAP; time limit 30 min |
-| Login | email/username + password, then a 6-digit one-time code (OWASP ZAP needs it) |
+| Scope | methods GET and POST; never touches /admin; tools whatweb, Katana, Nuclei and testssl.sh; time limit 30 min |
+| Login | a session cookie (Nuclei sends it) |
 | MEDIUM | Baseline request (read-only) · GET /api/orders/10482 |
 | HIGH | Cross-account read check · GET /api/orders/10483 (test account B) |
 | Blocked in the run | Blocked: GET /admin · Path outside approved scope. Not executed. |
@@ -137,7 +137,7 @@ The "API TEMPLATE: BASE URL AND SPEC" form opens first: press Esc to skip it (MF
 
 | What this template sets up | |
 |---|---|
-| Scope | methods GET and POST; never touches /internal and /admin; tools Nuclei, Postman and ZAP API scan; time limit 30 min |
+| Scope | methods GET and POST; never touches /internal and /admin; tools httpx, Katana and Nuclei (+ schemathesis with a spec); time limit 30 min |
 | Login | a session cookie (the API tools send it) |
 | MEDIUM | Baseline request (read-only) · GET /v1/orders/8842 (token A) |
 | HIGH | Cross-account read check · GET /v1/orders/8843 (token B's order) |
@@ -346,11 +346,11 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 ## 1.4 Source Code (git repo or folder)
 
-A git repo (https://…/x.git, git@host:owner/repo, github.com/owner/repo) or a local folder path picks Source Code at once.
+A GitHub repo (https://github.com/owner/repo, git@github.com:owner/repo, github.com/owner/repo) or a local folder path picks Source Code at once.
 
 | What this template sets up | |
 |---|---|
-| Scope | read only; never touches .git, node_modules, vendor and secrets; tools Semgrep, gitleaks and pip-audit; no login |
+| Scope | read only; never touches .git, node_modules, vendor and secrets; tools Semgrep, gitleaks and trivy; no login |
 | MEDIUM | Read the flagged line (read-only) · app/config/settings.py:42 |
 | HIGH | Check the flagged credential once · one try on a test database |
 | Blocked in the run | Blocked: read .git/config · Path excluded from the review. Not executed. |
@@ -361,7 +361,7 @@ A git repo (https://…/x.git, git@host:owner/repo, github.com/owner/repo) or a 
 **Type this:**
 
 ```text
-Review the repo https://git.example.com/acme/app.git for secrets and insecure code
+Review the repo https://github.com/acme/app for secrets and insecure code
 ```
 
 1. Scope → Approve scope → Plan → Run plan.
@@ -379,12 +379,12 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-review git@git.example.com:acme/app.git
+review git@github.com:acme/app.git
 ```
 
-1. review git@git.example.com:acme/app.git → Source Code.
+1. review git@github.com:acme/app.git → Source Code.
 2. /new → scan the source code in ./demo-app → Source Code (a folder path).
-3. /new → review repo github.com/acme → "github.com/acme isn't a repository — e.g. github.com/acme/app".
+3. /new → review repo github.com/acme → "github.com/acme isn't a repository — e.g. https://github.com/acme/app".
 4. /new → the first line again → finish the flow.
 
 **Expected:** All repository forms are understood; the incomplete one is explained.
@@ -396,7 +396,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-Check https://git.example.com/acme/app.git for hardcoded secrets
+Check https://github.com/acme/app for hardcoded secrets
 ```
 
 1. Approve scope → Run plan.
@@ -415,7 +415,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-Review https://git.example.com/acme/app.git for security issues
+Review https://github.com/acme/app for security issues
 ```
 
 1. Approve scope → at the plan: Chat about this → move 3b before 3a → "Only you can change the order…" and an order list.
@@ -433,7 +433,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-Review the repo https://git.example.com/acme/app.git for secrets and insecure code
+Review the repo https://github.com/acme/app for secrets and insecure code
 ```
 
 1. Approve scope → Run plan → while it runs press Ctrl+C → "Stop this assessment?" → Keep running → it goes on.

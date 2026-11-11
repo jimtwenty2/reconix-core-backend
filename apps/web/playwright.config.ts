@@ -1,4 +1,5 @@
-/* End-to-end tests: start the built dashboard on the sample data and drive it in Chromium.
+/* End-to-end tests: start the built dashboard on the sample data (the Findings view through
+   e2e/core-api-stub.mjs, which serves the same runs) and drive it in Chromium.
    Run `npm run build` first. Uses Playwright's Chromium (`npx playwright install chromium`)
    or the browser at CHROMIUM_PATH. */
 import { defineConfig, devices } from "@playwright/test";
@@ -9,6 +10,8 @@ import path from "node:path";
 export const PORT = Number(process.env.E2E_PORT || 3199);
 export const TOKEN = "e2e-token-0123456789abcdef";
 export const LLM_PORT = PORT - 4; // e2e/llm-stub.mjs, the AI Assistant's stand-in model
+export const CORE_API_PORT = PORT - 6; // e2e/core-api-stub.mjs, the Core API's stand-in (the Findings view)
+const CORE_API = `http://127.0.0.1:${CORE_API_PORT}`;
 export const LIVE_PORT = PORT - 2; // a second dashboard with live refresh on (e2e/live-refresh.spec.ts)
 /** The signed-in state every spec starts from (e2e/global-setup.ts writes it once per run). */
 export const STATE_FILE = path.join(tmpdir(), `reconix-e2e-state-${PORT}.json`);
@@ -77,10 +80,17 @@ export default defineConfig({
         RECONIX_DATA_DIR: "sample-data",
         RECONIX_STALE_AFTER_HOURS: "0",
         RECONIX_LIVE_REFRESH_MS: "1000",
+        RECONIX_CORE_API: CORE_API,
         RECONIX_WEB_URL_FILE: path.join(tmpdir(), `reconix-e2e-live-${PORT}.url`),
       },
       reuseExistingServer: false,
       timeout: 60_000,
+    },
+    {
+      command: "node e2e/core-api-stub.mjs",
+      url: `${CORE_API}/`,
+      env: { CORE_API_STUB_PORT: String(CORE_API_PORT) },
+      reuseExistingServer: false,
     },
     {
       command: "node e2e/llm-stub.mjs",
@@ -97,6 +107,8 @@ export default defineConfig({
         RECONIX_DATA_DIR: "sample-data",
         // the sample files are old: keep their waiting run waiting instead of reading it as stale
         RECONIX_STALE_AFTER_HOURS: "0",
+        // the Findings view reads the Core API's stand-in, which serves the same sample runs
+        RECONIX_CORE_API: CORE_API,
         // no 10 s self-refresh under a test (a spec that wants it sets its own server)
         RECONIX_LIVE_REFRESH_MS: "0",
         // honour RECONIX_KNOWLEDGE_CLI below (the knowledge CLI's stand-in)

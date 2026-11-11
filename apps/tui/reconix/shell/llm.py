@@ -44,16 +44,28 @@ class LlmMixin:
         if not self.ASK_PROVIDER_ON_START or store.active_model() is not None:
             return
         choices = [
-            Choice("provider", "Set a provider…",
-                   "OpenAI, Anthropic, DeepSeek, Ollama or a custom endpoint (/provider)"),
-            Choice("skip", "Use the Core API's model",
-                   "The model set in .env (RECONIX_MODEL_*). /provider changes it later.",
-                   recommended=True, separated=True),
+            Choice(
+                "provider",
+                "Set a provider…",
+                "OpenAI, Anthropic, DeepSeek, Ollama or a custom endpoint (/provider)",
+            ),
+            Choice(
+                "skip",
+                "Use the Core API's model",
+                "The model set in .env (RECONIX_MODEL_*). /provider changes it later.",
+                recommended=True,
+                separated=True,
+            ),
         ]
         self.open_dialog(
-            ChoiceScreen("◆ SET AN AI PROVIDER", "Which AI model should Reconix use?", choices,
-                         chip="Provider"),
-            self._start_provider_chosen)
+            ChoiceScreen(
+                "◆ SET AN AI PROVIDER",
+                "Which AI model should Reconix use?",
+                choices,
+                chip="Provider",
+            ),
+            self._start_provider_chosen,
+        )
 
     def _start_provider_chosen(self, choice: Optional[str]) -> None:
         if choice == "provider":
@@ -94,8 +106,10 @@ class LlmMixin:
         is on screen even when the list is longer than a small terminal (QA-002)."""
         choices = []
         providers = store.list_providers()
-        default = next((i for i, p in enumerate(providers) if p.active_model),
-                       next((i for i, p in enumerate(providers) if p.configured), 0))
+        default = next(
+            (i for i, p in enumerate(providers) if p.active_model),
+            next((i for i, p in enumerate(providers) if p.configured), 0),
+        )
         for p in providers:
             tag = "ACTIVE" if p.active_model else ""
             bits = [p.status.title()]
@@ -106,9 +120,15 @@ class LlmMixin:
             label = p.label + ("  [configured]" if p.configured else "")
             choices.append(Choice(p.id, label, " · ".join(bits), tag=tag))
         self.open_dialog(
-            ChoiceScreen("◆ LLM PROVIDERS", "Pick a provider to set up or manage:",
-                         choices, default=default, chip="Providers"),
-            self._provider_picked)
+            ChoiceScreen(
+                "◆ LLM PROVIDERS",
+                "Pick a provider to set up or manage:",
+                choices,
+                default=default,
+                chip="Providers",
+            ),
+            self._provider_picked,
+        )
 
     def _provider_picked(self, provider_id: Optional[str]) -> None:
         if provider_id:
@@ -116,6 +136,27 @@ class LlmMixin:
 
     def open_provider_submenu(self, provider_id: str) -> None:
         p = store.get_provider(provider_id)
+        if p.built_in:
+            # The Core API's own model (RECONIX_MODEL_* in its .env): shown, never edited here.
+            choices = [
+                Choice(
+                    "model",
+                    "Use this model",
+                    "Make the Core API's model the active choice",
+                    disabled=not p.models,
+                    reason="the Core API has no model set",
+                ),
+            ]
+            self.open_dialog(
+                ChoiceScreen(
+                    f"◆ {p.label.upper()}",
+                    f"{p.label} · the Core API's own model",
+                    choices,
+                    chip="Provider",
+                ),
+                lambda choice: self._submenu_chosen(provider_id, choice),
+            )
+            return
         setup = "Update" if p.configured else "Set up"
         if not p.configured:
             use_reason = "set up first"
@@ -125,17 +166,35 @@ class LlmMixin:
             use_reason = "no model listed"
         choices = [
             Choice("set", f"{setup} {p.label}", _setup_hint(p)),
-            Choice("test", "Test connection", "Check the key and that the model is reachable",
-                   disabled=not p.configured, reason="set up first"),
-            Choice("model", "Use a model", "Make one of its models the active choice",
-                   disabled=not (p.reachable and p.models), reason=use_reason),
-            Choice("unset", "Unset", "Remove this provider", disabled=not p.configured,
-                   separated=True, reason="not set up"),
+            Choice(
+                "test",
+                "Test connection",
+                "Check the key and that the model is reachable",
+                disabled=not p.configured,
+                reason="set up first",
+            ),
+            Choice(
+                "model",
+                "Use a model",
+                "Make one of its models the active choice",
+                disabled=not (p.reachable and p.models),
+                reason=use_reason,
+            ),
+            Choice(
+                "unset",
+                "Unset",
+                "Remove this provider",
+                disabled=not p.configured,
+                separated=True,
+                reason="not set up",
+            ),
         ]
         self.open_dialog(
-            ChoiceScreen(f"◆ {p.label.upper()}", f"{p.label} · {p.status.title()}",
-                         choices, chip="Provider"),
-            lambda choice: self._submenu_chosen(provider_id, choice))
+            ChoiceScreen(
+                f"◆ {p.label.upper()}", f"{p.label} · {p.status.title()}", choices, chip="Provider"
+            ),
+            lambda choice: self._submenu_chosen(provider_id, choice),
+        )
 
     def _submenu_chosen(self, provider_id: str, choice: Optional[str]) -> None:
         if choice == "set":
@@ -148,8 +207,9 @@ class LlmMixin:
             self.confirm_unset(provider_id)
 
     def open_provider_form(self, provider_id: str) -> None:
-        self.open_dialog(ProviderForm(provider_id),
-                         lambda result: self._provider_saved(provider_id, result))
+        self.open_dialog(
+            ProviderForm(provider_id), lambda result: self._provider_saved(provider_id, result)
+        )
 
     def _provider_saved(self, provider_id: str, result: Optional[str]) -> None:
         self.refresh_view()
@@ -157,10 +217,14 @@ class LlmMixin:
             return
         label = store.get_provider(provider_id).label
         self.open_dialog(
-            ChoiceScreen("✓ PROVIDER SAVED", f"Saved {label}. Test the connection now?",
-                         [Choice("test", "Yes, test it now"), Choice("later", "Not now")],
-                         chip="Provider"),
-            lambda choice: self.test_provider_async(provider_id) if choice == "test" else None)
+            ChoiceScreen(
+                "✓ PROVIDER SAVED",
+                f"Saved {label}. Test the connection now?",
+                [Choice("test", "Yes, test it now"), Choice("later", "Not now")],
+                chip="Provider",
+            ),
+            lambda choice: self.test_provider_async(provider_id) if choice == "test" else None,
+        )
 
     # --- test (worker) ------------------------------------------------------------------------
     def test_provider_async(self, provider_id: str) -> None:
@@ -173,8 +237,9 @@ class LlmMixin:
             self.notify(f"{view.label} is not configured yet.", severity="warning", markup=False)
             return
         self.notify(f"Testing {view.label}…", markup=False)
-        self.run_worker(lambda: self._run_test(provider_id), thread=True, group="llm",
-                        exit_on_error=False)
+        self.run_worker(
+            lambda: self._run_test(provider_id), thread=True, group="llm", exit_on_error=False
+        )
 
     def _run_test(self, provider_id: str) -> None:
         try:
@@ -186,17 +251,22 @@ class LlmMixin:
 
     def _test_done(self, view) -> None:
         """Say how the test went. A reachable provider becomes the active model when none is
-        active yet (as the start-up dialog does), and the notice says so."""
+        active yet; a model off this computer asks for your OK first."""
         message = f"{view.label}: {view.status} — {view.status_detail}"
+        active = None
         if view.reachable and view.models and store.active_model() is None:
             try:
                 active = store.activate(view.id, view.models[0])
-                message += f" · Active model now: {active.label} · {active.model}"
+                if store.core_api_needs_ok():
+                    message += f" · Approve {active.label} · {active.model} to use it"
+                else:
+                    message += f" · Active model now: {active.label} · {active.model}"
             except store.StoreValidationError as exc:
                 message += f" {exc}"
         self.refresh_view()
-        self.notify(message, severity="information" if view.reachable else "warning",
-                    markup=False)
+        self.notify(message, severity="information" if view.reachable else "warning", markup=False)
+        if active and store.core_api_needs_ok():
+            self.ask_core_api_ok(view.id, active)
 
     # --- unset --------------------------------------------------------------------------------
     def confirm_unset(self, provider_id: str) -> None:
@@ -209,12 +279,16 @@ class LlmMixin:
             self.notify(f"{view.label} is not configured.", severity="warning", markup=False)
             return
         self.open_dialog(
-            ChoiceScreen(f"REMOVE {view.label.upper()}?",
-                         f"This deletes {view.label}'s saved key and settings.",
-                         [Choice("keep", "No, keep it"),
-                          Choice("unset", "Yes, remove it", tone="danger")],
-                         chip="Provider", danger=True, default=0),
-            lambda choice: self._do_unset(provider_id) if choice == "unset" else None)
+            ChoiceScreen(
+                f"REMOVE {view.label.upper()}?",
+                f"This deletes {view.label}'s saved key and settings.",
+                [Choice("keep", "No, keep it"), Choice("unset", "Yes, remove it", tone="danger")],
+                chip="Provider",
+                danger=True,
+                default=0,
+            ),
+            lambda choice: self._do_unset(provider_id) if choice == "unset" else None,
+        )
 
     def _do_unset(self, provider_id: str) -> None:
         try:
@@ -243,25 +317,44 @@ class LlmMixin:
                 continue
             for i, model in enumerate(p.models):
                 active = p.active_model == model
-                hint = "active" if active else (
-                    "ready" if p.reachable else "Test the connection first")
-                choices.append(Choice(
-                    f"{p.id}/{model}", f"{p.label} · {model}", hint,
-                    disabled=not p.reachable, separated=(i == 0), tag="ACTIVE" if active else ""))
+                hint = (
+                    "active"
+                    if active
+                    else ("ready" if p.reachable else "Test the connection first")
+                )
+                choices.append(
+                    Choice(
+                        f"{p.id}/{model}",
+                        f"{p.label} · {model}",
+                        hint,
+                        disabled=not p.reachable,
+                        separated=(i == 0),
+                        tag="ACTIVE" if active else "",
+                    )
+                )
         if not choices:
-            self.notify("No models yet. Use /provider to set one up and test it.",
-                        severity="warning", markup=False)
+            self.notify(
+                "No models yet. Use /provider to set one up and test it.",
+                severity="warning",
+                markup=False,
+            )
             return
         self.open_dialog(
-            ChoiceScreen("◆ CHOOSE A MODEL", "Pick the model the next chat line will use:",
-                         choices, chip="Model"),
-            self.activate_model)
+            ChoiceScreen(
+                "◆ CHOOSE A MODEL",
+                "Pick the model the next chat line will use:",
+                choices,
+                chip="Model",
+            ),
+            self.activate_model,
+        )
 
     def activate_model(self, spec: Optional[str]) -> None:
         if not spec or "/" not in spec:
             if spec:
-                self.notify("Use provider/model, e.g. openai/gpt-4o-mini.",
-                            severity="warning", markup=False)
+                self.notify(
+                    "Use provider/model, e.g. openai/gpt-4o-mini.", severity="warning", markup=False
+                )
             return
         provider_id, model = spec.split("/", 1)
         try:
@@ -276,8 +369,9 @@ class LlmMixin:
 
     # --- the Core API's OK for a model off this computer --------------------------------
     def ask_core_api_ok(self, provider_id: str, active) -> None:
-        """The Core API calls the model itself. For a model off this computer it asks a
-        person first: you, here. No: chat calls the model directly, as before."""
+        """A model off this computer becomes active only after you approve it: the Core
+        API will send your scope, plan and chat (secrets masked) to it. No: it stays
+        pending and the model active before is kept."""
         from urllib.parse import urlsplit
 
         from rich.text import Text
@@ -292,18 +386,23 @@ class LlmMixin:
             Text(f"  Key       {view.api_key_hint or 'none'}"),
         ]
         choices = [
-            Choice("approve", "Approve", "the Core API may use this model", recommended=True),
-            Choice("cancel", "Not now", "chat calls the model directly, without the Core API"),
+            Choice("approve", "Approve", "make this the active model", recommended=True),
+            Choice("cancel", "Not now", "leave it pending; keep the model active before"),
         ]
         self.open_dialog(
-            ChoiceScreen("◆ USE THIS MODEL IN THE CORE API?",
-                         "This model runs off this computer.", choices, body=body,
-                         chip="Approval"),
-            self._core_api_ok_answer)
+            ChoiceScreen(
+                "◆ USE THIS MODEL IN THE CORE API?",
+                "This model runs off this computer.",
+                choices,
+                body=body,
+                chip="Approval",
+            ),
+            self._core_api_ok_answer,
+        )
 
     def _core_api_ok_answer(self, answer: Optional[str]) -> None:
         if answer != "approve":
-            self.notify("Not approved: chat calls the model directly.", markup=False)
+            self.notify("Not approved: the model is left pending.", markup=False)
             return
         self.notify("Approving it in the Core API…", markup=False)
         self.run_worker(self._core_api_approve, thread=True, group="llm", exit_on_error=False)
@@ -314,9 +413,7 @@ class LlmMixin:
         try:
             store.core_api_approve()
         except LLMError as exc:
-            self.from_worker(self.notify, f"Core API: {exc}", severity="warning",
-                                  markup=False)
+            self.from_worker(self.notify, f"Core API: {exc}", severity="warning", markup=False)
             return
-        self.from_worker(self.notify, "The Core API may use this model now.",
-                              markup=False)
+        self.from_worker(self.notify, "The Core API uses this model now.", markup=False)
         self.from_worker(self.refresh_view)

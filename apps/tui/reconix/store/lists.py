@@ -26,6 +26,10 @@ EVENTS: List[AuditEvent] = []
 PROMPT_HISTORY: List[HistoryEntry] = []
 FEEDBACK: List[Feedback] = []
 
+# Kali MCP tool container reachability (the seam a wire-backend task fills; see store/kali.py).
+# UNKNOWN until the Core API is wired in; no network call ever lives in the store.
+KALI = {"status": "UNKNOWN", "host": None}
+
 ALL_LISTS = (ASSESSMENTS, EVENTS, PROMPT_HISTORY, FEEDBACK)
 
 # This run of the app. Saved assessment files are named "<SESSION_ID>_<label>.json", so
@@ -60,3 +64,4 @@ def reset() -> None:
         table.clear()
     CURRENT[0] = 0
     SEQ[0] = 0
+    KALI.update(status="UNKNOWN", host=None)

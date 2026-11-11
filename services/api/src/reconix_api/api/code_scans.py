@@ -39,7 +39,8 @@ async def start_session_code_scan(
     - paths limits the scan to files or folders of the code; tools picks some of SEMGREP,
       GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: all of them).
     - A rescan reads only what changed since the last completed scan and keeps the earlier
-      findings on unchanged files.
+      findings on unchanged files; pass refresh=true to force every due tool to run again on
+      unchanged code, so new advisories in the trivy/grype databases surface.
     - Returns 403 NOT_YOUR_SESSION, 409 SESSION_CLOSED, 409 CODE_SCOPE_MISMATCH if the
       session's assessment has another scope, 409 ASSESSMENT_NOT_ACTIVE if it has ended,
       or any error of POST /assessments/{id}/code-scans.
@@ -84,7 +85,8 @@ async def start_code_scan(
       GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: those the scope
       allows). A tool the scope does not allow ends as a "<TOOL> BLOCKED" note.
     - A rescan reads only what changed since the last completed scan and keeps the earlier
-      findings on unchanged files.
+      findings on unchanged files; pass refresh=true to force every due tool to run again on
+      unchanged code, so new advisories in the trivy/grype databases surface.
     - With analyze (the default), the AI reviews each new finding with the active AI
       provider; a finding reviewed before on the same file with the same model keeps its
       review. A failed review is a "ANALYZE <CODE>" note, never a failed scan. A file no
@@ -93,8 +95,8 @@ async def start_code_scan(
     - Returns 503 NO_ACTIVE_PROVIDER if no AI provider is active (even without analyze:
       a scan is an agent run), 422 NO_CODE if no code was sent, 422 PATH_NOT_FOUND if a
       path holds no file, 422 NO_CODE_TOOLS if the scope allows none of the tools, 422
-      CODE_EXCLUDED if the scope excludes the whole code folder, or 409 SCAN_RUNNING if a
-      scan is already running.
+      CODE_EXCLUDED if the scope excludes the whole code folder, 409 SCAN_RUNNING if a
+      scan is already running, or 409 FIX_RUNNING while a code fix runs.
 
     Execution Behavior:
     - Runs each tool through the same safety checks as any action.

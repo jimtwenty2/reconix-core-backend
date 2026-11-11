@@ -4,8 +4,8 @@ try_provider sends one fixed prompt with no Reconix data in it, so nothing about
 assessment leaves this computer, even for a provider that is not approved yet.
 local_models asks an Ollama on this computer which models it has, and
 compatible_models an OpenAI-compatible server on this computer (LM Studio, vLLM...);
-servers off this computer and cloud providers are not asked (that would be a new kind of
-outside call).
+cloud_models a cloud service (OpenAI, Anthropic, DeepSeek) at its own fixed address, with
+the key already saved for it. Custom servers off this computer are not asked.
 """
 
 import ipaddress
@@ -18,13 +18,23 @@ from urllib.parse import urlsplit
 import httpx
 
 from reconix_ai.providers import Message, ProviderConfig, ProviderError, complete
-from reconix_ai.providers.base_url import BaseUrlError, check_base_url
+from reconix_ai.providers.base_url import BaseUrlError, call_address, check_base_url
 from reconix_ai.providers.settings import ollama_url
 from reconix_api.core.errors import ApiError
+from reconix_api.core.provider_urls import HOST_GATEWAY_NAME
 
 TEST_PROMPT = "Reply with the single word OK."
 LIST_TIMEOUT_SECONDS = 5
 MAX_LIST_BYTES = 1024 * 1024  # a model list is a few KB
+
+# A cloud service's model list: its fixed address and how it takes the key. Never a typed
+# address, so a saved key only ever goes to the service it was saved for.
+CLOUD_MODEL_LISTS = {
+    "OPENAI": ("https://api.openai.com/v1", "bearer"),
+    "ANTHROPIC": ("https://api.anthropic.com/v1", "anthropic"),
+    "DEEPSEEK": ("https://api.deepseek.com", "bearer"),
+}
+ANTHROPIC_VERSION = "2023-06-01"
 
 
 @dataclass(frozen=True)
@@ -68,6 +78,24 @@ async def compatible_models(base_url: str, api_key: str | None) -> list[str]:
     return sorted(str(model.get("id")) for model in models if isinstance(model, dict))
 
 
+async def cloud_models(provider_type: str, api_key: str | None) -> list[str]:
+    """The model ids a cloud service lists for the saved key, e.g. OpenAI's ["gpt-4o", ...].
+    Only the service's own address is asked."""
+    known = CLOUD_MODEL_LISTS.get(provider_type)
+    if known is None:
+        raise ApiError(422, "MODEL_LIST_NOT_SUPPORTED", "This provider cannot list its models.")
+    if not api_key:
+        raise ApiError(422, "PROVIDER_KEY_MISSING", "Save the provider's API key first.")
+    base_url, style = known
+    if style == "anthropic":
+        headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION}
+    else:
+        headers = {"Authorization": f"Bearer {api_key}"}
+    body = await _model_list(base_url, f"{base_url}/models", "The provider", headers)
+    models = body.get("data", []) if isinstance(body, dict) else []
+    return sorted(str(model.get("id")) for model in models if isinstance(model, dict))
+
+
 async def _model_list(
     base_url: str, list_url: str, who: str, headers: dict[str, str] | None = None
 ) -> object:
@@ -79,7 +107,9 @@ async def _model_list(
         raise ApiError(422, "PROVIDER_URL_NOT_ALLOWED", str(error)) from None
     try:
         async with httpx.AsyncClient(timeout=LIST_TIMEOUT_SECONDS) as client:
-            async with client.stream("GET", list_url, headers=headers or {}) as response:
+            async with client.stream(
+                "GET", call_address(list_url), headers=headers or {}
+            ) as response:
                 response.raise_for_status()
                 body = b""
                 async for part in response.aiter_bytes():
@@ -93,7 +123,7 @@ async def _model_list(
 
 def _is_loopback(url: str) -> bool:
     host = urlsplit(url).hostname or ""
-    if host == "localhost":
+    if host in ("localhost", HOST_GATEWAY_NAME):
         return True
     try:
         return ipaddress.ip_address(host).is_loopback

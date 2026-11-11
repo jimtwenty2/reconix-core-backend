@@ -135,6 +135,17 @@ def test_a_changed_manifest_runs_the_dependency_tools(manifest):
     assert DEPENDENCY.items() <= due.items()
 
 
+@pytest.mark.parametrize(
+    "iac", ["Dockerfile", "Dockerfile.prod", "docker-compose.yml", "infra/main.tf"]
+)
+def test_a_changed_iac_file_runs_trivy_for_misconfig_not_the_other_sca_tools(iac):
+    due = due_tools(ALL, {iac}, set(), full=False)
+
+    assert due.get("TRIVY") == "all"  # trivy scans IaC/config misconfig
+    # the other dependency scanners have nothing to do on a Dockerfile/Terraform change
+    assert "GRYPE" not in due and "OSV_SCANNER" not in due and "SYFT" not in due
+
+
 def test_a_deleted_file_runs_only_what_reads_every_file():
     assert due_tools(ALL, set(), {"src/old.py"}, full=False) == {"SONAR_SCAN": "all"}
     assert due_tools(ALL, set(), {"yarn.lock"}, full=False) == {**DEPENDENCY, "SONAR_SCAN": "all"}

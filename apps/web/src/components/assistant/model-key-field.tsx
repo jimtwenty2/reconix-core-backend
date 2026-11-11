@@ -68,7 +68,7 @@ export function ModelKeyField({ id, inputRef, provider, required, keySaved, remo
               : "Key saved: leave empty to keep it"
           : `${required ? "Needed." : "Optional."} Kept encrypted on this computer and never shown again.`}
       </p>
-      {keySaved && <Checkbox label="Remove key" checked={removeKey} onChange={(e) => onRemoveKey(e.target.checked)} />}
+      {keySaved && !keyTyped && <Checkbox label="Remove key" checked={removeKey} onChange={(e) => onRemoveKey(e.target.checked)} />}
     </div>
   );
 }

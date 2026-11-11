@@ -8,8 +8,9 @@ again, with the full context, before anything runs. wait pauses the graph
 until a person approves or rejects the step.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -53,23 +54,42 @@ from reconix_ai.providers import (
     complete,
     reconix_provider,
 )
+from reconix_ai.providers.settings import MAX_OUTPUT_TOKENS_CEILING
 from reconix_ai.reports.answers import read_report
 
 ATTEMPTS = 2  # a bad answer is asked once more
-# Tokens one ask may spend in total, prompts and answers together. A plan uses a few thousand.
-# A reasoning model spends a few thousand on thinking per call, so a plan with a few
-# reflections needs more than the 20,000 a model without thinking used.
-DEFAULT_TOKEN_BUDGET = 60_000
+# An empty answer is a flaky-endpoint hiccup (Anthropic returns empty intermittently, in bursts):
+# retry several times with a short backoff so one burst does not stop the whole run.
+EMPTY_RETRIES = 6
+EMPTY_BACKOFF_SECONDS = 1.0
+# Tokens one ask may spend in total, prompts and answers together. Every call (plan,
+# analyze, validate, report alike) may write up to the provider's max_tokens, at most
+# MAX_OUTPUT_TOKENS_CEILING (128,000), thinking included. The check runs before a call,
+# and reflect stops at half the budget, so 4x the ceiling leaves the plan a full-length
+# call plus its retry after the reflections. A normal ask spends far less.
+DEFAULT_TOKEN_BUDGET = 4 * MAX_OUTPUT_TOKENS_CEILING
 HITS_PER_QUERY = 3
-# An analysis answers for up to 10 findings at once, so it may write more than a plan.
-ANALYZE_MAX_TOKENS = 20_000  # thinking included, as for every call
-VALIDATE_MAX_TOKENS = 8_000  # one finding, one verdict
-REPORT_MAX_TOKENS = 16_000
+# Compaction: once a reflect or plan prompt is estimated above this many tokens (4
+# characters a token), the older tool results, knowledge texts and earlier reasoning
+# are cut down, so later calls stay small and the run goes on instead of reaching the
+# budget. The scope, goal, chat, findings, reflections and the newest tool result,
+# knowledge hits and reasoning are kept whole. The input caps (state.py) hold a full
+# prompt near 8,000 tokens, so this trims the heaviest ones (to about 6,000).
+COMPACT_AT_PROMPT_TOKENS = 6_000
+CHARS_PER_TOKEN = 4
+COMPACT_KEEP_CHARS = 400  # of each older tool result or knowledge text
+KEEP_NEWEST_HITS = 3
+KEEP_NEWEST_REASONING = 2
+REASONING_MARKER = "(older notes compacted away)"
+CUT_MARKER_END = " cut]"
 MAX_HITS = 6
 MAX_REFLECTIONS = 5
 MAX_KNOWLEDGE_HITS = 12  # find's hits plus what reflect looks up
 MAX_PROMPT_HIT_CHARS = 1200
-DEFAULT_GOAL = "Find what runs on the approved targets."
+DEFAULT_GOAL = (
+    "Find vulnerabilities on the approved targets by covering the techniques for this "
+    "assessment type, discovery first."
+)
 
 Complete = Callable[..., Awaitable[Completion]]
 Search = Callable[..., Awaitable[list[KnowledgeHit]]]
@@ -148,10 +168,12 @@ async def reflect(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, A
     # so a bad answer cannot spend a second prompt past this mark.
     if tokens_used(state) >= deps.token_budget // 2:
         return {"reflect_more": False}
+    compacted = compaction(state, reflect_messages)
+    state = {**state, **compacted}
     answer, usage = await ask_json(
         deps, reflect_messages(state), read_reflection, tokens_used(state), attempts=1
     )
-    update: dict[str, Any] = {"reflect_more": False, **added(state, usage)}
+    update: dict[str, Any] = {"reflect_more": False, **compacted, **added(state, usage)}
     if answer is None:
         return update
     line, query = answer
@@ -174,13 +196,53 @@ async def reflect(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, A
 
 
 async def plan(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
+    compacted = compaction(state, plan_messages)
+    state = {**state, **compacted}
     answer, usage = await ask_json(
         runtime.context, plan_messages(state), read_plan, tokens_used(state)
     )
     if answer is None:
         raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable plan.")
     summary, steps = answer
-    return {"summary": summary, "steps": steps, **added(state, usage)}
+    return {"summary": summary, "steps": steps, **compacted, **added(state, usage)}
+
+
+def prompt_tokens(messages: list[Message]) -> int:
+    """A rough count of a prompt's tokens, enough to decide when to compact."""
+    return sum(len(message.content) for message in messages) // CHARS_PER_TOKEN
+
+
+def compaction(state: AgentState, build: Callable[[AgentState], list[Message]]) -> dict[str, Any]:
+    """The state fields to replace when the prompt `build` makes is too big, else {}.
+
+    Deterministic cuts, no model call, and safe to run again on its own result: an older
+    tool result or knowledge text keeps its first COMPACT_KEEP_CHARS and a marker; only
+    the newest earlier reasoning is kept.
+    Reflections are left alone: they are short, and reflect counts them to stop.
+    """
+    if prompt_tokens(build(state)) <= COMPACT_AT_PROMPT_TOKENS:
+        return {}
+    update: dict[str, Any] = {}
+    results = state.get("tool_results", [])
+    if len(results) > 1:
+        update["tool_results"] = [*(shortened(text) for text in results[:-1]), results[-1]]
+    hits = state.get("knowledge", [])
+    if len(hits) > KEEP_NEWEST_HITS:
+        older, newest = hits[:-KEEP_NEWEST_HITS], hits[-KEEP_NEWEST_HITS:]
+        update["knowledge"] = [{**hit, "text": shortened(hit["text"])} for hit in older] + newest
+    notes = [note for note in state.get("prior_reasoning", []) if note != REASONING_MARKER]
+    if len(notes) > KEEP_NEWEST_REASONING:
+        update["prior_reasoning"] = [REASONING_MARKER, *notes[-KEEP_NEWEST_REASONING:]]
+    return update
+
+
+def shortened(text: str) -> str:
+    """The first COMPACT_KEEP_CHARS and a marker; a text already shortened stays as it is,
+    so plan compacting after reflect did changes nothing more."""
+    if len(text) <= COMPACT_KEEP_CHARS or text.endswith(CUT_MARKER_END):
+        return text
+    cut = len(text) - COMPACT_KEEP_CHARS
+    return f"{text[:COMPACT_KEEP_CHARS]}\n[compacted: {cut} chars{CUT_MARKER_END}"
 
 
 def suggest(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
@@ -207,12 +269,11 @@ def suggest(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
 async def analyze(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
     """The 8-part analysis of each finding. Suggestions only; a person accepts them."""
     deps = runtime.context
-    longer = replace(deps, provider=replace(deps.provider, max_tokens=ANALYZE_MAX_TOKENS))
     findings = state.get("findings", [])
     tool_results = state.get("tool_results", [])
     known = known_ids(state.get("knowledge", []))
     answer, usage = await ask_json(
-        longer,
+        deps,
         analyze_messages(state),
         lambda data: read_analysis(data, findings, tool_results, known),
         tokens_used(state),
@@ -232,9 +293,8 @@ async def validate(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, 
     """Judge whether the PoC tool output confirms one finding. The verdict is the AI's,
     grounded in the real (masked) tool output; the API records it as the finding's status."""
     deps = runtime.context
-    longer = replace(deps, provider=replace(deps.provider, max_tokens=VALIDATE_MAX_TOKENS))
     answer, usage = await ask_json(
-        longer, validate_messages(state), read_validation, tokens_used(state)
+        deps, validate_messages(state), read_validation, tokens_used(state)
     )
     if answer is None:
         raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable verdict.")
@@ -248,8 +308,7 @@ async def validate(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, 
 async def report(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
     """The executive summary and the methodology, written from the locked copy."""
     deps = runtime.context
-    longer = replace(deps, provider=replace(deps.provider, max_tokens=REPORT_MAX_TOKENS))
-    answer, usage = await ask_json(longer, report_messages(state), read_report, tokens_used(state))
+    answer, usage = await ask_json(deps, report_messages(state), read_report, tokens_used(state))
     if answer is None:
         raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable report text.")
     executive_summary, methodology = answer
@@ -368,9 +427,22 @@ async def ask_json(
     retry never runs on after it on a screen.
     """
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "masked_count": 0}
+    empty_retries = EMPTY_RETRIES
     for attempt in range(attempts):
         check_budget(deps, spent + usage["prompt_tokens"] + usage["completion_tokens"])
-        completion = await safe_complete(deps, messages, on_piece if attempt == 0 else None)
+        while True:
+            try:
+                completion = await safe_complete(deps, messages, on_piece if attempt == 0 else None)
+                break
+            except AgentError as error:
+                # An empty answer is a flaky-endpoint hiccup (Anthropic returns empty
+                # intermittently), not a real failure: wait a moment and ask again, without
+                # using a bad-answer try, so a burst of empties does not stop the whole run.
+                if error.code == "EMPTY_RESPONSE" and empty_retries > 0:
+                    empty_retries -= 1
+                    await asyncio.sleep(EMPTY_BACKOFF_SECONDS)
+                    continue
+                raise
         usage["prompt_tokens"] += completion.prompt_tokens
         usage["completion_tokens"] += completion.completion_tokens
         usage["masked_count"] += completion.masked_count

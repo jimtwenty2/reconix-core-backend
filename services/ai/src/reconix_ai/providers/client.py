@@ -9,6 +9,7 @@ import os
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any
 
 # LiteLLM reads these once, when it is imported, so they are forced here and
 # litellm must not be imported anywhere before this module.
@@ -45,7 +46,7 @@ import litellm  # noqa: E402
 import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 
 from reconix_ai.harness import StreamMasker, mask_secrets, mask_value  # noqa: E402
-from reconix_ai.providers.base_url import BaseUrlError, check_base_url  # noqa: E402
+from reconix_ai.providers.base_url import BaseUrlError, call_address, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
 
 litellm.suppress_debug_info = True  # no "Give Feedback" banner on every error
@@ -121,9 +122,13 @@ async def complete(
         "api_base": base_url,
         "api_key": config.api_key or NO_KEY,
         "timeout": config.timeout_seconds,
-        "max_tokens": config.max_tokens,
+        "max_tokens": answer_limit(model, config),
         "response_format": {"type": "json_object"} if json_answer else None,
     }
+
+    def fail(code: str, message: str) -> ProviderError:
+        return ProviderError(code, message)
+
     failure = None
     try:
         try:
@@ -139,38 +144,192 @@ async def complete(
     if failure is not None:
         # Raised outside the except block, so the original error (which may
         # carry the request and its key) is not attached to it at all.
-        raise failure
+        raise fail(failure.code, failure.message)
 
     if response is None or not response.choices:
-        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+        raise fail("EMPTY_RESPONSE", "The model sent back an empty answer.")
     choice = response.choices[0]
-    raw = choice.message.content or ""
+    raw = answer_text(choice.message, json_answer)
     text, answer_count = mask_json(raw) if json_answer else mask_secrets(raw)
     if not text.strip():
         if choice.finish_reason == "length":
             # A reasoning model can spend the whole length on thinking.
-            raise ProviderError(
+            raise fail(
                 "ANSWER_CUT_OFF",
-                f"The model reached its {config.max_tokens}-token limit before it answered.",
+                f"The model reached its {request['max_tokens']}-token limit before it answered.",
             )
-        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+        raise fail("EMPTY_RESPONSE", "The model sent back an empty answer.")
     usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    completion_tokens = getattr(usage, "completion_tokens", 0) or 0
     return Completion(
         text=text,
         provider_type=config.provider_type,
         model_name=config.model_name,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        masked_count=masked_count + answer_count,
+    )
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    call_id: str
+    name: str
+    arguments: str  # the model's JSON text, masked value by value
+
+
+@dataclass(frozen=True)
+class ToolReply:
+    text: str  # already masked; may be empty when the model only called tools
+    tool_calls: list[ToolCall]
+    prompt_tokens: int
+    completion_tokens: int
+    masked_count: int
+
+
+async def complete_with_tools(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    config: ProviderConfig,
+    on_piece: OnPiece | None = None,
+    on_thinking: OnPiece | None = None,
+) -> ToolReply:
+    """One step of a tool-using agent: masked messages and OpenAI-style tool definitions
+    in, the masked answer and the tools it wants to call out.
+
+    messages are OpenAI chat messages: role "system", "user", "assistant" (with
+    "tool_calls") or "tool" (with "tool_call_id"). Every content and every tool call's
+    arguments are masked before they leave, and the answer's text and arguments are
+    masked before they come back. With on_piece / on_thinking the answer and the model's
+    reasoning are streamed in masked pieces, for showing only. Errors are the same
+    ProviderError codes as complete()."""
+    model = litellm_model(config)
+    base_url = checked_base_url(config)
+    check_key(config)
+    masked_messages, masked_count = mask_chat(messages)
+    request = {
+        "model": model,
+        "messages": masked_messages,
+        "tools": tools,
+        "api_base": base_url,
+        "api_key": config.api_key or NO_KEY,
+        "timeout": config.timeout_seconds,
+        "max_tokens": answer_limit(model, config),
+    }
+    failure = None
+    try:
+        if on_piece is None and on_thinking is None:
+            response = await litellm.acompletion(**request)
+        else:
+            response = await streamed(request, on_piece, on_thinking)
+    except openai.OpenAIError as error:
+        failure = provider_error(error, config)
+    if failure is not None:
+        raise failure  # outside the except block: the original error is not attached
+
+    if response is None or not response.choices:
+        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+    choice = response.choices[0]
+    text, answer_count = mask_secrets(choice.message.content or "")
+    calls = []
+    for call in getattr(choice.message, "tool_calls", None) or []:
+        arguments, count = mask_json(call.function.arguments or "{}")
+        answer_count += count
+        calls.append(ToolCall(call.id or "", call.function.name or "", arguments))
+    if not text.strip() and not calls:
+        if choice.finish_reason == "length":
+            raise ProviderError(
+                "ANSWER_CUT_OFF",
+                f"The model reached its {request['max_tokens']}-token limit before it answered.",
+            )
+        raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
+    usage = getattr(response, "usage", None)
+    return ToolReply(
+        text=text,
+        tool_calls=calls,
         prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
         completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
         masked_count=masked_count + answer_count,
     )
 
 
+def mask_chat(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Chat messages with tool calls, masked: every content and every call's arguments."""
+    masked, total = [], 0
+    for message in messages:
+        out = dict(message)
+        content, count = mask_secrets(str(message.get("content") or ""))
+        out["content"] = content
+        total += count
+        if message.get("tool_calls"):
+            out["tool_calls"] = []
+            for call in message["tool_calls"]:
+                function = call["function"]
+                arguments, count = mask_json(function.get("arguments") or "{}")
+                total += count
+                out["tool_calls"].append(
+                    {**call, "function": {"name": function["name"], "arguments": arguments}}
+                )
+        masked.append(out)
+    return masked, total
+
+
+def answer_text(message: object, json_answer: bool) -> str:
+    """The answer, from content; when that is empty, from where a reasoning model left it.
+
+    Under JSON mode LiteLLM may leave the object in the first tool call's arguments
+    (Anthropic's emulated json_object), and a thinking model may leave its only text in
+    reasoning_content. For a JSON answer the tool call goes first: it is the structured
+    answer, while reasoning_content is thinking that may hold a draft object.
+    """
+    content = getattr(message, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content
+    reasoning = getattr(message, "reasoning_content", None)
+    reasoning = reasoning if isinstance(reasoning, str) and reasoning.strip() else ""
+    arguments = tool_call_arguments(message)
+    for text in (arguments, reasoning) if json_answer else (reasoning, arguments):
+        if text:
+            return text
+    return ""
+
+
+def tool_call_arguments(message: object) -> str:
+    """The first tool call's arguments as text, or "" when there are none."""
+    calls = getattr(message, "tool_calls", None) or []
+    function = getattr(calls[0], "function", None) if calls else None
+    arguments = getattr(function, "arguments", None)
+    if isinstance(arguments, dict):
+        return json.dumps(arguments, ensure_ascii=False)
+    return arguments if isinstance(arguments, str) and arguments.strip() else ""
+
+
+def answer_limit(model: str, config: ProviderConfig) -> int:
+    """max_tokens, lowered for a cloud model to its own output limit when LiteLLM's bundled
+    price list knows it (gpt-4o: 16,384), so a high setting never gets a 400. Only cloud
+    types are looked up: for Ollama LiteLLM would ask the server. A self-hosted model gets
+    max_tokens as set (lower RECONIX_MAX_OUTPUT_TOKENS if its server refuses it)."""
+    max_tokens = config.max_tokens
+    if config.provider_type not in CLOUD_TYPES:
+        return max_tokens
+    try:
+        known = litellm.get_model_info(model).get("max_output_tokens")
+    except Exception:  # not mapped: LiteLLM raises its own error for an unknown model
+        return max_tokens
+    return min(max_tokens, known) if isinstance(known, int) and known > 0 else max_tokens
+
+
 def mask_json(text: str) -> tuple[str, int]:
     """A JSON answer masked value by value (and whole under a secret key name), then
     written out again. Masking the whole text can eat a closing quote (password = ?"
-    inside a value) and break the JSON. An answer that is not JSON is masked as text."""
+    inside a value) and break the JSON. An answer that is not JSON is masked as text.
+    A model may wrap the object in ```json fences or a sentence, so the outer braces
+    are taken first (as json_object does) before parsing."""
+    start, end = text.find("{"), text.rfind("}")
+    snippet = text[start : end + 1] if 0 <= start < end else text
     try:
-        data = json.loads(text)
+        data = json.loads(snippet)
     except json.JSONDecodeError:
         return mask_secrets(text)
     data, count = mask_value(data)
@@ -184,15 +343,22 @@ async def send(request: dict, on_piece: OnPiece | None) -> litellm.ModelResponse
     return await streamed(request, on_piece)
 
 
-async def streamed(request: dict, on_piece: OnPiece) -> litellm.ModelResponse | None:
-    """The answer as it arrives, built back into one response (None when nothing came)."""
-    masker = StreamMasker()
+async def streamed(
+    request: dict, on_piece: OnPiece | None, on_thinking: OnPiece | None = None
+) -> litellm.ModelResponse | None:
+    """The answer as it arrives, built back into one response (None when nothing came).
+    on_thinking gets the model's reasoning, when it sends any, masked the same way."""
+    masker, thinking_masker = StreamMasker(), StreamMasker()
     chunks = []
     async for chunk in await litellm.acompletion(**request, stream=True):
         chunks.append(chunk)
-        piece = chunk.choices[0].delta.content if chunk.choices else None
-        if piece and (shown := masker.feed(piece)):
+        delta = chunk.choices[0].delta if chunk.choices else None
+        piece = delta.content if delta else None
+        if on_piece and piece and (shown := masker.feed(piece)):
             await on_piece(shown)
+        thought = getattr(delta, "reasoning_content", None) if delta else None
+        if on_thinking and thought and (shown := thinking_masker.feed(thought)):
+            await on_thinking(shown)
     return litellm.stream_chunk_builder(chunks, messages=request["messages"])
 
 
@@ -235,7 +401,7 @@ def checked_base_url(config: ProviderConfig) -> str | None:
         check_base_url(base_url)
     except BaseUrlError as error:
         raise ProviderError("PROVIDER_URL_NOT_ALLOWED", str(error)) from None
-    return base_url
+    return call_address(base_url)
 
 
 def check_key(config: ProviderConfig) -> None:

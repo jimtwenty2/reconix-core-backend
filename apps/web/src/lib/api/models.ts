@@ -10,7 +10,7 @@ import "server-only";
 import { type Preset, presetOf } from "../assistant/models/presets";
 import type { AddProvider, Probe, SetActive, UpdateProvider } from "../assistant/models/requests";
 import { PROVIDER_ID } from "../assistant/models/schema";
-import type { FetchResult, ModelsView, ProbeResult, ProviderView } from "../assistant/models/view";
+import { type FetchResult, type ModelsView, NEEDS_APPROVAL, type ProbeResult, type ProviderView } from "../assistant/models/view";
 import { coreJson, CoreError } from "./core";
 import { asMain } from "./sessions";
 
@@ -38,7 +38,7 @@ const TYPE_OF: Record<Preset["id"], string> = {
 };
 const PRESET_OF: Record<string, Preset["id"]> = Object.fromEntries(Object.entries(TYPE_OF).map(([id, type]) => [type, id as Preset["id"]]));
 
-export const NEEDS_APPROVAL = "This model runs off this computer, so the Core API needs a person's approval before it uses it. Approve the waiting configuration approval (in the TUI), then choose it again.";
+export { NEEDS_APPROVAL };
 
 /** The API's provider_type for a picker preset. */
 export const providerTypeOf = (preset: string): string => TYPE_OF[presetOf(preset).id];
@@ -101,6 +101,28 @@ export function toModelsView(rows: CoreProvider[], found: ReadonlyMap<string, re
     (LM Studio and Ollama list theirs too, e.g. text-embedding-nomic-embed-text-v1.5). */
 export const chatModels = (names: readonly string[]): string[] => names.filter((m) => /^[\w.:/@+-]{1,128}$/.test(m) && !/embed/i.test(m)).slice(0, 200);
 
+/** What a cloud service lists that is not for chat (OpenAI lists its image, audio and
+    moderation models too). */
+const NOT_CHAT = /embed|whisper|tts|dall-e|gpt-image|moderation|transcribe|audio|realtime|search|davinci|babbage|computer-use/i;
+
+/** A cloud service's chat models, newest names first. */
+export const cloudChatModels = (names: readonly string[]): string[] =>
+  chatModels(names)
+    .filter((m) => !NOT_CHAT.test(m))
+    .sort((a, b) => b.localeCompare(a));
+
+/** A saved cloud provider's real models, asked through the Core API with its saved key;
+    its built-in list when the service can't be asked (no key, offline, refused). */
+async function cloudModelsOf(id: string, preset: Preset): Promise<readonly string[]> {
+  try {
+    const out = await asMain((token) => coreJson<{ models: string[] }>(`/llm-providers/${id}/models`, { token }));
+    const models = cloudChatModels(out.models);
+    return models.length ? models : preset.models;
+  } catch {
+    return preset.models;
+  }
+}
+
 const rowsOf = () => asMain((token) => coreJson<CoreProvider[]>("/llm-providers", { token }));
 
 /** The rows of the provider whose id (its first row's) is `id`; none when it is gone. */
@@ -110,12 +132,12 @@ async function groupOf(id: string): Promise<CoreProvider[]> {
   return group;
 }
 
-/** Every model a provider has, as the TUI's providers hold many: a cloud service's built-in
-    ones, what an Ollama or a custom server on this computer lists (asked through the Core
-    API), or only the saved ones (Reconix, a server off this computer, or one that is down). */
+/** Every model a provider has, as the TUI's providers hold many: what a cloud service, an
+    Ollama or a custom server on this computer lists (asked through the Core API), or only the
+    saved ones (Reconix, a server off this computer, or one that is down). */
 async function modelsOf(row: CoreProvider): Promise<readonly string[]> {
   const preset = presetFor(row);
-  if (preset.kind === "cloud") return preset.models;
+  if (preset.kind === "cloud") return cloudModelsOf(row.llm_provider_id, preset);
   if ((preset.kind !== "local" && preset.kind !== "custom") || !row.is_local) return [];
   try {
     const out = await asMain((token) => coreJson<{ models: string[] }>(`/llm-providers/${row.llm_provider_id}/models`, { token }));
@@ -220,6 +242,8 @@ export async function updateProvider(id: string, body: UpdateProvider): Promise<
 /** Removes a provider: every row it has. */
 export async function removeProvider(id: string): Promise<ModelsView> {
   const group = await groupOf(id);
+  // the API keeps the active row: refuse first, so nothing of the provider is half removed
+  if (group.some((r) => r.is_active)) throw new CoreError(409, "PROVIDER_ACTIVE", "This provider answers your questions now: choose another model first, then remove it.");
   await eachRow(group, (row) => asMain((token) => coreJson(`/llm-providers/${row.llm_provider_id}`, { method: "DELETE", token })));
   return modelsView();
 }
@@ -289,7 +313,7 @@ export async function connect(body: { preset: string; baseUrl: string; apiKey?: 
     if (preset.kind === "cloud" || preset.kind === "reconix") {
       const out = await asMain((token) => coreJson<TestOut>(`/llm-providers/${id}/test`, { method: "POST", token }));
       if (!out.ok) throw new CoreError(422, out.code ?? "MODEL_UNAVAILABLE", (out.message ?? "It did not answer.").slice(0, 400));
-      models = preset.kind === "cloud" ? [...new Set([row.model_name, ...preset.models])] : [row.model_name];
+      models = preset.kind === "cloud" ? [...new Set([row.model_name, ...(await cloudModelsOf(id, preset))])] : [row.model_name];
       detail = `Connected: ${row.model_name} answered in ${out.latency_ms} ms.`;
     } else {
       const out = await asMain((token) => coreJson<{ models: string[] }>(`/llm-providers/${id}/models`, { token }));

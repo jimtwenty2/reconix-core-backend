@@ -466,6 +466,28 @@ def test_a_rescan_lists_only_what_it_found_again(client, db_app):
     assert second["counts"]["HIGH"] == 1
 
 
+def test_refresh_reruns_every_tool_on_unchanged_code(client, db_app):
+    # New grype/trivy advisories only surface on a full scan. refresh forces one even when no
+    # file changed, where a plain rescan would make no Kali call at all.
+    headers, _, assessment_id = ready_to_scan(client, db_app)
+    wait_for_end(client, headers, start(client, headers, assessment_id).json()["agent_run_id"])
+    mcp = db_app.state.parts["mcp"]
+    before = len(mcp.jobs)
+
+    wait_for_end(client, headers, start(client, headers, assessment_id).json()["agent_run_id"])
+    assert len(mcp.jobs) == before  # nothing changed, so a plain rescan ran no tool
+
+    refreshed = client.post(
+        f"/assessments/{assessment_id}/code-scans",
+        json={"analyze": False, "refresh": True},
+        headers=headers,
+    ).json()
+    wait_for_end(client, headers, refreshed["agent_run_id"])
+
+    reran = [job.tool for job in mcp.jobs[before:]]
+    assert ToolName.SEMGREP in reran and ToolName.GITLEAKS in reran
+
+
 def test_scan_needs_code_first(client):
     headers, session_id = vscode_session(client)
     assessment_id = code_assessment(client, headers, f"/workspace/code/{session_id}")

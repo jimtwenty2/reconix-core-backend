@@ -12,10 +12,16 @@ vulnerability, so they have their own reader that makes it the finding's target.
 import json
 import posixpath
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
-from reconix_api.findings.shape import NewEvidence, NewFinding, OutputUnreadable, dedupe_key
+from reconix_api.findings.shape import (
+    NewEvidence,
+    NewFinding,
+    OutputUnreadable,
+    dedupe_key,
+    sca_dedupe_key,
+)
 from reconix_api.models.enums import SeverityStatus
 from reconix_api.parsers.json_report import JsonParseError, get, parse, pick
 
@@ -53,9 +59,10 @@ def read(mapping: JsonMapping, output: str) -> tuple[list[NewFinding], int]:
 
 
 def read_trivy(output: str) -> tuple[list[NewFinding], int]:
-    """trivy fs: each finding's target is its manifest, ArtifactName (the scanned folder)
-    joined with the parent result's Target ("requirements.txt"). Any other artifact
-    (an image, a repository URL) keeps the package name as the target."""
+    """trivy fs: dependency vulnerabilities and IaC/config misconfigurations. Each finding's
+    target is its file, ArtifactName (the scanned folder) joined with the parent result's
+    Target ("requirements.txt", "Dockerfile"). Any other artifact (an image, a repository
+    URL) keeps the package name as the target. Only a FAILED misconfig check is a finding."""
     document = _document(output)
     scanned = document.get("ArtifactName") if document.get("ArtifactType") == "filesystem" else ""
     findings = []
@@ -63,7 +70,18 @@ def read_trivy(output: str) -> tuple[list[NewFinding], int]:
         manifest = _manifest(scanned, result.get("Target")) if isinstance(result, dict) else ""
         for vulnerability in pick(result, "Vulnerabilities[]"):
             if isinstance(vulnerability, dict):
-                findings.append(_finding(MAPPINGS["trivy"], vulnerability, manifest))
+                findings.append(
+                    _dep_finding(
+                        MAPPINGS["trivy"],
+                        vulnerability,
+                        manifest,
+                        "VulnerabilityID",
+                        "PkgName",
+                    )
+                )
+        for misconfig in pick(result, "Misconfigurations[]"):
+            if isinstance(misconfig, dict) and misconfig.get("Status") == "FAIL":
+                findings.append(_finding(MAPPINGS["trivy_misconfig"], misconfig, manifest))
     return findings, 0
 
 
@@ -80,7 +98,13 @@ def read_grype(output: str) -> tuple[list[NewFinding], int]:
             locations = pick(match, "artifact.locations[]")
             first = locations[0] if locations and isinstance(locations[0], dict) else {}
             findings.append(
-                _finding(MAPPINGS["grype"], match, _manifest(scanned, first.get("path")))
+                _dep_finding(
+                    MAPPINGS["grype"],
+                    match,
+                    _manifest(scanned, first.get("path")),
+                    "vulnerability.id",
+                    "artifact.name",
+                )
             )
     return findings, 0
 
@@ -132,6 +156,25 @@ def _finding(mapping: JsonMapping, result: dict[str, Any], target: str = "") -> 
         cve_ids=_ids(result, mapping.cve, CVE),
         remediation=_optional(result, mapping.remediation),
     )
+
+
+def _dep_finding(
+    mapping: JsonMapping,
+    result: dict[str, Any],
+    manifest: str,
+    id_path: str,
+    pkg_path: str,
+) -> NewFinding:
+    """A dependency-vulnerability finding keyed so trivy, grype and osv collapse the same CVE
+    in the same package+version+file into one finding (each tool a source), not three."""
+    finding = _finding(mapping, result, manifest)
+    key = sca_dedupe_key(
+        finding.cve_ids,
+        _text(get(result, id_path)),
+        _text(get(result, pkg_path)).lower(),
+        manifest,
+    )
+    return replace(finding, dedupe_key=key)
 
 
 def _severity(mapping: JsonMapping, result: dict[str, Any]) -> SeverityStatus:
@@ -225,9 +268,10 @@ MAPPINGS: dict[str, JsonMapping] = {
         severity="vulnerability.severity",
         severity_map={**SEVERITY_WORDS, "negligible": SeverityStatus.NONE},
         description="vulnerability.description",
-        # grype keeps CWEs (and the related CVE) in vulnerability.cwes; _ids regexes the text.
+        # CWEs are in vulnerability.cwes; the CVE is in relatedVulnerabilities[].id (grype's
+        # own id is usually a GHSA). _ids regexes each for its pattern.
         cwe="vulnerability.cwes",
-        cve="vulnerability.cwes",
+        cve="relatedVulnerabilities",
     ),
     "trivy": JsonMapping(
         kind="trivy_vulnerability",
@@ -242,4 +286,56 @@ MAPPINGS: dict[str, JsonMapping] = {
         cwe="CweIDs",
         cve="VulnerabilityID",
     ),
+    # IaC / config problems (Dockerfile, compose, k8s, Terraform) from trivy's misconfig
+    # scanner. The file is the parent result's Target, passed in as the finding target.
+    "trivy_misconfig": JsonMapping(
+        kind="trivy_misconfig",
+        title="Title",
+        target="AVDID",  # replaced by the manifest file passed to _finding
+        location=("AVDID", "CauseMetadata.StartLine"),
+        key=("AVDID", "CauseMetadata.StartLine"),
+        severity="Severity",
+        severity_map=SEVERITY_WORDS,
+        description="Description",
+        remediation="Resolution",
+    ),
 }
+
+GROUP_EVIDENCE = 100  # matcher lines kept on a grouped nuclei finding
+
+
+def read_nuclei(output: str) -> tuple[list[NewFinding], int]:
+    """nuclei matches, with the many matcher-findings of one info template (e.g. 10
+    missing-security-header matches from a single template) grouped into one finding
+    instead of one per header. Only several NONE (info) matches that share a title are
+    merged; a real vulnerability — its own title, or any severity above NONE — is untouched."""
+    findings, requests = read(MAPPINGS["nuclei"], output)
+    buckets: dict[tuple[str, SeverityStatus], list[NewFinding]] = {}
+    order: list[tuple[str, SeverityStatus]] = []
+    for finding in findings:
+        key = (finding.title.split(" (")[0], finding.severity)
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(finding)
+    merged: list[NewFinding] = []
+    for key in order:
+        group = buckets[key]
+        if len(group) >= 2 and key[1] == SeverityStatus.NONE:
+            merged.append(_merge_nuclei(key[0], group))
+        else:
+            merged.extend(group)
+    return merged, requests
+
+
+def _merge_nuclei(base: str, group: list[NewFinding]) -> NewFinding:
+    first = group[0]
+    evidence = [item for finding in group for item in finding.evidence][:GROUP_EVIDENCE]
+    return NewFinding(
+        title=f"{base} ({len(group)} matches)",
+        target=first.target,
+        description=f"nuclei reported {len(group)} '{base}' matches on {first.target}.",
+        severity=first.severity,
+        dedupe_key=dedupe_key("nuclei_group", first.target, base),
+        evidence=evidence,
+    )

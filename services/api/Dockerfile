@@ -3,9 +3,11 @@
 #   docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 FROM python:3.12-slim
 
-# WeasyPrint draws the PDF report with Pango.
+# WeasyPrint draws the PDF report with Pango; git (over https) clones source repos for a
+# code scan (POST /code/clone), with ca-certificates for TLS verification.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.12.24 /uv /bin/uv

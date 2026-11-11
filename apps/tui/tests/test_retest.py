@@ -7,7 +7,7 @@ from .support import run_to
 
 
 def _finding(title: str, path: str) -> Finding:
-    return Finding("x", "HIGH", title, path, "CONFIRMED", "", "", "", "", "")
+    return Finding("x", "HIGH", title, path, "CONFIRMED", "CONFIRMED", "", "", "", "", "")
 
 
 def test_no_retest_for_a_single_assessment():

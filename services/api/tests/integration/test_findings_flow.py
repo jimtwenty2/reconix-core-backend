@@ -130,8 +130,10 @@ def test_real_nuclei_output_saves_one_finding_per_match(db_client, db_app):
     assert run["error"] is None
 
     saved = findings(db_client, headers, assessment_id)
-    assert len(saved) == 11
-    assert len({f["title"] for f in saved}) == 11
+    # The 10 missing-header matches of one template are grouped into one finding, so the
+    # 11 raw matches become 2 findings (the grouped headers + the Wappalyzer detection).
+    assert len(saved) == 2
+    assert len({f["title"] for f in saved}) == 2
     assert {f["severity_status"] for f in saved} == {"NONE"}
 
 
@@ -148,3 +150,76 @@ def test_control_characters_never_reach_a_finding(db_client, db_app):
     [finding] = findings(db_client, headers, assessment_id)
     assert finding["title"] == "Banner [2J[31mred"
     assert "\x1b" not in finding["evidence"][0]["content"]
+
+
+# A tool that EXITS NON-ZERO when it finds issues (schemathesis) comes back FAILED, but its
+# output holds real findings: they must be saved and the run reported COMPLETED.
+SCHEMA_SCOPE = {
+    "max_risk": "HIGH",
+    "allowed_tools": ["SCHEMATHESIS"],
+    "targets": [{"type": "url", "value": "http://vampi:5000/"}],
+    "allowed_actions": ["scan"],
+    "allowed_methods": ["GET", "POST"],
+}
+
+
+def _approve(client, headers, approval_id, typed_target) -> None:
+    # schemathesis gates HIGH, so the operator types the exact target to approve it.
+    res = client.post(
+        f"/approvals/{approval_id}/approve", json={"typed_target": typed_target}, headers=headers
+    )
+    assert res.status_code == 200, res.json()
+
+
+def test_failed_schemathesis_with_output_still_saves_findings(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers, scope_draft=SCHEMA_SCOPE)
+    output = (FIXTURES / "schemathesis" / "vampi.txt").read_text()
+
+    async def failed_with_output(job):
+        db_app.state.parts["mcp"].jobs.append(job)
+        # schemathesis exits non-zero when it finds bugs -> the client reports FAILED.
+        return ToolResult(status=ToolRunStatus.FAILED, exit_code=1, stdout=output, stderr="")
+
+    db_app.state.interfaces = dataclasses.replace(
+        db_app.state.interfaces, call_tool=failed_with_output
+    )
+
+    action = send(
+        db_client,
+        headers,
+        assessment_id,
+        tool="SCHEMATHESIS",
+        target="http://vampi:5000/openapi.json",
+    ).json()
+    _approve(db_client, headers, action["approval_id"], "http://vampi:5000/openapi.json")
+
+    action = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert action["action_status"] == "COMPLETED"  # findings salvaged -> run succeeded
+    [run] = action["tool_runs"]
+    assert run["tool_run_status"] == "COMPLETED"
+    assert len(findings(db_client, headers, assessment_id)) >= 1
+
+
+def test_failed_schemathesis_with_no_output_stays_failed(db_client, db_app):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers, scope_draft=SCHEMA_SCOPE)
+
+    async def crashed(job):
+        db_app.state.parts["mcp"].jobs.append(job)
+        return ToolResult(status=ToolRunStatus.FAILED, exit_code=2, stdout="", stderr="boom")
+
+    db_app.state.interfaces = dataclasses.replace(db_app.state.interfaces, call_tool=crashed)
+
+    action = send(
+        db_client,
+        headers,
+        assessment_id,
+        tool="SCHEMATHESIS",
+        target="http://vampi:5000/openapi.json",
+    ).json()
+    _approve(db_client, headers, action["approval_id"], "http://vampi:5000/openapi.json")
+
+    action = db_client.get(f"/actions/{action['action_id']}", headers=headers).json()
+    assert action["action_status"] == "FAILED"
+    assert findings(db_client, headers, assessment_id) == []

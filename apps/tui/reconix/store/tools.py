@@ -20,7 +20,7 @@ TOOL_LOGIN: Dict[str, str] = {
 LOGIN_RANK = ("", "cookie", "password")
 
 # the templates' default tools the request parser does not name (see parser.TOOL_NAMES)
-TEMPLATE_TOOLS = ("Postman", "ZAP API scan", "Semgrep", "gitleaks", "pip-audit")
+TEMPLATE_TOOLS = ("Postman", "ZAP API scan", "Semgrep", "gitleaks")
 
 
 def known_tool(name: str) -> str:

@@ -10,14 +10,32 @@ from .support import DEMO_REQUEST
 
 # (request, headline start, the access line in "What it may do", never-touch paths)
 CASES = [
-    (DEMO_REQUEST, "Reconix will test https://staging.example.com as a web application.",
-     "Send only GET and POST requests", ["/admin"]),
-    ("Test the API at https://api.example.com/v1", "Reconix will test https://api.example.com",
-     "Send only GET and POST requests", ["/internal", "/admin"]),
-    ("scan 10.0.0.0/24", "Reconix will test 10.0.0.0/24 as a network.",
-     "Only connect to ports 22, 80, 443, 8080 and 8443, using TCP connect", []),
-    ("review github.com/acme/app", "Reconix will review github.com/acme/app as source code.",
-     "Only read the files; nothing is run", [".git", "node_modules", "vendor", "secrets"]),
+    (
+        DEMO_REQUEST,
+        "Reconix will test https://staging.example.com as a web application.",
+        "Send only GET and POST requests",
+        ["/admin"],
+    ),
+    (
+        "Test the API at https://api.example.com/v1",
+        "Reconix will test https://api.example.com",
+        "Send only GET and POST requests",
+        ["/internal", "/admin"],
+    ),
+    (
+        "scan 10.0.0.0/24",
+        "Reconix will test 10.0.0.0/24 as a network.",
+        "Only connect to ports 21, 22, 23, 25, 53, 80, 110, 111, 135, 137, 139, 143, 161, "
+        "389, 443, 445, 993, 995, 1433, 1521, 2049, 3000, 3306, 3389, 5432, 5900, 6379, "
+        "8000, 8080, 8443, 9200 and 27017, using TCP connect",
+        [],
+    ),
+    (
+        "review github.com/acme/app",
+        "Reconix will review https://github.com/acme/app as source code.",
+        "Only read the files; nothing is run",
+        [".git", "node_modules", "vendor", "secrets"],
+    ),
 ]
 
 
@@ -30,7 +48,7 @@ def test_each_template_reads_as_plain_language(request_text, headline, access, n
     assert summary.never == never
     assert summary.tools == store.get_scope().tools
     words = " ".join([summary.headline, *summary.may_do, *summary.never])
-    assert "minute" not in words                                 # the time limit isn't shown
+    assert "minute" not in words  # the time limit isn't shown
     assert not any(key in words for key in ("allowed_", "excluded_", "time_limit"))
 
 

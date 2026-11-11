@@ -3,7 +3,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { COOKIE, sessionValue } from "@/lib/auth/session";
-import { type FakeCore, startFakeCore } from "./fakes/core-api";
+import { type FakeCore, startFakeCore } from "./fakes/core-api-server";
 
 const TOKEN = "route-test-token-0123456789";
 let cookie = "";

@@ -1,0 +1,6 @@
+http://juice-shop:3000
+http://juice-shop:3000/polyfills.js
+http://juice-shop:3000/runtime.js
+http://juice-shop:3000/main.js
+http://juice-shop:3000/styles.css
+http://juice-shop:3000/vendor.js

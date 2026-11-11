@@ -40,6 +40,25 @@ def key_finding_rows() -> List[Tuple[Text, ...]]:
     return rows
 
 
+# A coverage status's color in the Test coverage table.
+COVERAGE_TONE = {"TESTED": "GREEN", "PARTIAL": "MEDIUM", "NOT_RUN": "MUTED", "MANUAL": "TEAL"}
+
+
+def coverage_rows() -> List[Tuple[Text, ...]]:
+    """The Test coverage table's rows: each technique, its status and the tools that ran
+    (from report_data(), so the preview matches every export)."""
+    if not store.get_scope():
+        return []
+    from ..store.templates.techniques import status_text
+
+    rows = []
+    for row in store.report_data().get("coverage", []):
+        tone = getattr(theme, COVERAGE_TONE.get(row["status"], "MUTED"))
+        rows.append((Text(row["name"]), Text(status_text(row), style=tone),
+                     Text(", ".join(row.get("tools", [])) or "—", style=theme.MUTED)))
+    return rows
+
+
 def can_export(fmt: str) -> bool:
     """The run is complete and `fmt` is installed (the store checks both again)."""
     formats = {f.id: f for f in store.list_report_formats()}
@@ -108,6 +127,15 @@ class ReportScreen(ReconixScreen):
             for row in key_finding_rows():
                 table.add_row(*row)
             yield table
+            coverage = coverage_rows()
+            if coverage:
+                yield Static("")
+                yield Static(Text("Test coverage", style=f"bold {theme.TEXT}"))
+                cover = DataTable(id="coverage-table", cursor_type="none", zebra_stripes=True)
+                cover.add_columns("TECHNIQUE", "STATUS", "TOOLS THAT RAN")
+                for cells in coverage:
+                    cover.add_row(*cells)
+                yield cover
             yield Static("")
             yield Static(Text("Changes since the last assessment", style=f"bold {theme.TEXT}"))
             yield Static(retest_line())

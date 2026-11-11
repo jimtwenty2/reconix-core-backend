@@ -88,6 +88,57 @@ def test_a_new_assessment_row_has_no_findings_yet(db_client):
     assert row["finding_count"] == 0
     assert row["worst_severity"] is None
     assert row["pending_approval_count"] == 0
+    assert row["plan_step_count"] == 0
+    assert row["plan_step_done_count"] == 0
+    assert row["last_activity_at"] == row["updated_at"]  # nothing has run yet
+
+
+def row_of(client, headers, assessment_id, **params) -> dict:
+    [row] = [
+        r
+        for r in get(client, headers, "/assessments", **params)
+        if r["assessment_id"] == assessment_id
+    ]
+    return row
+
+
+def test_a_list_row_carries_plan_progress(db_client):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    assert plan(db_client, headers, assessment_id).status_code == 201
+    run_nmap(db_client, headers, assessment_id)
+
+    row = row_of(db_client, headers, assessment_id)
+
+    assert row["plan_step_count"] == 1
+    assert row["plan_step_done_count"] == 1
+
+
+def test_last_activity_follows_the_newest_tool_run(db_client):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    finished_at = run_nmap(db_client, headers, assessment_id)["tool_runs"][0]["finished_at"]
+
+    row = row_of(db_client, headers, assessment_id)
+
+    last = datetime.fromisoformat(row["last_activity_at"])
+    assert last >= datetime.fromisoformat(finished_at)
+    assert last >= datetime.fromisoformat(row["updated_at"])
+
+
+def test_the_list_can_be_searched_and_filtered_by_type(db_client):
+    headers = open_session(db_client)
+    assessment_id = active_assessment(db_client, headers)
+    code = get(db_client, headers, f"/assessments/{assessment_id}")["engagement_code"]
+
+    def ids(**params) -> list[str]:
+        return [r["assessment_id"] for r in get(db_client, headers, "/assessments", **params)]
+
+    assert assessment_id in ids(q=code.lower())
+    assert assessment_id in ids(q="JUICE-SHOP:3000")  # a target, any case
+    assert assessment_id in ids(type="web_url")
+    assert assessment_id not in ids(type="network")
+    assert ids(q="no-such-run-anywhere") == []
 
 
 def test_an_expired_approval_is_not_counted(db_client, session_factory):

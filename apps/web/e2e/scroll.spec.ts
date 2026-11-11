@@ -5,12 +5,14 @@
    run with motion on, because the old bug (Lenis taking the wheel on the dashboard) only existed
    with motion on. The assistant's own scroller is e2e/scroll-assistant.spec.ts (run on its own:
    it writes conversations).
-   The long view they scroll is the every-run Report: on the fixed frame the Findings view
+   The long view they scroll is the newest assessment's Report (twelve versions from the Core API
+   stand-in): on the fixed frame the Findings view
    scrolls its list pane, not the content area (e2e/findings.spec.ts). */
 import { type CDPSession, type Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
+import { apiId } from "./core-api-ids.mjs";
 import { frames, newest, sideways, signIn, sizeLabel as label } from "./support";
 
 const SIZES = [
@@ -24,9 +26,11 @@ const SIZES = [
   { width: 390, height: 844 },
 ];
 const fixedFrame = (s: { width: number; height: number }) => s.width >= 1280 && s.height >= 760;
-const RUN = newest().uid; // Reports for one run, as well as for every run
-const VIEWS = ["overview", "findings", "assessments", "reports", `reports&uid=${RUN}`];
-const viewName = (v: string) => (v.includes("&uid=") ? `${v.split("&")[0]} (one run)` : v);
+const RUN = newest().uid;
+/** The newest assessment's Report: the stand-in gives it twelve versions (core-api-stub.mjs LONG). */
+const LONG_REPORT = `reports&assessment=${apiId(RUN)}`;
+const VIEWS = ["overview", "findings", "assessments", "reports", LONG_REPORT];
+const viewName = (v: string) => (v.includes("&assessment=") ? `${v.split("&")[0]} (one assessment)` : v);
 
 // the wheel and touch tests run with motion on (the project's default is reduced, for speed)
 test.use({ reducedMotion: "no-preference" });
@@ -162,13 +166,13 @@ for (const size of [SIZES[0], SIZES[2]]) {
   test.describe(`the owner's sizes, ${label(size)}`, () => {
     test.use({ viewport: size });
 
-    for (const view of ["overview", "reports"]) {
-      test(`the wheel scrolls the ${view} view to its end, in the content area`, async ({ page }) => {
+    for (const view of ["overview", LONG_REPORT]) {
+      test(`the wheel scrolls the ${viewName(view)} view to its end, in the content area`, async ({ page }) => {
         await signIn(page);
         await open(page, view);
         const start = await scrollState(page);
         expect(start.kind).toBe("content"); // the fixed frame: the content area scrolls, not the page
-        if (view !== "overview") expect(start.range).toBeGreaterThan(200); // the sample's findings and runs don't fit
+        if (view !== "overview") expect(start.range).toBeGreaterThan(200); // its twelve versions don't fit
         await wheelToEnd(page, size.width * 0.6, size.height * 0.6);
         expect(await page.evaluate(() => scrollY)).toBe(0);
       });
@@ -230,7 +234,7 @@ for (const size of SIZES) {
 
     test("scrolls the reports view to its end", async ({ page }) => {
       await signIn(page);
-      await open(page, "reports");
+      await open(page, LONG_REPORT);
       const end = await wheelToEnd(page, size.width * 0.6, size.height * 0.7);
       expect(end.kind).toBe(fixedFrame(size) ? "content" : "window");
       expect(end.range).toBeGreaterThan(0);
@@ -245,7 +249,7 @@ test.describe("on the fixed frame (1366×768)", () => {
 
   test("PageDown, Space, the arrows, End and Home scroll the content once it has focus", async ({ page }) => {
     await signIn(page);
-    await open(page, "reports"); // every run's Reports: more than a screen of range here; each key is tried from the top
+    await open(page, LONG_REPORT); // more than a screen of range here; each key is tried from the top
     await page.getByRole("heading", { name: "Report", level: 1 }).click(); // focus lands in the content
     const top = async () => (await scrollState(page)).top;
     for (const [key, least] of [["PageDown", 200], ["Space", 200], ["ArrowDown", 1]] as const) {
@@ -267,7 +271,7 @@ for (const size of [{ width: 1366, height: 768 }, { width: 390, height: 844 }]) 
 
     test("a swipe scrolls the reports view", async ({ page, context }) => {
       await signIn(page);
-      await open(page, "reports");
+      await open(page, LONG_REPORT);
       const cdp = await context.newCDPSession(page);
       await swipeUp(page, cdp, size.width * 0.6, size.height * 0.8, size.height * 0.3);
       await expect.poll(async () => (await scrollState(page)).top).toBeGreaterThan(100);
@@ -322,7 +326,7 @@ test.describe("the docs", () => {
 
     await page.locator('nav[aria-label="Views"] a[aria-label="Reports"]').click();
     await page.waitForURL((url) => url.pathname === "/");
-    await settled(page);
+    await open(page, LONG_REPORT); // the every-assessment Report is short: scroll the long one
     const end = await wheelToEnd(page, 900, 600);
     expect(end.range).toBeGreaterThan(0);
   });

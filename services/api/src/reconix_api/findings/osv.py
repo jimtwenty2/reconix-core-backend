@@ -10,7 +10,7 @@ the manifest osv-scanner read (its absolute source.path), else the package name.
 import json
 import re
 
-from reconix_api.findings.shape import NewEvidence, NewFinding, OutputUnreadable, dedupe_key
+from reconix_api.findings.shape import NewEvidence, NewFinding, OutputUnreadable, sca_dedupe_key
 from reconix_api.models.enums import SeverityStatus
 
 CVE = re.compile(r"CVE-\d{4}-\d+", re.IGNORECASE)
@@ -50,9 +50,8 @@ def _package_findings(package: dict, path: str) -> list[NewFinding]:
     findings = []
     for vuln in _list(package.get("vulnerabilities")):
         vuln_id = str(vuln.get("id") or "")
-        # The manifest is part of the key: one package in two manifests is two findings.
-        key = [vuln_id, name, version] + ([path] if path else [])
         aliases = [str(alias) for alias in vuln.get("aliases", []) if isinstance(alias, str)]
+        cves = _cve_ids([vuln_id, *aliases])
         title = _summary(vuln) or vuln_id
         findings.append(
             NewFinding(
@@ -60,7 +59,7 @@ def _package_findings(package: dict, path: str) -> list[NewFinding]:
                 target=path or name or vuln_id,
                 description=_description(vuln, where),
                 severity=severities.get(vuln_id, SeverityStatus.UNKNOWN),
-                dedupe_key=dedupe_key("osv_vulnerability", *key),
+                dedupe_key=sca_dedupe_key(cves, vuln_id, name.lower(), path),
                 evidence=[
                     NewEvidence(
                         kind="osv_vulnerability",
@@ -68,7 +67,7 @@ def _package_findings(package: dict, path: str) -> list[NewFinding]:
                         location=where,
                     )
                 ],
-                cve_ids=_cve_ids([vuln_id, *aliases]),
+                cve_ids=cves,
             )
         )
     return findings

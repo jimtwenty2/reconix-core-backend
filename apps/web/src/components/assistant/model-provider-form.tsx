@@ -10,7 +10,7 @@
    Changing the provider, the address or the key asks for a new test. A refusal stays here, in
    the error style. An answer that comes back after the form went is dropped. */
 import { useEffect, useId, useRef, useState } from "react";
-import { CircleCheck, Loader, PlugZap } from "lucide-react";
+import { CircleCheck, Loader, PlugZap, Plus, RefreshCw } from "lucide-react";
 
 import { toast } from "@/components/ui/toast";
 import * as api from "@/lib/assistant/client";
@@ -18,6 +18,7 @@ import { type PresetId, presetOf } from "@/lib/assistant/models/presets";
 import { MAX_URL } from "@/lib/assistant/models/schema";
 import type { ModelsView, ProviderView } from "@/lib/assistant/models/view";
 import { ModelKeyField, NOT_A_LOGIN } from "./model-key-field";
+import { ProviderTiles } from "./provider-tiles";
 import { type ListState, ModelNameField } from "./model-name-field";
 import {
   addressOf,
@@ -28,7 +29,7 @@ import {
   initialChoice,
   knownModels,
   NO_MODEL_YET,
-  providerOptions,
+  presetFor,
   requestsForAdd,
   savedFor,
   savedName,
@@ -42,9 +43,11 @@ interface Props {
   models: Models;
   onCancel: () => void;
   onDone: () => void;
+  /** The provider the form starts on (a provider picked in the list), else Reconix. */
+  start?: PresetId;
 }
 
-const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "host.docker.internal"]);
 const hostOf = (url: string) => {
   try {
     return new URL(url).hostname;
@@ -62,17 +65,18 @@ function listOf(preset: ReturnType<typeof presetOf>, saved: ProviderView | null)
 
 const firstOf = (list: ListState) => (list.status === "ready" ? (list.models[0] ?? NO_MODEL_YET) : NO_MODEL_YET);
 
-export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
+export function ModelProviderForm({ view, models, onCancel, onDone, start }: Props) {
+  const first = start ? presetOf(start) : firstPreset();
   const id = useId();
   const ids = { provider: `${id}-provider`, providerHint: `${id}-provider-hint`, url: `${id}-url`, urlHint: `${id}-url-hint`, key: `${id}-key`, model: `${id}-model` };
-  const providerField = useRef<HTMLSelectElement>(null);
+  const providerField = useRef<HTMLDivElement>(null);
   const keyField = useRef<HTMLInputElement>(null);
-  const [presetId, setPresetId] = useState<PresetId>(() => firstPreset().id);
-  const [baseUrl, setBaseUrl] = useState<string>(() => firstPreset().baseUrl);
+  const [presetId, setPresetId] = useState<PresetId>(() => first.id);
+  const [baseUrl, setBaseUrl] = useState<string>(() => first.baseUrl);
   const [removeKey, setRemoveKey] = useState(false);
   const [keyTyped, setKeyTyped] = useState(false);
-  const [list, setList] = useState<ListState>(() => listOf(firstPreset(), savedFor(view, firstPreset(), firstPreset().baseUrl)));
-  const [choice, setChoice] = useState(() => firstOf(listOf(firstPreset(), savedFor(view, firstPreset(), firstPreset().baseUrl))));
+  const [list, setList] = useState<ListState>(() => listOf(first, savedFor(view, first, first.baseUrl)));
+  const [choice, setChoice] = useState(() => firstOf(listOf(first, savedFor(view, first, first.baseUrl))));
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tested, setTested] = useState<string | null>(null); // a passed test, in words
@@ -87,9 +91,10 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
   const providerName = saved ? savedName(saved) : preset.label;
   const host = hostOf(address);
   const remote = host !== null && !LOOPBACK.has(host);
+  const ready = list.status === "ready" && list.models.length > 0; // a model to add: tested, or saved before
 
   useEffect(() => {
-    providerField.current?.focus({ preventScroll: true }); // the form's first control
+    providerField.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true }); // the form's first control
     alive.current = true;
     return () => {
       alive.current = false; // gone (Cancel, Escape, closed) while asking: the answer is dropped
@@ -195,21 +200,21 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
     <div className="ai-picker-form">
       <div className="ai-picker-body ai-picker-fields">
         <div className="ai-field">
-          <label htmlFor={ids.provider} className="ai-label">
+          <span id={ids.provider} className="ai-label">
             Provider
-          </label>
-          <select ref={providerField} id={ids.provider} value={presetId} onChange={(e) => choosePreset(e.target.value as PresetId)} aria-describedby={ids.providerHint} className="ai-select">
-            {providerOptions().map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          </span>
+          <ProviderTiles ref={providerField} labelledBy={ids.provider} describedBy={ids.providerHint} value={presetId} saved={new Set(view.providers.map((p) => presetFor(p).id))} onChange={choosePreset} />
           <div id={ids.providerHint} className="flex flex-col gap-1">
             {preset.kind === "reconix" && <p className="ai-hint">Its address, model and key come from the Core API&apos;s .env (read-only).</p>}
             {preset.kind === "cloud" && (
-              <p className="ai-hint">{`Just the API key: ${preset.label}'s models are built in. It runs at ${host}, so the Core API sends your questions and the session data they need there.`}</p>
+              <p className="ai-hint">{`Needs only an API key; its models are listed for you. It runs at ${host}, so the Core API sends your questions and the session data they need there.`}</p>
             )}
+            {preset.kind === "custom" && host !== null && !remote && (
+              <p className="ai-hint">
+                On this computer. The Core API reaches it through Docker&apos;s host address, so the server must listen on the local network (LM Studio: Serve on local network).
+              </p>
+            )}
+            {preset.kind === "local" && <p className="ai-hint">Ollama on this computer: start it with OLLAMA_HOST=0.0.0.0 so the Core API can reach it.</p>}
             {saved && preset.kind !== "reconix" && <p className="ai-hint">Saved as {providerName}: Add model switches it to the chosen model.</p>}
           </div>
         </div>
@@ -266,20 +271,27 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
             onBlur={() => undefined}
           />
         )}
-        <div className="ai-field">
-          <button type="button" onClick={() => void testConnection()} disabled={testing} className="ai-btn ai-btn-test">
-            {testing ? <Loader className="size-3.5 animate-spin" aria-hidden /> : <PlugZap className="size-3.5" aria-hidden />}
-            {testing ? "Testing the connection…" : tested ? "Test again" : "Test connection"}
-          </button>
-          {tested && !error ? (
-            <p className="ai-test-ok" role="status">
-              <CircleCheck className="size-3.5 shrink-0" aria-hidden />
-              {tested}
+        {/* where the connection stands: the footer's main button tests it (then adds the model) */}
+        {!error && (
+          <div className="ai-connect" data-state={testing ? "testing" : tested ? "ok" : ready ? "ready" : "idle"} role="status">
+            {testing ? (
+              <Loader className="ai-connect-icon animate-spin" aria-hidden />
+            ) : tested ? (
+              <CircleCheck className="ai-connect-icon" aria-hidden />
+            ) : (
+              <PlugZap className="ai-connect-icon" aria-hidden />
+            )}
+            <p>
+              {testing
+                ? `Connecting to ${preset.kind === "reconix" ? "the Core API's model" : (host ?? providerName)}…`
+                : tested
+                  ? tested
+                  : ready
+                    ? `${providerName} is saved but not tested here yet: Test again checks that it answers.`
+                    : "Test the connection first: it checks the provider and finds its models. Nothing is used until you add one."}
             </p>
-          ) : (
-            list.status !== "ready" && !error && <p className="ai-hint">Checks the provider and finds its models. Nothing is used until you add one.</p>
-          )}
-        </div>
+          </div>
+        )}
         {list.status === "ready" && list.models.length > 0 && (
           <ModelNameField
             id={ids.model}
@@ -298,19 +310,26 @@ export function ModelProviderForm({ view, models, onCancel, onDone }: Props) {
         )}
       </div>
       <div className="ai-picker-foot">
-        <button type="button" onClick={cancel} className="ai-btn ai-btn-small ai-btn-outline">
+        <button type="button" onClick={cancel} className="ai-btn ai-btn-small ai-btn-outline mr-auto">
           Cancel
         </button>
-        <button
-          type="button"
-          onClick={() => void add()}
-          disabled={saving || testing || list.status !== "ready" || choice === NO_MODEL_YET}
-          title={list.status !== "ready" ? "Test the connection first" : undefined}
-          className="ai-btn ai-btn-small ai-btn-primary"
-        >
-          {saving && <Loader className="size-3.5 animate-spin" aria-hidden />}
-          Add model
-        </button>
+        {ready ? (
+          <>
+            <button type="button" onClick={() => void testConnection()} disabled={testing || saving} className="ai-btn ai-btn-small ai-btn-outline">
+              {testing ? <Loader className="size-3.5 animate-spin" aria-hidden /> : <RefreshCw className="size-3.5" aria-hidden />}
+              Test again
+            </button>
+            <button type="button" onClick={() => void add()} disabled={saving || testing || choice === NO_MODEL_YET} className="ai-btn ai-btn-small ai-btn-primary ai-btn-go">
+              {saving ? <Loader className="size-3.5 animate-spin" aria-hidden /> : <Plus className="size-3.5" aria-hidden />}
+              Add model
+            </button>
+          </>
+        ) : (
+          <button type="button" onClick={() => void testConnection()} disabled={testing} className="ai-btn ai-btn-small ai-btn-primary ai-btn-go">
+            {testing ? <Loader className="size-3.5 animate-spin" aria-hidden /> : <PlugZap className="size-3.5" aria-hidden />}
+            {testing ? "Testing…" : "Test connection"}
+          </button>
+        )}
       </div>
     </div>
   );

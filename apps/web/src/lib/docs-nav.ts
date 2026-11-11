@@ -138,7 +138,7 @@ const GROUPS: GroupSpec[] = [
       { title: "Reviewing results", slug: "reviewing", description: "The Report screen, the summary and the audit trail." },
       { title: "Understanding findings", slug: "understanding-findings", description: "Severity, validation, CVSS, triage, filters and imports." },
       { title: "Exporting", slug: "exporting", description: "PDF, JSON and DOCX from the terminal, saved under ./reports/." },
-      { title: "The web dashboard", slug: "dashboard", description: "Single downloads, the preview, and the combined report of up to five runs." },
+      { title: "The web dashboard", slug: "dashboard", description: "Its views, and the Core API reports the Report view lists and downloads." },
       { title: "Dashboard panels", slug: "panels", description: "What each panel on the dashboard shows, how its numbers are counted and what you can click." },
     ],
   },
@@ -247,12 +247,7 @@ export const DOCS = {
   panelActivity: "/docs/reports#panels-activity-timeline",
   panelExecution: "/docs/reports#panels-execution-timeline",
   panelFindingsBySeverity: "/docs/reports#panels-findings-by-severity",
-  panelAssessment: "/docs/reports#panels-assessment",
-  panelReportFindings: "/docs/reports#panels-findings",
-  panelPreview: "/docs/reports#panels-preview",
-  panelRuns: "/docs/reports#panels-runs",
-  panelCombine: "/docs/reports#panels-combine-runs",
-  panelTargets: "/docs/reports#panels-targets",
+  panelReports: "/docs/reports#panels-reports",
   // the views that are one panel, not a row of cards (QAL-009)
   panelAssessments: "/docs/reports#panels-assessments",
   panelFindingsList: "/docs/reports#panels-findings-list",

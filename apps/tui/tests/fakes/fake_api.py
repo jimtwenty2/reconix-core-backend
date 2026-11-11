@@ -52,6 +52,21 @@ DEFAULT_STEPS: List[Tuple[str, str, str, List[str], str, str]] = [
 ]
 
 
+_VERIFIER_TOOLS = {"SQLMAP", "DALFOX", "COMMIX", "SCHEMATHESIS", "NUCLEI_DAST"}
+
+
+def _confidence(validation: str, finding_status: str, severity: str, tools: list) -> str:
+    """Mirror the API's derived FindingOut.confidence so the fake stays faithful."""
+    if validation == "CONFIRMED":
+        return "CONFIRMED"
+    if finding_status == "FALSE_POSITIVE" or severity == "NONE":
+        return "INFORMATIONAL"
+    upper = {t.upper() for t in tools}
+    if upper & _VERIFIER_TOOLS or len(upper) >= 2:
+        return "FIRM"
+    return "TENTATIVE"
+
+
 def finding_row(
     code: str,
     title: str,
@@ -63,6 +78,7 @@ def finding_row(
 ) -> dict:
     """A FindingOut without its ids (the fake fills them in)."""
     return {
+        "confidence": _confidence("UNCONFIRMED", "OPEN", severity, [tool]),
         "code": code,
         "title": title,
         "target": target,
@@ -80,6 +96,17 @@ def finding_row(
         "reviewed_at": None,
         "tools": [tool],
         "evidence_text": evidence,
+    }
+
+
+def code_finding_row() -> dict:
+    """A CodeFindingOut (a finding with its place in the uploaded code and the AI review)."""
+    return {
+        **finding_row("SEMGREP-SQLI", "SQL injection", "/workspace/code/s", "HIGH", "SEMGREP"),
+        "path": "app/db.py", "line": 12, "end_line": 12,
+        "rule_id": "python.lang.security.audit.sqli", "snippet": "cur.execute(q + user)",
+        "file_sha256": "0" * 64, "verdict": "LIKELY_TRUE_POSITIVE",
+        "explanation": "User input reaches the query.", "fix_recommendation": "Use parameters.",
     }
 
 
@@ -118,6 +145,10 @@ class FakeApi:
         }
         self.analysis_summary = "Two issues found; the admin panel is the one to fix first."
         self.pending_activation = False
+        # GET /system/kali: tests flip these to shape the status chip.
+        self.kali_connected = True
+        self.kali_host = "reconix-kali-container:8000"
+        self.provider_test_ok = True  # POST /llm-providers/{id}/test answers ok
         self.n = 0
         self.sessions: Dict[str, str] = {}  # token -> session id
         self.providers: List[dict] = []
@@ -129,6 +160,12 @@ class FakeApi:
         self.findings: Dict[str, dict] = {}
         self.reports: Dict[str, dict] = {}
         self.messages: List[dict] = []
+        self.uploads: List[bytes] = []  # the tar.gz bodies PUT to /code
+        self.code_files: Dict[str, str] = {}  # relative path -> sha256 the "API" holds
+        self.code_polls = 1  # a code scan answers RUNNING this many times before COMPLETED
+        self.code_findings: List[dict] = [code_finding_row()]
+        self.code_notes = ["SYFT 12 packages"]
+        self.scans: Dict[str, dict] = {}
 
     # --- helpers for tests ------------------------------------------------------------------
     def paths(self) -> List[str]:
@@ -142,14 +179,22 @@ class FakeApi:
         return [a["tool"] for a in self.actions.values() if a["tool_runs"]]
 
     # --- the transport -----------------------------------------------------------------------
-    def send(self, request) -> Any:
+    def send(self, request, timeout=None) -> Any:
         if self.down:
             raise CoreApiError("UNREACHABLE", NOT_RUNNING)
         path = request.full_url.split("/api/v1", 1)[1]
-        body = json.loads(request.data) if request.data else None
+        gzipped = request.headers.get("Content-type") == "application/gzip"
+        body = (
+            {"gzip_bytes": len(request.data)} if gzipped
+            else json.loads(request.data) if request.data else None
+        )
+        if gzipped:
+            self.uploads.append(request.data)
         auth = request.headers.get("Authorization", "")
         method = request.get_method()
         self.calls.append((method, path, body, auth))
+        if path == "/health":  # open, no token (api/system.py)
+            return {"status": "OK"}
         for key, (status, code, message) in self.fail_on.items():
             want_method, _, prefix = key.partition(" ")
             if method == want_method and path.startswith(prefix):
@@ -171,6 +216,12 @@ class FakeApi:
     # --- the routes --------------------------------------------------------------------------
     def answer(self, method: str, path: str, body: Any, full: str) -> Any:  # noqa: C901
         parts = path.strip("/").split("/")
+        if path == "/system/kali" and method == "GET":
+            return {
+                "connected": self.kali_connected,
+                "host": self.kali_host if self.kali_connected else None,
+                "checked_at": now(),
+            }
         if path == "/sessions" and method == "POST":
             token, session_id = TOKEN_PREFIX + self._id("t"), self._id("s")
             self.sessions[token] = session_id
@@ -188,10 +239,16 @@ class FakeApi:
             return self.providers if method == "GET" else self._add_provider(body)
         if path.endswith("/activate"):
             return self._activate(parts[1])
+        if path.endswith("/test") and parts[0] == "llm-providers":
+            return self._test_provider(parts[1])
+        if path.endswith("/models") and parts[0] == "llm-providers":
+            return self._provider_models(parts[1])
         if parts[0] == "llm-providers" and method == "PATCH":
-            row = next(r for r in self.providers if r["llm_provider_id"] == parts[1])
-            row["api_key_last4"] = (body.get("api_key") or "")[-4:] or None
-            return row
+            return self._patch_provider(parts[1], body)
+        if parts[0] == "llm-providers" and method == "DELETE":
+            return self._delete_provider(parts[1])
+        if parts[0] == "llm-providers" and len(parts) == 2 and method == "GET":
+            return self._provider(parts[1])
         if path.endswith("/scope-manifests") and method == "POST":
             return self._new_manifest(parts[1], body)
         if parts[0] == "scope-manifests" and method == "PATCH":
@@ -209,6 +266,8 @@ class FakeApi:
                 for a in self.approvals.values()
                 if "status=PENDING" not in full or a["approval_status"] == "PENDING"
             ]
+        if "/code" in path or parts[0] == "code-scans":
+            return self._code(method, parts, body)
         if path.endswith("/chat"):
             return {"reply": {"content_masked": self.reply}}
         if path.endswith("/messages"):
@@ -235,26 +294,120 @@ class FakeApi:
         if parts[0] == "findings":
             return self.findings[parts[1]]
         if path.endswith("/analyze"):
-            return self._analyze(parts[1])
+            return self._analyze(parts[1], body)
         raise AssertionError(f"the fake API has no route for {method} {path}")
 
+    # --- code scans (a source scope) ---------------------------------------------------------
+    def _code(self, method: str, parts: List[str], body: Any) -> Any:  # noqa: C901
+        if parts[0] == "sessions" and parts[2] == "code":
+            if parts[3:] == ["sync"]:
+                held = {f["path"]: f["sha256"] for f in body["files"]}
+                missing = [p for p, h in held.items() if self.code_files.get(p) != h]
+                self._listed = held
+                self.code_files = {p: h for p, h in self.code_files.items() if p in held}
+                return {"missing": missing, "target": f"/workspace/code/{parts[1]}"}
+            if method == "PUT":
+                self.code_files = dict(self._listed)
+                return {"files": 0, "size_bytes": body["gzip_bytes"],
+                        "target": f"/workspace/code/{parts[1]}"}
+            if parts[3:] == ["clone"]:
+                raise self.error(503, "GIT_NOT_FOUND", "git is not installed on this computer")
+        if parts[0] == "sessions" and parts[2] == "code-scans":
+            run_id = self._id("scan")
+            self.scans[run_id] = {"polls": 0, "tools": body.get("tools"), "session": parts[1]}
+            return self._code_scan_out(run_id)
+        if parts[0] == "code-scans" and len(parts) == 2:
+            self.scans[parts[1]]["polls"] += 1
+            return self._code_scan_out(parts[1])
+        if parts[0] == "code-scans" and parts[2] == "findings":
+            return [{**row, "finding_id": f"cf-{i}"} for i, row in enumerate(self.code_findings)]
+        raise AssertionError(f"the fake API has no code route for {method} {parts}")
+
+    def _code_scan_out(self, run_id: str) -> dict:
+        scan = self.scans[run_id]
+        running = scan["polls"] < self.code_polls
+        counts = {} if running else {"HIGH": len(self.code_findings)}
+        return {
+            "agent_run_id": run_id,
+            "agent_runs_status": "RUNNING" if running else "COMPLETED",
+            "stage": "SCANNING" if running else "DONE",
+            "progress": 40 if running else 100,
+            "started_at": now(),
+            "finished_at": None if running else now(),
+            "session_id": scan["session"],
+            "assessment_id": "a-code",
+            "counts": counts,
+            "notes": [] if running else self.code_notes,
+            "error": None,
+        }
+
     # --- providers ---------------------------------------------------------------------------
+    def _provider(self, provider_id: str) -> dict:
+        return next(r for r in self.providers if r["llm_provider_id"] == provider_id)
+
     def _add_provider(self, body: dict) -> dict:
         row = {
-            **body,
             "llm_provider_id": self._id("p"),
+            "provider_type": body["provider_type"],
+            "display_name": body.get("display_name", ""),
+            "base_url": body.get("base_url"),
+            "model_name": body["model_name"],
             "is_active": False,
             "is_local": (body.get("base_url") or "").startswith("http://127.0.0.1"),
             "api_key_last4": (body.get("api_key") or "")[-4:] or None,
+            "created_by": "operator",
+            "created_at": now(),
+            "updated_at": now(),
         }
-        row.pop("api_key", None)
         self.providers.append(row)
         return row
 
+    def _patch_provider(self, provider_id: str, body: dict) -> dict:
+        row = self._provider(provider_id)
+        if row["created_by"] == "system":
+            raise self.error(409, "BUILT_IN_PROVIDER", "The built-in provider can't be changed.")
+        if row["is_active"]:
+            raise self.error(409, "PROVIDER_IS_ACTIVE", "The active provider can't be changed.")
+        if body.get("api_key"):
+            row["api_key_last4"] = body["api_key"][-4:]
+        if body.get("base_url"):
+            row["base_url"] = body["base_url"]
+        row["updated_at"] = now()
+        return row
+
+    def _delete_provider(self, provider_id: str) -> None:
+        row = self._provider(provider_id)
+        if row["created_by"] == "system":
+            raise self.error(409, "BUILT_IN_PROVIDER", "The built-in provider can't be deleted.")
+        if row["is_active"]:
+            raise self.error(409, "PROVIDER_IS_ACTIVE", "The active provider can't be deleted.")
+        self.providers.remove(row)
+        return None
+
+    def _test_provider(self, provider_id: str) -> dict:
+        row = self._provider(provider_id)
+        return {
+            "ok": self.provider_test_ok,
+            "model_name": row["model_name"],
+            "latency_ms": 12,
+            "code": None if self.provider_test_ok else "MODEL_UNAVAILABLE",
+            "message": None if self.provider_test_ok else "the model did not answer",
+        }
+
+    def _provider_models(self, provider_id: str) -> dict:
+        row = self._provider(provider_id)
+        if row["provider_type"] != "OLLAMA":
+            raise self.error(422, "MODEL_LIST_NOT_SUPPORTED", "Only Ollama lists its models.")
+        return {"models": [row["model_name"], "bge-m3:latest"]}
+
+    def _make_active(self, provider_id: str) -> None:
+        for row in self.providers:
+            row["is_active"] = row["llm_provider_id"] == provider_id
+
     def _activate(self, provider_id: str) -> dict:
-        row = next(r for r in self.providers if r["llm_provider_id"] == provider_id)
+        row = self._provider(provider_id)
         if row["is_local"]:
-            row["is_active"] = True
+            self._make_active(provider_id)
             return {"llm_provider": row, "approval": None}
         if self.pending_activation:
             raise self.error(409, "APPROVAL_PENDING", "waits", approval_id="a-old")
@@ -347,6 +500,8 @@ class FakeApi:
             self.assessments[self.manifests[row["manifest_id"]]["assessment_id"]].update(
                 status="ACTIVE"
             )
+        if row["kind"] == "configuration":
+            self._make_active(row["subject_snapshot"]["llm_provider_id"])
         if row["action_id"]:
             self._run_tool(self.actions[row["action_id"]])
         return row
@@ -571,7 +726,25 @@ class FakeApi:
         )
         self.findings[finding_id] = finding
 
-    def _analyze(self, assessment_id: str) -> dict:
+    def _set_summary_evidence(self, finding: dict, summary: str) -> None:
+        """Keep the AI's plain reading as one analysis_summary evidence row, as the real API
+        does, replacing any earlier one."""
+        for row in finding.get("evidence", []):
+            if row.get("kind") == "analysis_summary":
+                row["content"] = summary
+                return
+        finding.setdefault("evidence", []).append(
+            {
+                "evidence_id": self._id("ev"),
+                "kind": "analysis_summary",
+                "content": summary,
+                "location": None,
+                "created_at": now(),
+                "tool_run_id": None,
+            }
+        )
+
+    def _analyze(self, assessment_id: str, body=None) -> dict:
         assessment = self._assessment(assessment_id)
         run_id = self._id("r")
         run = {
@@ -586,25 +759,38 @@ class FakeApi:
         }
         self.runs[run_id] = run
         rows = [f for f in self.findings.values() if f["assessment_id"] == assessment_id]
-        return {
-            "agent_run": self._run_out(run),
-            "summary": self.analysis_summary,
-            "analysis": [
+        wanted = set((body or {}).get("finding_ids") or [])
+        if wanted:  # per-step analysis targets just this step's findings
+            rows = [f for f in rows if f["finding_id"] in wanted]
+        analysis = []
+        for f in rows:
+            # The ANALYZE step writes a plain-language analysis onto each finding, as the
+            # real API now does, so GET /findings afterwards returns the filled-in texts.
+            f["description"] = f"In plain terms: {f['title']}."
+            f["impact"] = f"An attacker could abuse {f['title']}."
+            f["remediation"] = f["remediation"] or "Close what is not needed."
+            summary_text = f"The evidence shows {f['title']} plainly."
+            self._set_summary_evidence(f, summary_text)
+            analysis.append(
                 {
                     "code": f["code"],
-                    "explanation": f"About {f['title']}.",
+                    "explanation": f["description"],
                     "related": [],
                     "severity_status": f["severity_status"],
                     "cvss_score": None,
                     "evidence": "",
-                    "impact": f["impact"] or "",
-                    "remediation": f["remediation"] or "",
+                    "evidence_summary": summary_text,
+                    "impact": f["impact"],
+                    "remediation": f["remediation"],
                     "cwe_ids": [],
                     "owasp_id": [],
                     "cve_ids": [],
                     "next_step": None,
                     "unsure": "",
                 }
-                for f in rows
-            ],
+            )
+        return {
+            "agent_run": self._run_out(run),
+            "summary": self.analysis_summary,
+            "analysis": analysis,
         }

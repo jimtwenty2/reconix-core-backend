@@ -74,7 +74,7 @@ Never cut: the scope check, approvals, hiding secrets, the audit log, and the fu
 | Nut Youlong | Kali tool container, parsers and findings, VS Code extension, main presenter | Reconix-Kali-MCP · Reconix-Core parsers/ findings/ · Reconix-Vscode |
 | Khin Sakphearoth | AI Service (with Vanneth), public website and backup presenter | Reconix-Core · services/ai/ · Reconix-Public-Web |
 | Horn Vanhong | Terminal app (TUI and commands) | Reconix-Core · apps/tui/ |
-| Nhoeun Sokpiseth | Local web app | Reconix-Core · apps/web/ |
+| Nhoeun Sokpiseth | Local web app, Terminal app | Reconix-Core · apps/web/ · apps/tui/ |
 | Choeng Sreyleak | Book, docs, public website, VS Code extension | Reconix-Public-Web · Reconix-Vscode (with Youlong and Pojim) |
 
 ## Week 1 · Backend core and first flow (Fri 23 – Wed 28 Oct)
@@ -699,7 +699,7 @@ Reconix-Core/
 │   │   ├── make_sample_data.py # builds the JSON files from deploy/seed.sql
 │   │   └── *.json              # sessions, assessments, findings, reports
 │   │
-│   ├── tui/                    # Terminal app (Textual, Typer). Owner: Vanhong
+│   ├── tui/                    # Terminal app (Textual, Typer). Owner: Sokpiseth
 │   │   ├── AGENTS.md
 │   │   ├── pyproject.toml      # reconix-tui, in the uv workspace
 │   │   ├── scripts/

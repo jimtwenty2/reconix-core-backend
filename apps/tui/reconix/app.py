@@ -19,19 +19,37 @@ from . import store, theme
 from .commands import COMMANDS, Command, CommandCheck, check_command_line, find, parse
 from .screens import ChoiceScreen, CommandBarScreen, HelpScreen, StartScreen
 from .shell import (
-    ActionsMixin, DialogsMixin, KnowledgeMixin, LlmMixin, NavigationMixin,
-    RunHostMixin, WebDashboardMixin,
+    ActionsMixin,
+    DialogsMixin,
+    KnowledgeMixin,
+    LlmMixin,
+    NavigationMixin,
+    RunHostMixin,
+    WebDashboardMixin,
 )
-from .widgets import ActivityStatus, RunLog
+from .widgets import ActivityStatus, RunLog, SessionBar
 
 
-class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
-                 KnowledgeMixin, LlmMixin, WebDashboardMixin, App):
+class ReconixApp(
+    NavigationMixin,
+    RunHostMixin,
+    ActionsMixin,
+    DialogsMixin,
+    KnowledgeMixin,
+    LlmMixin,
+    WebDashboardMixin,
+    App,
+):
     """Reconix — AI-Powered Security Testing Assistant (demo)."""
 
     CSS_PATH = "reconix.tcss"
     TITLE = "reconix"
-    ENABLE_COMMAND_PALETTE = False   # Reconix has its own "/" command system
+    ENABLE_COMMAND_PALETTE = False  # Reconix has its own "/" command system
+
+    # Poll the Core API's health so the header shows whether the backend is reachable.
+    # Tests opt in (see conftest) so they don't spawn background health workers.
+    CHECK_CORE_API_ON_START = True
+    CORE_API_POLL_SECONDS = 15
 
     BINDINGS = [
         Binding("right", "nav_next", "next", show=False),
@@ -44,6 +62,7 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
         # Start prompt focused; in a dialog or a field with selected text it is left to them.
         Binding("ctrl+c", "stop_assessment", "stop", show=False, priority=True),
         Binding("ctrl+o", "toggle_activity", "expand steps", show=False),
+        Binding("ctrl+y", "copy_selection", "copy", show=False),
         # Quick jumps for presenting — hidden to keep the footer clean. On Alt, never on a
         # bare digit: a menu's digits pick a choice, and the same key must not mean "show
         # me screen N" on one screen and "decide this gate" on the next (QA-008).
@@ -59,12 +78,12 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
 
     def __init__(self) -> None:
         super().__init__()
-        self.selected_finding: str = ""          # finding id shown on the Detail screen
-        self.pending_prompt: str = ""            # draft for the Start prompt ("Chat about this")
+        self.selected_finding: str = ""  # finding id shown on the Detail screen
+        self.pending_prompt: str = ""  # draft for the Start prompt ("Chat about this")
         self.template_pick: Optional[str] = None  # template chosen with /template <id>
-        self.findings_filter: str = "all"        # Findings list view (kept across screens)
+        self.findings_filter: str = "all"  # Findings list view (kept across screens)
         self.findings_sort: str = "severity"
-        self.activity_expanded = False           # Ctrl+O: list the steps Reconix finished
+        self.activity_expanded = False  # Ctrl+O: list the steps Reconix finished
         self._init_run_host()
         self._init_web()
 
@@ -72,9 +91,32 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
         # The stylesheet's $variables come from theme.py, the one place colors are defined.
         return {**super().get_css_variables(), **theme.CSS_TOKENS}
 
+    KALI_POLL_SECONDS = 15   # how often the top bar's kali chip refreshes from the Core API
+
     def on_mount(self) -> None:
         self.push_screen(StartScreen())
-        self.call_after_refresh(self.ask_provider_on_start)   # until a model is active
+        self.call_after_refresh(self.ask_provider_on_start)  # until a model is active
+        if self.CHECK_CORE_API_ON_START:
+            self.poll_core_api()
+            if self.CORE_API_POLL_SECONDS > 0:
+                self.set_interval(self.CORE_API_POLL_SECONDS, self.poll_core_api)
+
+    def poll_core_api(self) -> None:
+        """Check the Core API's health in the background and show it in the header."""
+
+        def work() -> None:
+            from .core_api import client
+
+            self.from_worker(self._core_api_status, client.health())
+
+        self.run_worker(work, thread=True, group="core-api-health", exit_on_error=False)
+
+    def _core_api_status(self, online: bool) -> None:
+        if store.api_online() == online:
+            return
+        store.set_api_online(online)
+        for bar in self.screen.query(SessionBar):
+            bar.refresh_line()
 
     def on_unmount(self) -> None:
         # Quitting ends the session: mark the saved copies so the web dashboard shows an
@@ -90,18 +132,30 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
         else:
             self.push_screen(HelpScreen.for_screen(self.screen))
 
+    def action_copy_selection(self) -> None:
+        """Ctrl+Y: copy the selected text (drag to select) to the clipboard. Ctrl+C is Stop,
+        so copy is its own key. Paste works in any input."""
+        text = self.screen.get_selected_text()
+        if text:
+            self.copy_to_clipboard(text)
+            self.notify(f"Copied {len(text)} characters.", title="Clipboard", timeout=2)
+        else:
+            self.notify(
+                "Select text first (drag with the mouse), then Ctrl+Y.", title="Copy", timeout=3
+            )
+
     def action_toggle_activity(self) -> None:
         self.activity_expanded = not self.activity_expanded
         for status in self.screen.query(ActivityStatus):
             status.set_expanded(self.activity_expanded)
-        for log in self.screen.query(RunLog):          # the live output's thinking blocks
+        for log in self.screen.query(RunLog):  # the live output's thinking blocks
             log.set_expanded(self.activity_expanded)
 
     def action_command_bar(self) -> None:
         self.open_dialog(CommandBarScreen(), self._on_command_bar)
 
     def _on_command_bar(self, line: Optional[str]) -> None:
-        if line:                     # runs after the bar has closed
+        if line:  # runs after the bar has closed
             self.run_command_line(line)
 
     # --- slash commands ------------------------------------------------------------------------
@@ -173,7 +227,8 @@ class ReconixApp(NavigationMixin, RunHostMixin, ActionsMixin, DialogsMixin,
 
         question = command.question or command.description
         self.open_dialog(
-            ChoiceScreen(command.description, question, choices, chip=f"/{command.name}"), chosen,
+            ChoiceScreen(command.description, question, choices, chip=f"/{command.name}"),
+            chosen,
         )
 
 
