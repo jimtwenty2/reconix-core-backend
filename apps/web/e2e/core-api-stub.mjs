@@ -5,12 +5,15 @@
 //   POST /api/v1/sessions                 a token (any body with interface "web")
 //   GET  /api/v1/assessments              one row per sample run, newest first (as store.ts sorts)
 //   GET  /api/v1/findings[?assessment_id] their findings, the informational ones left out
+//   GET  /api/v1/assessments/{id}/overview its counts (AssessmentOverviewOut)
+//   GET  /api/v1/assessments/{id}/reports  one report for a run that got that far (reportOf)
+//   GET  /api/v1/reports/{id}/download     a small fake file, once READY and signed off
 // and what the AI Assistant needs from the API:
 //   sessions (one per conversation): open, list, read, messages, agent-runs, resume, close
 //   POST /api/v1/sessions/{id}/chat/stream  asks the active provider's model (e2e/llm-stub.mjs)
 //        as the real API's agent does, and streams it as PIECE, then DONE (or ERROR)
 //   /api/v1/llm-providers: list, add, change, delete, activate, test, models
-//   GET  /api/v1/assessments/{id}/overview|actions|timeline, /api/v1/approvals
+//   GET  /api/v1/assessments/{id}/actions|timeline, /api/v1/approvals
 // Every call but opening a session needs a token it issued (401 INVALID_TOKEN otherwise).
 // Test code only.
 import { randomUUID } from "node:crypto";
@@ -97,6 +100,68 @@ const assessments = runs.map((a) => {
   };
 });
 
+const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "NONE"];
+const byId = new Map(runs.map((a) => [apiId(a.uid), a]));
+
+function overviewOf(a) {
+  const row = assessments.find((r) => r.assessment_id === apiId(a.uid));
+  const mine = findings.filter((f) => f.assessment_id === row.assessment_id);
+  const counted = mine.filter((f) => f.finding_status !== "FALSE_POSITIVE");
+  const tally = (key, values) => Object.fromEntries(values.map((v) => [v, counted.filter((f) => f[key] === v).length]));
+  return {
+    assessment: { assessment_id: row.assessment_id, engagement_code: row.engagement_code, name: row.name, type: row.type, assessment_status: row.assessment_status, created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at, session_id: SESSION_ID },
+    targets: row.targets,
+    finding_count: counted.length,
+    findings_by_severity: tally("severity_status", SEVERITY),
+    findings_by_validation: tally("validation_status", ["CONFIRMED", "UNCONFIRMED", "INCONCLUSIVE"]),
+    findings_by_status: Object.fromEntries(["OPEN", "FALSE_POSITIVE", "FIXED"].map((v) => [v, mine.filter((f) => f.finding_status === v).length])),
+    actions_by_status: {},
+    plan_step_count: a.plan.length,
+    plan_step_done_count: a.plan.filter((p) => p.status === "done").length,
+    tool_run_count: a.timeline.filter((e) => e.type === "activity" && e.who === "TOOL").length,
+    request_count: a.requests.length,
+    masked_count: 0,
+    pending_approval_count: 0,
+    first_started_at: a.created_at,
+    last_finished_at: null,
+    duration_seconds: 0,
+    time_window_seconds: null,
+    over_time_window: false,
+  };
+}
+
+/** A Completed run has a signed-off report; a Running or waiting one a report whose review is
+    pending; a Stopped one none. The newest run has LONG versions (newest first), so its Report
+    view is longer than a screen (e2e/scroll.spec.ts scrolls it). */
+export const LONG = 12;
+function reportOf(a) {
+  if (a.status === "Stopped") return [];
+  const id = apiId(a.uid);
+  const done = a.status === "Completed";
+  const count = a === runs[0] ? LONG : 1;
+  return Array.from({ length: count }, (_, n) => count - n).map((version) => (
+    {
+      report_id: `${id.slice(0, 24)}${String(version).padStart(12, "f")}`,
+      version,
+      report_status: "READY",
+      executive_summary: `${a.label}: ${a.findings.length} findings recorded.`,
+      methodology: null,
+      snapshot_hash: "0".repeat(64),
+      formats: ["PDF", "DOCX", "JSON"],
+      generated_by: "tester@lab",
+      generated_at: a.saved_at || a.created_at,
+      created_at: a.created_at,
+      assessment_id: id,
+      assessment_ids: [id],
+      review_approval_id: SESSION_ID,
+      review_status: done ? "APPROVED" : "PENDING",
+      signed_off: done,
+    }
+  ));
+}
+const reports = runs.flatMap(reportOf);
+const FILES = { PDF: ["application/pdf", "pdf", "%PDF-1.4 e2e fake"], DOCX: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx", "PK e2e fake"], JSON: ["application/json", "json", '{"fake":true}'] };
+
 const send = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(body === undefined ? undefined : JSON.stringify(body));
@@ -119,26 +184,6 @@ function save(sessionId, role, content) {
   return message;
 }
 
-const overview = (row) => ({
-  assessment: { ...row },
-  targets: row.targets,
-  finding_count: row.finding_count,
-  findings_by_severity: {},
-  findings_by_validation: {},
-  findings_by_status: {},
-  actions_by_status: {},
-  plan_step_count: 0,
-  plan_step_done_count: 0,
-  tool_run_count: 0,
-  request_count: 0,
-  masked_count: 0,
-  pending_approval_count: 0,
-  first_started_at: null,
-  last_finished_at: null,
-  duration_seconds: 0,
-  time_window_seconds: null,
-  over_time_window: false,
-});
 
 /** Ask the active provider's model, as the real API's agent does, and stream its words. */
 async function chat(res, sessionId, content) {
@@ -272,13 +317,26 @@ async function handle(req, res, raw) {
   }
 
   if (m === "GET" && p === "/assessments") return send(res, 200, assessments);
-  hit = p.match(/^\/assessments\/([^/]+)\/(overview|actions|timeline)$/);
+  hit = p.match(/^\/assessments\/([^/]+)\/(overview|reports|actions|timeline)$/);
   if (m === "GET" && hit) {
-    const row = assessments.find((a) => a.assessment_id === hit[1]);
-    if (!row) return refuse(res, 404, "ASSESSMENT_NOT_FOUND", "No assessment has this id.");
-    if (hit[2] === "overview") return send(res, 200, overview(row));
+    const a = byId.get(hit[1]);
+    if (!a) return refuse(res, 404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.");
+    if (hit[2] === "overview") return send(res, 200, overviewOf(a));
+    if (hit[2] === "reports") return send(res, 200, reportOf(a));
     if (hit[2] === "actions") return send(res, 200, []);
     return send(res, 200, { events: [], has_older: false });
+  }
+  hit = p.match(/^\/reports\/([^/]+)\/download$/);
+  if (m === "GET" && hit) {
+    const r = reports.find((x) => x.report_id === hit[1]);
+    if (!r) return refuse(res, 404, "REPORT_NOT_FOUND", "No report with this id.");
+    // the format first, as the API's query validation answers before the handler runs
+    const [type, ext, file] = FILES[url.searchParams.get("format") || "PDF"] ?? [];
+    if (!type) return refuse(res, 422, "VALIDATION_ERROR", "Unknown format.");
+    if (!r.signed_off) return refuse(res, 409, "REPORT_NOT_SIGNED_OFF", "A person must approve the review first.");
+    const code = assessments.find((x) => x.assessment_id === r.assessment_id).engagement_code;
+    res.writeHead(200, { "Content-Type": type, "Content-Disposition": `attachment; filename="${code}-v${r.version}.${ext}"` });
+    return res.end(file);
   }
   if (m === "GET" && p === "/findings") {
     const id = url.searchParams.get("assessment_id");

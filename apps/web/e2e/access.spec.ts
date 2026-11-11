@@ -18,21 +18,6 @@ test("pages and routes need a session", async ({ page, request }) => {
   expect(api.status()).toBe(401);
 });
 
-test("the combined report needs a session, and a session can read it", async ({ context, request }) => {
-  const url = `/api/reports/combined?uids=${sample()[0].uid}&format=preview&evidence=1&low=1&appendix=1`;
-  const none = await request.get(url);
-  expect(none.status()).toBe(401);
-  await context.addCookies([{ name: "reconix_view", value: sessionValue(TOKEN), domain: "127.0.0.1", path: "/" }]);
-  const ok = await context.request.get(url);
-  expect(ok.status()).toBe(200);
-  expect(ok.headers()["content-type"]).toContain("text/html");
-  expect(await ok.text()).toContain("Combined security assessment report");
-  // the query is validated before anything is read: more than five runs, and unknown runs, are refused
-  const six = sample().slice(0, 6).map((a) => a.uid).join(",");
-  expect((await context.request.get(`/api/reports/combined?uids=${six}&format=preview`)).status()).toBe(400);
-  expect((await context.request.get("/api/reports/combined?uids=20200101-000000-dead_NOPE-1&format=preview")).status()).toBe(404);
-});
-
 test("there is no web terminal: its page and its ticket route are gone (404)", async ({ page }) => {
   await signInFresh(page);
   const origin = { Origin: `http://127.0.0.1:${PORT}` };

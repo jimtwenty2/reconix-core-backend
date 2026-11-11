@@ -5,8 +5,7 @@
    Every value is HTML-escaped (tool output and operator text read as text, never markup) and
    the document carries no scripts (the dashboard's CSP would block them anyway). The route
    masks the assessment once more before it gets here (lib/report/mask.ts); this renderer prints
-   text as given. The helpers and the stylesheet are exported for the combined report
-   (combined/html.ts), which must look the same. */
+   text as given. */
 import { type Assessment, type Finding, SEVERITIES as SEV_ORDER } from "@/lib/data/schema";
 
 const SEV_CLASS: Record<string, string> = { CRITICAL: "crit", HIGH: "high", MEDIUM: "med", LOW: "low" };
@@ -19,7 +18,7 @@ const escapeMap: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt
 /** `map[key]`, but only the map's own entries (a status named "constructor" is not one). */
 const own = (map: Record<string, string>, key: string, fallback: string) => (Object.hasOwn(map, key) ? map[key] : fallback);
 
-/** The document's own policy, for the printer's temp copy and the combined preview's frame: no
+/** The document's own policy, for the printer's temp copy: no
     scripts, no requests, only its inline styles and data: images. */
 export const META_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">`;
 

@@ -10,7 +10,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { deriveDashboard } from "@/components/dashboard/derive";
 import { deriveOverall } from "@/components/dashboard/derive-overall";
-import { overallReportCards, reportCards } from "@/components/dashboard/derive-report";
 import { parseFindingFilter, severityChips } from "@/components/dashboard/filters";
 import { findingsCard, pickCards } from "@/lib/assistant/cards";
 import { buildContext } from "@/lib/assistant/context";
@@ -20,10 +19,6 @@ import { assessmentView } from "@/lib/data/adapt";
 import { AssessmentSchema, isInfoFinding, SAVED_SEVERITIES, SEVERITIES } from "@/lib/data/schema";
 import { allFindings, attentionItems, effectiveSeverity, overview, severityCounts } from "@/lib/data/stats";
 import { readAssessmentFile } from "@/lib/data/store";
-import { combineAssessments } from "@/lib/report/combined/select";
-import { renderCombinedHtml } from "@/lib/report/combined/html";
-import { DEFAULT_COMBINE_OPTIONS } from "@/lib/report/combined/options";
-import { renderCombinedDocx } from "@/lib/report/docx/combined";
 import { renderReportDocx } from "@/lib/report/docx/report";
 import { renderReportHtml } from "@/lib/report/html";
 import { renderFile } from "@/lib/report/render";
@@ -124,16 +119,6 @@ describe("the dropped findings appear nowhere", () => {
     expect(deriveDashboard(v).findingTotal).toBe(real.length);
   });
 
-  it("in the Report view, for the run and for every run", () => {
-    const d = deriveDashboard(v);
-    const one = reportCards(v, d.findings, d.cards.findings);
-    const all = overallReportCards(views, deriveOverall(views).cards.findings);
-    for (const r of [one, all]) {
-      clean(JSON.stringify(r));
-      expect(Number(r.stats.find((s) => s.label === "Findings")!.value)).toBe(r.findings.total);
-    }
-  });
-
   it("in the single report: HTML (the PDF's source), Word and JSON", () => {
     const html = renderReportHtml(a, NOW);
     clean(html);
@@ -146,15 +131,6 @@ describe("the dropped findings appear nowhere", () => {
     const json = String(renderFile("json", a));
     clean(json);
     expect(json).not.toContain('"INFO"');
-  });
-
-  it("in the combined report: its model, preview and Word file", () => {
-    const r = combineAssessments(library.slice(0, 3), DEFAULT_COMBINE_OPTIONS);
-    clean(JSON.stringify(r));
-    expect(Object.keys(r.summary.uniqueBySeverity)).toEqual([...SEVERITIES]);
-    expect(Object.keys(r.summary.occurrencesBySeverity)).toEqual([...SEVERITIES]);
-    clean(renderCombinedHtml(r, NOW));
-    clean(unzip(renderCombinedDocx(r, NOW)).get("word/document.xml") ?? "");
   });
 
   it("for the AI Assistant: cards, counts, suggestions and the model's context", () => {

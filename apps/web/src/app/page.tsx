@@ -1,8 +1,8 @@
 /* The Local Assessment Viewer at `/`, rendered per request from the assessments the Reconix
    TUI saved (src/lib/data/store.ts). With no `?uid=` the Overview totals every saved run
-   (derive-overall.ts) and Reports sums them up (derive-report.ts);
-   `?uid=` opens one run (derive.ts). The Findings view reads the Core API instead
-   (components/dashboard/api-findings.tsx, `?assessment=`). `?view=` is
+   (derive-overall.ts); `?uid=` opens one run (derive.ts). The Findings and Report views read
+   the Core API instead (components/dashboard/api-findings.tsx, api-reports.tsx), for the
+   assessment `?assessment=<uuid>` names. `?view=` is
    the open view, read by the client Viewer. There are no roles: signed in (src/proxy.ts and
    loadLibrary check), every view renders. The AI Assistant learns what it is about, which model answers
    (lib/assistant/models/resolve.ts) and what to suggest, from the data in scope
@@ -12,13 +12,13 @@ import { Suspense } from "react";
 import type { AssistantInfo } from "@/components/assistant/types";
 import { deriveDashboard } from "@/components/dashboard/derive";
 import { deriveOverall } from "@/components/dashboard/derive-overall";
-import { assessmentsCards, overallReportCards, reportCards, runRow } from "@/components/dashboard/derive-report";
+import { assessmentsCards, runRow } from "@/components/dashboard/derive-report";
 import { runLogData } from "@/components/dashboard/derive-run-log";
 import { ApiFindings, FindingsLoading } from "@/components/dashboard/api-findings";
+import { ApiReports, ReportsLoading } from "@/components/dashboard/api-reports";
 import { AssessmentsView } from "@/components/dashboard/assessments-view";
 import { EmptyView } from "@/components/dashboard/empty-view";
 import { OverviewView } from "@/components/dashboard/overview-view";
-import { ReportsView } from "@/components/dashboard/reports-view";
 import { RunLogView } from "@/components/dashboard/run-log-view";
 import { TopBar } from "@/components/dashboard/top-bar";
 import { Viewer } from "@/components/dashboard/viewer";
@@ -67,8 +67,7 @@ export default async function Home({ searchParams }: Props) {
   /* A stale or hand-typed ?uid= used to fall straight through to the all-runs view, with nothing
      to say the run asked for was not there (QA-LOCAL-WEB-REPORT, QAL-003). */
   const missing = wanted && !chosen && views.length > 0;
-  const runs = views.map(runRow); // once: the Assessments view and the all-runs Report share it
-  const report = chosen && dash ? reportCards(chosen, dash.findings, dash.cards.findings) : overall ? overallReportCards(views, overall.cards.findings, runs) : null;
+  const runs = views.map(runRow);
 
   return (
     <Viewer
@@ -107,7 +106,11 @@ export default async function Home({ searchParams }: Props) {
         </Suspense>
       }
       log={views.length ? <RunLogView key={chosen?.uid ?? "all"} data={chosen ? runLogData(chosen) : null} /> : empty}
-      reports={report ? <ReportsView key={chosen?.uid ?? "all"} data={report} /> : empty}
+      reports={
+        <Suspense fallback={<ReportsLoading />}>
+          <ApiReports assessmentId={apiAssessment} />
+        </Suspense>
+      }
       knowledge={<KnowledgeView />}
       assistant={assistant}
     />

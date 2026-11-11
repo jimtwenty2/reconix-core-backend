@@ -52,7 +52,7 @@ export type ApiFinding = z.infer<typeof FindingOut>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isAssessmentId = (value: unknown): value is string => typeof value === "string" && UUID.test(value);
 
-function parse<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
+export function parse<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
   const r = schema.safeParse(value);
   if (!r.success) throw new CoreApiError("BAD_RESPONSE", `The Core API's ${what} don't match docs/openapi.json.`);
   return r.data;

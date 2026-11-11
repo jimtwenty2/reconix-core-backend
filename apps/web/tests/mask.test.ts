@@ -4,8 +4,6 @@
 import { describe, expect, it } from "vitest";
 
 import { AssessmentSchema } from "@/lib/data/schema";
-import { DEFAULT_COMBINE_OPTIONS } from "@/lib/report/combined/options";
-import { combineAssessments } from "@/lib/report/combined/select";
 import { maskAssessment, maskDeep } from "@/lib/report/mask";
 
 import { sampleAssessments } from "./fixtures";
@@ -65,11 +63,5 @@ describe("a run that stopped before its scope (no scope, no plan, no findings)",
     expect(masked.findings).toEqual([]);
     expect(masked.plan).toEqual([]);
     expect(masked.approvals).toEqual([]);
-  });
-
-  it("combines into a report that lists the missing scope", () => {
-    const report = combineAssessments([maskAssessment(stopped)], DEFAULT_COMBINE_OPTIONS);
-    expect(report.summary.occurrences).toBe(0);
-    expect(report.limitations.some((l) => l.text.includes("no Scope Manifest saved"))).toBe(true);
   });
 });

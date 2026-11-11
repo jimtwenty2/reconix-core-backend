@@ -85,15 +85,9 @@ async function settled(page: Page) {
     .catch(() => {});
 }
 
-/** `exclude`: a selector axe leaves out. A frame sandboxed without scripts (the report preview)
-    must be: axe injects a script into every frame, and one that can't run it never answers. */
-export async function axe(page: Page, name: string, { exclude }: { exclude?: string } = {}) {
+export async function axe(page: Page, name: string) {
   await settled(page);
-  const builder = () => {
-    const b = new AxeBuilder({ page }).withTags(WCAG);
-    return exclude ? b.exclude(exclude) : b;
-  };
-  const { violations } = await withGlobeFrozen(page, () => builder().analyze());
+  const { violations } = await withGlobeFrozen(page, () => new AxeBuilder({ page }).withTags(WCAG).analyze());
   const known = KNOWN[name] ?? [];
   const found = violations
     .filter((v) => !known.includes(v.id))

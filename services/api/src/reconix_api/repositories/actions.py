@@ -99,6 +99,25 @@ def count_by_status(db: Db, assessment_id: UUID) -> dict[ActionStatus, int]:
     return {row[0]: row[1] for row in db.execute(query)}
 
 
+def last_activity(db: Db, assessment_ids: list[UUID]) -> dict[UUID, datetime]:
+    """Per assessment with an action: the newest action created, tool run started or tool
+    run finished. GREATEST skips NULLs (a run not finished yet)."""
+    query = (
+        select(
+            Action.assessment_id,
+            func.greatest(
+                func.max(Action.created_at),
+                func.max(ToolRun.started_at),
+                func.max(ToolRun.finished_at),
+            ),
+        )
+        .outerjoin(ToolRun, ToolRun.action_id == Action.action_id)
+        .where(Action.assessment_id.in_(assessment_ids))
+        .group_by(Action.assessment_id)
+    )
+    return {row[0]: row[1] for row in db.execute(query)}
+
+
 def tool_run_totals(db: Db, assessment_id: UUID) -> Row:
     """One row: tool_run_count, request_count, masked_count, first_started_at, last_finished_at."""
     query = (

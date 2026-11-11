@@ -12,10 +12,12 @@ import { type Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 import { axe, AXE_MOTION_OR_REDUCED, show } from "./axe";
-import { newest } from "./support";
+import { newest, sample } from "./support";
 import { apiId } from "./core-api-ids.mjs";
 
 const RUN = newest().uid;
+/** A run whose stand-in report is signed off, so its files are offered (e2e/core-api-stub.mjs). */
+const REPORTED = apiId(sample().find((a) => a.status === "Completed")!.uid);
 test.describe("axe", () => {
   test.use(AXE_MOTION_OR_REDUCED);
 
@@ -24,7 +26,7 @@ test.describe("axe", () => {
     ["one run's overview", `/?uid=${RUN}`],
     ["findings", "/?view=findings"],
     ["one finding", `/?assessment=${apiId(RUN)}&view=findings&finding=F-001`],
-    ["reports", `/?uid=${RUN}&view=reports`],
+    ["reports", `/?assessment=${REPORTED}&view=reports`],
     ["every run's report", "/?view=reports"],
     ["assessments", "/?view=assessments"],
     ["assistant", "/?view=assistant"],
@@ -46,11 +48,9 @@ test.describe("axe", () => {
 
 });
 
-/* More states, each one axe pass: the docs, the search open, the Report view with runs ticked, a
-   preview and an error, a Findings list with no match and a finding's detail on a phone, the
+/* More states, each one axe pass: the docs, the search open, the Report view with a refused
+   download, a Findings list with no match and a finding's detail on a phone, the
    sign-in page, a 404, and the phone widths. */
-const boxLabel = (page: Page) => page.locator("label").filter({ has: page.getByRole("checkbox", { name: /^Combine / }) });
-const frameHeading = (page: Page) => page.frameLocator('iframe[title="Combined report preview"]').getByRole("heading", { name: "Combined security assessment report" });
 
 test.describe("axe, more states", () => {
   test.use(AXE_MOTION_OR_REDUCED);
@@ -75,38 +75,13 @@ test.describe("axe, more states", () => {
     await axe(page, "docs search open");
   });
 
-  test("the Reports view with runs ticked has no violations", async ({ page }) => {
-    await show(page, "/?view=reports");
-    await boxLabel(page).nth(0).click();
-    await boxLabel(page).nth(1).click();
-    await expect(page.getByText("2 of 5 selected")).toBeVisible();
-    await axe(page, "reports with runs selected");
-  });
-
-  test("the Reports view with a preview has no violations", async ({ page, context }) => {
-    test.slow(); // the preview builds a combined report
-    await show(page, "/?view=reports");
-    await boxLabel(page).nth(0).click();
-    await page.getByRole("button", { name: "Preview report" }).click();
-    await expect(frameHeading(page)).toBeVisible({ timeout: 20_000 });
-    // the frame runs no scripts (sandbox=""), so axe can't walk into it: the page is checked
-    // around it, and the report itself on a page of its own, from the same HTML
-    const frame = 'iframe[title="Combined report preview"]';
-    await axe(page, "reports preview", { exclude: frame });
-    const report = await page.locator(frame).getAttribute("srcdoc");
-    expect(report).toBeTruthy();
-    const alone = await context.newPage();
-    await alone.setContent(report!);
-    await axe(alone, "reports preview report");
-    await alone.close();
-  });
-
-  test("the Reports view with a failed preview (an alert) has no violations", async ({ page }) => {
-    await show(page, "/?view=reports");
-    await page.route("**/api/reports/combined?*", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "Stubbed failure." }) }));
-    await boxLabel(page).nth(0).click();
-    await page.getByRole("button", { name: "Preview report" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "The preview could not be loaded" })).toBeVisible();
+  test("the Reports view with a refused download (an alert) has no violations", async ({ page }) => {
+    await show(page, `/?assessment=${REPORTED}&view=reports`);
+    await page.route("**/api/core-reports/*/download?format=PDF", (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ code: "REPORT_FILE_CHANGED", message: "Stubbed refusal." }) }),
+    );
+    await page.getByRole("button", { name: "Download version 1 as PDF" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Stubbed refusal." })).toBeVisible();
     await axe(page, "reports error alert");
   });
 
@@ -229,7 +204,7 @@ test.describe("the keyboard", () => {
   for (const [name, url] of [
     ["overview", "/"],
     ["findings", "/?view=findings"],
-    ["reports", `/?uid=${RUN}&view=reports`],
+    ["reports", `/?assessment=${REPORTED}&view=reports`],
     ["every run's report", "/?view=reports"],
     ["assessments", "/?view=assessments"],
   ]) {

@@ -863,12 +863,25 @@
             "title": "Finding Count",
             "type": "integer"
           },
+          "last_activity_at": {
+            "format": "date-time",
+            "title": "Last Activity At",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
           },
           "pending_approval_count": {
             "title": "Pending Approval Count",
+            "type": "integer"
+          },
+          "plan_step_count": {
+            "title": "Plan Step Count",
+            "type": "integer"
+          },
+          "plan_step_done_count": {
+            "title": "Plan Step Done Count",
             "type": "integer"
           },
           "session_id": {
@@ -916,7 +929,10 @@
           "targets",
           "finding_count",
           "worst_severity",
-          "pending_approval_count"
+          "pending_approval_count",
+          "plan_step_count",
+          "plan_step_done_count",
+          "last_activity_at"
         ],
         "title": "AssessmentRowOut",
         "type": "object"
@@ -4999,7 +5015,7 @@
     },
     "/api/v1/assessments": {
       "get": {
-        "description": "Lists the assessments, newest first.\n\nBusiness Rules:\n- Each row includes its approved targets, finding count, worst severity, and pending approvals.\n- False positives are excluded from the finding count and the worst severity.\n- Filter with `status`.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Lists the assessments, newest first.\n\nBusiness Rules:\n- Each row includes its approved targets, finding count, worst severity, pending\n  approvals, plan progress, and the time of its last activity.\n- False positives are excluded from the finding count and the worst severity.\n- Filter with `status` and `type` (for example `web_url`), and search with `q`: it\n  matches the engagement code, the name, or a target, ignoring case.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_assessments_api_v1_assessments_get",
         "parameters": [
           {
@@ -5016,6 +5032,40 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 60,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
             }
           }
         ],
