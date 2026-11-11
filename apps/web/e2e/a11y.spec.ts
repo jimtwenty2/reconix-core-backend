@@ -83,13 +83,22 @@ test.describe("axe, more states", () => {
     await axe(page, "reports with runs selected");
   });
 
-  test("the Reports view with a preview has no violations", async ({ page }) => {
-    test.slow(); // the preview builds a combined report, and axe walks its frame too
+  test("the Reports view with a preview has no violations", async ({ page, context }) => {
+    test.slow(); // the preview builds a combined report
     await show(page, "/?view=reports");
     await boxLabel(page).nth(0).click();
     await page.getByRole("button", { name: "Preview report" }).click();
     await expect(frameHeading(page)).toBeVisible({ timeout: 20_000 });
-    await axe(page, "reports preview");
+    // the frame runs no scripts (sandbox=""), so axe can't walk into it: the page is checked
+    // around it, and the report itself on a page of its own, from the same HTML
+    const frame = 'iframe[title="Combined report preview"]';
+    await axe(page, "reports preview", { exclude: frame });
+    const report = await page.locator(frame).getAttribute("srcdoc");
+    expect(report).toBeTruthy();
+    const alone = await context.newPage();
+    await alone.setContent(report!);
+    await axe(alone, "reports preview report");
+    await alone.close();
   });
 
   test("the Reports view with a failed preview (an alert) has no violations", async ({ page }) => {
