@@ -1,8 +1,7 @@
 /* GET /api/assessments/<uid>/export called directly: a session, a known format (pdf, json,
    docx: nothing else), 404 for a run that is not saved, every format as a download (an `inline=1`
    changes nothing), 501 with the DOCX link when no browser can print, and 413 with
-   DOCX_TOO_LARGE when the Word document would pass DOCX_MAX_MIB — here and on the combined
-   route. Every answer is no-store. */
+   DOCX_TOO_LARGE when the Word document would pass DOCX_MAX_MIB. Every answer is no-store. */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -22,7 +21,6 @@ vi.mock("next/headers", () => ({ cookies: async () => ({ get: (name: string) => 
 vi.mock("next/server", async (load) => ({ ...(await load<typeof import("next/server")>()), connection: async () => undefined }));
 
 const { GET } = await import("@/app/api/assessments/[uid]/export/route");
-const combined = (await import("@/app/api/reports/combined/route")).GET;
 
 const withFindings = sampleAssessments().find((a) => a.findings.length > 0)!;
 const uid = withFindings.uid;
@@ -104,19 +102,5 @@ describe("GET /api/assessments/<uid>/export", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await detail(res)).toBe(DOCX_TOO_LARGE);
     expect((await get(uid, "format=json")).status).toBe(200); // the JSON of the same run is fine
-  });
-});
-
-describe("GET /api/reports/combined, format=docx", () => {
-  const getCombined = (query: string) => combined(new Request(`http://127.0.0.1:3100/api/reports/combined?${query}`, { headers: { host: "127.0.0.1:3100" } }));
-
-  it("answers 413 with DOCX_TOO_LARGE past the cap, and builds it without the evidence", { timeout: 60_000 }, async () => {
-    process.env.RECONIX_DATA_DIR = HUGE_DIR;
-    const res = await getCombined(`uids=${uid}&format=docx&evidence=1&low=1`);
-    expect(res.status).toBe(413);
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await detail(res)).toBe(DOCX_TOO_LARGE);
-    // evidence=0: the route keeps every option that is not spelled out (QAL-010)
-    expect((await getCombined(`uids=${uid}&format=docx&evidence=0&low=1`)).status).toBe(200);
   });
 });

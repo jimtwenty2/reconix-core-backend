@@ -1,6 +1,5 @@
 /* The Content-Security-Policy every response carries (set by src/proxy.ts). Scripts need the
-   per-request nonce; nothing may frame any page or route (every export is a download, and the
-   combined report's preview is handed to its sandboxed frame as `srcDoc`, never framed by URL).
+   per-request nonce; nothing may frame any page or route (every export is a download).
    Pages connect to this server only. */
 
 export function contentSecurityPolicy(nonce: string): string {

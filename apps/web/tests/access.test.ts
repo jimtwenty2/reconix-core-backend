@@ -35,7 +35,7 @@ const ROUTES: [string, string][] = [
   ["/api/assistant/models", "GET"],
   ["/api/knowledge", "GET"],
   ["/api/knowledge", "POST"],
-  ["/api/reports/combined", "GET"],
+  ["/api/core-reports/00000000-0000-4000-8000-000000000000/download", "GET"],
 ];
 
 describe("the proxy", () => {

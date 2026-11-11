@@ -1,12 +1,11 @@
 /* The globe dashboard on the sample data: every view, Findings by Severity's four rows, the
-   Duration card, the assessment switcher, the report downloads and the docs; the frame has no
+   Duration card, the assessment switcher, the export route and the docs; the frame has no
    Terminal item, no logo and no bell. */
 import { type Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
 import { PER_PAGE } from "../src/lib/paging";
-import { NO_PRINTER } from "../src/lib/report/formats";
 import { counted, hydrated, newest, sample, signIn, toolSteps } from "./support";
 import { apiId } from "./core-api-ids.mjs";
 
@@ -50,13 +49,9 @@ test("the overview totals every saved file by default", async ({ page }) => {
   await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, total)); // ten a page
   await expect(page.getByText(new RegExp(`^${total} findings across ${all.length} assessments`))).toBeVisible();
   await expect(page.getByText(`Showing ${total} of ${total} findings`)).toBeVisible();
-  // Reports sums up every run too (no run picker): a row per run
+  // Reports lists the Core API's assessments (the stand-in serves the same runs): a row each
   await page.click(view("Reports"));
-  // every run is a row, ten to a page
-  expect(all.length).toBeGreaterThan(PER_PAGE);
-  await expect(page.getByRole("table", { name: "Saved assessments" }).getByRole("link", { name: /^Open the report of/ })).toHaveCount(PER_PAGE);
-  await expect(page.getByRole("navigation", { name: "Saved assessment pages" })).toContainText(`${all.length} results`);
-  await expect(page.getByRole("group", { name: "Report summary" }).locator("section")).toHaveCount(4);
+  await expect(page.getByRole("table", { name: "Core API assessments" }).locator("tbody tr")).toHaveCount(all.length);
 });
 
 test("Findings by Severity lists Critical, High, Medium and Low, even at 0, and never Info", async ({ page }) => {
@@ -72,9 +67,6 @@ test("Findings by Severity lists Critical, High, Medium and Low, even at 0, and 
   await page.goto(`/?uid=${a.uid}`);
   await expect(severityRows(page)).toHaveText(FOUR_LEVELS);
   await expect(severityRows(page).first().locator("[data-countup]")).toHaveText("0");
-  // its Report shows the same card
-  await page.click(view("Reports"));
-  await expect(severityRows(page)).toHaveText(FOUR_LEVELS);
 });
 
 test("the Duration card has no line under its value, for one run or every run", async ({ page }) => {
@@ -88,20 +80,6 @@ test("the Duration card has no line under its value, for one run or every run", 
   await expect(duration.getByRole("meter", { name: "Time used of the limit" })).toBeVisible();
   await expect(duration.locator(".dash-stat-note")).toHaveCount(0);
   await expect(duration).not.toContainText(/in total|longest|of the .*limit|no time limit/);
-});
-
-test("every run's Report opens a run in the same view", async ({ page }) => {
-  await signIn(page);
-  const a = newest();
-  await page.goto("/?view=reports");
-  await hydrated(page);
-  await page.getByRole("link", { name: new RegExp(`^Open the report of ${a.label}`) }).first().click();
-  await expect(page).toHaveURL(new RegExp(`uid=${a.uid}`));
-  await expect(page).toHaveURL(/view=reports/);
-  // one run's report: no policy tiles, and every finding listed
-  const tiles = page.getByRole("group", { name: "Report summary" }).locator("section");
-  expect(await tiles.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual(["Findings", "Plan steps", "Requests sent", "Masked evidence"]);
-  await expect(page.getByRole("table", { name: "Findings in this report" }).locator("tbody tr")).toHaveCount(a.findings.length);
 });
 
 test("one run's overview counts what its file holds", async ({ page }) => {
@@ -215,8 +193,9 @@ test("the Findings view's own picker opens one Core API assessment's findings", 
 test("an assessment id the Core API doesn't know keeps the picker", async ({ page }) => {
   await signIn(page);
   await page.goto("/?view=findings&assessment=99999999-9999-4999-8999-999999999999");
-  await expect(page.getByText("The Core API has no assessment with that id. Pick another one.")).toBeVisible();
-  const picker = page.getByRole("combobox", { name: "Assessment" });
+  const pane = page.locator('[data-view-pane="findings"]'); // the Report pane says it too, hidden
+  await expect(pane.getByText("The Core API has no assessment with that id. Pick another one.")).toBeVisible();
+  const picker = pane.getByRole("combobox", { name: "Assessment" });
   await picker.selectOption(apiId(newest().uid));
   await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, counted(newest()).length));
 });
@@ -262,21 +241,13 @@ test("a waiting run shows its pending approval", async ({ page }) => {
   await expect(page.getByRole("region", { name: "Execution Timeline" }).getByText("Waiting for approval").first()).toBeVisible();
 });
 
-test("the report links every export format and each one downloads the newest run", async ({ page }) => {
+test("the saved-run export route serves every format as a download (the AI Assistant's report card links it)", async ({ page }) => {
   test.setTimeout(90_000); // the PDF is printed by a headless browser on this machine
+  await signIn(page);
   const run = newest();
-  await page.goto(`/?uid=${run.uid}`);
-  await page.click(view("Reports"));
-  const buttons = page.getByRole("navigation", { name: "Download the report" }).getByRole("button");
-  await expect(buttons).toHaveText(["PDF", "JSON", "DOCX"]);
   const media = { pdf: "application/pdf", json: "application/json", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
-  for (const [i, format] of (["pdf", "json", "docx"] as const).entries()) {
-    // the button fetches the file, then saves it under the run's name
-    const saved = page.waitForEvent("download", { timeout: 60_000 });
-    await buttons.nth(i).click();
-    expect((await saved).suggestedFilename(), format).toBe(`${run.uid}.${format}`);
-    const href = `/api/assessments/${run.uid}/export?format=${format}`;
-    const res = await page.request.get(href);
+  for (const format of ["pdf", "json", "docx"] as const) {
+    const res = await page.request.get(`/api/assessments/${run.uid}/export?format=${format}`, { timeout: 60_000 });
     expect(res.status(), format).toBe(200);
     expect(res.headers()["content-type"], format).toContain(media[format]);
     // every format is a download, and no export may be framed
@@ -296,30 +267,6 @@ test("the top bar's docs search lists matching pages, and says when none matches
   await search.fill("zzqx-no-such-page");
   await expect(page.getByRole("listbox")).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: "No docs page matches" })).toHaveText("No docs page matches “zzqx-no-such-page”.");
-});
-
-test("one run's PDF that fails shows why and offers Retry, and one that can't be printed offers the DOCX", async ({ page }) => {
-  const run = newest();
-  let calls = 0;
-  await page.route(`**/api/assessments/${run.uid}/export?format=pdf`, (route) => {
-    calls += 1;
-    return calls === 1
-      ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "Stubbed print failure" }) })
-      : route.fulfill({ status: 501, contentType: "application/json", body: JSON.stringify({ detail: NO_PRINTER }) });
-  });
-  await page.goto(`/?uid=${run.uid}&view=reports`);
-  await hydrated(page);
-  const pane = page.locator('[data-view-pane="reports"]');
-  const status = pane.locator("[data-file]");
-  await expect(status).toHaveAttribute("data-file", "idle");
-  await page.getByRole("navigation", { name: "Download the report" }).getByRole("button", { name: "PDF" }).click();
-  await expect(status).toHaveAttribute("data-file", "failed");
-  await expect(status).toContainText("The PDF could not be generated: Stubbed print failure.");
-  await status.getByRole("button", { name: "Retry" }).click();
-  await expect(status).toHaveAttribute("data-file", "unsupported");
-  await expect(status).toContainText(NO_PRINTER);
-  await expect(status.getByRole("link", { name: "Download DOCX" })).toHaveAttribute("href", `/api/assessments/${run.uid}/export?format=docx`);
-  expect(calls).toBe(2);
 });
 
 test("a card's help icon opens its documentation", async ({ page }) => {

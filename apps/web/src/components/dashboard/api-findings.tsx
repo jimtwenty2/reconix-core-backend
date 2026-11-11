@@ -6,13 +6,13 @@
 import { ApiAssessmentPicker } from "@/components/dashboard/api-assessment-picker";
 import { FindingsView } from "@/components/dashboard/findings-view";
 import { EmptyNote } from "@/components/ui/empty-note";
-import { apiFindingRows } from "@/lib/api/adapt";
+import { apiFindingRows, pickerItems } from "@/lib/api/adapt";
 import { CoreApiError } from "@/lib/api/client";
 import { type ApiAssessment, type ApiFinding, listAssessments, listFindings } from "@/lib/api/findings";
 
-const Shell = ({ children }: { children: React.ReactNode }) => <div className="dash-view dash-findings">{children}</div>;
+export const Shell = ({ children }: { children: React.ReactNode }) => <div className="dash-view dash-findings">{children}</div>;
 
-const ApiErrorNote = ({ e }: { e: CoreApiError }) => (
+export const ApiErrorNote = ({ e }: { e: CoreApiError }) => (
   <EmptyNote status className="dash-findings-api-error">
     {e.message} <span className="font-mono">({e.code})</span>
   </EmptyNote>
@@ -40,8 +40,8 @@ export async function ApiFindings({ assessmentId, savedRun = null }: { assessmen
     );
   }
 
-  const items = assessments.map((a) => ({ id: a.assessment_id, label: `${a.name || a.assessment_id.slice(0, 8)} · ${a.finding_count}` }));
-  const picker = <ApiAssessmentPicker items={items} current={assessmentId} />;
+  const items = pickerItems(assessments);
+  const picker = <ApiAssessmentPicker items={items} current={assessmentId} view="findings" />;
   const known = assessmentId === null || assessments.some((a) => a.assessment_id === assessmentId);
 
   let findings: ApiFinding[] = [];

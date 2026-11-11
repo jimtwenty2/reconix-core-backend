@@ -5,6 +5,9 @@
 //   POST /api/v1/sessions                 a token (any body with interface "web")
 //   GET  /api/v1/assessments              one row per sample run, newest first (as store.ts sorts)
 //   GET  /api/v1/findings[?assessment_id] their findings, the informational ones left out
+//   GET  /api/v1/assessments/{id}/overview its counts (AssessmentOverviewOut)
+//   GET  /api/v1/assessments/{id}/reports  one report for a run that got that far (reportOf)
+//   GET  /api/v1/reports/{id}/download     a small fake file, once READY and signed off
 // Every GET needs a token it issued (401 INVALID_TOKEN otherwise). Test code only.
 import { readdirSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -84,6 +87,68 @@ const assessments = runs.map((a) => {
   };
 });
 
+const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "NONE"];
+const byId = new Map(runs.map((a) => [apiId(a.uid), a]));
+
+function overviewOf(a) {
+  const row = assessments.find((r) => r.assessment_id === apiId(a.uid));
+  const mine = findings.filter((f) => f.assessment_id === row.assessment_id);
+  const counted = mine.filter((f) => f.finding_status !== "FALSE_POSITIVE");
+  const tally = (key, values) => Object.fromEntries(values.map((v) => [v, counted.filter((f) => f[key] === v).length]));
+  return {
+    assessment: { assessment_id: row.assessment_id, engagement_code: row.engagement_code, name: row.name, type: row.type, assessment_status: row.assessment_status, created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at, session_id: SESSION_ID },
+    targets: row.targets,
+    finding_count: counted.length,
+    findings_by_severity: tally("severity_status", SEVERITY),
+    findings_by_validation: tally("validation_status", ["CONFIRMED", "UNCONFIRMED", "INCONCLUSIVE"]),
+    findings_by_status: Object.fromEntries(["OPEN", "FALSE_POSITIVE", "FIXED"].map((v) => [v, mine.filter((f) => f.finding_status === v).length])),
+    actions_by_status: {},
+    plan_step_count: a.plan.length,
+    plan_step_done_count: a.plan.filter((p) => p.status === "done").length,
+    tool_run_count: a.timeline.filter((e) => e.type === "activity" && e.who === "TOOL").length,
+    request_count: a.requests.length,
+    masked_count: 0,
+    pending_approval_count: 0,
+    first_started_at: a.created_at,
+    last_finished_at: null,
+    duration_seconds: 0,
+    time_window_seconds: null,
+    over_time_window: false,
+  };
+}
+
+/** A Completed run has a signed-off report; a Running or waiting one a report whose review is
+    pending; a Stopped one none. The newest run has LONG versions (newest first), so its Report
+    view is longer than a screen (e2e/scroll.spec.ts scrolls it). */
+export const LONG = 12;
+function reportOf(a) {
+  if (a.status === "Stopped") return [];
+  const id = apiId(a.uid);
+  const done = a.status === "Completed";
+  const count = a === runs[0] ? LONG : 1;
+  return Array.from({ length: count }, (_, n) => count - n).map((version) => (
+    {
+      report_id: `${id.slice(0, 24)}${String(version).padStart(12, "f")}`,
+      version,
+      report_status: "READY",
+      executive_summary: `${a.label}: ${a.findings.length} findings recorded.`,
+      methodology: null,
+      snapshot_hash: "0".repeat(64),
+      formats: ["PDF", "DOCX", "JSON"],
+      generated_by: "tester@lab",
+      generated_at: a.saved_at || a.created_at,
+      created_at: a.created_at,
+      assessment_id: id,
+      assessment_ids: [id],
+      review_approval_id: SESSION_ID,
+      review_status: done ? "APPROVED" : "PENDING",
+      signed_off: done,
+    }
+  ));
+}
+const reports = runs.flatMap(reportOf);
+const FILES = { PDF: ["application/pdf", "pdf", "%PDF-1.4 e2e fake"], DOCX: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx", "PK e2e fake"], JSON: ["application/json", "json", '{"fake":true}'] };
+
 const send = (res, status, body) => {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
@@ -100,6 +165,24 @@ createServer((req, res) => {
   const auth = (req.headers.authorization ?? "").replace(/^Bearer /, "");
   if (!tokens.has(auth)) return send(res, 401, { code: "INVALID_TOKEN", message: "The session token is not valid.", details: {} });
   if (req.method === "GET" && url.pathname === "/api/v1/assessments") return send(res, 200, assessments);
+  const sub = url.pathname.match(/^\/api\/v1\/assessments\/([^/]+)\/(overview|reports)$/);
+  if (req.method === "GET" && sub) {
+    const a = byId.get(sub[1]);
+    if (!a) return send(res, 404, { code: "ASSESSMENT_NOT_FOUND", message: "No assessment with this id.", details: {} });
+    return send(res, 200, sub[2] === "overview" ? overviewOf(a) : reportOf(a));
+  }
+  const file = url.pathname.match(/^\/api\/v1\/reports\/([^/]+)\/download$/);
+  if (req.method === "GET" && file) {
+    const r = reports.find((x) => x.report_id === file[1]);
+    if (!r) return send(res, 404, { code: "REPORT_NOT_FOUND", message: "No report with this id.", details: {} });
+    // the format first, as the API's query validation answers before the handler runs
+    const [type, ext, body] = FILES[url.searchParams.get("format") || "PDF"] ?? [];
+    if (!type) return send(res, 422, { code: "VALIDATION_ERROR", message: "Unknown format.", details: {} });
+    if (!r.signed_off) return send(res, 409, { code: "REPORT_NOT_SIGNED_OFF", message: "A person must approve the review first.", details: {} });
+    const code = assessments.find((x) => x.assessment_id === r.assessment_id).engagement_code;
+    res.writeHead(200, { "Content-Type": type, "Content-Disposition": `attachment; filename="${code}-v${r.version}.${ext}"` });
+    return res.end(body);
+  }
   if (req.method === "GET" && url.pathname === "/api/v1/findings") {
     const id = url.searchParams.get("assessment_id");
     return send(res, 200, id ? findings.filter((f) => f.assessment_id === id) : findings);

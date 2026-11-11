@@ -74,6 +74,22 @@ export const APPROVAL_STATE: Record<"APPROVED" | "REJECTED" | "PENDING" | "NOT R
   "NOT REACHED": { label: "Not reached", tone: "info", icon: "unreached", hint: "The run ended before it got here." },
 };
 
+/** A Core API report version (ReportStatus). */
+export const REPORT_STATUS: Record<"GENERATING" | "READY" | "FAILED", Meaning> = {
+  GENERATING: { label: "Generating", tone: "primary", icon: "running", hint: "The Core API is still building its files." },
+  READY: { label: "Ready", tone: "success", icon: "done", hint: "Its files are built." },
+  FAILED: { label: "Failed", tone: "danger", icon: "blocked", hint: "The Core API could not build it: make a new version in the TUI." },
+};
+
+/** A report's review sign-off (its review approval; none until someone asks for it in the TUI). */
+export const REPORT_REVIEW: Record<"NONE" | "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED", Meaning> = {
+  NONE: { label: "Not reviewed", tone: "info", icon: "unreached", hint: "No review was asked for yet: ask for it in the TUI." },
+  PENDING: { label: "Review pending", tone: "warning", icon: "pending", hint: "Waiting for a person to approve the review in the TUI." },
+  APPROVED: { label: "Signed off", tone: "success", icon: "approved", hint: "A person approved the review: its files can be downloaded." },
+  REJECTED: { label: "Review rejected", tone: "danger", icon: "rejected", hint: "The review was rejected: make a new version in the TUI." },
+  EXPIRED: { label: "Review expired", tone: "warning", icon: "interrupted", hint: "Nobody approved the review in time: ask again in the TUI." },
+};
+
 /** A policy (scope) check of one request. */
 export const POLICY_DECISION: Record<"allowed" | "blocked", Meaning> = {
   allowed: { label: "Allowed", tone: "success", icon: "allowed", hint: "Inside the approved scope." },
