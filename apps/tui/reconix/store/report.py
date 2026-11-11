@@ -27,11 +27,12 @@ from .report_pdf import HAS_PDF, write_pdf
 from .retest import retest
 from .scope import blocked_count, get_scope, is_scope_approved, list_verdicts
 from .templates import selected_template
+from .templates.techniques import coverage
 from .transcript import add_activity, add_chat
 
-REPORTS_DIR = Path("reports")   # relative to where reconix runs; tests point it elsewhere
+REPORTS_DIR = Path("reports")  # relative to where reconix runs; tests point it elsewhere
 SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
-MAX_COPIES = 999                 # RCX-DEMO-001-2.pdf … -999.pdf, then refuse
+MAX_COPIES = 999  # RCX-DEMO-001-2.pdf … -999.pdf, then refuse
 
 # Report files this app wrote, by full path → the assessment that wrote it. Every session
 # numbers its assessments from RCX-DEMO-001, so a file of that name may be another session's
@@ -47,8 +48,13 @@ REPORT_FORMATS = (
 )
 
 REPORT_SECTIONS = (
-    "Executive summary", "Methodology", "Evidence and validation results", "References",
-    "Approved scope and limitations", "Findings and severity", "Impact and remediation",
+    "Executive summary",
+    "Methodology",
+    "Evidence and validation results",
+    "References",
+    "Approved scope and limitations",
+    "Findings and severity",
+    "Impact and remediation",
 )
 
 
@@ -86,55 +92,86 @@ def report_data() -> Dict[str, Any]:
     approvals = []
     for decision in list_approval_decisions():
         request = get_approval(decision.request_id)
-        approvals.append({
-            "action": request.action, "target": request.target, "risk": request.risk,
-            "decision": decision.decision, "operator": decision.operator,
-            "reason": decision.reason, "at": decision.created_at.isoformat(timespec="seconds"),
-        })
-    return redact_all({
-        "assessment_id": assessment.assessment_id,
-        "target": assessment.target_url,
-        "template": template.name if template else "",
-        "client": assessment.client,
-        "mode": assessment.mode,
-        "operator": assessment.operator,
-        "methodology": list(assessment.methodology),
-        "report_version": assessment.report_version,
-        "window": {"started": _iso(run.started_at), "finished": _iso(run.finished_at)},
-        "generated_at": utc_now().isoformat(timespec="seconds"),
-        "summary": findings_line(),
-        "scope": {
-            "approved": is_scope_approved(),
-            "kind": scope.kind,
-            "allowed_actions": list(scope.allowed_actions),
-            "allowed_methods": list(scope.allowed_methods),
-            "excluded_paths": list(scope.excluded_paths),
-            "allowed_ports": list(scope.allowed_ports),   # network scopes only
-            "time_limit_minutes": scope.time_limit_minutes,
-            "tools": list(scope.tools),
-        },
-        "blocked_requests": [
-            {"request": f"{v.method} {v.path}", "reason": v.reason}
-            for v in list_verdicts() if not v.allowed
-        ],
-        "approvals": approvals,
-        "findings": [
+        approvals.append(
             {
-                "id": f.fid, "severity": f.severity, "title": f.title, "path": f.path,
-                "validation": f.validation, "description": f.description,
-                "affected_url": f.affected_url, "evidence": list(f.evidence),
-                "impact": f.impact, "references": list(f.references),
-                "remediation": f.remediation, "tool": f.tool,
-                "cvss_score": f.cvss_score, "cvss_vector": f.cvss_vector,
-                "category": f.category, "cwe": f.cwe, "owasp": f.owasp, "cve": f.cve,
-                "status": f.status, "severity_override": f.severity_override,
-                "effective_severity": f.effective_severity, "triage_note": f.triage_note,
+                "action": request.action,
+                "target": request.target,
+                "risk": request.risk,
+                "decision": decision.decision,
+                "operator": decision.operator,
+                "reason": decision.reason,
+                "at": decision.created_at.isoformat(timespec="seconds"),
             }
-            for f in list_findings()
-        ],
-        "retest": retest(),
-        "sections": list(REPORT_SECTIONS),
-    })
+        )
+    return redact_all(
+        {
+            "assessment_id": assessment.assessment_id,
+            "target": assessment.target_url,
+            "template": template.name if template else "",
+            "client": assessment.client,
+            "mode": assessment.mode,
+            "operator": assessment.operator,
+            "methodology": list(assessment.methodology),
+            # each technique of the template: tested, partly, not run, or checked by hand
+            "coverage": coverage(
+                template.id if template else scope.kind,
+                lists.current().live.finished_tools,
+                scope.tools,
+            ),
+            "report_version": assessment.report_version,
+            "window": {"started": _iso(run.started_at), "finished": _iso(run.finished_at)},
+            "generated_at": utc_now().isoformat(timespec="seconds"),
+            "summary": findings_line(),
+            "scope": {
+                "approved": is_scope_approved(),
+                "kind": scope.kind,
+                "allowed_actions": list(scope.allowed_actions),
+                "allowed_methods": list(scope.allowed_methods),
+                "excluded_paths": list(scope.excluded_paths),
+                "allowed_ports": list(scope.allowed_ports),  # network scopes only
+                "time_limit_minutes": scope.time_limit_minutes,
+                "tools": list(scope.tools),
+            },
+            "blocked_requests": [
+                {"request": f"{v.method} {v.path}", "reason": v.reason}
+                for v in list_verdicts()
+                if not v.allowed
+            ],
+            "approvals": approvals,
+            "findings": [
+                {
+                    "id": f.fid,
+                    "severity": f.severity,
+                    "title": f.title,
+                    "path": f.path,
+                    "validation": f.validation,
+                    "description": f.description,
+                    "affected_url": f.affected_url,
+                    "evidence": list(f.evidence),
+                    "evidence_summary": f.evidence_summary,
+                    "validation_reason": f.validation_reason,
+                    "validation_method": f.validation_method,
+                    "impact": f.impact,
+                    "references": list(f.references),
+                    "remediation": f.remediation,
+                    "tool": f.tool,
+                    "cvss_score": f.cvss_score,
+                    "cvss_vector": f.cvss_vector,
+                    "category": f.category,
+                    "cwe": f.cwe,
+                    "owasp": f.owasp,
+                    "cve": f.cve,
+                    "status": f.status,
+                    "severity_override": f.severity_override,
+                    "effective_severity": f.effective_severity,
+                    "triage_note": f.triage_note,
+                }
+                for f in list_findings()
+            ],
+            "retest": retest(),
+            "sections": list(REPORT_SECTIONS),
+        }
+    )
 
 
 def _display_path(path: Path) -> str:
@@ -158,8 +195,9 @@ def _report_path(assessment_id: str, extension: str, owner: Optional[str] = None
             raise StoreValidationError("Reports can only be saved in the reports folder.")
         if owner is None or _WRITTEN.get(str(path)) == owner or not path.exists():
             return REPORTS_DIR / path.name
-    raise StoreValidationError("Too many reports of this assessment in the reports folder; "
-                               "move some of them first.")
+    raise StoreValidationError(
+        "Too many reports of this assessment in the reports folder; move some of them first."
+    )
 
 
 def _owner_key() -> str:
@@ -182,8 +220,9 @@ def _write(fmt: ReportFormat, data: Dict[str, Any], path: Path) -> None:
     failed = f"Couldn't save the {fmt.name} report."
     try:
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-        handle, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-",
-                                        suffix=f".tmp.{fmt.extension}")
+        handle, name = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.stem}-", suffix=f".tmp.{fmt.extension}"
+        )
         os.close(handle)
     except OSError as exc:
         raise StoreValidationError(failed) from exc

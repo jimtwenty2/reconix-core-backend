@@ -219,7 +219,7 @@ def test_a_failed_edit_changes_no_field():
 
 @pytest.mark.parametrize("request_text, methods, tools", [
     ("scan 10.0.0.0/24 for open ports", ["tcp CONNECT"], ["NMAP", "testssl"]),
-    ("review repo github.com/acme/app", ["READ"], ["semgrep", "Gitleaks", "pip-audit"]),
+    ("review repo github.com/acme/app", ["READ"], ["semgrep", "Gitleaks", "Trivy"]),
 ])
 def test_edit_checks_methods_and_tools_for_every_kind(request_text, methods, tools):
     from .support import play_until_gate

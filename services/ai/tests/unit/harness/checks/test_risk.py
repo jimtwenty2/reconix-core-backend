@@ -21,6 +21,7 @@ def risk_of(tool: str, arguments: list[str], is_validation: bool = False) -> Ris
     [
         ("NMAP", LOW),
         ("NUCLEI", MEDIUM),
+        ("NUCLEI_DAST", HIGH),  # DAST fuzzing is destructive
         ("ZAP", HIGH),
         ("SEMGREP", LOW),
         ("GITLEAKS", LOW),
@@ -38,6 +39,12 @@ def test_unknown_tool_is_high() -> None:
     assert risk_of("METASPLOIT", []) == HIGH
 
 
+def test_nuclei_dast_is_blocked_above_a_medium_scope() -> None:
+    # A disposable/HIGH tool cannot run under a scope that caps risk at MEDIUM.
+    outcome = check_risk("NUCLEI_DAST", [], False, max_risk=MEDIUM)
+    assert outcome.decision == Decision.BLOCKED
+
+
 # --- options ---------------------------------------------------------------
 
 
@@ -51,6 +58,16 @@ def test_risk_ops_pattern_raises_the_level() -> None:
     # The bare "--script" pattern raises any scripted scan to at least MEDIUM.
     assert risk_of("NMAP", ["--script", "http-title"]) == MEDIUM
     assert risk_of("SEMGREP", ["--config=p/default"]) == LOW
+
+
+def test_aggressive_nmap_timing_needs_a_person() -> None:
+    # -T4 (aggressive) / -T5 (insane) and --min-rate can overwhelm a production host, so they
+    # escalate above nmap's LOW baseline to MEDIUM (a person approves before it runs).
+    assert risk_of("NMAP", ["-T5", "-p-"]) == MEDIUM
+    assert risk_of("NMAP", ["-T4", "-sV", "-p", "80"]) == MEDIUM
+    assert risk_of("NMAP", ["--min-rate", "10000"]) == MEDIUM
+    # a polite scan (default timing, -T3 or below) stays LOW: no checkpoint needed
+    assert risk_of("NMAP", ["-sV", "-p", "80,443", "-Pn", "-T3"]) == LOW
 
 
 def test_a_code_tool_option_that_sends_code_away_is_high() -> None:

@@ -12,7 +12,13 @@ from .base import ReconixScreen
 from .. import store, theme
 from ..models import Finding
 from ..widgets.findings import (
-    cvss_text, for_display, mask, severity_text, triage_text, validation_text,
+    confidence_text,
+    cvss_text,
+    for_display,
+    mask,
+    severity_text,
+    triage_text,
+    validation_text,
 )
 
 
@@ -22,6 +28,13 @@ def _heading(text: str, color: str) -> Static:
 
 def _para(text: str, color: str = theme.MUTED) -> Static:
     return Static(Text(text, style=color))
+
+
+def _url(url: str, color: str = theme.CYAN) -> Static:
+    """A URL the terminal makes clickable (ctrl/cmd+click opens it in the browser)."""
+    if url.startswith(("http://", "https://")):
+        return Static(Text(url, style=f"link {url} {color}"))
+    return _para(url, color)
 
 
 class FindingDetailScreen(ReconixScreen):
@@ -51,45 +64,87 @@ class FindingDetailScreen(ReconixScreen):
     def compose_body(self) -> ComposeResult:
         f = self._finding()
         if f is None:
-            yield Static(Text.assemble(("← findings", theme.CYAN), ("  ·  no finding selected — "
-                                                                    "open one from the list",
-                                                                    theme.DIM)),
-                         id="breadcrumb")
+            yield Static(
+                Text.assemble(
+                    ("← findings", theme.CYAN),
+                    ("  ·  no finding selected — open one from the list", theme.DIM),
+                ),
+                id="breadcrumb",
+            )
             return
         order, inside = self._order()
         position = order.index(f.fid) + 1
-        where = (f"({position} of {len(order)})" if inside
-                 else f"(outside filter · {position} of {len(order)})")
-        yield Static(Text.assemble(
-            ("← findings", theme.CYAN), ("  /  ", theme.BORDER), (f.fid, f"bold {theme.MUTED}"),
-            (f"  {where}", theme.DIM), ("  ·  [ prev  ·  ] next", theme.DIM),
-        ), id="breadcrumb")
-        d = for_display(f)               # mask secrets in every shown field (display only)
+        where = (
+            f"({position} of {len(order)})"
+            if inside
+            else f"(outside filter · {position} of {len(order)})"
+        )
+        yield Static(
+            Text.assemble(
+                ("← findings", theme.CYAN),
+                ("  /  ", theme.BORDER),
+                (f.fid, f"bold {theme.MUTED}"),
+                (f"  {where}", theme.DIM),
+                ("  ·  [ prev  ·  ] next", theme.DIM),
+            ),
+            id="breadcrumb",
+        )
+        d = for_display(f)  # mask secrets in every shown field (display only)
         with Vertical(classes="panel", id="detail-header"):
-            yield Static(Text.assemble(severity_text(d), "   ", (d.title, f"bold {theme.TEXT}"),
-                                       "      ", validation_text(d), "   ", triage_text(d)))
+            yield Static(
+                Text.assemble(
+                    severity_text(d),
+                    "   ",
+                    (d.title, f"bold {theme.TEXT}"),
+                    "      ",
+                    validation_text(d),
+                    "   ",
+                    confidence_text(d),
+                    "   ",
+                    triage_text(d),
+                )
+            )
             refs = " · ".join(d.cve + d.cwe + d.owasp) or "—"
-            yield Static(Text.assemble(
-                (f"{d.fid} · {d.path} · detected by {d.tool}", theme.MUTED), "    ",
-                (f"CVSS {cvss_text(d)} · {refs}", theme.KEY)))
+            yield Static(
+                Text.assemble(
+                    (f"{d.fid} · {d.path} · detected by {d.tool}", theme.MUTED),
+                    "    ",
+                    (f"CVSS {cvss_text(d)} · {refs}", theme.KEY),
+                )
+            )
         with Horizontal(id="detail-cols"):
             with Vertical(classes="panel") as evidence:
                 evidence.border_title = "▤ EVIDENCE"
-                evidence.border_subtitle = Text(d.tool)     # imported text: never markup
+                evidence.border_subtitle = Text(d.tool)  # imported text: never markup
                 yield _heading("Affected URL", theme.DIM)
-                yield _para(d.affected_url, theme.CYAN)
+                yield _url(d.affected_url, theme.CYAN)
+                if d.evidence_summary:
+                    yield Static("")
+                    yield _heading("What the evidence shows", theme.DIM)
+                    yield _para(d.evidence_summary, theme.TEXT)
                 yield Static("")
                 yield _heading("Evidence (masked)", theme.DIM)
                 for line in d.evidence:
                     yield _para(line, theme.STRING)
+                if not d.evidence:
+                    yield _para("—", theme.DIM)
                 yield Static("")
+                yield _heading("Validation", theme.DIM)
                 if d.needs_review:
-                    note = (f"○ {d.validation.title()} — needs analyst review. Press t to set "
-                            "its status.", theme.MEDIUM)
+                    note = (
+                        f"○ {d.validation.title()} — needs analyst review. Press t to set "
+                        "its status.",
+                        theme.MEDIUM,
+                    )
                 else:
-                    note = ("✓ Confirmed during the run by the limited validation you "
-                            "approved.", theme.TEAL)
+                    by = f" by {d.validation_method}" if d.validation_method else ""
+                    note = (
+                        f"✓ Confirmed during the run{by} by the limited validation you approved.",
+                        theme.TEAL,
+                    )
                 yield Static(Text(*note), classes="panel-note")
+                if d.validation_reason:
+                    yield _para(d.validation_reason, theme.DIM)
             with Vertical(classes="panel") as analysis:
                 analysis.border_title = "✦ AI ANALYSIS"
                 analysis.border_subtitle = "grounded in OWASP · CWE · NVD"
@@ -127,7 +182,7 @@ class FindingDetailScreen(ReconixScreen):
         order, _ = self._order()
         position = order.index(self.app.selected_finding) + delta
         if not 0 <= position < len(order):
-            self.app.bell()          # at an end: no wrap-around
+            self.app.bell()  # at an end: no wrap-around
             return
         self.app.open_finding(order[position])
 

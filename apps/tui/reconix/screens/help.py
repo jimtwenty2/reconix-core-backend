@@ -17,14 +17,21 @@ Row = Tuple[str, str]
 # Keys of the flow screens. Inside a dialog (a menu or a form) its own keys apply instead,
 # so "/" and "?" typed into a field stay text; the rows say where a key does not reach.
 GLOBAL_ROWS: List[Row] = [
-    ("←  /  →", "previous / next step, unless you are typing; → waits at a step that still "
-                "needs your choice; Esc closes a chat first"),
+    (
+        "←  /  →",
+        "previous / next step, unless you are typing; → waits at a step that still "
+        "needs your choice; Esc closes a chat first",
+    ),
     ("Alt+1 … 8", "jump to a screen"),
-    ("/", "command suggestions (not inside a dialog); in a chat, start a line with / to "
-          "run a command"),
+    (
+        "/",
+        "command suggestions (not inside a dialog); in a chat, start a line with / to "
+        "run a command",
+    ),
     ("?", "toggle this help (not inside a dialog; on the prompt when it is empty)"),
     ("^C", "stop the running assessment (asks first; copies selected text in a field)"),
     ("^O", "expand / collapse the steps Reconix finished (click one to open it)"),
+    ("^Y", "copy the selected text (drag with the mouse to select) to the clipboard"),
     ("^Q", "quit"),
 ]
 
@@ -44,7 +51,7 @@ LIST_ROWS: List[Row] = [
 
 MENU_ROWS: List[Row] = LIST_ROWS + [
     ("1 … 9", "pick a numbered choice (a red, unnumbered one needs ↑/↓ and Enter)"),
-    ("type", "on \"Type something.\", write it, then Enter"),
+    ("type", 'on "Type something.", write it, then Enter'),
 ]
 
 # Textual's short key names, written the way the rows above write them.
@@ -72,13 +79,13 @@ def context_rows(screen: Screen) -> List[Row]:
         typing = any(choice.kind == "input" for choice in focused._choices)
         rows = [row for row in MENU_ROWS if typing or row[0] != "type"]
     elif isinstance(focused, DataTable):
-        rows = LIST_ROWS[:1]          # Enter is the screen's own (e.g. "open finding")
+        rows = LIST_ROWS[:1]  # Enter is the screen's own (e.g. "open finding")
     elif isinstance(focused, OptionList):
         rows = list(LIST_ROWS)
     else:
         rows = []
     seen = {desc for _, desc in rows}
-    covered = {"up", "down"} if rows else set()   # already explained above
+    covered = {"up", "down"} if rows else set()  # already explained above
     if any(keys == "Enter" for keys, _ in rows):
         covered.add("enter")
     # A screen key that does what the app's key does is already in "Everywhere".
@@ -113,7 +120,7 @@ class HelpScreen(ModalScreen):
         return cls(f"⌨ Shortcuts · {name}" if name else "⌨ Keyboard", context_rows(screen))
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(id="help-box") as box:   # scrolls if the terminal is short
+        with VerticalScroll(id="help-box") as box:  # scrolls if the terminal is short
             box.border_title = self._title
             if self._rows:
                 yield Static(Text("This screen", style=f"bold {theme.TEXT}"))
@@ -123,14 +130,14 @@ class HelpScreen(ModalScreen):
             yield from (self._row(keys, desc) for keys, desc in GLOBAL_ROWS)
             yield Static("")
             yield Static(
-                f"[{theme.DIM}]in-memory demo data · /tests: the evaluator checklist · "
-                f"? or Esc closes this[/]",
+                f"[{theme.DIM}]data from the Core API (RECONIX_CORE_API) · "
+                f"/tests: the evaluator checklist · ? or Esc closes this[/]",
                 markup=True,
             )
 
     def on_mount(self) -> None:
         box = self.query_one("#help-box", VerticalScroll)
-        box.focus()                         # ↑/↓ and PgUp/PgDn scroll it
+        box.focus()  # ↑/↓ and PgUp/PgDn scroll it
         self.watch(box, "scroll_y", lambda _old, _new: self._scroll_hint(), init=False)
         self.call_after_refresh(self._scroll_hint)
 
@@ -157,7 +164,8 @@ class HelpScreen(ModalScreen):
         return Horizontal(
             Static(Text(keys, style=f"bold {theme.CYAN}"), classes="help-keys"),
             Static(Text(desc, style=theme.MUTED), classes="help-desc"),
-            classes="help-row")
+            classes="help-row",
+        )
 
     def action_close(self) -> None:
         self.app.pop_screen()

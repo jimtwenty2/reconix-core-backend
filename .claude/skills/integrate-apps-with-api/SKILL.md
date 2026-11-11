@@ -26,7 +26,7 @@ decides everything and the safety rules S1–S11 cover what app users do.
 | Work | Folder | Owner | Run Claude from |
 |---|---|---|---|
 | Backend prerequisites (step 2) | `services/api/` | Vanneth | repo root |
-| TUI wiring | `apps/tui/` | Vanhong | `apps/` (`wire-backend` skill, `backend-integrator` agent) |
+| TUI wiring | `apps/tui/` | Sokpiseth | `apps/` (`wire-backend` skill, `backend-integrator` agent) |
 | Web wiring | `apps/web/` | Sokpiseth | `apps/` (same) |
 | Turning API calls on in `apps/.claude/` | `apps/.claude/` | the app owners | `apps/` |
 | This skill, `AGENTS.md` | `.claude/`, root | Pojim | repo root |

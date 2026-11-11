@@ -74,9 +74,11 @@ def decide(
     return {"approval": decided, "action": action, "findings": findings(assessment_id)}
 
 
-def analyze(assessment_id: str) -> Dict[str, Any]:
-    """The agent's analysis of the OPEN findings (AnalysisOut + findings)."""
-    out = connect.request("POST", f"/assessments/{quote(assessment_id)}/analyze")
+def analyze(assessment_id: str, finding_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    """The agent's analysis of the findings (AnalysisOut + findings). With finding_ids, only
+    those are analyzed (per step, as a step finds them); without, every OPEN finding."""
+    body = {"finding_ids": finding_ids} if finding_ids else None
+    out = connect.request("POST", f"/assessments/{quote(assessment_id)}/analyze", body)
     return with_findings(out, assessment_id)
 
 

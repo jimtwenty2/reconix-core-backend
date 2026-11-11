@@ -1,4 +1,4 @@
-# Reconix local stack: the API, Postgres, Qdrant, the bge-m3 embedding server and the Kali
+# Reconix local stack: the API, Postgres, Qdrant, the bge-small embedding server and the Kali
 # tool container. The AI model itself (RECONIX) is served by the Reconix team, not here.
 #
 # Start everything (--build rebuilds the API after a code change):
@@ -78,14 +78,17 @@ services:
     networks: [models]
 
   # --- Embeddings: turns text into vectors for the knowledge search --------------------------
-  # Runs BAAI/bge-m3 on CPU (Hugging Face text-embeddings-inference) and answers OpenAI-style at
-  # http://embeddings:8080/v1/embeddings. It downloads the model (~2.3 GB) once, on first start.
+  # Runs BAAI/bge-small-en-v1.5 on CPU (Hugging Face text-embeddings-inference) and answers
+  # OpenAI-style at http://embeddings:8080/v1/embeddings. It downloads the model (~130 MB) once,
+  # on first start. A small 384-dim English model: the knowledge chunks are short (<= 1200 chars),
+  # so its 512-token input limit is plenty, and it runs in well under 1 GB of memory.
   embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.8
     restart: unless-stopped
-    # A batch of 8192 tokens (the model's longest input) keeps the CPU warm-up short; the
-    # default 16384 can take many minutes. It uses about 6-9 GB of memory.
-    command: ["--model-id", "BAAI/bge-m3", "--port", "8080", "--max-batch-tokens", "8192"]
+    # 4096 batch tokens fits several of the model's 512-token inputs per batch and keeps the
+    # CPU warm-up short; mem_limit caps the container at 2 GB (it uses far less).
+    command: ["--model-id", "BAAI/bge-small-en-v1.5", "--port", "8080", "--max-batch-tokens", "4096"]
+    mem_limit: 2g
     volumes: [embeddings-data:/data]
     # Needs no Linux permissions; port 8080 needs none to open.
     cap_drop: [ALL]

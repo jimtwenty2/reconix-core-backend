@@ -60,6 +60,8 @@ def test_a_report_is_ready_with_its_3_files(db_client, db_app, reports_dir):
     saved = json.loads(next(reports_dir.rglob("report.json")).read_text())
     assert [f["code"] for f in saved["findings"]] == ["RCX-001", "RCX-002"]
     assert saved["severity_counts"]["NONE"] == 2
+    # the derived trust tier reaches the locked copy; a NONE-severity fact is INFORMATIONAL
+    assert [f["confidence"] for f in saved["findings"]] == ["INFORMATIONAL", "INFORMATIONAL"]
     assert [run["approval_check"] for run in saved["tool_runs"]] == ["NOT_REQUIRED"]
     assert {"REPORT_REQUESTED", "REPORT_READY"} <= set(event_types(db_app))
 

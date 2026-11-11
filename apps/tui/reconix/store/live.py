@@ -22,15 +22,16 @@ the decision is taken back and the gate asks again with the API's reason.
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from ..core_api import adapt, run_api
+from ..core_api import adapt, code_scan, run_api, sync
 from ..core_api.client import CoreApiError
+from ..core_api.scope_map import api_tools
 from ..models import GATE_APPROVAL_PREFIX, Assessment, LiveRun, RunStep
 from . import lists
 from .activity import log_event
 from .scenario import banner, gate
 from .transcript import add_activity
 
-MAX_STEPS = 12  # the run asks the agent for at most this many steps (the API caps it too)
+MAX_STEPS = 24  # the run asks the agent for at most this many steps (the API caps it too)
 
 
 @dataclass
@@ -41,6 +42,18 @@ class Job:
     assessment: Assessment
     fetch: Callable[[], Any]
     on_result: Callable[[Assessment, Any], None]
+    # A slow job (the code scan) reports what it is doing: the host sets this to hand the
+    # line to the UI thread (`progress` there), and the worker calls `report`.
+    on_progress: Optional[Callable[[str], None]] = None
+
+    def report(self, text: str) -> None:
+        """From the worker: a progress line, handed to the UI thread when the host listens."""
+        if self.on_progress is not None:
+            self.on_progress(text)
+
+    def progress(self, text: str) -> None:
+        """UI thread: show one progress line of the job in the run's log."""
+        _append(self.assessment, [_log("SYS", text)])
 
     def apply(self, result: Any) -> None:
         live = self.assessment.live
@@ -79,7 +92,7 @@ def next_job(assessment: Optional[Assessment] = None) -> Optional[Job]:
     assessment = assessment or lists.current()
     live, run = assessment.live, assessment.run
     if (live.busy or live.failed or not run.plan_started or run.stopped or run.completed
-            or not live.assessment_id):
+            or not (live.assessment_id or _is_source(assessment))):
         return None  # (after a failure the run waits for you: retry())
     from .scope import time_limit_pending
 
@@ -93,7 +106,14 @@ def next_job(assessment: Optional[Assessment] = None) -> Optional[Job]:
     return job
 
 
+def _is_source(assessment: Assessment) -> bool:
+    """A source-code scope: its run is a code scan (upload, scan, findings), no plan."""
+    return assessment.scope is not None and assessment.scope.kind == "source"
+
+
 def _job_for(assessment: Assessment, live: LiveRun) -> Optional[Job]:
+    if _is_source(assessment):
+        return None if live.code_scan_done else _code_scan_job(assessment)
     aid = live.assessment_id
     if not live.sent:
         if not live.agent_run_id:
@@ -115,15 +135,68 @@ def _job_for(assessment: Assessment, live: LiveRun) -> Optional[Job]:
             lambda: run_api.decide(approval_id, approve, aid, typed or None),
             _on_decided,
         )
+    if live.to_analyze:
+        ids = list(live.to_analyze)
+        # Analyze this step's findings before moving on, so each one gets its analysis now.
+        return Job("analyze", assessment, lambda: run_api.analyze(aid, ids), _on_step_analysis)
     if not live.agent_done and live.steps_done < MAX_STEPS:
         return Job("next", assessment, lambda: run_api.next_step(aid), _on_plan_out)
-    if not live.analyzed and not assessment.findings:
-        # Nothing was found (every step failed, or the scan came up clean): there is nothing
-        # to analyze, so finish without that call rather than hit NO_FINDINGS.
-        return Job("finish", assessment, lambda: None, _on_finish)
     if not live.analyzed:
-        return Job("analyze", assessment, lambda: run_api.analyze(aid), _on_analysis)
+        # Every step's findings were analyzed as they came in; close the run.
+        return Job("finish", assessment, lambda: None, _on_finish)
     return None
+
+
+def _code_scan_job(assessment: Assessment) -> Job:
+    """Upload the local code (or have the API clone a repo), scan it, read the findings."""
+    scope = assessment.scope
+    tools = list(api_tools(scope))
+    add_activity("SYS", "Code scan: uploading the code to the Core API…")
+
+    def fetch() -> Any:
+        return code_scan.run_scan(
+            scope.target_url, scope.excluded_paths, tools,
+            lambda: sync.session_for(assessment), job.report,
+        )
+
+    job = Job("code_scan", assessment, fetch, _on_code_scan)
+    return job
+
+
+def _on_code_scan(assessment: Assessment, out: Dict[str, Any]) -> None:
+    """The finished code scan and its findings: shown, then the run is complete."""
+    live = assessment.live
+    scan = out.get("scan") or {}
+    live.code_scan_done = True
+    live.code_scan_id = str(scan.get("agent_run_id", ""))
+    steps = [_log("SYS", f"Code scan {scan.get('stage', 'DONE').title()}", "ok")]
+    for note in scan.get("notes") or []:
+        bad = any(word in str(note) for word in ("FAILED", "BLOCKED"))
+        steps.append(_log("SYS", str(note), "warn" if bad else "default"))
+    steps += _new_code_findings(assessment, out.get("findings") or [])
+    steps += [RunStep("progress", name=bar, value=100, pause=0.0)
+              for bar in ("discovery", "scanning", "validation", "analysis")]
+    steps += _completion_steps(assessment)
+    _append(assessment, steps)
+    log_event("run.finished", live.code_scan_id)
+
+
+def _new_code_findings(assessment: Assessment, rows: List[dict]) -> List[RunStep]:
+    """The scan's findings, added and revealed (the API's own review is on each row)."""
+    live = assessment.live
+    known = set(live.finding_ids.values())
+    steps: List[RunStep] = []
+    for row in rows:
+        finding_id = str(row.get("finding_id", ""))
+        if not finding_id or finding_id in known:
+            continue
+        fid = f"{len(live.finding_ids) + 1:03d}"
+        live.finding_ids[fid] = finding_id
+        assessment.findings.append(adapt.code_finding(row, fid))
+        steps.append(RunStep("reveal", name=fid, pause=0.1))
+        steps.append(_log("AI", f"Finding {fid} · {adapt.severity(row.get('severity_status'))} "
+                                f"· {row.get('title', '')}", "warn"))
+    return steps
 
 
 def failed_reason() -> str:
@@ -153,6 +226,7 @@ def _unsent_decision(assessment: Assessment, approval_id: str):
 def _on_plan_out(assessment: Assessment, out: Dict[str, Any]) -> None:
     """A PlanOut (the first step, or the next one) plus the findings."""
     live = assessment.live
+    first = not live.sent
     if not live.sent:
         live.sent = True
         live.agent_run_id = ""
@@ -165,6 +239,9 @@ def _on_plan_out(assessment: Assessment, out: Dict[str, Any]) -> None:
             steps.insert(0, _say(text[:600]))
         _append(assessment, steps)
         return
+    reasoning = (out.get("text") or "").strip()
+    if reasoning and not first:  # the first step's reasoning is on the plan card already
+        _append(assessment, [_say(reasoning[:500])])
     _append(assessment, _action_steps(assessment, action, out.get("approval")))
     _append(assessment, _new_findings(assessment, out.get("findings") or []))
 
@@ -188,31 +265,26 @@ def _on_decided(assessment: Assessment, out: Dict[str, Any]) -> None:
     _append(assessment, _new_findings(assessment, out.get("findings") or []))
 
 
-def _on_analysis(assessment: Assessment, out: Dict[str, Any]) -> None:
+def _on_step_analysis(assessment: Assessment, out: Dict[str, Any]) -> None:
+    """A per-step analysis came back: write it onto the findings this step found and show the
+    AI's read of each one. The run is not ended here; more steps may follow."""
     live = assessment.live
-    live.analyzed = True
-    live.analysis_summary = str(out.get("summary") or "")
-    # The agent has nothing left: every testing phase is over (it ran, or you rejected its
-    # checks, which the plan shows as skipped). Analysis is done now.
-    steps: List[RunStep] = [RunStep("progress", name=bar, value=100, pause=0.0)
-                            for bar in ("discovery", "scanning", "validation")]
-    steps += [
-        RunStep("phase", name="analyzing", pause=0.0),
-        RunStep("progress", name="analysis", value=100, pause=0.2),
-    ]
-    if live.analysis_summary:
-        steps.append(_say(live.analysis_summary[:1200]))
+    live.to_analyze = []  # these were just analyzed
+    _refresh_findings(assessment, out.get("findings") or [])
+    steps: List[RunStep] = []
     for row in out.get("analysis") or []:
+        code = str(row.get("code") or "")
+        meaning = str(row.get("impact") or "").strip() or str(row.get("explanation") or "").strip()
+        if meaning:
+            steps.append(_log("AI", f"Analysis {code}: {meaning[:400]}", "default"))
         if row.get("unsure"):
             steps.append(
                 _log(
                     "AI",
-                    f"{row.get('code', '')}: unsure, a person decides ({str(row['unsure'])[:200]})",
+                    f"{code}: unsure, a person decides ({str(row['unsure'])[:200]})",
                     "warn",
                 )
             )
-    steps += _new_findings(assessment, out.get("findings") or [])
-    steps += _completion_steps(assessment)
     _append(assessment, steps)
     log_event("run.analyzed", live.assessment_id)
 
@@ -252,8 +324,11 @@ def _failed(assessment: Assessment, name: str, error: Exception) -> None:
     if name == "next" and code == "NO_TOOL_RESULTS":
         live.agent_done = True  # nothing ran (all skipped): go to analysis
         return
-    if name == "analyze" and code in ("NO_FINDINGS", "NO_OPEN_FINDINGS"):
-        _on_finish(assessment, None)  # nothing to analyze: finish cleanly, not a stopped run
+    if name == "analyze":
+        # a per-step analysis failed: skip it and keep the run going (findings stay
+        # un-analyzed); the run is not stopped for an analysis hiccup.
+        live.to_analyze = []
+        _append(assessment, [_log("AI", "Could not analyze this step; continuing.", "warn")])
         return
     live.failed = f"{code}: {reason}" if code else reason
     add_activity("SYS", f"Core API: {live.failed}", tone="block")
@@ -345,6 +420,8 @@ def _ran_steps(assessment: Assessment, action: dict) -> List[RunStep]:
     if not run:
         return [_log("TOOL", f"{tool} on {target}: no tool run recorded", "warn")]
     tone = "ok" if run["status"] == "COMPLETED" else "block"
+    if run["status"] == "COMPLETED" and tool not in assessment.live.finished_tools:
+        assessment.live.finished_tools.append(tool)   # the report's test coverage
     line = f"{tool} on {target}: {run['status'].lower()}"
     if run["exit"]:
         line += f" · exit {run['exit']}"
@@ -380,6 +457,7 @@ def _new_findings(assessment: Assessment, rows: List[dict]) -> List[RunStep]:
             continue
         fid = f"{len(live.finding_ids) + 1:03d}"
         live.finding_ids[fid] = finding_id
+        live.to_analyze.append(finding_id)  # analyzed before the next step
         assessment.findings.append(adapt.finding(row, fid))
         steps.append(RunStep("reveal", name=fid, pause=0.1))
         steps.append(
@@ -391,6 +469,25 @@ def _new_findings(assessment: Assessment, rows: List[dict]) -> List[RunStep]:
             )
         )
     return steps
+
+
+def _refresh_findings(assessment: Assessment, rows: List[dict]) -> None:
+    """Refresh findings already shown with the API's latest copy, so the plain-language
+    analysis the ANALYZE step wrote (description, impact, remediation, CVSS) reaches the
+    detail view. Local triage (status, note, severity override) is left as it is."""
+    live = assessment.live
+    local_of = {finding_id: fid for fid, finding_id in live.finding_ids.items()}
+    by_fid = {f.fid: f for f in assessment.findings}
+    for row in rows:
+        finding = by_fid.get(local_of.get(str(row.get("finding_id", "")), ""))
+        if finding is None:
+            continue
+        finding.description = str(row.get("description") or finding.description)
+        finding.impact = str(row.get("impact") or "")
+        finding.remediation = str(row.get("remediation") or "")
+        cvss = row.get("cvss_score")
+        if cvss is not None:
+            finding.cvss_score = float(cvss)
 
 
 # --- after the scope and plan -----------------------------------------------------------------

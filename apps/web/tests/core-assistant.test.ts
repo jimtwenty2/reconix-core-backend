@@ -1,12 +1,12 @@
 /* The AI Assistant's routes on the Core API (lib/api/): a question becomes a new web session
    and its chat stream, the conversation list and reads come from the API's sessions and
    messages, delete closes the session, and the model picker drives /llm-providers. A fake
-   Core API (tests/fakes/core-api.ts) runs on a free local port. */
+   Core API (tests/fakes/core-api-server.ts) runs on a free local port. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { COOKIE, sessionValue } from "@/lib/auth/session";
 import { type Frame, parseFrame } from "@/lib/assistant/protocol";
-import { type FakeCore, startFakeCore } from "./fakes/core-api";
+import { type FakeCore, startFakeCore } from "./fakes/core-api-server";
 
 const TOKEN = "route-test-token-0123456789";
 let cookie = "";

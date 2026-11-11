@@ -41,6 +41,7 @@ AGENT_RESPONSE_FIELDS = {
     "risk",
     "blocked",
     "references",
+    "reflections",
     "analysis_summary",
     "analysis",
     "validation_status",
@@ -62,7 +63,8 @@ def names(shape: type) -> set[str]:
 
 
 def test_finding_input_uses_the_erd_columns() -> None:
-    assert names(FindingInput) == FINDING_COLUMNS
+    # confidence is a derived trust tier (never an ERD column), carried for the report.
+    assert names(FindingInput) == FINDING_COLUMNS | {"confidence"}
 
 
 def test_analysis_never_suggests_a_parser_owned_column() -> None:

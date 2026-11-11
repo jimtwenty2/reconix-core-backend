@@ -6,6 +6,7 @@ already on the machine). PDF export is available when either is present; the res
 same one-page-first document the HTML report shows.
 """
 
+import contextlib
 import importlib.util
 import os
 import shutil
@@ -72,12 +73,29 @@ def _print_with_chrome(chrome: str, html: str, out: Path) -> None:
         raise StoreValidationError("The browser did not produce a PDF.")
 
 
+@contextlib.contextmanager
+def _silence_fds():
+    """Send fds 1 and 2 to /dev/null for the block. WeasyPrint's Pango/Fontconfig write C-level
+    warnings straight to fd 2, past any Python redirect; in the TUI that corrupts the screen."""
+    with open(os.devnull, "wb") as null:
+        saved = [os.dup(fd) for fd in (1, 2)]
+        try:
+            os.dup2(null.fileno(), 1)
+            os.dup2(null.fileno(), 2)
+            yield
+        finally:
+            for fd, back in zip((1, 2), saved):
+                os.dup2(back, fd)
+                os.close(back)
+
+
 def write_pdf(data: Dict[str, Any], path) -> None:
     """Write the HTML report rendered to a PDF file at `path`."""
     html = render_html(data)
     if HAS_WEASYPRINT:
         from weasyprint import HTML
-        HTML(string=html).write_pdf(str(path))
+        with _silence_fds():
+            HTML(string=html).write_pdf(str(path))
         return
     chrome = chrome_binary()
     if chrome is None:

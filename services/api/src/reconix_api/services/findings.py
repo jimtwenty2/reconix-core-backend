@@ -22,11 +22,20 @@ from reconix_api.core.interfaces import (
     WriteAudit,
 )
 from reconix_api.core.masking import MaskSecrets, mask_output
-from reconix_api.findings import code_notes, json_mapping
+from reconix_api.findings import arjun as arjun_findings
+from reconix_api.findings import code_notes, json_mapping, paths, web_fingerprint
+from reconix_api.findings import dalfox as dalfox_findings
+from reconix_api.findings import enum4linux as enum4linux_findings
+from reconix_api.findings import nikto as nikto_findings
 from reconix_api.findings import nmap as nmap_findings
+from reconix_api.findings import onesixtyone as onesixtyone_findings
 from reconix_api.findings import osv as osv_findings
 from reconix_api.findings import sarif as sarif_findings
+from reconix_api.findings import schemathesis as schemathesis_findings
+from reconix_api.findings import sqlmap as sqlmap_findings
+from reconix_api.findings import testssl as testssl_findings
 from reconix_api.findings.shape import NewFinding
+from reconix_api.findings.text import host_of
 from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
 from reconix_api.models.enums import (
     AgentRunStatus,
@@ -34,6 +43,7 @@ from reconix_api.models.enums import (
     ToolRunStatus,
     ValidationStatus,
 )
+from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as finding_repo
 from reconix_api.schemas.findings import (
@@ -57,9 +67,27 @@ READERS: dict[str, Callable[[str], tuple[list[NewFinding], int]]] = {
     # ZAP's report is SARIF (zap_report, template sarif-json). Core's "ZAP" is zap_scan.
     "zap_scan": partial(sarif_findings.read, "zap_alert"),
     **{name: partial(json_mapping.read, rule) for name, rule in json_mapping.MAPPINGS.items()},
+    # nuclei's many matcher-findings of one info template are grouped into one (read_nuclei).
+    "nuclei": json_mapping.read_nuclei,
+    "nuclei_dast": json_mapping.read_nuclei,
     "trivy": json_mapping.read_trivy,  # the manifest file is the target
     "grype": json_mapping.read_grype,
     "syft": code_notes.read_syft,  # a package list: no findings, a note in the code scan
+    # Text tools: one reader each (findings/text.py helpers). Facts (stack, open paths)
+    # are NONE; a tool's own verdict sets any higher severity, never a guess.
+    "whatweb": web_fingerprint.read_whatweb,
+    "httpx_probe": web_fingerprint.read_httpx,
+    "katana": paths.read_katana,
+    "ffuf": paths.read_ffuf,
+    "gobuster": paths.read_gobuster,
+    "testssl": testssl_findings.read,
+    "nikto": nikto_findings.read,
+    "dalfox": dalfox_findings.read,
+    "arjun": arjun_findings.read,
+    "schemathesis": schemathesis_findings.read,
+    "enum4linux": enum4linux_findings.read,
+    "onesixtyone": onesixtyone_findings.read,
+    "sqlmap": sqlmap_findings.read,
 }
 
 # Control characters, except tab and newline. A scanned host can put terminal escape
@@ -104,6 +132,8 @@ def save_findings(
         finding = finding_repo.get_by_dedupe_key(db, assessment_id, item.dedupe_key)
         if finding is None:
             finding = _new_finding(db, mask, assessment_id, item)
+        else:
+            _enrich(mask, finding, item)
         finding_repo.add_source(db, finding.finding_id, run.tool_run_id)
         for proof_no, proof in enumerate(item.evidence):
             content, _ = mask_output(mask, CONTROL.sub("", proof.content))
@@ -202,6 +232,27 @@ def review_finding(
 POC = "poc"
 
 
+def _poc_targets_finding(poc_target: str, finding_target: str) -> bool:
+    """True when a PoC tool run actually hit the finding's target.
+
+    Compares host identity (host_of), not a raw substring, so an *adjacent* target is
+    never taken as proof: "10.0.0.5" does not match "10.0.0.50", "example.com" does not
+    match "admin.example.com", "h:8080" does not match "h:80". The one allowance is a bare
+    host against the same "host:port/proto" (so an nmap finding on "10.0.0.5" is confirmed
+    by its own run recorded as "10.0.0.5:22/tcp"), and only at a real boundary. This is the
+    sole gate on the CONFIRMED verdict, so it fails closed."""
+    poc, found = poc_target.strip().lower(), finding_target.strip().lower()
+    if not poc or not found:
+        return False
+    poc_host, found_host = host_of(poc), host_of(found)
+    if not poc_host or not found_host:
+        return False
+    if poc_host == found_host:
+        return True
+    short, long = sorted((poc_host, found_host), key=len)
+    return long.startswith(short) and not long[len(short)].isalnum()
+
+
 async def check_finding(
     db: Db,
     interfaces: Interfaces,
@@ -226,6 +277,14 @@ async def check_finding(
         raise ApiError(404, "TOOL_RUN_NOT_FOUND", "No tool run with this id for this finding.")
     if tool_run.tool_run_status != ToolRunStatus.COMPLETED:
         raise ApiError(422, "TOOL_RUN_NOT_COMPLETED", "The PoC tool run has not completed.")
+    # The PoC must have run against this finding's target. A completed run elsewhere in the
+    # same assessment is not proof for an unrelated target, and CONFIRMED is the strongest
+    # verdict, so an unlinked run must never flip a finding to it.
+    poc_action = action_repo.get(db, tool_run.action_id)
+    if poc_action is None or not _poc_targets_finding(poc_action.target, finding.target):
+        raise ApiError(
+            422, "POC_TARGET_MISMATCH", "The PoC tool run did not run against this finding."
+        )
 
     scope = plans.approved_scope(interfaces, assessment_id)
     run = agent_runs.new_agent_run(db, operator, assessment_id, task="VALIDATE")
@@ -242,7 +301,7 @@ async def check_finding(
                 provider=provider,
                 model=model,
                 scope=scope,
-                findings=[finding_input(finding)],
+                findings=[finding_input(db, finding)],
                 tool_results=[tool_run.output_masked or ""],
             ),
         )
@@ -318,6 +377,57 @@ def _get_finding(db: Db, finding_id: UUID, lock: bool = False) -> Finding:
     if finding is None:
         raise ApiError(404, "FINDING_NOT_FOUND", "No finding with this id.")
     return finding
+
+
+def _enrich(mask: MaskSecrets, finding: Finding, item: NewFinding) -> None:
+    """A later run found the same thing (same dedupe_key) with more detail: upgrade the
+    stored finding in place. Used e.g. when a plain `nmap -p` port finding is found again
+    by `nmap -sV` with the service version.
+
+    Only acts when the new occurrence is strictly more detailed, so it never downgrades:
+    the title is replaced only when the new title extends the stored one (contains it and
+    is longer), and the description only when it is longer. CVE/CWE/OWASP ids are merged
+    (union, additive). Severity is never changed, and the stored evidence is kept (the new
+    run's evidence is added by the caller either way).
+    """
+    title = _clean(mask, item.title)
+    if _more_detailed(finding.title, title):
+        finding.title = title
+        description = _clean(mask, item.description)
+        if len(description) > len(finding.description or ""):
+            finding.description = description
+        if item.remediation and not finding.remediation:
+            finding.remediation = _clean(mask, item.remediation)
+    finding.cve_ids = _union(finding.cve_ids, item.cve_ids)
+    finding.cwe_ids = _union(finding.cwe_ids, item.cwe_ids)
+    finding.owasp_id = _union(finding.owasp_id, item.owasp_id)
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _more_detailed(old: str, new: str) -> bool:
+    """True when `new` says everything `old` did and more, so upgrading never loses
+    information: "Open port 21/tcp (ftp)" -> "Open port 21/tcp (ftp, vsftpd 2.3.4)".
+
+    Compared by word, so punctuation differences (a closing ")" moving) do not matter:
+    every word of `old` must appear in `new`, and `new` must add at least one.
+    """
+    old_words, new_words = _tokens(old or ""), _tokens(new)
+    if not new_words or new_words == old_words:
+        return False
+    new_set = set(new_words)
+    return all(word in new_set for word in old_words) and len(new_words) > len(old_words)
+
+
+def _union(existing: list[str], extra: list[str]) -> list[str]:
+    """`existing` with any new values from `extra` appended (order kept, no duplicates)."""
+    out = list(existing or [])
+    for value in extra or []:
+        if value not in out:
+            out.append(value)
+    return out
 
 
 def _new_finding(db: Db, mask: MaskSecrets, assessment_id: UUID, item: NewFinding) -> Finding:

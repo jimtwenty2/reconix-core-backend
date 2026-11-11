@@ -22,6 +22,8 @@ from reconix_ai.agent import nodes
 from reconix_ai.agent.nodes import AgentDeps, AgentError
 from reconix_ai.agent.state import (
     MAX_MESSAGES,
+    MAX_PRIOR_OBSERVATIONS,
+    MAX_PRIOR_REASONING,
     MAX_TOOL_RESULTS,
     AgentState,
     ScopeLike,
@@ -76,6 +78,9 @@ class AgentRequestLike(Protocol):
     report: Any | None  # REPORT: the shared ReportInput
     chat_scope: ChatScopeLike | None  # CHAT: the scope the person talks about
     plan: list[str]  # CHAT: the current plan, one line per step
+    recent_reasoning: list[str]  # the agent's own earlier per-step reasoning, oldest first
+    recent_observations: list[str]  # the agent's own earlier ReflAct observations, oldest first
+    tools_run: list[str]  # tools that have completed, for the coverage map
 
 
 def build_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:
@@ -138,6 +143,12 @@ async def ask_agent(
     messages, masked_in_messages = masked_texts(list(request.messages), MAX_MESSAGES)
     results, masked_in_results = masked_texts(list(request.tool_results), MAX_TOOL_RESULTS)
     findings, masked_in_findings = masked_findings(list(request.findings))
+    reasoning, masked_in_reasoning = masked_texts(
+        list(request.recent_reasoning), MAX_PRIOR_REASONING
+    )
+    observations, masked_in_observations = masked_texts(
+        list(request.recent_observations), MAX_PRIOR_OBSERVATIONS
+    )
     if task == "ANALYZE":
         check_findings(findings)
     if task == "VALIDATE":
@@ -153,6 +164,9 @@ async def ask_agent(
         "messages": messages,
         "tool_results": results,
         "reflections": [],
+        "prior_reasoning": reasoning,
+        "prior_observations": observations,
+        "tools_run": list(request.tools_run),
         "proposed_action": None,
         "risk": None,
         "blocked": [],
@@ -168,6 +182,8 @@ async def ask_agent(
         "masked_count": masked_in_messages
         + masked_in_results
         + masked_in_findings
+        + masked_in_reasoning
+        + masked_in_observations
         + masked_in_report,
     }
     if task == "ANALYZE":
@@ -344,6 +360,7 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         risk=values.get("risk"),
         blocked=[BlockedStep(**step) for step in values.get("blocked", [])],
         references=references(values),
+        reflections=list(values.get("reflections", [])),
         agent_run_id=run_id,
         checkpoint_id=snapshot.config["configurable"].get("checkpoint_id"),
         waiting="wait" in snapshot.next,

@@ -8,7 +8,7 @@
 
     "nmap": {
       "_comment": "Baseline is low (a plain port/service scan). These raise a call above that: medium for intrusive-but-safe options, high for offensive NSE categories.",
-      "medium": ["--script", "-su", "-a ", "-o "],
+      "medium": ["--script", "-su", "-a ", "-o ", "-t4", "-t5", "--min-rate"],
       "high": ["--script=exploit", "--script exploit", "--script=vuln", "--script=dos", "--script=brute"]
     },
 

@@ -68,6 +68,9 @@ class CodeScanIn(BaseModel):
     # Some of CODE_TOOLS. None: every one of them the scope allows.
     tools: list[ToolName] | None = Field(None, min_length=1)
     analyze: bool = True  # also ask the AI to review each new finding after the tools ran
+    # Re-run every due tool even when no file changed, so new advisories in the trivy/grype
+    # databases surface on unchanged code (a full scan, not an incremental one).
+    refresh: bool = False
 
     @field_validator("paths")
     @classmethod

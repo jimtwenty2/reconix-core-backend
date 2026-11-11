@@ -176,13 +176,15 @@ def _add_tools(server: MCPServer, app: FastAPI) -> None:
         paths: list[str] | None = None,
         tools: list[ToolName] | None = None,
         analyze: bool = True,
+        refresh: bool = False,
     ) -> CodeScanOut:
         """Starts a scan of the session's code and returns at once; follow it with
         watch_code_scan. paths: relative files or folders to scan (default: all). tools: some
         of SEMGREP, GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT, SONAR_SCAN (default: all).
-        analyze: the AI reviews each new finding. A rescan reads only what changed."""
+        analyze: the AI reviews each new finding. A rescan reads only what changed; refresh
+        re-runs every due tool even on unchanged code so new advisories surface."""
         operator = operator_of(app, ctx.headers or {})
-        body = CodeScanIn(paths=paths or [], tools=tools, analyze=analyze)
+        body = CodeScanIn(paths=paths or [], tools=tools, analyze=analyze, refresh=refresh)
         interfaces = app.state.interfaces
         factory = session_factory()
         with factory() as db:

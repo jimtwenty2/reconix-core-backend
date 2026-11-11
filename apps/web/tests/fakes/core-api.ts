@@ -1,210 +1,83 @@
-/* A stand-in Core API for the web's tests, in the exact response shapes of docs/openapi.json
-   (SessionCreated, SessionRead, MessageOut, the chat stream's PIECE/DONE/ERROR events,
-   LlmProviderOut, LlmProviderActivation, LlmProviderTestOut, the {code, message, details}
-   error). Test code only: product code never imports it. It runs on a free 127.0.0.1 port. */
-import { randomUUID } from "node:crypto";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
+/* A fake Core API for tests only (product code never imports it): answers in the exact shapes
+   of docs/openapi.json (SessionCreated, AssessmentRowOut, FindingOut, the error shape), served
+   through a stubbed `fetch`. Values are obvious fakes. */
+import { vi } from "vitest";
 
-type Session = { session_id: string; interface: string; session_status: string; created_at: string; closed_at: string | null };
-type Message = { message_id: string; sequence_no: number; role: string; content_masked: string; created_at: string; session_id: string };
-type Provider = Record<string, unknown> & { llm_provider_id: string; provider_type: string; base_url: string | null; model_name: string; is_active: boolean; is_local: boolean };
+export const ASSESSMENT_ID = "11111111-1111-4111-8111-111111111111";
+const SESSION_ID = "22222222-2222-4222-8222-222222222222";
+const TOOL_RUN_ID = "33333333-3333-4333-8333-333333333333";
+const AT = "2026-11-10T09:00:00Z";
 
-/** What a cloud provider's GET /llm-providers/{id}/models answers. */
-export const CLOUD_MODELS = ["gpt-4.1", "gpt-4o", "gpt-4o-mini", "whisper-1", "text-embedding-3-small", "dall-e-3", "omni-moderation-latest"];
+export const assessmentRow = {
+  assessment_id: ASSESSMENT_ID,
+  engagement_code: "ENG-TEST",
+  name: "Juice Shop web",
+  type: "WEB",
+  assessment_status: "ACTIVE",
+  created_by: "tester@lab",
+  created_at: AT,
+  updated_at: AT,
+  session_id: SESSION_ID,
+  targets: ["http://10.10.0.5:3000"],
+  finding_count: 2,
+  worst_severity: "HIGH",
+  pending_approval_count: 0,
+};
 
-export interface FakeCore {
-  url: string;
-  sessions: Map<string, Session>;
-  tokens: Map<string, string>; // token -> session id
-  messages: Message[];
-  providers: Provider[];
-  codes: Set<string>;
-  calls: { method: string; path: string; body: unknown; token: string }[];
-  /** What the agent answers (pieces, then the saved reply); `error` sends an ERROR event. */
-  agent: { pieces: string[]; reply?: string; error?: string };
-  /** Session id -> the newest agent run's status (GET /sessions/{id}/agent-runs). */
-  runs: Map<string, string>;
-  /** GET /llm-providers/{id}/models answers 503 MODEL_UNAVAILABLE (the server is down). */
-  listFails: boolean;
-  /** The assessments the API holds, with what their routes answer (AssessmentRowOut,
-      AssessmentOverviewOut, FindingOut[], ActionOut[], TimelineOut), and the approvals. */
-  assessments: { row: Record<string, unknown>; overview: Record<string, unknown>; findings: unknown[]; actions: unknown[]; events: unknown[] }[];
-  approvals: { approval_status: string; [key: string]: unknown }[];
-  /** Forget every token, as an API restart does. */
-  restart(): void;
-  close(): Promise<void>;
+const finding = {
+  assessment_id: ASSESSMENT_ID,
+  created_at: AT,
+  cve_ids: [],
+  cwe_ids: ["CWE-89"],
+  owasp_id: ["A03:2021"],
+  description: "The search parameter reaches the SQL query unescaped.",
+  evidence: [
+    { evidence_id: "44444444-4444-4444-8444-444444444444", kind: "REQUEST", content: "GET /rest/products/search?q='", location: "q", created_at: AT, tool_run_id: TOOL_RUN_ID },
+  ],
+  finding_status: "OPEN",
+  impact: "Read any table.",
+  latest_validation: null,
+  remediation: "Use bound parameters.\nValidate the input.",
+  reviewed_at: null,
+  reviewed_by: null,
+  source_tool_run_ids: [TOOL_RUN_ID],
+  tools: ["sqlmap"],
+};
+
+export const findings = [
+  { ...finding, finding_id: "55555555-5555-4555-8555-555555555555", code: "F-001", title: "SQL injection in search", target: "http://10.10.0.5:3000/rest/products/search", severity_status: "HIGH", cvss_score: "8.6", validation_status: "CONFIRMED" },
+  { ...finding, finding_id: "66666666-6666-4666-8666-666666666666", code: "F-002", title: "Unrated banner", target: "http://10.10.0.5:3000", severity_status: "UNKNOWN", cvss_score: null, validation_status: "UNCONFIRMED", finding_status: "FALSE_POSITIVE", cwe_ids: [], owasp_id: [], evidence: [], impact: null, remediation: null },
+];
+
+export const FAKE_TOKEN = "fake-session-token-for-tests";
+
+type Answer = { status: number; body: unknown };
+export interface FakeApi {
+  calls: { method: string; path: string; auth: string | null; body: unknown }[];
+  /** Override the answer for one path (after /api/v1, query included). */
+  answers: Map<string, Answer[]>;
+  down: boolean;
 }
 
-const now = () => new Date().toISOString();
-const MASKED = /sk-[A-Za-z0-9]{8,}/g;
-
-export async function startFakeCore(): Promise<FakeCore> {
-  const fake = {
-    sessions: new Map<string, Session>(),
-    tokens: new Map<string, string>(),
-    messages: [] as Message[],
-    providers: [] as Provider[],
-    codes: new Set<string>(),
-    calls: [] as FakeCore["calls"],
-    agent: { pieces: ["Two ", "approvals"], reply: "Two approvals wait." } as FakeCore["agent"],
-    runs: new Map<string, string>(),
-    listFails: false,
-    assessments: [] as FakeCore["assessments"],
-    approvals: [] as FakeCore["approvals"],
-  };
-
-  const open = (iface: string) => {
-    const session: Session = { session_id: randomUUID(), interface: iface, session_status: "ACTIVE", created_at: now(), closed_at: null };
-    const token = `fake-token-${randomUUID()}`;
-    fake.sessions.set(session.session_id, session);
-    fake.tokens.set(token, session.session_id);
-    return { ...session, token };
-  };
-  const save = (sessionId: string, role: string, content: string): Message => {
-    const m = { message_id: randomUUID(), sequence_no: fake.messages.filter((x) => x.session_id === sessionId).length + 1, role, content_masked: content.replace(MASKED, "[MASKED]"), created_at: now(), session_id: sessionId };
-    fake.messages.push(m);
-    return m;
-  };
-
-  const send = (res: ServerResponse, status: number, body?: unknown) => {
-    res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(body === undefined ? undefined : JSON.stringify(body));
-  };
-  const refuse = (res: ServerResponse, status: number, code: string, message: string) => send(res, status, { code, message, details: {} });
-
-  const handle = (req: IncomingMessage, res: ServerResponse, raw: string) => {
-    const url = new URL(req.url ?? "/", "http://x");
-    const path = url.pathname.replace(/^\/api\/v1/, "");
-    const body = raw ? JSON.parse(raw) : undefined;
-    const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
-    fake.calls.push({ method: req.method ?? "", path: `${path}${url.search}`, body, token });
-    const m = req.method;
-
-    if (m === "POST" && path === "/sessions") return send(res, 201, open(body.interface));
-    if (m === "POST" && path === "/sessions/web-sign-in") {
-      if (!fake.codes.delete(body.code)) return refuse(res, 401, "INVALID_SIGN_IN_CODE", "The sign-in code is not valid.");
-      return send(res, 201, open("web"));
-    }
-    const me = fake.tokens.get(token);
-    if (!me) return refuse(res, 401, "UNAUTHORIZED", "A valid session token is required.");
-
-    if (m === "GET" && path === "/sessions") {
-      const list = [...fake.sessions.values()].filter((s) => (!url.searchParams.get("interface") || s.interface === url.searchParams.get("interface")) && (!url.searchParams.get("session_status") || s.session_status === url.searchParams.get("session_status")));
-      return send(res, 200, list.reverse());
-    }
-    let hit = path.match(/^\/sessions\/([^/]+)(\/.*)?$/);
-    if (hit) {
-      const [, id, rest = ""] = hit;
-      const session = fake.sessions.get(id);
-      if (!session) return refuse(res, 404, "SESSION_NOT_FOUND", "No session has this id.");
-      if (m === "GET" && rest === "") return send(res, 200, session);
-      if (m === "GET" && rest === "/messages") return send(res, 200, fake.messages.filter((x) => x.session_id === id));
-      if (m === "GET" && rest === "/agent-runs") {
-        const status = fake.runs.get(id);
-        return send(res, 200, status ? [{ agent_run_id: randomUUID(), agent_runs_status: status, model_name: "m", plan: null, started_at: now(), finished_at: null, session_id: id, assessment_id: null }] : []);
-      }
-      if (m === "POST" && rest === "/resume") {
-        if (session.interface !== "web") return refuse(res, 403, "NOT_A_WEB_SESSION", "Only a web session can be resumed.");
-        if (session.session_status === "CLOSED") return refuse(res, 409, "SESSION_CLOSED", "This session is already closed.");
-        const token = `fake-token-${randomUUID()}`;
-        fake.tokens.set(token, id);
-        return send(res, 201, { ...session, token });
-      }
-      if (m === "POST" && rest === "/close") {
-        if (id !== me) return refuse(res, 403, "NOT_YOUR_SESSION", "You can only close your own session.");
-        session.session_status = "CLOSED";
-        session.closed_at = now();
-        return send(res, 200, session);
-      }
-      if (m === "POST" && rest === "/chat/stream") {
-        if (id !== me) return refuse(res, 403, "NOT_YOUR_SESSION", "You can only write in your own session.");
-        if (!fake.providers.some((p) => p.is_active)) return refuse(res, 409, "NO_ACTIVE_PROVIDER", "Choose a model first.");
-        const message = save(id, "user", body.content);
-        res.writeHead(200, { "Content-Type": "text/event-stream" });
-        for (const text of fake.agent.pieces) res.write(`event: PIECE\ndata: ${JSON.stringify({ text })}\n\n`);
-        if (fake.agent.error) return res.end(`event: ERROR\ndata: ${JSON.stringify({ code: "AGENT_FAILED", message: fake.agent.error, details: {} })}\n\n`);
-        const reply = save(id, "assistant", fake.agent.reply ?? fake.agent.pieces.join(""));
-        return res.end(`event: DONE\ndata: ${JSON.stringify({ message, reply, agent_run_id: randomUUID() })}\n\n`);
-      }
-    }
-
-    if (m === "GET" && path === "/assessments") return send(res, 200, fake.assessments.map((a) => a.row));
-    hit = path.match(/^\/assessments\/([^/]+)\/(overview|actions|timeline)$/);
-    if (m === "GET" && hit) {
-      const a = fake.assessments.find((x) => x.row.assessment_id === hit![1]);
-      if (!a) return refuse(res, 404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.");
-      if (hit[2] === "overview") return send(res, 200, a.overview);
-      if (hit[2] === "actions") return send(res, 200, a.actions);
-      return send(res, 200, { events: a.events, has_older: false });
-    }
-    if (m === "GET" && path === "/findings") {
-      const a = fake.assessments.find((x) => x.row.assessment_id === url.searchParams.get("assessment_id"));
-      return send(res, 200, a ? a.findings : []);
-    }
-    if (m === "GET" && path === "/approvals") return send(res, 200, fake.approvals.filter((x) => x.approval_status === (url.searchParams.get("status") ?? "PENDING")));
-    if (m === "GET" && path === "/llm-providers") return send(res, 200, fake.providers);
-    if (m === "POST" && path === "/llm-providers") {
-      const local = body.provider_type === "OLLAMA" || /^http:\/\/(127\.0\.0\.1|localhost)/.test(body.base_url ?? "");
-      const row: Provider = {
-        llm_provider_id: randomUUID(),
-        provider_type: body.provider_type,
-        display_name: body.display_name,
-        base_url: body.base_url ?? null,
-        api_key_last4: body.api_key ? String(body.api_key).slice(-4) : null,
-        model_name: body.model_name,
-        is_active: false,
-        is_local: local,
-        created_by: "tester@host",
-        created_at: now(),
-        updated_at: now(),
-      };
-      fake.providers.push(row);
-      return send(res, 201, row);
-    }
-    hit = path.match(/^\/llm-providers\/([^/]+)(\/.*)?$/);
-    if (hit) {
-      const [, id, rest = ""] = hit;
-      const row = fake.providers.find((p) => p.llm_provider_id === id);
-      if (!row) return refuse(res, 404, "LLM_PROVIDER_NOT_FOUND", "No provider has this id.");
-      if (m === "PATCH" && rest === "") {
-        if ("display_name" in body) row.display_name = body.display_name;
-        if ("model_name" in body) row.model_name = body.model_name;
-        if ("base_url" in body) row.base_url = body.base_url;
-        if ("api_key" in body) row.api_key_last4 = body.api_key ? String(body.api_key).slice(-4) : null;
-        return send(res, 200, row);
-      }
-      if (m === "DELETE" && rest === "") {
-        fake.providers.splice(fake.providers.indexOf(row), 1);
-        res.writeHead(204);
-        return res.end();
-      }
-      if (m === "POST" && rest === "/activate") {
-        if (!row.is_local) return send(res, 200, { llm_provider: row, approval: { approval_id: randomUUID() } });
-        for (const p of fake.providers) p.is_active = p === row;
-        return send(res, 200, { llm_provider: row, approval: null });
-      }
-      if (m === "POST" && rest === "/test") return send(res, 200, { ok: true, model_name: row.model_name, latency_ms: 42, code: null, message: null });
-      if (m === "GET" && rest === "/models") {
-        if (fake.listFails) return refuse(res, 503, "MODEL_UNAVAILABLE", "The server did not answer with its models.");
-        // a cloud service lists everything it has for the key, chat or not (as OpenAI does)
-        if (["OPENAI", "ANTHROPIC", "DEEPSEEK"].includes(row.provider_type)) return send(res, 200, { models: CLOUD_MODELS });
-        return send(res, 200, { models: ["llama3.2", "qwen:7b"] });
-      }
-    }
-    return refuse(res, 404, "NOT_FOUND", "Not found.");
-  };
-
-  const server: Server = createServer((req, res) => {
-    let raw = "";
-    req.on("data", (c) => (raw += c));
-    req.on("end", () => handle(req, res, raw));
+/** Stub `fetch` with the fake API; returns its call log and per-path answer queue. */
+export function installFakeApi(): FakeApi {
+  const api: FakeApi = { calls: [], answers: new Map(), down: false };
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit = {}) => {
+    if (api.down) throw new TypeError("fetch failed");
+    const path = new URL(url).pathname.replace(/^\/api\/v1/, "") + new URL(url).search;
+    const headers = (init.headers ?? {}) as Record<string, string>;
+    api.calls.push({ method: init.method ?? "GET", path, auth: headers.Authorization ?? null, body: init.body ? JSON.parse(String(init.body)) : null });
+    const queued = api.answers.get(path)?.shift();
+    const a: Answer = queued ?? defaultAnswer(init.method ?? "GET", path);
+    return new Response(JSON.stringify(a.body), { status: a.status, headers: { "Content-Type": "application/json" } });
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return Object.assign(fake, {
-    url,
-    restart: () => fake.tokens.clear(),
-    close: () => new Promise<void>((done) => server.close(() => done())),
-  });
+  return api;
+}
+
+function defaultAnswer(method: string, path: string): Answer {
+  if (method === "POST" && path === "/sessions")
+    return { status: 200, body: { session_id: SESSION_ID, interface: "web", session_status: "ACTIVE", created_at: AT, closed_at: null, token: FAKE_TOKEN } };
+  if (path === "/assessments") return { status: 200, body: [assessmentRow] };
+  if (path.startsWith("/findings")) return { status: 200, body: findings };
+  return { status: 404, body: { code: "NOT_FOUND", message: "Not found.", details: {} } };
 }

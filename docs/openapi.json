@@ -368,7 +368,7 @@
         "type": "string"
       },
       "AnalysisOut": {
-        "description": "The agent's suggestions for each OPEN finding. Nothing here changes a finding: a\nperson accepts a suggestion with PATCH /findings/{id}. A next_step is a validation\nstep: send it to POST /assessments/{id}/actions with purpose \"validation\", where it\nis checked and waits for an approval like any MEDIUM action.",
+        "description": "The agent's analysis of each OPEN finding. The explanatory fields (a plain-language\nexplanation, impact and remediation, and a CVSS score when missing) are written onto the\nfinding so a reader sees them; the status a person owns (OPEN / FALSE_POSITIVE / FIXED)\nstays theirs via PATCH /findings/{id}. A next_step is a validation step: send it to POST\n/assessments/{id}/actions with purpose \"validation\", where it is checked and waits for an\napproval like any MEDIUM action.",
         "properties": {
           "agent_run": {
             "$ref": "#/components/schemas/AgentRunOut"
@@ -390,6 +390,28 @@
           "summary"
         ],
         "title": "AnalysisOut",
+        "type": "object"
+      },
+      "AnalyzeIn": {
+        "description": "Which findings to analyze. Omitted or empty: every OPEN finding (the end-of-run\nbatch). A list of ids: only those OPEN findings \u2014 used for per-step analysis, so each\nstep's new findings are analyzed as they are found, not all at the end.",
+        "properties": {
+          "finding_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finding Ids"
+          }
+        },
+        "title": "AnalyzeIn",
         "type": "object"
       },
       "ApprovalDecision": {
@@ -1118,6 +1140,10 @@
             "title": "Code",
             "type": "string"
           },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence",
+            "readOnly": true
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -1375,7 +1401,8 @@
           "end_line",
           "rule_id",
           "snippet",
-          "file_sha256"
+          "file_sha256",
+          "confidence"
         ],
         "title": "CodeFindingOut",
         "type": "object"
@@ -1409,6 +1436,11 @@
             "maxItems": 100,
             "title": "Paths",
             "type": "array"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
           },
           "tools": {
             "anyOf": [
@@ -1606,6 +1638,17 @@
         "title": "CombinedReportIn",
         "type": "object"
       },
+      "Confidence": {
+        "description": "How trustworthy a finding is, derived at read time (never stored, like the code\nVerdict). It ranks a report so confirmed and firm findings sit above tentative guesses.\n\n- CONFIRMED:     a validation run confirmed it (an OOB callback, sqlmap, a dalfox verify).\n- FIRM:          strong deterministic signal with no validation yet \u2014 a verifying tool\n                 (sqlmap/dalfox/commix/schemathesis/nuclei -dast), or two or more tools agree.\n- TENTATIVE:     a single scanner's unvalidated match.\n- INFORMATIONAL: a fact, not a weakness (NONE severity: ports, stack, paths, hidden\n                 parameters), or a finding a person marked a false positive.",
+        "enum": [
+          "CONFIRMED",
+          "FIRM",
+          "TENTATIVE",
+          "INFORMATIONAL"
+        ],
+        "title": "Confidence",
+        "type": "string"
+      },
       "DisclosedValueOut": {
         "properties": {
           "approval_id": {
@@ -1764,6 +1807,11 @@
             "title": "Evidence",
             "type": "string"
           },
+          "evidence_summary": {
+            "default": "",
+            "title": "Evidence Summary",
+            "type": "string"
+          },
           "explanation": {
             "title": "Explanation",
             "type": "string"
@@ -1837,6 +1885,10 @@
           "code": {
             "title": "Code",
             "type": "string"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence",
+            "readOnly": true
           },
           "created_at": {
             "format": "date-time",
@@ -1997,7 +2049,8 @@
           "reviewed_by",
           "reviewed_at",
           "created_at",
-          "assessment_id"
+          "assessment_id",
+          "confidence"
         ],
         "title": "FindingOut",
         "type": "object"
@@ -2159,6 +2212,38 @@
           "kind"
         ],
         "title": "HiddenValueOut",
+        "type": "object"
+      },
+      "KaliStatus": {
+        "description": "Whether the Kali MCP tool container answers. For a reachability indicator in the\napps; it never carries the access token.",
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          }
+        },
+        "required": [
+          "connected",
+          "host",
+          "checked_at"
+        ],
+        "title": "KaliStatus",
         "type": "object"
       },
       "KnowledgeAddOnOut": {
@@ -5013,7 +5098,7 @@
     },
     "/api/v1/assessments/{assessment_id}/analyze": {
       "post": {
-        "description": "Asks the agent for suggestions on each OPEN finding, 10 findings at a time.\n\nBusiness Rules:\n- Nothing about a finding changes until a person accepts a suggestion with PATCH /findings/{id}.\n\nExecution Behavior:\n- Calls the agent to analyze the open findings.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Analyzes the OPEN findings with the agent, 10 findings at a time.\n\nBusiness Rules:\n- body.finding_ids limits it to those findings (per-step analysis, as a step finds them);\n  omitted, it analyzes every OPEN finding. 422 NO_FINDINGS when none match.\n- The agent's explanation, impact and remediation (and a CVSS score when missing) are\n  written onto each finding; the review status stays a person's via PATCH /findings/{id}.\n\nExecution Behavior:\n- Calls the agent to analyze the findings and persists the analysis onto them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "analyze_api_v1_assessments__assessment_id__analyze_post",
         "parameters": [
           {
@@ -5027,6 +5112,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AnalyzeIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {
@@ -5062,7 +5164,7 @@
     },
     "/api/v1/assessments/{assessment_id}/code-scans": {
       "post": {
-        "description": "Scans the code sent to the assessment's session with the source code tools.\n\nBusiness Rules:\n- The scope needs a \"path\" target for that code.\n- paths limits the scan to files or folders of the code; tools picks some of SEMGREP,\n  GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: those the scope\n  allows). A tool the scope does not allow ends as a \"<TOOL> BLOCKED\" note.\n- A rescan reads only what changed since the last completed scan and keeps the earlier\n  findings on unchanged files.\n- With analyze (the default), the AI reviews each new finding with the active AI\n  provider; a finding reviewed before on the same file with the same model keeps its\n  review. A failed review is a \"ANALYZE <CODE>\" note, never a failed scan. A file no\n  GITLEAKS run read as it is now (GITLEAKS not picked, or it failed) sends the AI no\n  code.\n- Returns 503 NO_ACTIVE_PROVIDER if no AI provider is active (even without analyze:\n  a scan is an agent run), 422 NO_CODE if no code was sent, 422 PATH_NOT_FOUND if a\n  path holds no file, 422 NO_CODE_TOOLS if the scope allows none of the tools, 422\n  CODE_EXCLUDED if the scope excludes the whole code folder, or 409 SCAN_RUNNING if a\n  scan is already running.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- Creates a code scan.\n- Deletes excluded \"path\" targets inside the code folder (for example \".../node_modules\")\n  from the stored code before the scan, so the tools never read them.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Scans the code sent to the assessment's session with the source code tools.\n\nBusiness Rules:\n- The scope needs a \"path\" target for that code.\n- paths limits the scan to files or folders of the code; tools picks some of SEMGREP,\n  GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: those the scope\n  allows). A tool the scope does not allow ends as a \"<TOOL> BLOCKED\" note.\n- A rescan reads only what changed since the last completed scan and keeps the earlier\n  findings on unchanged files; pass refresh=true to force every due tool to run again on\n  unchanged code, so new advisories in the trivy/grype databases surface.\n- With analyze (the default), the AI reviews each new finding with the active AI\n  provider; a finding reviewed before on the same file with the same model keeps its\n  review. A failed review is a \"ANALYZE <CODE>\" note, never a failed scan. A file no\n  GITLEAKS run read as it is now (GITLEAKS not picked, or it failed) sends the AI no\n  code.\n- Returns 503 NO_ACTIVE_PROVIDER if no AI provider is active (even without analyze:\n  a scan is an agent run), 422 NO_CODE if no code was sent, 422 PATH_NOT_FOUND if a\n  path holds no file, 422 NO_CODE_TOOLS if the scope allows none of the tools, 422\n  CODE_EXCLUDED if the scope excludes the whole code folder, or 409 SCAN_RUNNING if a\n  scan is already running.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- Creates a code scan.\n- Deletes excluded \"path\" targets inside the code folder (for example \".../node_modules\")\n  from the stored code before the scan, so the tools never read them.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "start_code_scan_api_v1_assessments__assessment_id__code_scans_post",
         "parameters": [
           {
@@ -7911,7 +8013,7 @@
     },
     "/api/v1/sessions/{session_id}/code-scans": {
       "post": {
-        "description": "Scans the code sent to your own session, with no scope to write or approve.\n\nBusiness Rules:\n- The scope is only the session's code folder, so the server approves it itself; the\n  session's assessment is reused while its scope is exactly that folder.\n- paths limits the scan to files or folders of the code; tools picks some of SEMGREP,\n  GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: all of them).\n- A rescan reads only what changed since the last completed scan and keeps the earlier\n  findings on unchanged files.\n- Returns 403 NOT_YOUR_SESSION, 409 SESSION_CLOSED, 409 CODE_SCOPE_MISMATCH if the\n  session's assessment has another scope, 409 ASSESSMENT_NOT_ACTIVE if it has ended,\n  or any error of POST /assessments/{id}/code-scans.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- The first time: creates the scope and its assessment and approves it (one\n  SCOPE_APPROVED audit line with reason CODE_SESSION_FOLDER). That scope takes only\n  the code scan's own tool calls: any other action on it is BLOCKED CODE_SCAN_ONLY.\n- Creates a code scan.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Scans the code sent to your own session, with no scope to write or approve.\n\nBusiness Rules:\n- The scope is only the session's code folder, so the server approves it itself; the\n  session's assessment is reused while its scope is exactly that folder.\n- paths limits the scan to files or folders of the code; tools picks some of SEMGREP,\n  GITLEAKS, TRIVY, GRYPE, OSV_SCANNER, SYFT and SONAR_SCAN (default: all of them).\n- A rescan reads only what changed since the last completed scan and keeps the earlier\n  findings on unchanged files; pass refresh=true to force every due tool to run again on\n  unchanged code, so new advisories in the trivy/grype databases surface.\n- Returns 403 NOT_YOUR_SESSION, 409 SESSION_CLOSED, 409 CODE_SCOPE_MISMATCH if the\n  session's assessment has another scope, 409 ASSESSMENT_NOT_ACTIVE if it has ended,\n  or any error of POST /assessments/{id}/code-scans.\n\nExecution Behavior:\n- Runs each tool through the same safety checks as any action.\n- Responds immediately (202); poll GET /code-scans/{id} to follow it.\n\nState Changes:\n- The first time: creates the scope and its assessment and approves it (one\n  SCOPE_APPROVED audit line with reason CODE_SESSION_FOLDER). That scope takes only\n  the code scan's own tool calls: any other action on it is BLOCKED CODE_SCAN_ONLY.\n- Creates a code scan.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "start_session_code_scan_api_v1_sessions__session_id__code_scans_post",
         "parameters": [
           {
@@ -8522,6 +8624,33 @@
         "summary": "Read Stream",
         "tags": [
           "stream"
+        ]
+      }
+    },
+    "/api/v1/system/kali": {
+      "get": {
+        "description": "Returns whether the Kali MCP tool container is reachable, for a status indicator.\n\nBusiness Rules:\n- Probes the Kali MCP server with the initialize handshake only; no tool runs.\n- An unreachable, mis-authenticated or unconfigured server answers connected=false,\n  never an error.\n\nSecurity:\n- Requires a valid session token.\n- Never returns the Kali access token; only the configured host.",
+        "operationId": "read_kali_status_api_v1_system_kali_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaliStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Kali Status",
+        "tags": [
+          "system"
         ]
       }
     },

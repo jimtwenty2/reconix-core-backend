@@ -221,6 +221,8 @@ def test_download_ok_logs_host_and_path_only(server):
     assert fetched == ["127.0.0.1/openapi.json"]
     assert all(TEST_PASSWORD not in e.detail for e in store.list_events())
     assert TEST_PASSWORD not in json.dumps(store.get_api_spec().__dict__)
+    # the doc URL it was fetched from is kept (query stripped) to send to the Core API
+    assert store.get_api_spec().source_url == f"{server}/openapi.json"
 
 
 def test_base_url_change_and_download_together(server):
@@ -269,3 +271,14 @@ def test_an_http_error_and_wrong_content(server):
 def test_attach_api_spec_takes_a_url_too(server):
     api_scope(f"test the API at {server}/v1")
     assert store.attach_api_spec(f"{server}/openapi.json").total == 3
+
+
+def test_check_spec_url_allows_http_when_the_target_is_http():
+    from reconix.store.openapi_fetch import check_spec_url
+
+    # an http API's spec may be fetched over http (same host, same trust level as the scan)
+    parts = check_spec_url("http://api.example.com/v3/api-docs", "http://api.example.com")
+    assert parts.geturl() == "http://api.example.com/v3/api-docs"
+    # but an https API must not have its spec downgraded to http
+    with pytest.raises(store.StoreValidationError):
+        check_spec_url("http://api.example.com/s.json", "https://api.example.com")

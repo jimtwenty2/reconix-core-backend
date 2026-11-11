@@ -12,7 +12,13 @@ log, findings or reports.
 from typing import Dict, List, Optional, Union
 
 from ..models import (
-    GATE_ACCOUNT, GATE_CODE, Assessment, AuthChallenge, Secret, VaultEntry, challenge_for,
+    GATE_ACCOUNT,
+    GATE_CODE,
+    Assessment,
+    AuthChallenge,
+    Secret,
+    VaultEntry,
+    challenge_for,
 )
 from . import lists
 from .activity import log_event
@@ -26,17 +32,26 @@ OTP_LENGTH = 6
 
 
 # --- what the run needs ----------------------------------------------------------------------
+def _login_scope_tools(assessment: Assessment) -> List[str]:
+    """The scope's tools, or none when the scope kind has no login to use (network,
+    source): a login reaches pages behind a web sign-in, which those scopes don't have."""
+    scope = assessment.scope
+    if scope is None or scope.kind in ("network", "source"):
+        return []
+    return list(scope.tools)
+
+
 def login_tools(assessment: Optional[Assessment] = None) -> List[str]:
     """The scope's tools that need a target login."""
     assessment = assessment or lists.current()
-    return tools_login(assessment.scope.tools if assessment.scope else [])[1]
+    return tools_login(_login_scope_tools(assessment))[1]
 
 
 def login_kind(assessment: Optional[Assessment] = None) -> str:
     """The login the run asks for: "" (none), "cookie", "password" or "password+otp"
     (a test account, then a one-time code on its own)."""
     assessment = assessment or lists.current()
-    kind = tools_login(assessment.scope.tools if assessment.scope else [])[0]
+    kind = tools_login(_login_scope_tools(assessment))[0]
     return "password+otp" if kind == "password" and assessment.login_2fa else kind
 
 
@@ -50,8 +65,7 @@ def login_done(assessment: Optional[Assessment] = None) -> bool:
     kind = login_kind(assessment)
     if not kind:
         return True
-    return assessment.run.authenticated and (kind != "password+otp"
-                                             or assessment.run.code_verified)
+    return assessment.run.authenticated and (kind != "password+otp" or assessment.run.code_verified)
 
 
 def current_auth_challenge() -> Optional[AuthChallenge]:
@@ -83,8 +97,12 @@ def provide_auth(values: Dict[str, Union[Secret, str]]) -> None:
     """
     run = lists.current().run
     challenge = current_auth_challenge()
-    if (run.waiting_gate == GATE_CODE and challenge is not None and run.authenticated
-            and not run.code_verified):            # the code only ever follows the password
+    if (
+        run.waiting_gate == GATE_CODE
+        and challenge is not None
+        and run.authenticated
+        and not run.code_verified
+    ):  # the code only ever follows the password
         code_field = next(field for field in challenge.fields if field.otp)
         _accept_code(values.get(code_field.id, ""))
         return
@@ -107,7 +125,8 @@ def provide_auth(values: Dict[str, Union[Secret, str]]) -> None:
                 raise StoreValidationError(f"Enter the {field.label.lower()}.")
             if len(identity) > MAX_IDENTITY_LENGTH or any(c.isspace() for c in identity):
                 raise StoreValidationError(
-                    f"{field.label} is one word, up to {MAX_IDENTITY_LENGTH} characters.")
+                    f"{field.label} is one word, up to {MAX_IDENTITY_LENGTH} characters."
+                )
 
     _store(challenge.kind, identity, secret)
     run.authenticated = True
@@ -119,7 +138,7 @@ def _accept_code(raw: Union[Secret, str]) -> None:
     code = _plain(raw)
     if not (len(code) == OTP_LENGTH and code.isdigit()):
         raise StoreValidationError(f"The one-time code is {OTP_LENGTH} digits.")
-    lists.current().run.code_verified = True                 # the code itself is dropped
+    lists.current().run.code_verified = True  # the code itself is dropped
     add_activity("USER", "One-time code accepted · used once, not stored", tone="ok")
     log_event("vault.code_accepted")
 
@@ -130,8 +149,13 @@ def _store(kind: str, identity: str, secret: Optional[Secret]) -> None:
     if kind == "cookie":
         entry = VaultEntry(kind="cookie", secret=secret, scope=scope, label="session cookie")
     else:
-        entry = VaultEntry(kind="password", identity=identity, secret=secret, scope=scope,
-                           label=f"password · {identity}")
+        entry = VaultEntry(
+            kind="password",
+            identity=identity,
+            secret=secret,
+            scope=scope,
+            label=f"password · {identity}",
+        )
     vault.clear()
     vault.append(entry)
 

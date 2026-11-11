@@ -129,3 +129,21 @@ def test_only_known_severities_become_a_css_class() -> None:
 
     assert 'class="sev UNKNOWN"' in html
     assert 'class="sev x CRITICAL"' not in html
+
+
+def test_confidence_ranks_trustworthy_findings_first_within_a_severity() -> None:
+    base = CASES[0].finding
+    tentative = FindingInput(**{**base, "code": "RCX-100", "confidence": "TENTATIVE"})
+    firm = FindingInput(**{**base, "code": "RCX-101", "confidence": "FIRM"})
+    confirmed = FindingInput(**{**base, "code": "RCX-102", "confidence": "CONFIRMED"})
+    # same severity, given worst-confidence first: the report must reorder them trustworthy-first
+    doc = document(locked_copy(findings=[tentative, firm, confirmed]))
+    assert [f["code"] for f in doc["findings"]] == ["RCX-102", "RCX-101", "RCX-100"]
+
+
+def test_the_confidence_tier_shows_in_the_html_and_docx() -> None:
+    firm = FindingInput(**{**CASES[0].finding, "confidence": "FIRM"})
+    doc = document(locked_copy(findings=[firm]))
+    assert "FIRM" in to_html(doc)
+    word = Document(BytesIO(to_docx(doc)))
+    assert any("Confidence: FIRM" in p.text for p in word.paragraphs)

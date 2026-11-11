@@ -237,6 +237,9 @@ class FindingInput(BaseModel):
     cwe_ids: list[str] = Field(default_factory=list)
     owasp_id: list[str] = Field(default_factory=list)
     cve_ids: list[str] = Field(default_factory=list)
+    # How trustworthy the signal is, derived (never guessed): CONFIRMED, FIRM, TENTATIVE
+    # or INFORMATIONAL. The report ranks trustworthy findings above unverified ones.
+    confidence: str = "TENTATIVE"
 
 
 class ToolRunInput(BaseModel):
@@ -298,6 +301,7 @@ class FindingAnalysis(BaseModel):
     severity_status: str  # suggested
     cvss_score: float | None
     evidence: str  # copied from the masked tool output
+    evidence_summary: str = ""  # plain-language reading of the evidence; the AI's words
     impact: str
     remediation: str
     cwe_ids: list[str]
@@ -328,6 +332,16 @@ class AgentRequest(BaseModel):
     resume: ResumeInput | None = None
     chat_scope: ChatScope | None = None  # CHAT: the scope the person talks about
     plan: list[str] = Field(default_factory=list)  # CHAT: the current plan, one line a step
+    # The agent's own earlier per-step reasoning this assessment (masked), oldest first, so a
+    # PLAN or SUGGEST step builds on what it already decided instead of re-deriving it.
+    recent_reasoning: list[str] = Field(default_factory=list)
+    # The tools that have already completed in this assessment: a technique counts as covered
+    # when one of its tools is here, so the planner covers what remains and does not re-run a
+    # tool. Facts from the tool_runs table, never the model's claim; tool names, not secret.
+    tools_run: list[str] = Field(default_factory=list)
+    # The agent's own earlier ReflAct observations this assessment (masked), oldest first, so a
+    # SUGGEST step keeps following the leads earlier steps spotted instead of re-reading output.
+    recent_observations: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def scope_unless_chat(self) -> Self:
@@ -351,6 +365,7 @@ class AgentResponse(BaseModel):
     risk: RiskLevel | None = None  # the harness risk of proposed_action
     blocked: list[BlockedStep] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)  # knowledge ids, e.g. CWE-89
+    reflections: list[str] = Field(default_factory=list)  # the run's own ReflAct observations
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = Field(default_factory=list)  # ANALYZE
     # VALIDATE: the AI's verdict on a finding, read from the real (masked) PoC tool output.

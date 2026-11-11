@@ -45,6 +45,7 @@ class FakeAgent:
         self.requests: list[AgentRequest] = []
         self.waiting: dict[UUID, tuple[UUID, Action]] = {}  # run -> (assessment, action)
         self.suggest: Action | None = None  # set by a test: the step the next plan suggests
+        self.reflections: list[str] = []  # set by a test: the ReflAct observations a plan returns
         self.verdict = "CONFIRMED"  # set by a test: the VALIDATE verdict the fake returns
         self.down = False  # set by a test: the model is not running
         self.error: Exception | None = None  # set by a test: a bug, not an ApiError
@@ -146,6 +147,7 @@ class FakeAgent:
             ],
             proposed_action=action,
             risk=RiskLevel.MEDIUM,  # the real harness rates -sV as MEDIUM
+            reflections=list(self.reflections),
             agent_run_id=run_id,
             waiting=True,
         )
@@ -168,13 +170,14 @@ class FakeAgent:
 def unsure_analysis(finding: FindingInput) -> FindingAnalysis:
     return FindingAnalysis(
         code=finding.code,
-        explanation=finding.title,
+        explanation=f"In plain terms: {finding.title}.",
         related=[],
         severity_status=finding.severity_status,
         cvss_score=finding.cvss_score,
         evidence="",
-        impact="",
-        remediation="",
+        evidence_summary="Fake reading: the output shows the finding plainly.",
+        impact="Fake impact.",
+        remediation="Fake remediation.",
         cwe_ids=finding.cwe_ids,
         owasp_id=finding.owasp_id,
         cve_ids=finding.cve_ids,

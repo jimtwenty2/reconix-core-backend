@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_ai.harness.catalog import canonical
 from reconix_api.core import code_files
 from reconix_api.core.config import Settings
 from reconix_api.core.disclosure import DisclosureVault, vault_for_tool_runs
@@ -28,6 +29,24 @@ from reconix_api.services.findings import CONTROL, KeptValues, parse_run, save_f
 logger = logging.getLogger(__name__)
 
 TERMINAL_CODES = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+# Tools that EXIT NON-ZERO precisely when they find issues (not a crash): schemathesis
+# (exit 1 = test failures found), sqlmap and dalfox. The Kali wrapper reports these as
+# failed, but their output holds real findings, so a FAILED/TIMED_OUT run with output is
+# still parsed. Catalog (canonical) names.
+FINDINGS_ON_NONZERO_EXIT = {"schemathesis", "sqlmap", "dalfox"}
+
+
+def _should_parse(run: ToolRun, action: Action) -> bool:
+    """True when the run's output should be parsed for findings: a COMPLETED run, or a
+    find-on-nonzero-exit tool that came back FAILED/TIMED_OUT but left output to read."""
+    if run.tool_run_status == ToolRunStatus.COMPLETED:
+        return True
+    return (
+        canonical(str(action.tool)) in FINDINGS_ON_NONZERO_EXIT
+        and run.tool_run_status in (ToolRunStatus.FAILED, ToolRunStatus.TIMED_OUT)
+        and bool(run.output_masked)
+    )
 
 
 async def run_action(
@@ -93,9 +112,15 @@ async def run_action(
     else:
         _save_result(run, row, mask, result)
     finding_count = 0
-    if result is not None and run.tool_run_status == ToolRunStatus.COMPLETED:
+    if result is not None and _should_parse(run, action):
         vault = vault_for_tool_runs(settings)
         finding_count = _save_findings(db, mask, vault, run, row, action, result)
+        # A find-on-nonzero-exit tool (schemathesis, sqlmap, dalfox) comes back FAILED
+        # though its output is valid; when it yielded findings the run really succeeded,
+        # so record it COMPLETED for coverage and the UI. No findings: leave it FAILED.
+        if finding_count and run.tool_run_status != ToolRunStatus.COMPLETED:
+            run.tool_run_status = ToolRunStatus.COMPLETED
+            row.action_status = ActionStatus.COMPLETED
     db.commit()
 
     audit(

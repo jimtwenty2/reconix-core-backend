@@ -122,7 +122,7 @@ def read_step(raw: Any) -> dict[str, Any] | None:
     tool = raw.get("tool")
     if tool is None or (isinstance(tool, str) and tool.strip().upper() in NO_TOOL):
         return {**step, "action": None}
-    action = read_action(tool, raw.get("target"), raw.get("arguments", []))
+    action = read_action(tool, raw.get("target"), raw.get("arguments", []), step["phase"])
     if action is None:
         return None
     return {**step, "action": action}
@@ -144,7 +144,9 @@ def read_reason(reason: Any) -> str:
     return line.strip()[:MAX_REASON_CHARS]
 
 
-def read_action(tool: Any, target: Any, arguments: Any) -> dict[str, Any] | None:
+def read_action(
+    tool: Any, target: Any, arguments: Any, phase: str | None = None
+) -> dict[str, Any] | None:
     if not isinstance(tool, str) or not is_known_tool(tool.strip()):
         return None
     if not isinstance(target, str) or not target.strip():
@@ -157,7 +159,7 @@ def read_action(tool: Any, target: Any, arguments: Any) -> dict[str, Any] | None
         "tool": tool.strip().upper(),
         "target": target.strip(),
         "arguments": list(arguments),
-        "is_validation": False,
+        "is_validation": phase == "validation",
     }
 
 

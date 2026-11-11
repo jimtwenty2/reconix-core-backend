@@ -127,3 +127,51 @@ def test_other_tools_on_a_path_reach_no_port() -> None:
 
 def test_zap_scan_is_checked_like_zap() -> None:
     assert reason([], tool="zap_scan", target="http://172.20.0.5:9999/") == "PORTS_OUT_OF_SCOPE"
+
+
+# --- service tools reach only their own fixed ports (enum4linux, onesixtyone) --------------
+
+
+@dataclass(frozen=True)
+class SmbScope:
+    # enum4linux -a reaches 137/139/389/445; onesixtyone reaches 161. All must be allowed.
+    allowed_ports: list[int] = field(default_factory=lambda: [137, 139, 389, 445, 161])
+
+
+@dataclass(frozen=True)
+class PartialSmbScope:
+    allowed_ports: list[int] = field(default_factory=lambda: [139, 445])  # missing 137/389
+
+
+@dataclass(frozen=True)
+class WebOnlyScope:
+    allowed_ports: list[int] = field(default_factory=lambda: [80, 443])
+
+
+def test_enum4linux_on_a_host_is_allowed_when_all_its_ports_are_in_scope() -> None:
+    assert reason([], tool="ENUM4LINUX", scope=SmbScope(), target="metasploitable") is None
+
+
+def test_onesixtyone_on_a_host_is_allowed_when_snmp_port_is_in_scope() -> None:
+    assert reason([], tool="ONESIXTYONE", scope=SmbScope(), target="metasploitable") is None
+
+
+def test_enum4linux_blocked_when_a_port_it_can_reach_is_not_in_scope() -> None:
+    # -a would reach 137/389 (NetBIOS/LDAP), which this scope does not authorize.
+    assert reason([], tool="ENUM4LINUX", scope=PartialSmbScope(), target="host") == (
+        "PORTS_OUT_OF_SCOPE"
+    )
+
+
+def test_service_tool_is_blocked_when_its_ports_are_not_in_scope() -> None:
+    assert reason([], tool="ENUM4LINUX", scope=WebOnlyScope(), target="host") == (
+        "PORTS_OUT_OF_SCOPE"
+    )
+
+
+def test_a_free_shell_tool_is_not_port_bounded_as_a_service_tool() -> None:
+    # smbclient takes -p <port>, so it is NOT in SERVICE_TOOL_PORTS; on a host target with
+    # a ports scope it stays blocked (its port cannot be bounded from its arguments).
+    assert reason([], tool="smbclient", scope=SmbScope(), target="metasploitable") == (
+        "PORTS_NOT_SUPPORTED"
+    )

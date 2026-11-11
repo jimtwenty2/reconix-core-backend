@@ -52,7 +52,21 @@ OWN_PORT_OPTIONS = {"--top-ports", "-F", "-p-"}
 # (-O, -A), and scripts that connect on their own (-sC, --script).
 OTHER_PORT_PROBES = {"-O", "-A", "-sC", "--script"}
 DEFAULT_PORTS = {"http": 80, "https": 443}
-WEB_TOOLS = {"nuclei", "zap_scan"}  # catalog names
+WEB_TOOLS = {"nuclei", "nuclei_dast", "zap_scan"}  # catalog names
+# Tools that reach only a fixed, known set of service ports (never scanning others like
+# masscan/rustscan, and with no option that can reach an arbitrary port). With allowed
+# ports in the scope, such a tool may target a host only when EVERY port it can reach is
+# allowed, so no flag can escape the scope's ports. The set must list every port the
+# tool can touch with any of its options:
+# - enum4linux `-a` (the catalog's recommended full run) reaches NetBIOS name service
+#   (137), SMB (139, 445) and LDAP (389); none of its flags take an arbitrary port.
+# - onesixtyone is hard-wired to SNMP (161) and has no port option.
+# A free-shell tool (e.g. smbclient, which takes `-p <port>`) is NOT listed here: its port
+# cannot be bounded from its arguments, so it keeps the default host-target port handling.
+SERVICE_TOOL_PORTS = {
+    "enum4linux": frozenset({137, 139, 389, 445}),
+    "onesixtyone": frozenset({161}),
+}
 # Cloud metadata and link-local addresses: never a target, even inside a scope range.
 METADATA_NETWORKS = [
     ipaddress.ip_network(net)
@@ -101,6 +115,7 @@ class TargetKind(StrEnum):
 TOOL_TARGET_KINDS = {
     "nmap": {TargetKind.IP, TargetKind.NETWORK, TargetKind.DOMAIN},
     "nuclei": {TargetKind.URL, TargetKind.DOMAIN},
+    "nuclei_dast": {TargetKind.URL},  # DAST fuzzes a concrete URL, never a bare domain
     "zap_scan": {TargetKind.URL},
     "semgrep": {TargetKind.PATH},
     "gitleaks": {TargetKind.PATH},
@@ -199,7 +214,7 @@ def check_ports(
     if name in WEB_TOOLS:
         return check_url_port(target, allowed)
     if name != "nmap":
-        return check_other_tool_port(target, allowed)
+        return check_other_tool_port(name, target, allowed)
     named = False
     for index, argument in enumerate(arguments):
         option = argument.partition("=")[0]  # also "--top-ports=100"
@@ -221,7 +236,12 @@ def check_ports(
     return ALLOWED if "-Pn" in arguments else blocked("HOST_DISCOVERY_NOT_ALLOWED")
 
 
-def check_other_tool_port(target: str, allowed: set[int]) -> CheckOutcome:
+def check_other_tool_port(name: str, target: str, allowed: set[int]) -> CheckOutcome:
+    # A service tool reaches only its own fixed ports; allow it on a host when those are
+    # all in scope (it never scans other ports). enum4linux -> 139/445, onesixtyone -> 161.
+    service_ports = SERVICE_TOOL_PORTS.get(name)
+    if service_ports is not None:
+        return ALLOWED if service_ports <= allowed else blocked("PORTS_OUT_OF_SCOPE")
     parsed = parse_target(target)
     if parsed is None:
         return blocked("INVALID_TARGET")
@@ -363,12 +383,26 @@ def is_in_scope(target: Target, scope: ScopeRules) -> bool:
         case TargetKind.NETWORK:
             # The whole network must fit inside one allowed range, not just touch it.
             return any(network_inside(target.network, entry) for entry in scope.ip_ranges)
+        case TargetKind.URL:
+            if any(matches_entry(target, entry) for entry in scope.url_prefixes):
+                return True
+            # Only a scope with NO URL prefixes (a network scope) allows a URL by its host:
+            # a URL on an in-scope host (allowed domain or IP) is allowed, the port enforced
+            # separately by check_ports. This lets nuclei/testssl run on a network host.
+            # A scope that lists URL prefixes uses them as the sole authority for URLs, so a
+            # URL off every prefix stays out of scope even on an allowed domain.
+            if scope.url_prefixes:
+                return False
+            host_target = parse_target(target.url.host)
+            return (
+                host_target is not None
+                and host_target.kind in (TargetKind.IP, TargetKind.DOMAIN)
+                and is_in_scope(host_target, scope)
+            )
         case TargetKind.IP:
             entries = scope.ip_ranges
         case TargetKind.DOMAIN:
             entries = scope.domains
-        case TargetKind.URL:
-            entries = scope.url_prefixes
         case TargetKind.PATH:
             entries = scope.repo_paths
     return any(matches_entry(target, entry) for entry in entries)
