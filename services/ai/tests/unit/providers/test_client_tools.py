@@ -6,7 +6,7 @@ import pytest
 
 from reconix_ai.providers import client
 from reconix_ai.providers.client import ProviderError, complete_with_tools
-from reconix_ai.providers.settings import reconix_provider
+from reconix_ai.providers.settings import ProviderConfig, ProviderType, reconix_provider
 
 litellm = client.litellm  # through the client: litellm must load after its settings
 
@@ -133,3 +133,11 @@ async def test_no_url_is_refused_before_any_call(
         await complete_with_tools([{"role": "user", "content": "x"}], TOOLS, reconix_provider())
     assert error.value.code == "PROVIDER_URL_MISSING"
     assert model.calls == []
+
+
+async def test_a_cloud_model_gets_at_most_its_own_output_limit(model: FakeModel) -> None:
+    config = ProviderConfig(ProviderType.OPENAI, "gpt-4o", api_key="fake-openai-key")
+
+    await complete_with_tools([{"role": "user", "content": "x"}], TOOLS, config)
+
+    assert model.calls[0]["max_tokens"] == 16_384  # gpt-4o's own limit, not the 128k default
