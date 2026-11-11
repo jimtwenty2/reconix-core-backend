@@ -142,15 +142,27 @@ def findings(agent_run_id: str) -> List[dict]:
     return connect.request("GET", f"/code-scans/{quote(agent_run_id)}/findings") or []
 
 
-def clone(session_id: str, url: str) -> int:
-    """Put a GitHub repo on the session (`POST /code/clone`). The API's own refusal (for
-    example 503 GIT_NOT_FOUND in Docker) is raised as it came. Returns the file count."""
-    return int(connect.request("POST", f"/sessions/{session_id}/code/clone", {"url": url})["files"])
+def repo_token() -> Optional[str]:
+    """A GitHub token for cloning a private repo, read from this computer's environment
+    (GH_TOKEN or GITHUB_TOKEN). It is forwarded to the Core API only; never stored or logged."""
+    return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+
+
+def clone(session_id: str, url: str, token: Optional[str] = None) -> int:
+    """Put a GitHub repo on the session (`POST /code/clone`). A private repo needs a token:
+    the API hands it to git as an HTTP header and never stores or logs it. The API's own
+    refusal (for example 503 GIT_NOT_FOUND in Docker) is raised as it came. Returns the file
+    count."""
+    body: Dict[str, object] = {"url": url}
+    if token:
+        body["token"] = token
+    return int(connect.request("POST", f"/sessions/{session_id}/code/clone", body)["files"])
 
 
 def run_scan(
     target: str, excluded: Iterable[str], tools: Optional[List[str]],
     session: Callable[[], str], progress: Optional[Progress] = None,
+    token: Optional[str] = None,
 ) -> Dict[str, object]:
     """Feed the target's code to the API, scan it, read the findings. Blocks: call it in a
     worker. A local folder is uploaded; a repo URL is cloned by the API. Returns
@@ -167,6 +179,6 @@ def run_scan(
     else:
         session_id = session()
         say("Asking the Core API to clone the repository…")
-        say(f"Cloned {clone(session_id, target)} files; starting the scan…")
+        say(f"Cloned {clone(session_id, target, token or repo_token())} files; starting the scan…")
     scan = wait(start(session_id, tools), say)
     return {"scan": scan, "findings": findings(str(scan["agent_run_id"]))}
