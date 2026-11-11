@@ -72,14 +72,18 @@ def call(
     body: Any = None,
     token: str = "",
     timeout: int = TIMEOUT_SECONDS,
+    gzip_body: Optional[bytes] = None,
 ) -> Any:
     """One API call: the decoded JSON answer (None for 204). Raises CoreApiError with the
-    API's own code and message, which are safe to show (the API masks them)."""
+    API's own code and message, which are safe to show (the API masks them).
+    `gzip_body` is a ready tar.gz sent as it is (the code upload) instead of JSON `body`."""
     url = base_url()
-    data = None if body is None else json.dumps(body).encode()
+    data = gzip_body if gzip_body is not None else (
+        None if body is None else json.dumps(body).encode())
     headers = {"Accept": "application/json"}
     if data is not None:
-        headers["Content-Type"] = "application/json"
+        headers["Content-Type"] = "application/gzip" if gzip_body is not None \
+            else "application/json"
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(

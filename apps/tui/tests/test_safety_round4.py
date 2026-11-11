@@ -209,7 +209,7 @@ def test_percent_encoded_traversal_leaves_the_repository(target):
 
 
 def test_the_source_template_refuses_a_nested_excluded_folder():
-    store.start_run("review repo https://git.example.com/acme/app.git")
+    store.start_run("review repo https://github.com/acme/app")
     assert play_until_gate() == "scope"  # the repo picked Source Code; checked on the draft
     excluded = store.get_scope().excluded_paths
     assert repo_path_reason("app/main.py", excluded) == ""

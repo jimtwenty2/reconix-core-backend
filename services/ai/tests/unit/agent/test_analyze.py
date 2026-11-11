@@ -118,7 +118,7 @@ async def test_a_bad_list_of_findings_never_reaches_the_model(graph, findings, c
     assert model.prompts == []
 
 
-async def test_the_analysis_answer_may_be_longer_than_a_plan(graph) -> None:
+async def test_the_analysis_gets_the_full_configured_answer_length(graph) -> None:
     sent = []
     model = FakeModel(answer(good_answer(FTP)))
 
@@ -130,7 +130,7 @@ async def test_the_analysis_answer_may_be_longer_than_a_plan(graph) -> None:
 
     await ask_agent(graph, analyze_request(FTP), str(uuid4()), deps)
 
-    assert sent == [20_000]
+    assert sent == [128_000]  # no lower per-step cap: a reasoning model needs the room
 
 
 async def test_an_id_named_only_inside_a_hit_text_is_not_allowed(graph) -> None:

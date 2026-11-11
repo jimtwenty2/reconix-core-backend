@@ -100,8 +100,46 @@ async def test_every_call_caps_the_answer_length(model: FakeModel) -> None:
     await complete(QUESTION, reconix_provider())
     await complete(QUESTION, short)
 
-    assert model.calls[0]["max_tokens"] == 16_000
+    assert model.calls[0]["max_tokens"] == 128_000
     assert model.calls[1]["max_tokens"] == 300
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [("", 128_000), ("32000", 32_000), ("999999", 128_000), ("0", 1)]
+)
+def test_max_output_tokens_comes_from_the_environment_within_the_ceiling(
+    monkeypatch: pytest.MonkeyPatch, value: str, expected: int
+) -> None:
+    monkeypatch.setenv("RECONIX_MAX_OUTPUT_TOKENS", value)
+
+    assert reconix_provider().max_tokens == expected
+
+
+def test_a_max_output_tokens_that_is_not_a_number_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RECONIX_MAX_OUTPUT_TOKENS", "lots")
+
+    with pytest.raises(ValueError, match="RECONIX_MAX_OUTPUT_TOKENS"):
+        reconix_provider()
+
+
+@pytest.mark.parametrize(
+    ("provider_type", "model_name", "expected"),
+    [
+        (ProviderType.ANTHROPIC, "claude-sonnet-5-5", 128_000),  # its own limit is 128,000
+        (ProviderType.OPENAI, "gpt-4o", 16_384),  # lowered to its own limit
+        (ProviderType.OPENAI, "not-a-known-model", 128_000),  # unknown: as set
+    ],
+)
+async def test_a_cloud_model_gets_at_most_its_own_output_limit(
+    model: FakeModel, provider_type: ProviderType, model_name: str, expected: int
+) -> None:
+    config = ProviderConfig(provider_type, model_name, api_key="sk-test-key-123456789")
+
+    await complete(QUESTION, config)
+
+    assert model.calls[0]["max_tokens"] == expected
 
 
 async def test_ollama_url_comes_from_the_environment(
@@ -315,7 +353,7 @@ async def test_an_answer_cut_off_by_the_length_says_so(
         await complete(QUESTION, reconix_provider())
 
     assert raised.value.code == "ANSWER_CUT_OFF"
-    assert "16000" in raised.value.message
+    assert "128000" in raised.value.message
 
 
 @pytest.mark.parametrize(
@@ -459,3 +497,91 @@ async def test_on_piece_errors_still_hide_the_provider_text(monkeypatch) -> None
         await complete(QUESTION, reconix_provider(), on_piece=on_piece)
     assert raised.value.code == "MODEL_UNAVAILABLE"
     assert "secret-url" not in raised.value.message
+
+
+def answer_with(message: dict, finish_reason: str = "stop"):
+    async def fake(**kwargs: object) -> litellm.ModelResponse:
+        return litellm.ModelResponse(
+            choices=[{"message": {"role": "assistant", **message}, "finish_reason": finish_reason}]
+        )
+
+    return fake
+
+
+def tool_call(arguments: str) -> dict:
+    return {
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "json_tool_call", "arguments": arguments},
+    }
+
+
+async def test_an_empty_content_falls_back_to_the_reasoning(
+    monkeypatch: pytest.MonkeyPatch, model: FakeModel
+) -> None:
+    thinking = "The port is open. password=hunter2-secret"
+    monkeypatch.setattr(
+        client.litellm, "acompletion", answer_with({"content": "", "reasoning_content": thinking})
+    )
+
+    completion = await complete(QUESTION, reconix_provider())
+
+    assert completion.text.startswith("The port is open.")
+    assert "hunter2-secret" not in completion.text
+    assert completion.masked_count == 1
+
+
+async def test_an_empty_json_content_falls_back_to_the_tool_call_json(
+    monkeypatch: pytest.MonkeyPatch, model: FakeModel
+) -> None:
+    arguments = json.dumps({"summary": "Scan it.", "token": "sk-live-abcdefghijklmnop"})
+    message = {
+        "content": None,
+        # Thinking that holds a draft object: the tool call is the answer, not this.
+        "reasoning_content": 'Draft: {"summary": "wrong"}',
+        "tool_calls": [tool_call(arguments)],
+    }
+    monkeypatch.setattr(client.litellm, "acompletion", answer_with(message))
+
+    completion = await complete(QUESTION, reconix_provider(), json_answer=True)
+
+    data = json.loads(completion.text)
+    assert data["summary"] == "Scan it."
+    assert "sk-live-abcdefghijklmnop" not in completion.text
+
+
+async def test_an_empty_text_content_falls_back_to_the_tool_call_without_reasoning(
+    monkeypatch: pytest.MonkeyPatch, model: FakeModel
+) -> None:
+    message = {"content": "  ", "tool_calls": [tool_call('{"answer": "yes"}')]}
+    monkeypatch.setattr(client.litellm, "acompletion", answer_with(message))
+
+    completion = await complete(QUESTION, reconix_provider())
+
+    assert completion.text == '{"answer": "yes"}'
+
+
+@pytest.mark.parametrize(
+    ("finish_reason", "code"), [("stop", "EMPTY_RESPONSE"), ("length", "ANSWER_CUT_OFF")]
+)
+async def test_nothing_anywhere_still_raises(
+    monkeypatch: pytest.MonkeyPatch, model: FakeModel, finish_reason: str, code: str
+) -> None:
+    message = {"content": "", "reasoning_content": "   ", "tool_calls": None}
+    monkeypatch.setattr(client.litellm, "acompletion", answer_with(message, finish_reason))
+
+    with pytest.raises(ProviderError) as raised:
+        await complete(QUESTION, reconix_provider(), json_answer=True)
+
+    assert raised.value.code == code
+
+
+async def test_a_content_answer_ignores_the_reasoning(
+    monkeypatch: pytest.MonkeyPatch, model: FakeModel
+) -> None:
+    message = {"content": "Port 3000 is open.", "reasoning_content": "Let me think."}
+    monkeypatch.setattr(client.litellm, "acompletion", answer_with(message))
+
+    completion = await complete(QUESTION, reconix_provider())
+
+    assert completion.text == "Port 3000 is open."

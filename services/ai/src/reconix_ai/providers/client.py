@@ -118,7 +118,7 @@ async def complete(
         "api_base": base_url,
         "api_key": config.api_key or NO_KEY,
         "timeout": config.timeout_seconds,
-        "max_tokens": config.max_tokens,
+        "max_tokens": answer_limit(model, config),
         "response_format": {"type": "json_object"} if json_answer else None,
     }
 
@@ -141,14 +141,14 @@ async def complete(
     if response is None or not response.choices:
         raise fail("EMPTY_RESPONSE", "The model sent back an empty answer.")
     choice = response.choices[0]
-    raw = choice.message.content or ""
+    raw = answer_text(choice.message, json_answer)
     text, answer_count = mask_json(raw) if json_answer else mask_secrets(raw)
     if not text.strip():
         if choice.finish_reason == "length":
             # A reasoning model can spend the whole length on thinking.
             raise fail(
                 "ANSWER_CUT_OFF",
-                f"The model reached its {config.max_tokens}-token limit before it answered.",
+                f"The model reached its {request['max_tokens']}-token limit before it answered.",
             )
         raise fail("EMPTY_RESPONSE", "The model sent back an empty answer.")
     usage = getattr(response, "usage", None)
@@ -162,6 +162,51 @@ async def complete(
         completion_tokens=completion_tokens,
         masked_count=masked_count + answer_count,
     )
+
+
+def answer_text(message: object, json_answer: bool) -> str:
+    """The answer, from content; when that is empty, from where a reasoning model left it.
+
+    Under JSON mode LiteLLM may leave the object in the first tool call's arguments
+    (Anthropic's emulated json_object), and a thinking model may leave its only text in
+    reasoning_content. For a JSON answer the tool call goes first: it is the structured
+    answer, while reasoning_content is thinking that may hold a draft object.
+    """
+    content = getattr(message, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content
+    reasoning = getattr(message, "reasoning_content", None)
+    reasoning = reasoning if isinstance(reasoning, str) and reasoning.strip() else ""
+    arguments = tool_call_arguments(message)
+    for text in (arguments, reasoning) if json_answer else (reasoning, arguments):
+        if text:
+            return text
+    return ""
+
+
+def tool_call_arguments(message: object) -> str:
+    """The first tool call's arguments as text, or "" when there are none."""
+    calls = getattr(message, "tool_calls", None) or []
+    function = getattr(calls[0], "function", None) if calls else None
+    arguments = getattr(function, "arguments", None)
+    if isinstance(arguments, dict):
+        return json.dumps(arguments, ensure_ascii=False)
+    return arguments if isinstance(arguments, str) and arguments.strip() else ""
+
+
+def answer_limit(model: str, config: ProviderConfig) -> int:
+    """max_tokens, lowered for a cloud model to its own output limit when LiteLLM's bundled
+    price list knows it (gpt-4o: 16,384), so a high setting never gets a 400. Only cloud
+    types are looked up: for Ollama LiteLLM would ask the server. A self-hosted model gets
+    max_tokens as set (lower RECONIX_MAX_OUTPUT_TOKENS if its server refuses it)."""
+    max_tokens = config.max_tokens
+    if config.provider_type not in CLOUD_TYPES:
+        return max_tokens
+    try:
+        known = litellm.get_model_info(model).get("max_output_tokens")
+    except Exception:  # not mapped: LiteLLM raises its own error for an unknown model
+        return max_tokens
+    return min(max_tokens, known) if isinstance(known, int) and known > 0 else max_tokens
 
 
 def mask_json(text: str) -> tuple[str, int]:

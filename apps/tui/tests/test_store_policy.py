@@ -106,18 +106,18 @@ def test_a_network_exclusion_must_be_readable(entry):
 def _source_scope_approved_here():
     """A source scope, approved in the store only: the Core API can't take one yet (code is
     uploaded through the code-scan flow), but the policy engine still judges its paths."""
-    store.start_run("review repo https://git.example.com/acme/app.git")
+    store.start_run("review repo https://github.com/acme/app")
     assert play_until_gate() == "scope"                # the repo picked Source Code
     lists.current().scope.status = "APPROVED"
     lists.current().run.started_at = utc_now()
 
 
-def test_a_source_scope_is_refused_by_the_core_api_for_now():
-    store.start_run("review repo https://git.example.com/acme/app.git")
+def test_a_source_scope_is_approved_and_runs_as_a_code_scan(fake_api):
+    store.start_run("review repo https://github.com/acme/app")
     assert play_until_gate() == "scope"
-    with pytest.raises(store.StoreValidationError, match="source-code scope"):
-        store.approve_scope()
-    assert store.get_scope().status == "DRAFT"
+    store.approve_scope()
+    assert store.get_scope().status == "APPROVED"
+    assert not any("/scope-manifests" in p for p in fake_api.paths())  # no manifest for source
 
 
 @pytest.mark.parametrize("target", [

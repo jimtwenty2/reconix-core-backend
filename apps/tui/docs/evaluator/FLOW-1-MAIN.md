@@ -346,7 +346,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 
 ## 1.4 Source Code (git repo or folder)
 
-A git repo (https://…/x.git, git@host:owner/repo, github.com/owner/repo) or a local folder path picks Source Code at once.
+A GitHub repo (https://github.com/owner/repo, git@github.com:owner/repo, github.com/owner/repo) or a local folder path picks Source Code at once.
 
 | What this template sets up | |
 |---|---|
@@ -361,7 +361,7 @@ A git repo (https://…/x.git, git@host:owner/repo, github.com/owner/repo) or a 
 **Type this:**
 
 ```text
-Review the repo https://git.example.com/acme/app.git for secrets and insecure code
+Review the repo https://github.com/acme/app for secrets and insecure code
 ```
 
 1. Scope → Approve scope → Plan → Run plan.
@@ -379,12 +379,12 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-review git@git.example.com:acme/app.git
+review git@github.com:acme/app.git
 ```
 
-1. review git@git.example.com:acme/app.git → Source Code.
+1. review git@github.com:acme/app.git → Source Code.
 2. /new → scan the source code in ./demo-app → Source Code (a folder path).
-3. /new → review repo github.com/acme → "github.com/acme isn't a repository — e.g. github.com/acme/app".
+3. /new → review repo github.com/acme → "github.com/acme isn't a repository — e.g. https://github.com/acme/app".
 4. /new → the first line again → finish the flow.
 
 **Expected:** All repository forms are understood; the incomplete one is explained.
@@ -396,7 +396,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-Check https://git.example.com/acme/app.git for hardcoded secrets
+Check https://github.com/acme/app for hardcoded secrets
 ```
 
 1. Approve scope → Run plan.
@@ -415,7 +415,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-Review https://git.example.com/acme/app.git for security issues
+Review https://github.com/acme/app for security issues
 ```
 
 1. Approve scope → at the plan: Chat about this → move 3b before 3a → "Only you can change the order…" and an order list.
@@ -433,7 +433,7 @@ Result: ☐ Pass ☐ Fail ☐ Skip
 **Type this:**
 
 ```text
-Review the repo https://git.example.com/acme/app.git for secrets and insecure code
+Review the repo https://github.com/acme/app for secrets and insecure code
 ```
 
 1. Approve scope → Run plan → while it runs press Ctrl+C → "Stop this assessment?" → Keep running → it goes on.

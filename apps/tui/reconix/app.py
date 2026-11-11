@@ -91,6 +91,8 @@ class ReconixApp(
         # The stylesheet's $variables come from theme.py, the one place colors are defined.
         return {**super().get_css_variables(), **theme.CSS_TOKENS}
 
+    KALI_POLL_SECONDS = 15   # how often the top bar's kali chip refreshes from the Core API
+
     def on_mount(self) -> None:
         self.push_screen(StartScreen())
         self.call_after_refresh(self.ask_provider_on_start)  # until a model is active

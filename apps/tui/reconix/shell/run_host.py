@@ -115,6 +115,8 @@ class RunHostMixin:
         if job is None:
             return
 
+        job.on_progress = lambda text: self.from_worker(self._live_done, job.progress, text)
+
         def work() -> None:
             try:
                 result = job.fetch()

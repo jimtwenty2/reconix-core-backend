@@ -2,8 +2,8 @@
 
 Only what the API knows is sent. A scope tool is named as the Kali catalog names it
 (testssl.sh -> TESTSSL, OWASP ZAP -> ZAP, Postman -> NEWMAN); the API refuses a tool that
-isn't in the catalog, and that refusal is shown as it came. A source-code scope needs its
-code uploaded to the API first (the code-scan flow), so it can't be sent from here yet.
+isn't in the catalog, and that refusal is shown as it came. A source-code scope is not a
+ScopeDraft: its code is uploaded and scanned through the code-scan flow (code_scan.py).
 """
 
 import ipaddress
@@ -55,7 +55,7 @@ def scope_draft(scope: ScopeManifest, api_doc_url: Optional[str] = None) -> dict
     not a guessed <base>/openapi.json."""
     if scope.kind == "source":
         raise CoreApiError(
-            "SCOPE_NOT_SUPPORTED", "a source-code scope can't be sent to the Core API yet"
+            "SCOPE_NOT_SUPPORTED", "a source-code scope has no ScopeDraft: it runs as a code scan"
         )
     tools = list(api_tools(scope))
     if not tools:

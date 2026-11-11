@@ -29,3 +29,5 @@ class LiveRun:
     actions: List[str] = field(default_factory=list)  # the API's action ids, in order
     finished_tools: List[str] = field(default_factory=list)  # tools whose runs completed
     to_analyze: List[str] = field(default_factory=list)  # API finding ids awaiting analysis
+    code_scan_id: str = ""  # a source scope's code scan (agent run) on the API
+    code_scan_done: bool = False  # its findings were read (the code scan has no plan or steps)

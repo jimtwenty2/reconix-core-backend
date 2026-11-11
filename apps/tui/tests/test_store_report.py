@@ -75,6 +75,21 @@ def test_pdf_report_is_the_styled_report_as_a_pdf(reports_dir):
     assert path.read_bytes()[:5] == b"%PDF-"
 
 
+def test_silence_fds_hides_c_level_writes_then_restores(capfd):
+    """A raw write to fd 2 inside the block (as Pango/Fontconfig do) is dropped, and fds
+    1 and 2 work again after it — so a report export can't corrupt the TUI screen."""
+    import os
+
+    from reconix.store.report_pdf import _silence_fds
+
+    with _silence_fds():
+        os.write(2, b"fontconfig error: should vanish\n")
+    os.write(2, b"visible-again\n")
+    err = capfd.readouterr().err
+    assert "fontconfig" not in err
+    assert "visible-again" in err
+
+
 @pytest.mark.skipif(not report.HAS_DOCX, reason="python-docx not installed")
 def test_docx_report_is_written_as_a_binary_file(reports_dir):
     run_to(None)

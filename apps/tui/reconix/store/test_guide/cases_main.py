@@ -379,7 +379,8 @@ SOURCE = Flow(
     number="1.4",
     title="Source Code (git repo or folder)",
     intro=(
-        "A git repo (https://…/x.git, git@host:owner/repo, github.com/owner/repo) or a "
+        "A GitHub repo (https://github.com/owner/repo, git@github.com:owner/repo, "
+        "github.com/owner/repo) or a "
         "local folder path picks Source Code at once.",
     ),
     facts=(
@@ -414,21 +415,21 @@ SOURCE = Flow(
                 + REPORT_EXPORT.format(key="p (PDF)"),
             ),
             "Every step at ✓; the hardcoded password never shows in plain text.",
-            ask="Review the repo https://git.example.com/acme/app.git for secrets and "
+            ask="Review the repo https://github.com/acme/app for secrets and "
             "insecure code",
         ),
         Case(
             "MF-SRC-02",
             "Other ways to name a repository",
             (
-                "review git@git.example.com:acme/app.git → Source Code.",
+                "review git@github.com:acme/app.git → Source Code.",
                 "/new → scan the source code in ./demo-app → Source Code (a folder path).",
                 "/new → review repo github.com/acme → \"github.com/acme isn't a repository — e.g. "
-                'github.com/acme/app".',
+                'https://github.com/acme/app".',
                 "/new → the first line again → finish the flow.",
             ),
             "All repository forms are understood; the incomplete one is explained.",
-            ask="review git@git.example.com:acme/app.git",
+            ask="review git@github.com:acme/app.git",
         ),
         Case(
             "MF-SRC-03",
@@ -444,7 +445,7 @@ SOURCE = Flow(
                 APPROVE_HIGH,
             ),
             "Only files inside the repository and outside the excluded paths can be read.",
-            ask="Check https://git.example.com/acme/app.git for hardcoded secrets",
+            ask="Check https://github.com/acme/app for hardcoded secrets",
         ),
         Case(
             "MF-SRC-04",
@@ -461,7 +462,7 @@ SOURCE = Flow(
                 REPORT_EXPORT.format(key="j (JSON)"),
             ),
             "The run follows the order you saved; the phases never move.",
-            ask="Review https://git.example.com/acme/app.git for security issues",
+            ask="Review https://github.com/acme/app for security issues",
         ),
         Case(
             "MF-SRC-05",
@@ -474,7 +475,7 @@ SOURCE = Flow(
                 "/new → start again.",
             ),
             "Keep running loses nothing; Stop now runs nothing else and keeps what was found.",
-            ask="Review the repo https://git.example.com/acme/app.git for secrets and "
+            ask="Review the repo https://github.com/acme/app for secrets and "
             "insecure code",
         ),
     ),
