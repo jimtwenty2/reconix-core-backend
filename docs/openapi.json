@@ -2437,6 +2437,38 @@
         "title": "HiddenValueOut",
         "type": "object"
       },
+      "KaliStatus": {
+        "description": "Whether the Kali MCP tool container answers. For a reachability indicator in the\napps; it never carries the access token.",
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          }
+        },
+        "required": [
+          "connected",
+          "host",
+          "checked_at"
+        ],
+        "title": "KaliStatus",
+        "type": "object"
+      },
       "KnowledgeAddOnOut": {
         "properties": {
           "chunk_count": {
@@ -8967,6 +8999,33 @@
         "summary": "Read Stream",
         "tags": [
           "stream"
+        ]
+      }
+    },
+    "/api/v1/system/kali": {
+      "get": {
+        "description": "Returns whether the Kali MCP tool container is reachable, for a status indicator.\n\nBusiness Rules:\n- Probes the Kali MCP server with the initialize handshake only; no tool runs.\n- An unreachable, mis-authenticated or unconfigured server answers connected=false,\n  never an error.\n\nSecurity:\n- Requires a valid session token.\n- Never returns the Kali access token; only the configured host.",
+        "operationId": "read_kali_status_api_v1_system_kali_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KaliStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionToken": []
+          }
+        ],
+        "summary": "Read Kali Status",
+        "tags": [
+          "system"
         ]
       }
     },

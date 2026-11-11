@@ -98,7 +98,8 @@ def test_the_new_defaults():
         "onesixtyone",
     ]
     assert {3306, 3389, 445, 5432, 6379, 3000, 161} <= set(_scope("network").allowed_ports)
-    assert _scope("source").tools == ["Semgrep", "gitleaks", "trivy"]
+    assert _scope("source").tools == ["Semgrep", "gitleaks", "trivy", "grype", "osv-scanner",
+                                      "syft"]
 
 
 def test_new_technique_tools_are_defaults_and_non_destructive():

@@ -134,15 +134,14 @@ async def test_each_templates_first_case_runs_to_the_end(app, case_id, fake_api)
     assert TEST_PASSWORD not in chat
 
 
-def test_the_source_case_is_refused_by_the_core_api_for_now():
-    """A source-code scope needs its code uploaded to the API first (the code-scan flow)."""
+def test_the_source_case_is_approved_for_the_code_scan_flow():
+    """A source-code scope is not sent as a manifest: its code is uploaded and scanned."""
     from .support import play_until_gate
 
     store.submit_prompt(test_guide.find_case("MF-SRC-01").ask)
     assert play_until_gate() == "scope"
-    with pytest.raises(store.StoreValidationError, match="source-code scope"):
-        store.approve_scope()
-    assert store.get_scope().status == "DRAFT"
+    store.approve_scope()
+    assert store.get_scope().status == "APPROVED"
 
 
 def test_bare_hostname_waits_for_the_template():

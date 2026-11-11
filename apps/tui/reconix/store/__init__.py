@@ -66,6 +66,7 @@ from .findings_view import (
     sort_label,
 )
 from .history import add_history, list_history
+from .kali import kali_host, kali_status, refresh_kali, set_kali_status
 from .llm_chat import (
     Draft,
     begin_reply,

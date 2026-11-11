@@ -23,6 +23,7 @@ from reconix_api.core.interfaces import CallTool, ToolJob, ToolResult, ToolRunSt
 
 PROTOCOL_VERSION = "2025-06-18"
 NETWORK_MARGIN_SECONDS = 30  # on top of the tool's own timeout
+KALI_CHECK_TIMEOUT_SECONDS = 5.0  # a reachability probe waits only briefly
 
 # The path brute-forcers' wordlist: fixed by Core, never chosen by the model. It ships
 # with the Kali image (wfuzz's general list, about 950 common paths).
@@ -246,3 +247,27 @@ def make_call_tool(
         return to_tool_result(text)
 
     return call_tool
+
+
+async def check_kali(
+    url: str,
+    auth_token: str,
+    timeout_seconds: float = KALI_CHECK_TIMEOUT_SECONDS,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> bool:
+    """True when the Kali MCP server answers the initialize handshake. No tool runs and no
+    job token is signed: this only reports reachability. Any network, auth or protocol
+    error is False, never raised, so a status check never breaks the caller. `transport`
+    is only for tests."""
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds, transport=transport) as client:
+            await start_session(client, url, headers)
+    except (httpx.HTTPError, McpError, json.JSONDecodeError):
+        return False
+    return True

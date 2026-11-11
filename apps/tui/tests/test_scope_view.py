@@ -32,7 +32,7 @@ CASES = [
     ),
     (
         "review github.com/acme/app",
-        "Reconix will review github.com/acme/app as source code.",
+        "Reconix will review https://github.com/acme/app as source code.",
         "Only read the files; nothing is run",
         [".git", "node_modules", "vendor", "secrets"],
     ),

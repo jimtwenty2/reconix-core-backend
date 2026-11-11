@@ -64,7 +64,12 @@ def approve_scope() -> ScopeManifest:
     assessment.assessment_id = assessment.planned_id
     run.started_at = utc_now()
     add_activity("USER", "Scope approved", tone="ok")
-    add_activity("SYS", f"Assessment {assessment.assessment_id} created on the Core API")
+    if scope.kind == "source":
+        # No plan to review: the run is a code scan (store/live.py), which starts at once.
+        run.plan_started = True
+        add_activity("SYS", "Source scope: the code is uploaded and scanned by the Core API")
+    else:
+        add_activity("SYS", f"Assessment {assessment.assessment_id} created on the Core API")
     log_event("scope.approved", assessment.assessment_id)
     return scope
 

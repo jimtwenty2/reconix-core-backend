@@ -4,7 +4,13 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from reconix_api.clients.mcp import McpError, make_call_tool, to_tool_result, tool_call
+from reconix_api.clients.mcp import (
+    McpError,
+    check_kali,
+    make_call_tool,
+    to_tool_result,
+    tool_call,
+)
 from reconix_api.core.interfaces import ToolJob, ToolName, ToolRunStatus
 
 URL = "http://kali:8096/mcp"
@@ -243,3 +249,25 @@ def test_nuclei_dast_without_a_configured_server_injects_nothing(monkeypatch):
     monkeypatch.setattr(mcp, "INTERACTSH_SERVER", "")
     _, args = mcp.tool_call(job("nuclei_dast", "http://juice-shop:3000/rest/x?q=1", []))
     assert "interactsh_server" not in args  # falls back to nuclei's default
+
+
+async def test_check_kali_true_when_the_server_answers():
+    kali = FakeKali()
+    assert await check_kali(URL, FAKE_AUTH_TOKEN, transport=httpx.MockTransport(kali)) is True
+
+
+async def test_check_kali_false_when_unreachable():
+    def unreachable(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route to host")
+
+    reachable = await check_kali(URL, FAKE_AUTH_TOKEN, transport=httpx.MockTransport(unreachable))
+    assert reachable is False
+
+
+async def test_check_kali_false_when_the_server_refuses():
+    def refuse(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        message = {"jsonrpc": "2.0", "id": body.get("id"), "error": {"message": "unauthorized"}}
+        return httpx.Response(200, json=message)
+
+    assert await check_kali(URL, FAKE_AUTH_TOKEN, transport=httpx.MockTransport(refuse)) is False
