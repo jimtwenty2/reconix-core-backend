@@ -69,6 +69,15 @@ CWE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </Weakness_Catalog>"""
 
 
+def test_cwe_reads_a_newer_schema_namespace() -> None:
+    # MITRE moved the namespace from cwe-7 to cwe-8 in CWE 5.0 (2026-10-28);
+    # a pinned namespace silently parsed zero weaknesses.
+    [item] = parse_cwe(CWE_XML.replace("cwe-7", "cwe-8"))
+
+    assert item.ref_id == "CWE-89"
+    assert "enough" in item.text
+
+
 def test_cwe_skips_deprecated_and_reads_xhtml_text() -> None:
     [item] = parse_cwe(CWE_XML)
 
