@@ -6,13 +6,35 @@ import pytest
 from reconix_ai.knowledge import KnowledgeFilters, KnowledgeHit, Source, search_knowledge, store
 from reconix_ai.knowledge.ingest import ingest
 from reconix_ai.knowledge.paths import SAMPLE_DATA_DIR
-from reconix_ai.knowledge.search import MAX_HIT_CHARS, MAX_SECTIONS_PER_REF, cap_sections
+from reconix_ai.knowledge.search import MAX_HIT_CHARS, MAX_SECTIONS_PER_REF, cap_sections, spread
 from reconix_ai.knowledge.store import KnowledgeError
 
 
-def hit_of(ref_id: str, section: str) -> KnowledgeHit:
+def test_spread_takes_turns_by_source() -> None:
+    """B2: by score alone two long passages of one source push the short CWE entry out
+    of the top 3. One hit per source each round brings it back; inside a source the
+    score order stays."""
+    hits = [
+        hit_of("A03:2021", "/1/"),
+        hit_of("A03:2021", "/2/"),
+        hit_of("CVE-2023-34362", "/", Source.CVE),
+        hit_of("CWE-89", "/", Source.CWE),
+    ]
+
+    ordered = [hit.ref_id for hit in spread(hits)]
+
+    assert ordered[:3] == ["A03:2021", "CVE-2023-34362", "CWE-89"]
+
+
+def test_spread_keeps_one_source_as_it_is() -> None:
+    hits = [hit_of("CVE-1", "/", Source.CVE), hit_of("CVE-2", "/", Source.CVE)]
+
+    assert [hit.ref_id for hit in spread(hits)] == ["CVE-1", "CVE-2"]
+
+
+def hit_of(ref_id: str, section: str, source: Source = Source.OWASP_TOP10) -> KnowledgeHit:
     return KnowledgeHit(
-        source=Source.OWASP_TOP10,
+        source=source,
         ref_id=ref_id,
         title=ref_id,
         text="text",
