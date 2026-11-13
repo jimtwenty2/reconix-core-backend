@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from reconix_ai.agent import AgentError, ask_agent
+from reconix_ai.knowledge import KnowledgeHit, Source
 from tests.unit.agent.fakes import (
     PLANNED,
     UNDERSTOOD,
@@ -20,6 +21,17 @@ from tests.unit.agent.fakes import (
 )
 
 ANSWER = {"answer": "nmap -sV finds service versions.", "references": ["nmap", "CVE-2099-1"]}
+
+# A public knowledge piece as the search returns it: an id, a title and a link to open.
+CWE_89 = KnowledgeHit(
+    Source.CWE,
+    "CWE-89",
+    "Improper Neutralization of Special Elements used in an SQL Command",
+    "An SQL injection lets a person read the database behind the query.",
+    "https://cwe.mitre.org/data/definitions/89.html",
+    "Description",
+    0.9,
+)
 
 
 def chat_request(**values) -> Request:
@@ -263,3 +275,44 @@ async def test_memory_down_still_answers_from_the_knowledge(graph) -> None:
     )
 
     assert answer.text == "nmap -sV finds service versions."
+
+
+async def test_a_cited_piece_comes_back_with_its_title_and_link(graph) -> None:
+    """An app shows where the answer came from, so a bare id is not enough: only the pieces
+    the answer names come back, not every hit the search found."""
+    model = FakeModel({"answer": "It is an SQL injection.", "references": ["CWE-89"]})
+    deps = make_deps(model, FakeSearch([CWE_89, nmap_guide()]))
+
+    answer = await ask_agent(graph, chat_request(), str(uuid4()), deps)
+
+    assert [(s.ref_id, s.title, s.url, s.source, s.section) for s in answer.sources] == [
+        (
+            "CWE-89",
+            "Improper Neutralization of Special Elements used in an SQL Command",
+            "https://cwe.mitre.org/data/definitions/89.html",
+            "CWE",
+            "Description",
+        )
+    ]
+    assert answer.references == ["CWE-89"]  # the ids stay, for a caller that reads only them
+
+
+async def test_an_answer_that_names_no_knowledge_carries_no_source(graph) -> None:
+    model = FakeModel({"answer": "nmap -sV finds service versions.", "references": []})
+
+    answer = await ask_agent(graph, chat_request(), str(uuid4()), make_deps(model))
+
+    assert answer.sources == []
+
+
+async def test_a_cited_finding_stays_an_id_and_is_no_source(graph) -> None:
+    """A finding (or a remembered one) has no title or link in the knowledge: it is cited by
+    its code, and only that."""
+    answer = {"answer": "Yes: RCX-001, anonymous FTP.", "references": ["RCX-001"]}
+    request = assessed_chat(messages=["Do you remember that FTP finding?"])
+
+    deps = make_deps(FakeModel(answer), memory=FakeMemory([remembered()]))
+    out = await ask_agent(graph, request, str(uuid4()), deps)
+
+    assert out.references == ["RCX-001"]
+    assert out.sources == []

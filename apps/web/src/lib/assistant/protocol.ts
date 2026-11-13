@@ -22,6 +22,7 @@ export const isConversationId = (value: unknown): value is string => typeof valu
 
 const short = z.string().max(120);
 const line = z.string().max(400);
+const addr = z.string().max(2_000); // an http(s) address the page may link to
 const count = z.number().int().min(0).max(1_000_000);
 
 /** The run a card row is about. */
@@ -30,6 +31,13 @@ export type RunRef = z.infer<typeof RunRefSchema>;
 
 /** The /add-on files a reply used (their names, each once; at most one per passage sent). */
 export const KnowledgeNamesSchema = z.array(z.string().min(1).max(MAX_NAME)).min(1).max(TOP_K);
+
+/** One knowledge piece the answer cites, the API's ChatOut `sources` (SourceRef): all five
+    fields are masked text, `url` is "" when there is nothing to open (an add-on, a guide). */
+export const SourceRefSchema = z.object({ ref_id: short, title: line, url: addr, source: short, section: line }).strict();
+export type SourceRef = z.infer<typeof SourceRefSchema>;
+export const MAX_SOURCES = 12; // citations in one reply
+export const SourcesSchema = z.array(SourceRefSchema).min(1).max(MAX_SOURCES);
 
 /** What a conversation is about: one saved run, or every run (uid null). */
 export const ScopeRefSchema = z.object({ uid: z.string().regex(RUN_UID).nullable(), label: short }).strict();
@@ -195,6 +203,8 @@ export const FrameSchema = z.discriminatedUnion("t", [
   z.object({ t: z.literal("text"), delta: z.string().max(20_000) }).strict(),
   // the reply as the Core API saved it: shown in place of the pieces
   z.object({ t: z.literal("final"), text: z.string().max(20_000) }).strict(),
+  // the knowledge the answer cites, from the DONE event (after `meta`, so a frame of its own)
+  z.object({ t: z.literal("sources"), items: SourcesSchema }).strict(),
   z.object({ t: z.literal("error"), detail: z.string().max(400) }).strict(),
   z.object({ t: z.literal("done") }).strict(),
 ]);

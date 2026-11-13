@@ -92,6 +92,17 @@ describe("asking", () => {
     expect(core.tokens.get(chat.token)).toBe(id); // asked as the conversation's own session
   });
 
+  it("sends the knowledge the answer cites as one sources frame, and none when it cites nothing", async () => {
+    await addLocalModel();
+    const cited = { ref_id: "CVE-2021-44228", title: "Apache Log4j2 JNDI features remote code execution", url: "https://nvd.nist.gov/vuln/detail/CVE-2021-44228", source: "CVE", section: "Description" };
+    core.agent = { pieces: ["Log4j "], reply: "Log4j is the one.", sources: [cited] };
+    const frames = await framesOf(await ask({ uid: null, question: "What is CVE-2021-44228?" }));
+    expect(frames).toContainEqual({ t: "sources", items: [cited] });
+    core.agent = { pieces: [], reply: "Nothing cited." };
+    const plain = await framesOf(await ask({ uid: null, question: "And now?" }));
+    expect(plain.some((f) => f.t === "sources")).toBe(false);
+  });
+
   it("continues the same conversation in the same session", async () => {
     await addLocalModel();
     const id = (await ask({ uid: null, question: "First" })).headers.get("x-conversation-id")!;

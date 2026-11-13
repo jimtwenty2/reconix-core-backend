@@ -6,7 +6,7 @@
   opens a new API session.
 - A chat line goes to /sessions/{id}/chat, with one line saying where the app's flow is
   (the API doesn't see the app's steps); the API answers with the scope and plan as
-  context and saves both lines.
+  context, saves both lines and names the knowledge its answer cites (`sources`).
 - The plan, the run and the findings are the API's own (store/ai_plan.py, store/live.py).
 """
 
@@ -108,8 +108,34 @@ def ask_model(prompt: str) -> str:
     return answered["reply"]["content_masked"]
 
 
-def chat_reply(text: str, assessment: Assessment) -> Tuple[str, List[str]]:
-    """The API's answer to `text`, and notes for the activity log. Raises CoreApiError.
+# A citation stays on one line: a longer title is cut with an ellipsis.
+TITLE_LIMIT = 80
+
+
+def _source_lines(answered: dict) -> List[str]:
+    """ChatOut.sources as one display line each, in the API's order ("[CWE-89] title url").
+
+    The API masked every field already (S8); `url` is "" for an add-on or a tool guide, and
+    an API that answers without the `sources` key (its build before citations) cites nothing.
+    """
+    lines: List[str] = []
+    for source in answered.get("sources") or []:
+        if not isinstance(source, dict):
+            continue
+        title = source.get("title") or ""
+        if len(title) > TITLE_LIMIT:
+            title = title[:TITLE_LIMIT] + "…"
+        ref = source.get("ref_id") or ""
+        line = (f"[{ref}] {title}" if ref else title).strip()
+        url = source.get("url") or ""
+        if line or url:
+            lines.append(f"{line} {url}".strip())
+    return lines
+
+
+def chat_reply(text: str, assessment: Assessment) -> Tuple[str, List[str], List[str]]:
+    """The API's answer to `text`, notes for the activity log, and the knowledge the answer
+    cites as display lines (empty when it cites nothing). Raises CoreApiError.
     The API answers with whatever provider is active on it (chosen in /provider)."""
     notes: List[str] = []
     try:
@@ -120,7 +146,7 @@ def chat_reply(text: str, assessment: Assessment) -> Tuple[str, List[str]]:
         notes.append(f"Core API chat without the scope: {exc}")
     sent = f"{text}\n{app_step_line()}"
     answered = connect.request("POST", f"/sessions/{connect.session_id()}/chat", {"content": sent})
-    return answered["reply"]["content_masked"], notes
+    return answered["reply"]["content_masked"], notes, _source_lines(answered)
 
 
 def app_step_line() -> str:

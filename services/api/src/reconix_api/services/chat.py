@@ -231,6 +231,8 @@ async def answer(
         message=message,
         reply=MessageOut.model_validate(reply, from_attributes=True),
         agent_run_id=run.agent_run_id,
+        # The knowledge the answer cites, as the agent read it (masked when it was ingested).
+        sources=list(response.sources),
     )
 
 

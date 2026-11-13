@@ -13,7 +13,8 @@ It keeps the API's own rules where the app depends on them:
   (`findings_for`) appear once it ran;
 - errors have the API's shape {"code", "message", "details"} and status.
 
-Tests change `steps`, `outputs`, `findings_for`, `reply`, `down` or `fail` to shape a run.
+Tests change `steps`, `outputs`, `findings_for`, `reply`, `sources`, `down` or `fail` to shape
+a run.
 """
 
 import json
@@ -147,6 +148,7 @@ class FakeApi:
         self.fail: Optional[Tuple[int, str, str]] = None  # every call (but /sessions) fails
         self.fail_on: Dict[str, Tuple[int, str, str]] = {}  # "METHOD /path-prefix" -> error
         self.reply = "The API's answer."
+        self.sources: List[dict] = []  # ChatOut.sources: the knowledge the reply cites
         self.steps = [list(step) for step in DEFAULT_STEPS]
         self.outputs: Dict[str, str] = {}  # tool -> output (else a default)
         self.findings_for: Dict[str, List[dict]] = {
@@ -306,7 +308,7 @@ class FakeApi:
         if "/code" in path or parts[0] == "code-scans":
             return self._code(method, parts, body)
         if path.endswith("/chat"):
-            return {"reply": {"content_masked": self.reply}}
+            return {"reply": {"content_masked": self.reply}, "sources": self.sources}
         if path.endswith("/messages"):
             self.messages.append(body)
             return {"message_id": self._id("msg")}

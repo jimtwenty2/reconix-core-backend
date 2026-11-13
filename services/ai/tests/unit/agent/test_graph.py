@@ -38,6 +38,7 @@ async def test_suggests_one_step_and_waits(graph) -> None:
     assert answer.text == "Start with a service scan."
     assert [step.title for step in answer.plan] == ["Find open ports and services"]
     assert answer.references == ["nmap"]
+    assert answer.sources == []  # only a CHAT cites pieces; a plan names the hits it read
     assert answer.checkpoint_id
     assert search.queries == ["nmap service scan"]
     assert answer.prompt_tokens == 200 and answer.completion_tokens == 40

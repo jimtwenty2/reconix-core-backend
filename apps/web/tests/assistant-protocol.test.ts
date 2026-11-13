@@ -17,6 +17,7 @@ const frames: Frame[] = [
   ...pickCards(samples, null, "Analyze the findings, the progress and what waits on my approval").map((card) => ({ t: "card" as const, card })),
   { t: "text", delta: "Here is what " },
   { t: "text", delta: "the data says: ünïcode ✓\nnext line" },
+  { t: "sources", items: [{ ref_id: "CVE-2021-44228", title: "Apache Log4j2 remote code execution", url: "https://nvd.nist.gov/vuln/detail/CVE-2021-44228", source: "CVE", section: "Description" }] },
   { t: "error", detail: "The AI model stopped answering." },
   { t: "done" },
 ];
@@ -53,6 +54,9 @@ describe("frames", () => {
     ["a card counting INFO", JSON.stringify({ t: "card", card: { kind: "findings", total: 0, counts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 }, items: [], runs: 0 } })],
     ["a card listing an INFO finding", JSON.stringify({ t: "card", card: { kind: "finding", item: { id: "F", title: "t", severity: "INFO", cvss: null, target: "t", review: "review", run: { uid: samples[0].uid, label: "x", when: "y" } }, cwe: "—", tool: "—", description: "", impact: "", remediation: [] } })],
     ["a notice with an action that does something", JSON.stringify({ t: "card", card: { ...NOTICES.act, action: "approve" } })],
+    ["sources with an empty list", JSON.stringify({ t: "sources", items: [] })],
+    ["a citation holding an extra field", JSON.stringify({ t: "sources", items: [{ ref_id: "A", title: "t", url: "", source: "CVE", section: "", onclick: "alert(1)" }] })],
+    ["a citation whose url is not a string", JSON.stringify({ t: "sources", items: [{ ref_id: "A", title: "t", url: { toString: 1 }, source: "CVE", section: "" }] })],
   ])("skip %s", (_name, line) => {
     expect(parseFrame(line)).toBeNull();
   });

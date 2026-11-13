@@ -1034,6 +1034,13 @@
           },
           "reply": {
             "$ref": "#/components/schemas/MessageOut"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceRef"
+            },
+            "title": "Sources",
+            "type": "array"
           }
         },
         "required": [
@@ -4048,6 +4055,40 @@
         ],
         "title": "SeverityStatus",
         "type": "string"
+      },
+      "SourceRef": {
+        "description": "One knowledge piece a CHAT answer cites, as the apps show it under the answer.\n\nreferences keeps the bare ids (a finding's code may be cited too); sources holds only\nthe knowledge hits behind those ids. Every field was masked when the knowledge was\ningested, so an add-on's file name or a link never carries a secret (S8).",
+        "properties": {
+          "ref_id": {
+            "title": "Ref Id",
+            "type": "string"
+          },
+          "section": {
+            "default": "",
+            "title": "Section",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref_id"
+        ],
+        "title": "SourceRef",
+        "type": "object"
       },
       "SummaryResult": {
         "description": "Open findings of the latest code scan, counted. No model writes any of it.",
