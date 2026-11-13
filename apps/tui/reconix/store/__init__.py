@@ -77,6 +77,7 @@ from .llm_chat import (
 )
 from . import knowledge
 from .knowledge import add_source, list_sources, remove_source
+from .knowledge import all_remotes, clear_remotes, pop_remote, set_remote
 from .knowledge import clear as clear_knowledge
 from .knowledge import search as search_knowledge
 from .openapi import (
@@ -467,4 +468,9 @@ __all__ = [
     "remove_source",
     "clear_knowledge",
     "search_knowledge",
+    # which of them the Core API holds too (/add-on uploads)
+    "all_remotes",
+    "clear_remotes",
+    "pop_remote",
+    "set_remote",
 ]

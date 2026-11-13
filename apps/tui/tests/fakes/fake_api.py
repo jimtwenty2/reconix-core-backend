@@ -17,6 +17,7 @@ Tests change `steps`, `outputs`, `findings_for`, `reply`, `down` or `fail` to sh
 """
 
 import json
+import re
 import shlex
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -24,6 +25,33 @@ from typing import Any, Dict, List, Optional, Tuple
 from reconix.core_api.client import NOT_RUNNING, CoreApiError
 
 TOKEN_PREFIX = "fake-session-token-"  # noqa: S105 - a fake
+_NAME = re.compile(rb'name="([^"]+)"')
+_FILENAME = re.compile(rb'filename="((?:[^"\\]|\\.)*)"')
+# KnowledgeAddOnKind: the API picks it from the uploaded file's own name.
+_KIND = {"txt": "TXT", "md": "MD", "json": "JSON", "yaml": "YAML", "yml": "YAML",
+         "docx": "DOCX", "pdf": "PDF"}
+
+
+def form_of(data: bytes) -> Tuple[Dict[str, str], str, bytes]:
+    """One multipart/form-data body as the API reads it: (text fields, file name, file)."""
+    fields: Dict[str, str] = {}
+    file_name, file_data = "", b""
+    boundary = data.split(b"\r\n", 1)[0]               # the leading "--<boundary>" line
+    for part in data.split(boundary)[1:]:
+        if not part.startswith(b"\r\n"):               # the closing "--" and anything after
+            continue
+        head, _, rest = part.partition(b"\r\n\r\n")
+        key = _NAME.search(head)
+        if key is None:
+            continue
+        value = rest[:-2]                              # the \r\n before the next boundary
+        name = _FILENAME.search(head)
+        if name:
+            file_name = name.group(1).decode().replace('\\"', '"').replace("\\\\", "\\")
+            file_data = value
+        else:
+            fields[key.group(1).decode()] = value.decode()
+    return fields, file_name, file_data
 
 
 def now() -> str:
@@ -161,6 +189,9 @@ class FakeApi:
         self.reports: Dict[str, dict] = {}
         self.messages: List[dict] = []
         self.uploads: List[bytes] = []  # the tar.gz bodies PUT to /code
+        self.add_on_bodies: List[bytes] = []  # the multipart bodies POSTed to /knowledge-add-ons
+        self.add_ons: Dict[str, dict] = {}  # knowledge_add_on_id -> KnowledgeAddOnOut
+        self.add_on_n = 0
         self.code_files: Dict[str, str] = {}  # relative path -> sha256 the "API" holds
         self.code_polls = 1  # a code scan answers RUNNING this many times before COMPLETED
         self.code_findings: List[dict] = [code_finding_row()]
@@ -184,12 +215,16 @@ class FakeApi:
             raise CoreApiError("UNREACHABLE", NOT_RUNNING)
         path = request.full_url.split("/api/v1", 1)[1]
         gzipped = request.headers.get("Content-type") == "application/gzip"
+        multipart = request.headers.get("Content-type", "").startswith("multipart/")
         body = (
+            {"multipart_bytes": len(request.data)} if multipart else
             {"gzip_bytes": len(request.data)} if gzipped
             else json.loads(request.data) if request.data else None
         )
         if gzipped:
             self.uploads.append(request.data)
+        if multipart:
+            self.add_on_bodies.append(request.data)
         auth = request.headers.get("Authorization", "")
         method = request.get_method()
         self.calls.append((method, path, body, auth))
@@ -266,6 +301,8 @@ class FakeApi:
                 for a in self.approvals.values()
                 if "status=PENDING" not in full or a["approval_status"] == "PENDING"
             ]
+        if parts[0] == "knowledge-add-ons":
+            return self._add_on(method, parts)
         if "/code" in path or parts[0] == "code-scans":
             return self._code(method, parts, body)
         if path.endswith("/chat"):
@@ -340,6 +377,41 @@ class FakeApi:
             "notes": [] if running else self.code_notes,
             "error": None,
         }
+
+    # --- knowledge add-ons (/add-on uploads) --------------------------------------------------
+    def _add_on(self, method: str, parts: List[str]) -> Any:
+        """POST one uploaded file (multipart/form-data) or DELETE one add-on by id, as
+        api/knowledge_add_ons.py does. Only what the app reads back is real: its id."""
+        if method == "POST":
+            fields, file_name, file_data = form_of(self.add_on_bodies[-1])
+            if not file_name:
+                raise self.error(422, "VALIDATION_ERROR", "The request is not valid.",
+                                 fields=[{"field": "body.file", "message": "Field required"}])
+            if fields.get("interface") not in ("web", "cli"):
+                raise self.error(422, "VALIDATION_ERROR", "The request is not valid.")
+            add_on_id = self._add_on_id()
+            row = {
+                "knowledge_add_on_id": add_on_id,
+                "name": file_name,
+                "kind": _KIND.get(file_name.rsplit(".", 1)[-1].lower(), "TXT"),
+                "size_bytes": len(file_data),
+                "chunk_count": 1,
+                "interface": fields["interface"],
+                "created_at": now(),
+                "cut": None,
+            }
+            self.add_ons[add_on_id] = row
+            return row
+        if method == "DELETE" and len(parts) == 2:
+            if parts[1] not in self.add_ons:
+                raise self.error(404, "KNOWLEDGE_ADD_ON_NOT_FOUND", "No add-on has this id.")
+            del self.add_ons[parts[1]]
+            return None
+        raise AssertionError(f"the fake API has no add-on route for {method} {parts}")
+
+    def _add_on_id(self) -> str:
+        self.add_on_n += 1
+        return f"00000000-0000-4000-8000-{self.add_on_n:012d}"
 
     # --- providers ---------------------------------------------------------------------------
     def _provider(self, provider_id: str) -> dict:

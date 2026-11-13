@@ -43,8 +43,10 @@ themselves (rule S7), and there is no mock model, sample run or seed data in pro
   never dropped.
 - **Tests** use the fake API in `tui/tests/fakes/` (web: `web/tests/fakes/`), built in the
   exact response shapes. That is test code only; product code never imports it.
-- **Still local** (no endpoint yet): test logins and the vault, local knowledge files, the
-  `accepted` triage status, severity override and note, retest, and the template list.
+- **Still local** (no endpoint yet): test logins and the vault, the knowledge *passages* the
+  chat and `/assess` quote (BM25 in `store/knowledge`; the file itself now goes to
+  `/knowledge-add-ons` too, so the API's agent can search it in its own store), the `accepted`
+  triage status, severity override and note, retest, and the template list.
 
 ## TUI (`tui/`)
 

@@ -5,13 +5,21 @@ directly. Adding reads and redacts the file through `store.knowledge` in a worke
 `/add-on <path>` and the Add form alike, so a long PDF never blocks the UI and a file that
 fails to parse never takes the app down: a refusal goes back to the form while it is open,
 else to a notification, and so does any unexpected failure. When the index can't be read, the
-menu still opens, offering only to remove everything. Nothing here decides a gate or runs
-anything — a knowledge file is only ever read, redacted and stored for the model to quote.
+menu still opens, offering only to remove everything.
+
+The saved file is also uploaded to the Core API (`core_api.knowledge`), whose agent searches
+its own knowledge store and would otherwise never see it. That upload is best effort, in the
+same worker thread: without it the file stays a local add-on and the notice says so. Removing
+a file removes it there too, while it is still known by id (`store/knowledge/remote.py`).
+Nothing here decides a gate or runs anything — a knowledge file is only ever read, redacted
+and stored for the model to quote.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from .. import store
+from ..core_api import knowledge as api
+from ..core_api.client import CoreApiError
 from ..models import Choice
 from ..screens import ChoiceScreen
 from ..screens.forms import AddOnForm
@@ -95,16 +103,36 @@ class KnowledgeMixin:
         except Exception:  # noqa: BLE001 - a parser bug must neither crash the app nor vanish
             self.from_worker(self._add_failed, _FAILED, form)
             return
+        problem = self._upload_knowledge(source)
         try:
             remote = store.active_remote_label()
         except Exception:  # noqa: BLE001 - the notice is best-effort; the file is saved
             remote = None
-        self.from_worker(self._added_knowledge, source, remote, form)
+        self.from_worker(self._added_knowledge, source, remote, problem, form)
+
+    def _upload_knowledge(self, source) -> str:
+        """Send the saved file to the Core API too, so its agent can search it (the API reads
+        its own store, never this folder). Worker thread. "" when it is there, else why not —
+        a file that only reached this computer is still a saved file."""
+        try:
+            # The bytes the store just read and checked, not the path read a second time: what
+            # the API gets is exactly the file that is kept here, and nothing new can slip in.
+            kept = store.knowledge.read_original(source.id)
+            add_on_id = api.upload_add_on(kept, source.name)
+        except CoreApiError as exc:
+            return str(exc)                      # the API's own reason, masked
+        except store.StoreValidationError:
+            return "the saved copy of it could not be read"
+        try:
+            store.set_remote(source.id, add_on_id)
+        except Exception:  # noqa: BLE001 - a lost id only costs the later remove its unlink
+            pass
+        return ""
 
     def _form_open(self, form: Optional[AddOnForm]) -> bool:
         return form is not None and form in self.screen_stack
 
-    def _added_knowledge(self, source, remote: Optional[str],
+    def _added_knowledge(self, source, remote: Optional[str], problem: str,
                          form: Optional[AddOnForm]) -> None:
         """The file is saved: close the form, then say what was kept and where it may go."""
         if self._form_open(form):
@@ -112,6 +140,11 @@ class KnowledgeMixin:
         self.refresh_view()
         cut = f", {source.cut}" if source.cut else ""
         message = f"Added {source.name} — {counted(source.chunks, 'passage')}{cut}."
+        if problem:
+            message += (f" Kept on this computer only ({problem}), so the Core API's agent "
+                        "can't search it yet.")
+        else:
+            message += " The Core API's agent can search it too."
         if remote:
             message += f" Passages from it may be sent to {remote} with your questions."
         self.notify(message, title=_TITLE, markup=False)
@@ -144,8 +177,37 @@ class KnowledgeMixin:
         except store.StoreValidationError as exc:
             self._warn(exc)
             return
+        add_on_id = store.pop_remote(source_id)
+        if add_on_id:
+            self._drop_remotes([add_on_id])
         self.refresh_view()
         self.notify(f"Removed {removed.name}.", title=_TITLE, markup=False)
+
+    def _drop_remotes(self, add_on_ids: List[str]) -> None:
+        """Delete the API's copies too, off the UI thread (best effort: the local files are
+        already gone, so a failure is only reported). No group, so a remove never cancels the
+        add worker that runs in the "knowledge" one."""
+        self.run_worker(lambda: self._forget_remotes(add_on_ids), thread=True,
+                        exit_on_error=False)
+
+    def _forget_remotes(self, add_on_ids: List[str]) -> None:
+        """Worker thread: how many of the API's copies it refused to remove (one it no longer
+        has is not left behind)."""
+        left = 0
+        for add_on_id in add_on_ids:
+            try:
+                api.delete_add_on(add_on_id)
+            except CoreApiError as exc:
+                if exc.status != 404:
+                    left += 1
+        if left:
+            self.from_worker(self._still_searchable, left)
+
+    def _still_searchable(self, count: int) -> None:
+        still = "it is" if count == 1 else "they are"
+        self.notify(f"Removed here, but the Core API could not delete "
+                    f"{counted(count, 'add-on')}, so {still} still searchable by its agent.",
+                    title=_TITLE, severity="warning", markup=False)
 
     # --- remove all ---------------------------------------------------------------------------
     def _confirm_clear_knowledge(self) -> None:
@@ -162,7 +224,11 @@ class KnowledgeMixin:
             lambda choice: self._do_clear_knowledge() if choice == "clear" else None)
 
     def _do_clear_knowledge(self) -> None:
-        """Remove every knowledge file; works on an unreadable index too."""
+        """Remove every knowledge file, here and in the Core API; works on an unreadable
+        index too."""
+        add_on_ids = list(store.all_remotes().values())
         count = store.clear_knowledge()
         self.refresh_view()
         self.notify(f"Removed all {counted(count, 'add-on')}.", title=_TITLE, markup=False)
+        if add_on_ids:
+            self._drop_remotes(add_on_ids)

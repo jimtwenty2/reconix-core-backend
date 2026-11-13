@@ -8,7 +8,9 @@ material — nothing is ever run from a knowledge file. The relevant passages go
 model with the question, so a remote model receives them too.
 
 This package is the only place that reads or writes the folder. The on-disk format and the
-ranker are the contract the web is built to (`rank.py`, `files.py`).
+ranker are the contract the web is built to (`rank.py`, `files.py`). `remote.py` keeps the
+separate note of which files `/add-on` also uploaded to the Core API, whose own agent searches
+them there and never in this folder.
 """
 
 import dataclasses
@@ -19,10 +21,11 @@ from ..activity import log_event
 from ..errors import StoreValidationError
 from ...wording import counted
 from ..redact import redact
-from . import files, original, paths
+from . import files, original, paths, remote
 from .chunk import split
 from .extract import extract
 from .files import MAX_SOURCES, Source
+from .remote import all_remotes, clear_remotes, pop_remote, set_remote
 # Importing from .rank registers the submodule, so `knowledge.rank` stays the module (the web
 # port's counterpart). The ranking function is aliased `_bm25` so it never shadows that name.
 from .rank import BUDGET_CHARS, Passage, fit_budget, tokenize  # noqa: F401 (re-exported)
@@ -32,6 +35,7 @@ __all__ = [
     "Source", "Passage", "add_source", "list_sources", "remove_source", "clear", "search",
     "MAX_SOURCES",
     "read_original", "ORIGINS",
+    "all_remotes", "clear_remotes", "pop_remote", "set_remote",
 ]
 
 
@@ -150,9 +154,10 @@ def read_original(source_id: str) -> bytes:
 
 
 def clear() -> int:
-    """Remove every source file and the index, even when the index is unreadable. Returns how
-    many source files were removed."""
+    """Remove every source file, the index and the upload list (`remote.py`), even when the
+    index is unreadable. Returns how many source files were removed."""
     count = files.delete_all()
+    remote.clear_remotes()
     log_event("knowledge.cleared", f"{count} file(s)")
     return count
 
