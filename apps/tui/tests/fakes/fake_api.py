@@ -379,8 +379,7 @@ class FakeApi:
         row = self._provider(provider_id)
         if row["created_by"] == "system":
             raise self.error(409, "BUILT_IN_PROVIDER", "The built-in provider can't be deleted.")
-        if row["is_active"]:
-            raise self.error(409, "PROVIDER_IS_ACTIVE", "The active provider can't be deleted.")
+        # The active row goes too: nothing is left active, exactly as the Core API answers.
         self.providers.remove(row)
         return None
 

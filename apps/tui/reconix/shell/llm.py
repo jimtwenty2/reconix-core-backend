@@ -39,8 +39,9 @@ class LlmMixin:
 
     # --- start-up: "Set an AI provider?" ------------------------------------------------------
     def ask_provider_on_start(self) -> None:
-        """Offer to set a model of your own, until one is active. Without one, the Core API
-        uses its own model (RECONIX_MODEL_* in .env)."""
+        """Offer to set a model of your own, until one is active. Without one the Core API
+        has no model and refuses (503 NO_ACTIVE_PROVIDER) until you choose: Reconix never
+        picks one for you."""
         if not self.ASK_PROVIDER_ON_START or store.active_model() is not None:
             return
         choices = [
@@ -104,8 +105,12 @@ class LlmMixin:
     def open_provider_menu(self) -> None:
         """Every provider; the ACTIVE one (else the first configured) is highlighted, so it
         is on screen even when the list is longer than a small terminal (QA-002)."""
+        try:
+            providers = store.list_providers()
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
         choices = []
-        providers = store.list_providers()
         default = next(
             (i for i, p in enumerate(providers) if p.active_model),
             next((i for i, p in enumerate(providers) if p.configured), 0),
@@ -135,7 +140,11 @@ class LlmMixin:
             self.open_provider_submenu(provider_id)
 
     def open_provider_submenu(self, provider_id: str) -> None:
-        p = store.get_provider(provider_id)
+        try:
+            p = store.get_provider(provider_id)
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
         if p.built_in:
             # The Core API's own model (RECONIX_MODEL_* in its .env): shown, never edited here.
             choices = [
@@ -207,15 +216,22 @@ class LlmMixin:
             self.confirm_unset(provider_id)
 
     def open_provider_form(self, provider_id: str) -> None:
-        self.open_dialog(
-            ProviderForm(provider_id), lambda result: self._provider_saved(provider_id, result)
-        )
+        try:
+            form = ProviderForm(provider_id)  # the form reads the provider in its constructor
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
+        self.open_dialog(form, lambda result: self._provider_saved(provider_id, result))
 
     def _provider_saved(self, provider_id: str, result: Optional[str]) -> None:
         self.refresh_view()
         if result != "saved":
             return
-        label = store.get_provider(provider_id).label
+        try:
+            label = store.get_provider(provider_id).label
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
         self.open_dialog(
             ChoiceScreen(
                 "✓ PROVIDER SAVED",
@@ -309,8 +325,13 @@ class LlmMixin:
         self.activate_model(arg)
 
     def open_model_menu(self, only_provider: Optional[str] = None) -> None:
+        try:
+            providers = store.list_providers()
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
         choices = []
-        for p in store.list_providers():
+        for p in providers:
             if only_provider and p.id != only_provider:
                 continue
             if not p.configured or not p.models:
@@ -376,7 +397,11 @@ class LlmMixin:
 
         from rich.text import Text
 
-        view = store.get_provider(provider_id)
+        try:
+            view = store.get_provider(provider_id)
+        except store.StoreValidationError as exc:
+            self._warn(exc)
+            return
         host = urlsplit(view.base_url).hostname if view.base_url else ""
         body = [
             Text("The Core API will send your scope, plan and chat (secrets masked) to:"),

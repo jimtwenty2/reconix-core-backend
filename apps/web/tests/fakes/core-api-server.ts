@@ -119,7 +119,7 @@ export async function startFakeCore(): Promise<FakeCore> {
       }
       if (m === "POST" && rest === "/chat/stream") {
         if (id !== me) return refuse(res, 403, "NOT_YOUR_SESSION", "You can only write in your own session.");
-        if (!fake.providers.some((p) => p.is_active)) return refuse(res, 409, "NO_ACTIVE_PROVIDER", "Choose a model first.");
+        if (!fake.providers.some((p) => p.is_active)) return refuse(res, 503, "NO_ACTIVE_PROVIDER", "Choose a model first.");
         const message = save(id, "user", body.content);
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         for (const text of fake.agent.pieces) res.write(`event: PIECE\ndata: ${JSON.stringify({ text })}\n\n`);

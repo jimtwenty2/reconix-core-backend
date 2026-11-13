@@ -7,6 +7,8 @@ The Core API is the source of truth. These tests drive the store against the fak
 import pytest
 
 from reconix import store
+from reconix.core_api import providers as api
+from reconix.core_api.client import CoreApiError
 
 SECRET_KEY = "sk-live-SECRET-0ff9a"  # a fake key; only its last 4 are ever shown
 
@@ -54,6 +56,16 @@ def test_unset_removes_the_rows():
     store.set_provider("openai", api_key=SECRET_KEY, models=["gpt-4o-mini"])
     store.unset_provider("openai")
     assert store.get_provider("openai").configured is False
+
+
+def test_unset_removes_the_active_provider_and_all_its_models():
+    store.set_provider("openai", api_key=SECRET_KEY, models=["gpt-4o-mini", "gpt-4o"])
+    store.test_provider("openai")
+    store.activate("openai", "gpt-4o-mini")
+    store.core_api_approve()  # a cloud model: your OK makes it active
+    store.unset_provider("openai")
+    assert store.get_provider("openai").models == ()  # both rows gone, not one
+    assert store.active_model() is None  # nothing was chosen in its place
 
 
 def test_reconix_is_the_core_apis_own_model():
@@ -131,3 +143,48 @@ def test_the_list_has_every_provider_reconix_first():
     ids = [p.id for p in store.list_providers()]
     assert ids[0] == "reconix"
     assert set(ids) == {"reconix", "openai", "anthropic", "deepseek", "ollama", "openai_compatible"}
+
+
+# --- what a Core API answer that is not OK looks like ------------------------------------------
+# The screens and the provider form catch StoreValidationError and nothing else, so a
+# CoreApiError escaping here reaches Textual as an unhandled error and crashes the app.
+
+DOWN = [
+    pytest.param(lambda: store.list_providers(), id="list"),
+    pytest.param(lambda: store.get_provider("openai"), id="get"),
+    pytest.param(lambda: store.set_provider("deepseek", api_key=SECRET_KEY), id="set"),
+    pytest.param(lambda: store.test_provider("openai"), id="test"),
+    pytest.param(lambda: store.unset_provider("openai"), id="unset"),
+    pytest.param(lambda: store.activate("openai", "gpt-4o-mini"), id="activate"),
+]
+
+
+@pytest.mark.parametrize("call", DOWN)
+def test_an_api_that_is_down_is_a_store_error(fake_api, call):
+    store.set_provider("openai", api_key=SECRET_KEY, models=["gpt-4o-mini"])
+    fake_api.down = True
+    with pytest.raises(store.StoreValidationError):
+        call()
+
+
+@pytest.mark.parametrize(
+    "name, call",
+    [
+        pytest.param(
+            "create", lambda: store.set_provider("deepseek", api_key=SECRET_KEY), id="create"
+        ),
+        pytest.param("delete", lambda: store.unset_provider("openai"), id="delete"),
+        pytest.param("test", lambda: store.test_provider("openai"), id="test"),
+    ],
+)
+def test_a_refused_write_is_a_store_error(monkeypatch, name, call):
+    """The read succeeds and the write is refused (the API died mid-save, or keeps a row this
+    app does not know is active): the screen must still get a warning, not a crash."""
+    store.set_provider("openai", api_key=SECRET_KEY, models=["gpt-4o-mini"])
+
+    def refuse(*_args, **_kwargs):
+        raise CoreApiError("UNAUTHORIZED", "The session token is not known.")
+
+    monkeypatch.setattr(api, name, refuse)
+    with pytest.raises(store.StoreValidationError):
+        call()
