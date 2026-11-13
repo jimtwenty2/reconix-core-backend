@@ -1,13 +1,10 @@
 /* The shapes the dashboard reads: one saved assessment, mapped by adapt.ts into the terms the
    viewer uses (log lines with a kind, findings with display fields, the scope as lists).
    Types only, so client components may import them freely. */
-import type { Severity, Status } from "./schema";
+import type { FindingSeverity, Severity, Status } from "./schema";
 import type { StreamItem } from "./thinking";
 
-export type { Severity, Status };
-
-/** A finding's severity: the four levels, plus the Core API's UNKNOWN and NONE (shown, never dropped). */
-export type FindingSeverity = Severity | "UNKNOWN" | "NONE";
+export type { FindingSeverity, Severity, Status };
 
 /** What a log line is about; it picks the line's chip, colour and chart height. */
 export type LogKind = "scope" | "policy" | "tool" | "finding" | "mask" | "gate" | "user" | "info";
@@ -28,7 +25,7 @@ export interface EvidenceLine {
 export interface FindingView {
   id: string; // "F-001"
   title: string;
-  severity: Severity;
+  severity: FindingSeverity;
   target: string;
   tool: string;
   cwe: string;

@@ -5,8 +5,8 @@ import {
   type Assessment,
   type Decision,
   type Finding,
-  SEVERITIES,
-  type Severity,
+  FINDING_SEVERITIES,
+  type FindingSeverity,
   type Status,
   STATUSES,
   type TimelineEntry,
@@ -35,7 +35,7 @@ export const isConfirmed = (f: Finding) => f.validation === "CONFIRMED";
 /** The analyst's severity when one was set, else the detected one (older files have neither).
     Never INFO: the reader dropped every finding with INFO in any of the three (schema.ts
     `withoutInfo`), so an Info override can't bring the detected severity back. */
-export function effectiveSeverity(f: Finding): Severity {
+export function effectiveSeverity(f: Finding): FindingSeverity {
   return f.effective_severity || f.severity_override || f.severity;
 }
 
@@ -63,14 +63,14 @@ export function allFindings(list: Assessment[]): FindingRow[] {
   const rows = list.flatMap((a) => a.findings.map((f) => ({ ...f, key: `${a.uid}~${f.id}`, assessment: a })));
   return rows.sort(
     (x, y) =>
-      SEVERITIES.indexOf(effectiveSeverity(x)) - SEVERITIES.indexOf(effectiveSeverity(y)) ||
+      FINDING_SEVERITIES.indexOf(effectiveSeverity(x)) - FINDING_SEVERITIES.indexOf(effectiveSeverity(y)) ||
       y.assessment.created_at.localeCompare(x.assessment.created_at) ||
       x.id.localeCompare(y.id),
   );
 }
 
-export function severityCounts(findings: Finding[]): Record<Severity, number> {
-  const counts = Object.fromEntries(SEVERITIES.map((s) => [s, 0])) as Record<Severity, number>;
+export function severityCounts(findings: Finding[]): Record<FindingSeverity, number> {
+  const counts = Object.fromEntries(FINDING_SEVERITIES.map((s) => [s, 0])) as Record<FindingSeverity, number>;
   for (const f of findings) counts[effectiveSeverity(f)] += 1;
   return counts;
 }
@@ -246,7 +246,7 @@ const ATTENTION_STATUSES: ReadonlySet<Status> = new Set(["Awaiting input", "Stop
 
 export type AttentionItem =
   | { kind: "waiting" | "stopped" | "interrupted"; assessment: Assessment }
-  | { kind: "review"; count: number; bySeverity: Record<Severity, number> };
+  | { kind: "review"; count: number; bySeverity: Record<FindingSeverity, number> };
 
 /** What needs the operator, one of each kind first (waiting, review, stopped, interrupted)
     so a short list still shows every kind, then the rest. `runs` counts the assessments. */

@@ -7,13 +7,21 @@ import type { EventBadge } from "@/components/dashboard/overview-types";
 import type { Stat } from "@/components/dashboard/stat-types";
 import { evidenceTone } from "@/lib/data/adapt";
 import { duration, hourMinute, shortDay } from "@/lib/data/format";
-import { SEVERITIES } from "@/lib/data/schema";
+import { type FindingSeverity, isFindingSeverity, SEVERITIES } from "@/lib/data/schema";
 import { type Meaning, REPORT_REVIEW, REPORT_STATUS, SEVERITY_META } from "@/lib/status";
 
 import type { ApiAssessment, ApiFinding } from "./findings";
 import type { ApiOverview, ApiReport, ReportFormat } from "./reports";
 
 const TRIAGE: Record<string, string> = { OPEN: "open", FIXED: "fixed", FALSE_POSITIVE: "false-positive" };
+
+/** The API's `severity_status` on the web's scale: UPPERCASE ERD V3, and anything off it (a value
+    this web does not know yet) reads as UNKNOWN — the tool gave no rating — so one unexpected
+    word never drops a run. The TUI's `core_api/adapt.py::severity` does the same. */
+export function severityOf(value: string): FindingSeverity {
+  const level = value.trim().toUpperCase();
+  return isFindingSeverity(level) ? level : "UNKNOWN";
+}
 
 /** The assessment a row came from, as the "all assessments" list names it. */
 export function runOf(a: Pick<ApiAssessment, "assessment_id" | "name">): NonNullable<ListedFinding["run"]> {
