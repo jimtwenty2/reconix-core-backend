@@ -21,7 +21,9 @@ capped at 120 characters at ingest, like the passages.
 import io
 import json
 import os
+import re
 import stat
+import sys
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,6 +79,39 @@ def base_name(name: str) -> str:
     return (name or "").replace("\\", "/").rsplit("/", 1)[-1]
 
 
+# A Windows drive path (D:\x or C:/x), a \\wsl.localhost\<distro>\x / \\wsl$\<distro>\x UNC,
+# and a WSL /mnt/<drive>/x mount. Used to accept a path written for either OS.
+_WIN_DRIVE = re.compile(r"^([A-Za-z]):[\\/](.*)$", re.DOTALL)
+_WSL_UNC = re.compile(r"^\\\\(?:wsl\.localhost|wsl\$)\\[^\\]+\\(.*)$", re.DOTALL)
+_LINUX_MNT = re.compile(r"^/mnt/([A-Za-z])(/.*)?$", re.DOTALL)
+
+
+def to_local_path(text: str) -> str:
+    """Return a path this OS can open, accepting one written for Windows or Linux.
+
+    On WSL/Linux a Windows drive path (`D:\\x`) becomes `/mnt/d/x` and a `\\\\wsl$\\<distro>\\x`
+    UNC becomes `/x`; on Windows the reverse (`/mnt/d/x` -> `D:\\x`). Anything else (a Linux
+    path, `~`, a relative path) is returned unchanged for `extract` to validate. The file is
+    still checked through `extract`'s own refusals (symlink, regular file, type, size).
+    """
+    windows = sys.platform == "win32"
+    drive = _WIN_DRIVE.match(text)
+    if drive:
+        letter, rest = drive.group(1), drive.group(2).replace("\\", "/")
+        if windows:
+            return letter.upper() + ":\\" + rest.replace("/", "\\")
+        return "/mnt/" + letter.lower() + "/" + rest
+    unc = _WSL_UNC.match(text)
+    if unc and not windows:
+        return "/" + unc.group(1).replace("\\", "/")
+    if windows:
+        mnt = _LINUX_MNT.match(text)
+        if mnt:
+            rest = (mnt.group(2) or "").lstrip("/").replace("/", "\\")
+            return mnt.group(1).upper() + ":\\" + rest
+    return text
+
+
 def extract(path_text: str, name: str = "") -> Extracted:
     """Read the file at `path_text` and return its `Extracted` text, or raise.
 
@@ -84,12 +119,15 @@ def extract(path_text: str, name: str = "") -> Extracted:
     upload to a temp file and passes the upload's own base name.
     """
     text = (path_text or "").strip()
+    # Windows "Copy as path" wraps the path in quotes; accept it quoted or bare.
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1].strip()
     if not text:
         raise StoreValidationError("Enter the path to a file to add.")
     if "\x00" in text:
         raise StoreValidationError("That isn't a valid path.")
     try:
-        path = Path(text).expanduser()
+        path = Path(to_local_path(text)).expanduser()
     except RuntimeError:                      # "~someone" with no such home directory
         raise StoreValidationError("No file at that path.") from None
 
