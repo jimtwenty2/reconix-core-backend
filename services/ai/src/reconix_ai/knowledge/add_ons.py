@@ -97,6 +97,35 @@ async def list_add_ons(client: AsyncQdrantClient | None = None) -> list[AddOn]:
     return sorted(add_ons, key=lambda add_on: add_on.created_at)
 
 
+async def add_on_passages(
+    knowledge_add_on_id: str, client: AsyncQdrantClient | None = None
+) -> list[str]:
+    """One add-on's passages (masked when they were saved), in their order. An unknown id,
+    or no collection yet: []. Raises KnowledgeError when Qdrant fails."""
+    client = client or store.shared_client()
+    failure = None
+    records: list[models.Record] = []
+    try:
+        if await client.collection_exists(store.COLLECTION):
+            only = models.Filter(
+                must=[store.source_is(Source.USER_DOC), ref_id_is(knowledge_add_on_id)]
+            )
+            offset = None
+            while True:
+                page, offset = await client.scroll(
+                    store.COLLECTION, scroll_filter=only, limit=256, offset=offset
+                )
+                records.extend(page)
+                if offset is None or len(records) >= MAX_PASSAGES:
+                    break
+    except store.QDRANT_ERRORS as error:
+        failure = store.knowledge_error(error)
+    if failure is not None:
+        raise failure
+    ordered = sorted(records, key=lambda record: (record.payload or {}).get("index", 0))
+    return [str((record.payload or {}).get("text", "")) for record in ordered[:MAX_PASSAGES]]
+
+
 async def remove_add_on(knowledge_add_on_id: str, client: AsyncQdrantClient | None = None) -> None:
     """Remove every piece of one add-on."""
     await delete_pieces(client or store.shared_client(), [ref_id_is(knowledge_add_on_id)])

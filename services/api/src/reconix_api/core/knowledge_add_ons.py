@@ -22,8 +22,10 @@ from reconix_ai.knowledge import (
     KnowledgeFilters,
     KnowledgeHit,
     Source,
+    ingest,
     split_passages,
 )
+from reconix_ai.knowledge.paths import knowledge_data_dir
 from reconix_ai.providers import ProviderError, embed_texts
 from reconix_api.core.agent import AGENT_ERROR_STATUS
 from reconix_api.core.errors import ApiError
@@ -32,12 +34,34 @@ __all__ = [
     "AddOn",
     "CurrentKnowledgeStore",
     "KnowledgeStore",
+    "ingest_public",
     "list_all",
+    "passages",
     "remove",
     "remove_all",
     "save",
     "split_passages",
 ]
+
+
+@dataclass
+class ReingestJob:
+    """The knowledge re-ingest (services/knowledge_reingest.py): one at a time, kept in this
+    process only. status: IDLE, RUNNING, COMPLETED or FAILED; step: PUBLIC (ALL only), then
+    ADD_ONS."""
+
+    status: str = "IDLE"
+    scope: str = "ALL"  # NEW: only the add-ons waiting; ALL: the public knowledge and every add-on
+    step: str | None = None
+    public_pieces: int = 0
+    add_ons_done: int = 0
+    add_ons_total: int = 0
+    new_ingested: int = 0  # waiting add-ons put into the knowledge search
+    started_at: str | None = None
+    finished_at: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    task: asyncio.Task | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -48,6 +72,9 @@ class KnowledgeStore:
     embed: EmbedTexts = embed_texts
     # One upload at a time: the add-on limit holds, and only one file is read at once.
     adding: asyncio.Lock = field(default_factory=asyncio.Lock, compare=False)
+    reingest: ReingestJob = field(default_factory=ReingestJob, compare=False)
+    # Ids removed while a re-ingest runs ("*": all of them), so the job never brings one back
+    removed: set[str] = field(default_factory=set, compare=False)
 
 
 def get_knowledge_store(request: Request) -> KnowledgeStore:
@@ -65,6 +92,18 @@ async def save(store: KnowledgeStore, add_on: AddOn, passages: list[str]) -> Non
 async def list_all(store: KnowledgeStore) -> list[AddOn]:
     with api_errors():
         return await knowledge.list_add_ons(store.client)
+
+
+async def passages(store: KnowledgeStore, knowledge_add_on_id: str) -> list[str]:
+    with api_errors():
+        return await knowledge.add_on_passages(knowledge_add_on_id, store.client)
+
+
+async def ingest_public(store: KnowledgeStore) -> int:
+    """Replace the public knowledge (CVE, CWE, OWASP, ATT&CK, tool guides); add-ons stay.
+    How many pieces were saved."""
+    with api_errors():
+        return await ingest.ingest(knowledge_data_dir(), client=store.client, embed=store.embed)
 
 
 async def remove(store: KnowledgeStore, knowledge_add_on_id: str) -> None:

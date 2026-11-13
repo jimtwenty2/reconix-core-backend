@@ -12,10 +12,12 @@ import io
 import json
 
 import pytest
+from cryptography.fernet import Fernet
 from docx import Document
 from fastapi.testclient import TestClient
 
 from reconix_ai.knowledge import store
+from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.knowledge_add_ons import KnowledgeStore
 from reconix_api.core.wiring import build_mask_secrets
 from reconix_api.main import create_app
@@ -55,7 +57,7 @@ UPLOADS = [
 
 
 @pytest.fixture
-def leak_run():
+def leak_run(tmp_path):
     """Upload every file with the real masking; keep what each place saw."""
     qdrant = store.connect(":memory:")
     sent_to_model: list[str] = []
@@ -70,6 +72,12 @@ def leak_run():
         mask_secrets=build_mask_secrets(),
         knowledge_store=KnowledgeStore(client=qdrant, embed=keep_and_embed),
     )
+    # a private folder for waiting add-ons, never the real one
+    settings = Settings(
+        provider_encryption_key=Fernet.generate_key().decode(),
+        knowledge_pending_dir=str(tmp_path / "pending"),
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
     client = TestClient(app, base_url="http://127.0.0.1/api/v1")
     headers = {"Authorization": f"Bearer {OPERATOR_TOKEN}"}
     answers = []

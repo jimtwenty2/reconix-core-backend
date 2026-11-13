@@ -45,3 +45,11 @@ fcbc0d365e6a01c63258075c46b41af9c9a19fb0:services/ai/tests/unit/agent/fakes.py:g
 fcbc0d365e6a01c63258075c46b41af9c9a19fb0:services/ai/tests/unit/agent/test_graph.py:generic-api-key:202
 fcbc0d365e6a01c63258075c46b41af9c9a19fb0:services/ai/tests/unit/agent/test_graph.py:generic-api-key:212
 fee51f408e6d9337275b8f2946718464e0a81e46:services/ai/src/reconix_ai/knowledge/download.py:generic-api-key:33
+# Staged changes (the pre-commit hook, `gitleaks git --pre-commit --staged`) have no commit
+# yet, so their fingerprint is file:rule:line. These are the same fake test values, seen
+# when Develop is merged into an older branch.
+apps/tui/tests/test_llm_providers.py:generic-api-key:11
+apps/web/tests/core-assistant.test.ts:generic-api-key:309
+services/ai/tests/unit/agent/test_code_fix.py:stripe-access-token:118
+services/ai/tests/unit/providers/test_client.py:generic-api-key:138
+services/api/tests/unit/services/test_code_fixes.py:private-key:106

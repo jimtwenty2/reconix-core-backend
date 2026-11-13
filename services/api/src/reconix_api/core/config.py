@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # the folder.
     vault_dir: str = "data/vault"
 
+    # Knowledge add-ons uploaded and waiting to be ingested: their masked passages, encrypted
+    # with RECONIX_PROVIDER_ENCRYPTION_KEY, until a re-ingest puts them into the knowledge search.
+    knowledge_pending_dir: str = "data/knowledge-pending"
+
     # Approvals
     approval_ttl_minutes: int = 30
 

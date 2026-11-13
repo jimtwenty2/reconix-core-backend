@@ -7,6 +7,7 @@ from reconix_ai.knowledge.add_ons import (
     MAX_CHARS,
     MAX_PASSAGES,
     AddOn,
+    add_on_passages,
     list_add_ons,
     remove_add_on,
     remove_all_add_ons,
@@ -195,3 +196,20 @@ def test_text_past_the_passage_limit_is_cut() -> None:
 
 def test_blank_text_has_no_passages() -> None:
     assert split_passages(" \n\n \n") == ([], False)
+
+
+async def test_an_add_on_gives_back_its_passages_in_order(client, embedder) -> None:
+    passages = [f"Passage {i}: CWE-89 in the search form." for i in range(300)]  # past one page
+    await save_add_on(add_on(chunk_count=300), passages, client=client, embed=embedder.embed)
+    other = add_on("9c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f", name="other.md")
+    await save_add_on(other, ["Another document."], client=client, embed=embedder.embed)
+
+    assert await add_on_passages(add_on().knowledge_add_on_id, client) == passages
+    assert await add_on_passages("00000000-0000-4000-8000-000000000000", client) == []
+
+
+async def test_passages_come_back_masked(client, embedder) -> None:
+    await save_add_on(add_on(), [f"key {AWS_KEY} here"], client=client, embed=embedder.embed)
+
+    [text] = await add_on_passages(add_on().knowledge_add_on_id, client)
+    assert AWS_KEY not in text
