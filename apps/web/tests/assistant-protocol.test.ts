@@ -56,6 +56,12 @@ describe("frames", () => {
   ])("skip %s", (_name, line) => {
     expect(parseFrame(line)).toBeNull();
   });
+  it("reads a findings card saved while the scale had only the four levels, the unrated ones at 0", () => {
+    const card = pickCards(samples, null, "Analyze the findings").find((c) => c.kind === "findings")!;
+    const four = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+    const parsed = CardSchema.safeParse({ ...card, counts: four });
+    expect(parsed.success && parsed.data.kind === "findings" && parsed.data.counts).toEqual({ ...four, UNKNOWN: 0, NONE: 0 });
+  });
   it("names conversations by random v4 UUIDs only", () => {
     expect(isConversationId(ID)).toBe(true);
     for (const bad of ["", "x", ID.toUpperCase(), `${ID}x`, "00000000-0000-1000-8000-000000000000", 42]) expect(isConversationId(bad)).toBe(false);

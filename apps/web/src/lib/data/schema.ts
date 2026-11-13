@@ -8,9 +8,14 @@ import { z } from "zod";
 
 /** The severity scale, worst first: these four, everywhere (the TUI's too). */
 export const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
-/** What a saved finding's `severity` may hold: older TUIs also wrote INFO. Such a file still
-    loads, but its INFO findings are left out of every list, count, chart and report. */
-export const SAVED_SEVERITIES = [...SEVERITIES, "INFO"] as const;
+/** A finding's severity as the Core API records it: the four levels plus `UNKNOWN` (the tool gave
+    no rating) and `NONE` (informational). Both are shown, never dropped — the same six the TUI's
+    `store/findings.py` SEVERITY_ORDER holds, worst first, so an unrated finding sorts after LOW. */
+export const FINDING_SEVERITIES = [...SEVERITIES, "UNKNOWN", "NONE"] as const;
+/** What a saved finding's `severity` may hold: the six, plus INFO, which older TUIs wrote and the
+    reader drops (`withoutInfo`). Such a file still loads, but its INFO findings are left out of
+    every list, count, chart and report. */
+export const SAVED_SEVERITIES = [...FINDING_SEVERITIES, "INFO"] as const;
 export const STATUSES = ["New", "Running", "Awaiting input", "Completed", "Stopped", "Interrupted"] as const;
 /** Statuses of a run that has not ended (it can still move, unless its TUI is gone). */
 export const UNFINISHED: ReadonlySet<string> = new Set(["New", "Running", "Awaiting input"]);
@@ -145,32 +150,35 @@ const SavedAssessmentSchema = z.object({
 });
 
 export type Severity = (typeof SEVERITIES)[number];
+/** A finding's severity on the whole scale, so an unrated one is still a severity the UI can show. */
+export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
 export type Status = (typeof STATUSES)[number];
 type SavedFinding = z.infer<typeof FindingSchema>;
-/** A finding as the dashboard reads it: every severity field on the four-level scale (the
-    analyst's two are "" when unset). */
+/** A finding as the dashboard reads it: its severity on the whole scale, the analyst's two on the
+    four levels ("" when unset). */
 export type Finding = Omit<SavedFinding, "severity" | "severity_override" | "effective_severity"> & {
-  severity: Severity;
+  severity: FindingSeverity;
   severity_override: Severity | "";
   effective_severity: Severity | "";
 };
 
 export const isSeverity = (value: string): value is Severity => (SEVERITIES as readonly string[]).includes(value);
+export const isFindingSeverity = (value: string): value is FindingSeverity => (FINDING_SEVERITIES as readonly string[]).includes(value);
 
 /** An informational finding from an older saved file: INFO (in any case) as its detected,
     overridden or effective severity. It is dropped, never remapped to another level. */
 export const isInfoFinding = (f: { severity: string; severity_override?: string; effective_severity?: string }) =>
   [f.severity, f.severity_override ?? "", f.effective_severity ?? ""].some((s) => s.trim().toUpperCase() === "INFO");
 
-/** The saved findings as the dashboard reads them: the informational ones dropped, and an
-    analyst's severity that is not one of the four read as unset. */
+/** The saved findings as the dashboard reads them: the informational (INFO) ones dropped, an
+    analyst's severity that is not one of the four read as unset, and UNKNOWN and NONE kept —
+    only INFO is ever dropped. */
 export function withoutInfo(findings: SavedFinding[]): Finding[] {
   const level = (s: string): Severity | "" => (isSeverity(s) ? s : "");
-  return findings.flatMap((f) =>
-    isInfoFinding(f) || !isSeverity(f.severity)
-      ? []
-      : [{ ...f, severity: f.severity, severity_override: level(f.severity_override), effective_severity: level(f.effective_severity) }],
-  );
+  return findings.flatMap((f): Finding[] => {
+    if (isInfoFinding(f) || !isFindingSeverity(f.severity)) return [];
+    return [{ ...f, severity: f.severity, severity_override: level(f.severity_override), effective_severity: level(f.effective_severity) }];
+  });
 }
 
 export const AssessmentSchema = SavedAssessmentSchema.transform((saved) => {

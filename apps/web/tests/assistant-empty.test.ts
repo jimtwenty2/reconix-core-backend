@@ -9,7 +9,7 @@ import type { Card, ChatMessage } from "@/components/assistant/types";
 import { parseFrame } from "@/lib/assistant/protocol";
 
 const reply = (over: Partial<ChatMessage>): ChatMessage => ({ id: "r", role: "assistant", content: "", cards: [], state: "error", ...over });
-const findings: Card = { kind: "findings", total: 0, counts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 }, items: [], runs: 0 };
+const findings: Card = { kind: "findings", total: 0, counts: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, UNKNOWN: 0, NONE: 0 }, items: [], runs: 0 };
 
 /** What the real reply stream says when the model answers with nothing. */
 async function emptyAnswerDetail(cards: Card[]): Promise<string> {

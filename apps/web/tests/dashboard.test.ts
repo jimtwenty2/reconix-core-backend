@@ -327,7 +327,7 @@ describe("deriveDashboard", () => {
     const rows = (a: Assessment) => deriveDashboard(assessmentView(a)).cards.findings;
     const levels = (f: ReturnType<typeof rows>) => f.severity.map((s) => s.level);
     /** The run with its first counted finding (not a false positive) moved to `level`. */
-    const withOne = (level: Finding["severity"]) => {
+    const withOne = (level: Severity) => {
       const at = completed.findings.findIndex((x) => x.status !== "false-positive");
       return { ...completed, findings: completed.findings.map((x, i) => (i === at ? { ...x, severity: level, effective_severity: level } : x)) };
     };

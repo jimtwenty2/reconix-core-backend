@@ -9,7 +9,7 @@
    uid only). Pure: browser and server. */
 import { z } from "zod";
 
-import { SEVERITIES, STATUSES } from "../data/schema";
+import { FINDING_SEVERITIES, STATUSES } from "../data/schema";
 import { TOP_K } from "./knowledge/rank";
 import { MAX_NAME } from "./knowledge/schema";
 
@@ -35,7 +35,7 @@ export const KnowledgeNamesSchema = z.array(z.string().min(1).max(MAX_NAME)).min
 export const ScopeRefSchema = z.object({ uid: z.string().regex(RUN_UID).nullable(), label: short }).strict();
 export type ScopeRef = z.infer<typeof ScopeRefSchema>;
 
-const Severity = z.enum(SEVERITIES);
+const Severity = z.enum(FINDING_SEVERITIES);
 const Review = z.enum(["confirmed", "review", "closed"]);
 const StepStatus = z.enum(["pending", "active", "done"]);
 const ApprovalState = z.enum(["APPROVED", "REJECTED", "PENDING", "NOT REACHED"]);
@@ -57,9 +57,10 @@ const FindingsCardSchema = z
   .object({
     kind: z.literal("findings"),
     total: count,
-    // the four levels (a conversation saved with an INFO count reads back without it:
-    // history-schema.ts `withoutInfoCards`)
-    counts: z.object({ CRITICAL: count, HIGH: count, MEDIUM: count, LOW: count }).strict(),
+    // the whole finding scale, so an unrated finding is counted and not lost (a conversation
+    // saved with an INFO count reads back without it: history-schema.ts `withoutInfoCards`).
+    // UNKNOWN and NONE came later, so an older card still reads, with both at 0.
+    counts: z.object({ CRITICAL: count, HIGH: count, MEDIUM: count, LOW: count, UNKNOWN: count.default(0), NONE: count.default(0) }).strict(),
     items: z.array(FindingItemSchema).max(8),
     runs: count, // how many runs the findings come from
   })
