@@ -1,10 +1,15 @@
 """Evals 1 to 19: retrieval over the five public knowledge sources.
 
 The 12 semantic queries are the T2 sweep (rag-retrieval-quality report §2): the entry
-that defines the topic must land in the top 3. The 7 marked xfail are bug B2 (canonical
-CWE/OWASP entries buried by verbose prose): they must turn into XPASS for a ranking
-change to count as proven. The exact-id cases cover all five sources and must rank
-first from the id boost.
+that defines the topic must land in the top 3. The 6 marked xfail are the remaining
+bug B2 gap: the source spread fixed the between-source burial ("SQL injection" now
+gives CWE-89 a top-3 slot), but the rest measure (2026-11-13 candidate dump) either
+outside the fetched lists entirely ("cross site scripting", "command injection",
+"authentication bypass": wanted entry past rank 80 in dense or both lists - an ingest
+recall gap, not ranking) or behind their own source's verbose siblings ("path
+traversal", "sensitive data exposure", "supply chain vulnerabilities" - length
+normalisation alone moved nothing there, and no better-proven change exists yet).
+The exact-id cases cover all five sources and must rank first from the id boost.
 
 Assertions are on rank and ref_id, never on score: fused RRF scores also reach 1.0
 without any id in the query, so `score == 1.0` does not prove the boost fired.
@@ -13,13 +18,13 @@ without any id in the query, so `score == 1.0` does not prove the boost fired.
 import pytest
 
 B2 = pytest.mark.xfail(
-    reason="B2: canonical entry does not surface for its own topic yet (ranking)",
+    reason="B2: wanted entry not in top 3 at limit 3 (list-depth recall or same-source burial)",
     strict=False,
 )
 
 # (query, the ref_id that must be in the top 3) — the T2 sweep, wanted entry per row.
 SEMANTIC = [
-    pytest.param("SQL injection", "CWE-89", marks=B2),
+    pytest.param("SQL injection", "CWE-89"),
     pytest.param("server-side request forgery", "CWE-918"),
     pytest.param("credential dumping", "T1003"),
     pytest.param("broken object level authorization", "API1:2023"),
