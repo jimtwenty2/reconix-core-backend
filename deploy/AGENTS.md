@@ -20,7 +20,7 @@ Mon 23 Nov; deployment is done on **Fri 27 Nov**.
 | `kali-standalone.yml` | Kali on its own, for when the API runs on the host (Compose's Kali has no port on this computer): an override on top of the Kali repo's `../reconix-kali-backend/docker-compose.yml` (left unedited). It sets `KALI_MCP_AUTH_TOKEN` from `RECONIX_MCP_AUTH_TOKEN`, `KALI_AUTO_BOOTSTRAP=1` (sonar_scan's SonarQube server, about 1 minute on first start) and mounts `RECONIX_CODE_DIR` (absolute) read-only at `/workspace/code`. The MCP port is pinned to `127.0.0.1:8096` (`ports: !override`, so a missing `HOST_PORT` never opens it on every interface); core uses `RECONIX_KALI_MCP_URL=http://127.0.0.1:8096/mcp` |
 | `lab/` | Test targets: OWASP Juice Shop and a small repo with known bugs and a fake secret (empty, to build) |
 | `seed.sql` | Sample data matching ERD V3; `apps/sample-data/api/` is built from it |
-| `install.sh` | Installs Reconix-Core (backend, terminal app, local web) and pulls the Kali image (placeholder) |
+| `install.sh` | Installs Reconix-Core (backend, terminal app, local web), pulls the Kali image and loads the knowledge base (full download when the sources are reachable, the committed sample offline, then the ingest in the `api` container) |
 
 ## Networks
 
@@ -80,7 +80,7 @@ Keep this table true; update the row in the PR that changes it.
 | Lab: `reconix-lab` network with Juice Shop and a test repo with known bugs and a fake secret | 1 | Youlong | Network exists; targets to add in `lab/` |
 | `seed.sql` matching ERD V3, sample files rebuilt from it | 1 | Sreyleak | Done: one demo assessment; `make_sample_data.py` writes `apps/sample-data/api/` |
 | API (and every backend service) in Compose; one command starts everything | 2 | Vanneth | Done: `api` service; `./deploy/dev.sh` starts everything |
-| `install.sh` and uv install steps (backend, TUI, web, Kali image) | 2 | Vanneth | To do (placeholder) |
+| `install.sh` and uv install steps (backend, TUI, web, Kali image) | 2 | Vanneth | Done: one command checks the tools, installs the packages, starts the stack and loads the knowledge base (sample offline). Not yet run end to end on a clean machine (`cut-release`) |
 | Clean demo data on the lab for Wed 4 Nov | 3 | Youlong | To do |
 | Fresh install with uv and with `install.sh` (Wed 4 Nov, Mon 23 Nov) | 3, 5 | Vanneth | To do (`cut-release` skill) |
 
