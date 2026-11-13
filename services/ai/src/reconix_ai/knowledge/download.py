@@ -230,10 +230,19 @@ def download_all(out_dir: Path = FULL_DATA_DIR) -> dict[Source, int]:
                 http, Source.OWASP_API_TOP10, OWASP_API_URL, OWASP_API_PAGE_URL, OWASP_API_PAGES
             ),
         }
+    ensure_sources_not_empty(downloaded)
     for source, items in downloaded.items():
         write_items(out_dir / f"{source.lower()}.jsonl", items)
         print(f"{source}: {len(items)} items")
     return {source: len(items) for source, items in downloaded.items()}
+
+
+def ensure_sources_not_empty(downloaded: dict[Source, list[KnowledgeItem]]) -> None:
+    """A source that gave nothing is a failure, not an empty file: a pinned CWE namespace
+    once parsed zero weaknesses, and the ingest silently lost the whole source."""
+    empty = sorted(source.value for source, items in downloaded.items() if not items)
+    if empty:
+        raise ValueError(f"No items downloaded for: {', '.join(empty)}. Nothing was written.")
 
 
 def fetch(http: httpx.Client, url: str) -> httpx.Response:

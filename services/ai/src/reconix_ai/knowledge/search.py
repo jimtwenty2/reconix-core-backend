@@ -13,6 +13,9 @@ from reconix_ai.providers import embed_texts
 
 DEFAULT_LIMIT = 5
 MAX_LIMIT = 20
+# One document must not fill the list with its own sections (a long OWASP page took
+# 6 of 10 slots for "SQL injection"); exact-id hits are never capped.
+MAX_SECTIONS_PER_REF = 2
 # Keeps any one hit from filling the agent's prompt.
 MAX_HIT_CHARS = 4000
 # Above any fused score, so exact id matches sort first.
@@ -80,8 +83,23 @@ async def search_knowledge(
     exact = [hit(record.payload or {}, EXACT_MATCH_SCORE) for record in records]
     seen = {(h.ref_id, h.section) for h in exact}
     found = [hit(point.payload or {}, point.score) for point in points]
-    rest = [h for h in found if (h.ref_id, h.section) not in seen]
-    return (exact + rest)[:limit]
+    return (exact + cap_sections(found, seen))[:limit]
+
+
+def cap_sections(hits: list[KnowledgeHit], seen: set[tuple[str, str]]) -> list[KnowledgeHit]:
+    """Keep at most MAX_SECTIONS_PER_REF passages per document, in score order, so one
+    long guide cannot fill the list. The exact-id hits (seen) are skipped, never capped."""
+    kept: list[KnowledgeHit] = []
+    per_ref: dict[str, int] = {}
+    for h in hits:
+        if (h.ref_id, h.section) in seen:
+            continue
+        count = per_ref.get(h.ref_id, 0)
+        if count >= MAX_SECTIONS_PER_REF:
+            continue
+        per_ref[h.ref_id] = count + 1
+        kept.append(h)
+    return kept
 
 
 def ref_ids_in(query: str) -> list[str]:

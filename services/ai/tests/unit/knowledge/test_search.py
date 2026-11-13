@@ -3,11 +3,40 @@ from pathlib import Path
 
 import pytest
 
-from reconix_ai.knowledge import KnowledgeFilters, Source, search_knowledge, store
+from reconix_ai.knowledge import KnowledgeFilters, KnowledgeHit, Source, search_knowledge, store
 from reconix_ai.knowledge.ingest import ingest
 from reconix_ai.knowledge.paths import SAMPLE_DATA_DIR
-from reconix_ai.knowledge.search import MAX_HIT_CHARS
+from reconix_ai.knowledge.search import MAX_HIT_CHARS, MAX_SECTIONS_PER_REF, cap_sections
 from reconix_ai.knowledge.store import KnowledgeError
+
+
+def hit_of(ref_id: str, section: str) -> KnowledgeHit:
+    return KnowledgeHit(
+        source=Source.OWASP_TOP10,
+        ref_id=ref_id,
+        title=ref_id,
+        text="text",
+        url="",
+        section=section,
+        score=0.5,
+    )
+
+
+def test_one_document_cannot_flood_the_list() -> None:
+    found = [hit_of("A03:2021", f"/s{i}/") for i in range(5)] + [hit_of("CWE-89", "/")]
+
+    kept = cap_sections(found, set())
+
+    assert [h.ref_id for h in kept] == ["A03:2021", "A03:2021", "CWE-89"]
+
+
+def test_cap_sections_skips_the_exact_hits() -> None:
+    exact = hit_of("CWE-89", "/")
+    found = [exact, hit_of("CWE-89", "/2/")]
+
+    kept = cap_sections(found, {(exact.ref_id, exact.section)})
+
+    assert kept == [found[1]]
 
 
 @pytest.fixture
@@ -96,6 +125,22 @@ async def test_long_hits_are_cut(loaded, embedder) -> None:
     hits = await search(loaded, embedder, "injection", sources=[Source.OWASP_TOP10], limit=5)
 
     assert all(len(hit.text) <= MAX_HIT_CHARS for hit in hits)
+
+
+async def test_search_caps_sections_of_one_document(client, embedder, tmp_path: Path) -> None:
+    guides = tmp_path / "guides"
+    guides.mkdir()
+    sections = "\n\n".join(
+        f"## Part {i}\nThe zebrafish topic appears in part {i} with enough words to pass "
+        "the minimum piece length."
+        for i in range(6)
+    )
+    (guides / "zebrafish.md").write_text(f"# Zebrafish\n\n{sections}\n", encoding="utf-8")
+    await ingest(SAMPLE_DATA_DIR, guides_dir=guides, client=client, embed=embedder.embed)
+
+    hits = await search(client, embedder, "zebrafish", limit=10)
+
+    assert 0 < sum(h.ref_id == "zebrafish" for h in hits) <= MAX_SECTIONS_PER_REF
 
 
 async def test_search_before_any_ingest_gives_a_clear_error(client, embedder) -> None:
