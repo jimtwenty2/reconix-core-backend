@@ -40,6 +40,10 @@ KALI_STATUS = {
     "timeout": ToolRunStatus.TIMED_OUT,
 }
 
+# The port to use when a URL does not write one.
+URL_DEFAULT_PORTS = {"http": 80, "https": 443}
+DEFAULT_PORT = 80
+
 
 class McpError(Exception):
     """The MCP server refused the call or answered with something we cannot read."""
@@ -70,19 +74,20 @@ def tool_call(job: ToolJob) -> tuple[str, dict[str, Any]]:
         args["opts"] = shlex.join(job.arguments)
     if "timeout" in props:
         args["timeout"] = job.timeout_seconds
-    args.update(_fixed_inputs(name, job.target, props))
+    args.update(_fixed_inputs(name, job.target, job.arguments, props))
     if primary and name in FUZZ_TOOLS:
         args[primary] = _with_fuzz(job.target)
     return name, args
 
 
-def _fixed_inputs(name: str, target: str, props: dict[str, Any]) -> dict[str, Any]:
+def _fixed_inputs(
+    name: str, target: str, arguments: list[str], props: dict[str, Any]
+) -> dict[str, Any]:
     """Required inputs other than the target, which the model never supplies: fixed by
     Core, or read from the approved target itself.
 
     - ffuf, gobuster, wfuzz: Core's own wordlist.
-    - nikto: the port of the target URL (https without one: 443), so nikto does not
-      scan port 80 of an https or :3000 site.
+    - nikto: the host and port of the approved URL (see `_nikto_target`).
     - schemathesis: the base URL is the scheme+host of the schema URL (the target), so
       the tests hit the API the schema came from and nothing wider.
     - nuclei_dast: a Reconix-controlled Interactsh server for OOB callbacks, when set.
@@ -90,16 +95,47 @@ def _fixed_inputs(name: str, target: str, props: dict[str, Any]) -> dict[str, An
     fixed: dict[str, Any] = {}
     if name in WORDLIST_TOOLS and "wordlist" in props:
         fixed["wordlist"] = WORDLIST
-    if name == "nikto" and "port" in props:
-        port = _url_port(target)
-        if port:
-            fixed["port"] = str(port)
+    if name == "nikto":
+        fixed.update(_nikto_target(target, arguments, props))
     if name == "schemathesis" and "base_url" in props:
         base = _origin(target)
         if base:
             fixed["base_url"] = base
     if name == "nuclei_dast" and INTERACTSH_SERVER and "interactsh_server" in props:
         fixed["interactsh_server"] = INTERACTSH_SERVER
+    return fixed
+
+
+def _nikto_target(target: str, arguments: list[str], props: dict[str, Any]) -> dict[str, Any]:
+    """The `host` and `port` for nikto, taken from the approved URL.
+
+    The Kali wrapper always passes `-port` (its own default is 80), and nikto stops with
+    "ERROR: The -port option cannot be used with a full URI" as soon as `-host` holds a
+    URL, so a URL target goes the way the catalog describes it: the host on its own, plus
+    the port. The rest of the URL is kept too, so the scan never goes wider than what was
+    approved: its https scheme becomes `-ssl` and its path becomes `-root`. A bare host,
+    IP or domain is sent as it is, with the port the person put in the options.
+    """
+    try:
+        parts = urlsplit(target)
+        host = parts.hostname
+        port = parts.port or URL_DEFAULT_PORTS.get(parts.scheme.lower(), DEFAULT_PORT)
+    except ValueError:
+        return {}  # not a URL the checks approved: send the target as it was approved
+    if "host" not in props or not parts.scheme or not host:
+        return {}
+    fixed: dict[str, Any] = {"host": host}
+    if "port" in props:
+        fixed["port"] = str(port)
+    extra: list[str] = []
+    if "opts" in props:
+        if parts.scheme.lower() == "https" and "-ssl" not in arguments:
+            extra.append("-ssl")
+        path = parts.path.rstrip("/")
+        if path and "-root" not in arguments:
+            extra += ["-root", path]
+        if extra:
+            fixed["opts"] = shlex.join([*arguments, *extra])
     return fixed
 
 
@@ -125,18 +161,6 @@ def _with_fuzz(target: str) -> str:
     parts = urlsplit(target)
     path = parts.path if parts.path.endswith("/") else parts.path + "/"
     return parts._replace(path=path + "FUZZ", fragment="").geturl()
-
-
-def _url_port(target: str) -> int | None:
-    """The port a URL names, or its scheme's default; None for a bare host."""
-    try:
-        parts = urlsplit(target)
-        port = parts.port
-    except ValueError:
-        return None
-    if port:
-        return port
-    return {"http": 80, "https": 443}.get(parts.scheme.lower())
 
 
 def _primary_param(required: list[str], props: dict[str, Any]) -> str | None:
