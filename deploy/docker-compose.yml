@@ -39,7 +39,13 @@ services:
       timeout: 3s
       retries: 20
     # Audit log, reports and uploaded code. Kali reads data/code (read-only).
-    volumes: [../data:/app/data]
+    # The disclosure vault (RECONIX_VAULT_DIR, data/vault) gets its own volume: a host
+    # folder on Windows cannot be made 0700, so the API could not save the real value
+    # behind a mask, nothing could ever be revealed, and the encrypted values sat in a
+    # folder every user of this computer can read.
+    volumes:
+      - ../data:/app/data
+      - vault-data:/app/data/vault
     depends_on:
       postgres:
         condition: service_healthy
@@ -130,3 +136,5 @@ volumes:
   postgres-data:
   qdrant-data:
   embeddings-data:
+  # The real values behind masked evidence (the API's data/vault): never a host folder.
+  vault-data:
