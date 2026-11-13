@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from reconix_ai.agent import AgentDeps
 from reconix_ai.knowledge import KnowledgeError, KnowledgeHit, Source
+from reconix_ai.memory import FindingHit
 from reconix_ai.providers import Completion, Message, OnPiece, ProviderConfig, ProviderType
 
 NOW = datetime.fromisoformat("2026-10-27T10:00:00+00:00")
@@ -113,13 +114,47 @@ def nmap_guide(text: str = "-sV detects service versions.") -> KnowledgeHit:
     return KnowledgeHit(Source.TOOL_GUIDE, "nmap", "nmap", text, "", "Options", 1.0)
 
 
+def remembered(code: str = "RCX-001", title: str = "Anonymous FTP login") -> FindingHit:
+    """One accepted finding as the memory search returns it (its text is masked already)."""
+    return FindingHit(
+        finding_id="f-1",
+        code=code,
+        title=title,
+        target="172.20.0.5",
+        severity_status="MEDIUM",
+        finding_status="OPEN",
+        text=f"{code}: {title}\nTarget: 172.20.0.5",
+        score=0.8,
+    )
+
+
+class FakeMemory:
+    """Stands in for the accepted-finding memory search (reconix_ai.memory.search_findings)."""
+
+    def __init__(self, hits: list[FindingHit] | None = None, down: bool = False) -> None:
+        self.hits = hits if hits is not None else []
+        self.down = down
+        self.calls: list[tuple[str, str]] = []
+
+    async def search(self, query: str, assessment_id: str, limit: int = 5) -> list[FindingHit]:
+        self.calls.append((query, assessment_id))
+        if self.down:
+            raise KnowledgeError("KNOWLEDGE_UNAVAILABLE", "Qdrant is down.")
+        return self.hits[:limit]
+
+
 PROVIDER = ProviderConfig(ProviderType.RECONIX, "reconix", api_key="sk-test-key-123456789")
 
 
-def make_deps(model: FakeModel, search: FakeSearch | None = None) -> AgentDeps:
+def make_deps(
+    model: FakeModel,
+    search: FakeSearch | None = None,
+    memory: FakeMemory | None = None,
+) -> AgentDeps:
     return AgentDeps(
         provider=PROVIDER,
         complete=model.complete,
         search=(search or FakeSearch()).search,
+        search_memory=(memory or FakeMemory()).search,
         now=lambda: NOW,
     )

@@ -2,8 +2,10 @@
 
 Answer the person's last message in the chat. The chat can be about this
 assessment (its scope, its plan, its findings) or a general security question.
-Use the scope, the plan, the findings and the knowledge below, and the earlier
-messages for context.
+Use the scope, the plan, the findings, the remembered findings and the knowledge
+below, and the earlier messages for context. The remembered findings are the ones
+the person accepted in this assessment earlier; when the question is about a finding
+or what was found here, answer from them and name its code.
 
 Answer with this JSON object:
 
@@ -12,10 +14,10 @@ Answer with this JSON object:
 
 - Keep the answer short: a few sentences, or a short list when the person asks
   how something works.
-- About this assessment, use only facts from the scope, the plan, the findings
-  and the knowledge. If they do not answer the question, say you do not know and
-  what would help find out. A general question (what a tool or a weakness is)
-  may be answered from what you know.
+- About this assessment, use only facts from the scope, the plan, the findings,
+  the remembered findings and the knowledge. If they do not answer the question, say
+  you do not know and what would help find out. A general question (what a tool or a
+  weakness is) may be answered from what you know.
 - references lists every finding code or knowledge id your answer relies on,
   and nothing else. Leave it empty for a general answer.
 - You change nothing. Never say that you changed, added, removed, approved or

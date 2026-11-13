@@ -40,6 +40,11 @@ class Stack:
         answer.raise_for_status()
         return answer.json()
 
+    def patch(self, path: str, body: dict) -> dict:
+        answer = httpx.patch(f"{V1}{path}", headers=self.headers, json=body, timeout=60)
+        answer.raise_for_status()
+        return answer.json()
+
     def ranks(self, query: str, limit: int = 3) -> list[str]:
         """The search's ref_ids, best first. Evals assert on these and never on score:
         a fused RRF score reaches 1.0 with no id in the query ("credential dumping"
