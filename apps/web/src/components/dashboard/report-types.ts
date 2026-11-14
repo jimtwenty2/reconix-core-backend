@@ -1,12 +1,13 @@
 /* What the Assessments view draws (AssessmentsCards, derive-report.ts): every saved run as a
    row. Types only. */
-import type { LibraryItem, Severity } from "@/lib/data/view-types";
+import type { FindingSeverity, LibraryItem } from "@/lib/data/view-types";
 
 /** A saved run in the runs table (a LibraryItem, so the run search reads it). */
 export interface ReportRunRow extends LibraryItem {
   findings: number; // false positives left out
-  worst: Severity | null;
+  worst: FindingSeverity | null; // a Core API row may be UNKNOWN or NONE
   steps: { done: number; total: number };
+  href?: string; // where the row opens; without it, the saved run's Overview
 }
 
 /** What the Assessments view draws: its header and every saved run as a row. */

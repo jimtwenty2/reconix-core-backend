@@ -97,6 +97,9 @@ const assessments = runs.map((a) => {
     finding_count: mine.length,
     worst_severity: mine[0]?.severity_status ?? null,
     pending_approval_count: 0,
+    plan_step_count: a.plan.length,
+    plan_step_done_count: a.plan.filter((p) => p.status === "done").length,
+    last_activity_at: a.saved_at || a.created_at,
   };
 });
 

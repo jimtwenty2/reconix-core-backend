@@ -1,13 +1,19 @@
-/* The AI Assistant's data from the Core API, in the run shape its cards, prompts and scope
-   picker read (lib/data/schema.ts `Assessment`), so they show the API's real assessments and
-   never the saved demo files. Per assessment: GET /assessments/{id}/overview, /findings,
-   /actions and /timeline; the approvals once (PENDING, APPROVED, REJECTED). Only what the API
-   records is filled in; the rest stays empty. Server only. */
+/* The Core API's assessments in the run shape (lib/data/schema.ts `Assessment`) the Overview,
+   the top bar, the Run log and the AI Assistant read, so they show the API's real assessments
+   and never the saved demo files. Per assessment: GET /assessments/{id}/overview, /findings,
+   /actions and /timeline, and its session's /agent-runs for the status; the approvals once
+   (PENDING, APPROVED, REJECTED). Only what the API records is filled in; the rest stays empty.
+   An assessment that can't be read or doesn't fit is listed with the reason, not hidden.
+   Server only. */
 import "server-only";
+
+import { ZodError } from "zod";
 
 import { type Assessment, AssessmentSchema, STATUSES } from "../data/schema";
 import type { Library } from "../data/store";
-import { coreJson } from "./core";
+
+import { liveStatus, newestPlanRun } from "./assessments";
+import { coreJson, CoreError } from "./core";
 import { asMain } from "./sessions";
 
 const MAX_ASSESSMENTS = 50;
@@ -63,11 +69,18 @@ function entryOf(e: CoreEvent, seq: number): Assessment["timeline"][number] {
   return { seq, at: e.at, type: "activity", who, kind: t, text: t === "SCOPE_APPROVED" ? "Scope approved" : /^FINDING/.test(t) ? `Finding: ${what || words(t)}` : text, tone, rows: [] };
 }
 
+/** The run shape's severities (lib/data/schema.ts SAVED_SEVERITIES): the four levels as they
+ *  are; the API's NONE and UNKNOWN have no level there, so they become INFO, which the
+ *  Overview and Run log leave out of their severity counts (schema.ts withoutInfo). The
+ *  Findings and Assessments views read the API directly and still show them. */
+const LEVELS = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
+const levelOf = (severity: string) => (LEVELS.has(severity) ? severity : "INFO");
+
 function findingOf(f: CoreFinding) {
   const score = typeof f.cvss_score === "string" ? Number(f.cvss_score) : (f.cvss_score ?? 0);
   return {
     id: f.code,
-    severity: f.severity_status,
+    severity: levelOf(f.severity_status),
     title: f.title,
     path: f.target,
     validation: f.validation_status,
@@ -91,12 +104,21 @@ const snap = (a: CoreApproval, key: string) => {
   return Array.isArray(v) ? v.join(" ") : typeof v === "string" ? v : "";
 };
 
-/** One API assessment as a run. */
-export function runOf(row: Row, overview: Overview, findings: CoreFinding[], actions: CoreAction[], approvals: CoreApproval[], events: CoreEvent[]): Assessment {
+/** One API assessment as a run. `live`: the status its newest plan run gives
+ *  (assessments.ts liveStatus, the Assessments view's too); without it, the API's own status. */
+export function runOf(
+  row: Row,
+  overview: Overview,
+  findings: CoreFinding[],
+  actions: CoreAction[],
+  approvals: CoreApproval[],
+  events: CoreEvent[],
+  live: (typeof STATUSES)[number] | null = null,
+): Assessment {
   const ids = new Set(actions.map((a) => a.action_id));
   const mine = approvals.filter((a) => a.kind === "action" && a.action_id && ids.has(a.action_id));
   const pending = mine.filter((a) => a.approval_status === "PENDING");
-  const status = statusOf(row.assessment_status, pending.length > 0);
+  const status = live ?? statusOf(row.assessment_status, pending.length > 0);
   const target = overview.targets[0] ?? row.targets[0] ?? "";
   const blocked = actions.filter((a) => a.action_status === "BLOCKED");
   const saved = {
@@ -157,6 +179,29 @@ export function runOf(row: Row, overview: Overview, findings: CoreFinding[], act
   return AssessmentSchema.parse(saved);
 }
 
+/** An ACTIVE assessment's status from its newest plan run (GET /sessions/{id}/agent-runs), as
+ *  the Assessments view shows it. null for one that isn't ACTIVE, or when its session's runs
+ *  can't be read (then runOf keeps the API's own status, so the run is not dropped for it). */
+async function liveOf(row: Row, get: <T>(path: string) => Promise<T>): Promise<(typeof STATUSES)[number] | null> {
+  if (row.assessment_status !== "ACTIVE") return null;
+  try {
+    return liveStatus(row, newestPlanRun(await get<unknown>(`/sessions/${row.session_id}/agent-runs`), row.assessment_id));
+  } catch {
+    return null;
+  }
+}
+
+/** Why one assessment could not be shown: the API's refusal as it said it, or which of its
+ *  fields didn't fit the run shape (names only, never a value). */
+function problemOf(error: unknown): string {
+  if (error instanceof CoreError) return `The Core API refused a call: ${error.message} (${error.code}).`;
+  if (error instanceof ZodError) {
+    const fields = [...new Set(error.issues.map((i) => i.path.join(".")))].slice(0, 5).join(", ");
+    return `Its data doesn't fit the dashboard (${fields || "unknown field"}).`;
+  }
+  return "The Core API could not give all of it.";
+}
+
 /** Every assessment the Core API has (newest first, at most MAX_ASSESSMENTS), as runs. */
 export async function loadApiLibrary(): Promise<Library> {
   const get = <T>(path: string) => asMain((token) => coreJson<T>(path, { token }));
@@ -167,15 +212,16 @@ export async function loadApiLibrary(): Promise<Library> {
     rows.map(async (row) => {
       const id = row.assessment_id;
       try {
-        const [overview, findings, actions, timeline] = await Promise.all([
+        const [overview, findings, actions, timeline, live] = await Promise.all([
           get<Overview>(`/assessments/${id}/overview`),
           get<CoreFinding[]>(`/findings?assessment_id=${id}`),
           get<CoreAction[]>(`/assessments/${id}/actions`),
           get<{ events: CoreEvent[] }>(`/assessments/${id}/timeline`),
+          liveOf(row, get),
         ]);
-        return runOf(row, overview, findings, actions, approvals, timeline.events);
-      } catch {
-        problems.push({ file: row.engagement_code, reason: "The Core API could not give all of it." });
+        return runOf(row, overview, findings, actions, approvals, timeline.events, live);
+      } catch (error) {
+        problems.push({ file: row.engagement_code, reason: problemOf(error) });
         return null;
       }
     }),
