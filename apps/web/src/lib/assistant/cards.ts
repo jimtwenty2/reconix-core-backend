@@ -218,7 +218,18 @@ export function reportCard(views: AssessmentView[]): CardOf<"report"> {
 
 // --- picking -------------------------------------------------------------------------------
 
-const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function matchesId(text: string, id: string): boolean {
+  const lowerText = text.toLowerCase();
+  const lowerId = id.toLowerCase();
+  let idx = 0;
+  while ((idx = lowerText.indexOf(lowerId, idx)) !== -1) {
+    const prev = idx > 0 ? lowerText[idx - 1] : " ";
+    const next = idx + lowerId.length < lowerText.length ? lowerText[idx + lowerId.length] : " ";
+    if (!/[\w-]/.test(prev) && !/[\w-]/.test(next)) return true;
+    idx += lowerId.length;
+  }
+  return false;
+}
 
 /** The cards for `question` about one saved run (`uid`) or every run (null), in the order they
     are shown, at most MAX_CARDS. Every card passes CardSchema (anything else is dropped). */
@@ -232,7 +243,7 @@ export function pickCards(library: Assessment[], uid: string | null, question: s
   );
   // about every run, a question that names runs ("RCX-DEMO-002") is about those
   if (!uid) {
-    const named = views.filter((v) => v.id && new RegExp(`(?<![\\w-])${escape(v.id)}(?![\\w-])`, "i").test(question));
+    const named = views.filter((v) => v.id && matchesId(question, v.id));
     if (named.length) views = named;
   }
   const has = (i: (typeof intents)[number]) => intents.includes(i);

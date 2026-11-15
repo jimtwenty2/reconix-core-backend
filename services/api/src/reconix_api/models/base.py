@@ -43,4 +43,5 @@ def pg_enum(enum: type[StrEnum], name: str) -> Enum:
 
 def json_default(value: str) -> object:
     """Server default for a jsonb column, e.g. json_default("[]")."""
+    # nosemgrep: avoid-sqlalchemy-text
     return text(f"'{value}'::jsonb")

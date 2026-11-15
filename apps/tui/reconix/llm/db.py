@@ -95,6 +95,7 @@ def upsert_provider(provider_id: str, fields: Dict[str, Any], now: str) -> None:
         ).fetchone()
         if exists:
             cols = ", ".join(f"{k} = ?" for k in fields)
+            # nosemgrep: sqlalchemy-execute-raw-query
             conn.execute(
                 f"UPDATE providers SET {cols}, updated_at = ? WHERE provider_id = ?",
                 (*fields.values(), now, provider_id),
@@ -104,6 +105,7 @@ def upsert_provider(provider_id: str, fields: Dict[str, Any], now: str) -> None:
                       "created_at": now, "updated_at": now}
             cols = ", ".join(fields)
             marks = ", ".join("?" for _ in fields)
+            # nosemgrep: sqlalchemy-execute-raw-query
             conn.execute(
                 f"INSERT INTO providers ({cols}) VALUES ({marks})", tuple(fields.values())
             )

@@ -47,8 +47,8 @@ async def checkpoint_connection(
         psycopg_url(database_url), autocommit=True, prepare_threshold=0, row_factory=dict_row
     ) as conn:
         if create_schema:
-            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}")
-        await conn.execute(f"SET search_path TO {SCHEMA}")
+            await conn.execute("CREATE SCHEMA IF NOT EXISTS langgraph")
+        await conn.execute("SET search_path TO langgraph")
         yield conn
 
 
