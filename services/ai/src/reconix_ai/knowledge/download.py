@@ -69,7 +69,6 @@ OWASP_API_PAGES = [
     ("API9:2023", "0xa9-improper-inventory-management"),
     ("API10:2023", "0xaa-unsafe-consumption-of-apis"),
 ]
-CWE_NS = {"cwe": "http://cwe.mitre.org/cwe-7"}
 # The CWE XML is about 20 MB unzipped; refuse anything far bigger (a zip bomb).
 MAX_UNZIPPED_BYTES = 200 * 1024 * 1024
 
@@ -106,23 +105,32 @@ def kev_item(entry: dict) -> KnowledgeItem:
     )
 
 
+def cwe_ns(root: ElementTree.Element) -> dict[str, str]:
+    """MITRE moves the namespace with each schema version (cwe-7, cwe-8, ...), so it is
+    read from the document, never pinned."""
+    tag = root.tag
+    uri = tag[1 : tag.index("}")] if tag.startswith("{") else ""
+    return {"cwe": uri}
+
+
 def parse_cwe(xml_text: str) -> list[KnowledgeItem]:
     # MITRE's own file over HTTPS. ElementTree never loads external entities, and
     # expat (2.4+) stops "billion laughs" entity expansion.
     root = ElementTree.fromstring(xml_text)  # noqa: S314
+    ns = cwe_ns(root)
     items = []
-    for weakness in root.iterfind("cwe:Weaknesses/cwe:Weakness", CWE_NS):
+    for weakness in root.iterfind("cwe:Weaknesses/cwe:Weakness", ns):
         if weakness.get("Status") == "Deprecated":
             continue
-        items.append(cwe_item(weakness))
+        items.append(cwe_item(weakness, ns))
     return items
 
 
-def cwe_item(weakness: ElementTree.Element) -> KnowledgeItem:
+def cwe_item(weakness: ElementTree.Element, ns: dict[str, str]) -> KnowledgeItem:
     cwe_id = f"CWE-{weakness.get('ID')}"
     name = weakness.get("Name", "")
-    parts = [f"{cwe_id}: {name}.", element_text(weakness.find("cwe:Description", CWE_NS))]
-    extended = element_text(weakness.find("cwe:Extended_Description", CWE_NS))
+    parts = [f"{cwe_id}: {name}.", element_text(weakness.find("cwe:Description", ns))]
+    extended = element_text(weakness.find("cwe:Extended_Description", ns))
     if extended:
         parts.append(extended)
     return KnowledgeItem(
@@ -222,10 +230,19 @@ def download_all(out_dir: Path = FULL_DATA_DIR) -> dict[Source, int]:
                 http, Source.OWASP_API_TOP10, OWASP_API_URL, OWASP_API_PAGE_URL, OWASP_API_PAGES
             ),
         }
+    ensure_sources_not_empty(downloaded)
     for source, items in downloaded.items():
         write_items(out_dir / f"{source.lower()}.jsonl", items)
         print(f"{source}: {len(items)} items")
     return {source: len(items) for source, items in downloaded.items()}
+
+
+def ensure_sources_not_empty(downloaded: dict[Source, list[KnowledgeItem]]) -> None:
+    """A source that gave nothing is a failure, not an empty file: a pinned CWE namespace
+    once parsed zero weaknesses, and the ingest silently lost the whole source."""
+    empty = sorted(source.value for source, items in downloaded.items() if not items)
+    if empty:
+        raise ValueError(f"No items downloaded for: {', '.join(empty)}. Nothing was written.")
 
 
 def fetch(http: httpx.Client, url: str) -> httpx.Response:

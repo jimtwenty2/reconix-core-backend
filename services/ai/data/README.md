@@ -9,7 +9,7 @@ Qdrant. The code is in `src/reconix_ai/knowledge/`.
 |---|---|---|
 | `knowledge-sample/` | A small sample of every source (20 CVEs, 20 CWEs, 20 ATT&CK techniques, all 10 + 10 OWASP pages), so tests and a fresh install work offline. Licences are in `knowledge-sample/SOURCES.md`. | Yes |
 | `knowledge/` | The full download, made by the download command below | No (git-ignored) |
-| `tool-guides/` | One Markdown guide per tool (`nmap.md`, `nuclei.md`, `zap.md`, `semgrep.md`, `gitleaks.md`), written by hand. Owner: Youlong. | Yes |
+| `tool-guides/` | One Markdown guide per tool in the Kali catalog (`tool_specs.json`), named after the tool (`nmap.md`, `nuclei.md`, `zap_scan.md`, `semgrep.md`, `gitleaks.md`), written by hand. Four sections each: when to use, key options, output, risk notes. Owner: Youlong. | Yes |
 
 The ingest uses `knowledge/` when it has `.jsonl` files, otherwise `knowledge-sample/`.
 

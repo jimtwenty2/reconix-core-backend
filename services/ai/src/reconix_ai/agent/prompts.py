@@ -117,6 +117,8 @@ def chat_messages(state: AgentState) -> list[Message]:
     ]
     if state.get("findings"):
         parts.append(findings_text(state["findings"]))
+    if state.get("memories"):
+        parts.append(memories_text(state["memories"]))
     parts.append(knowledge_text(state.get("knowledge", [])))
     parts.append(chat_text(state.get("messages", [])))
     return [system_message(), Message("user", "\n\n".join(parts))]
@@ -223,6 +225,17 @@ def knowledge_text(hits: list[dict[str, str]]) -> str:
         return "## Knowledge\n(none found)"
     pieces = [f"[{hit['ref_id']}] {hit['title']}\n{hit['text']}" for hit in hits]
     return "## Knowledge\n" + fenced("reference_data", "\n\n".join(pieces))
+
+
+def memories_text(memories: list[dict[str, str]]) -> str:
+    """Findings a person accepted in this assessment earlier, from the AI's memory.
+    Their text describes a target, so it is fenced as data, like the knowledge hits."""
+    pieces = [
+        f"[{m['code']}] {m['title']} ({m['target']}, {m['severity_status']}, "
+        f"{m['finding_status']})\n{m['text']}"
+        for m in memories
+    ]
+    return "## Remembered findings\n" + fenced("remembered_findings", "\n\n".join(pieces))
 
 
 def tool_results_text(results: list[str]) -> str:

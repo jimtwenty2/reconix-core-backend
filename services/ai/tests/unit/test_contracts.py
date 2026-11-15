@@ -7,6 +7,7 @@ from reconix_ai.contracts import (
     FindingInput,
     ProposedAction,
     ResumeInput,
+    SourceRef,
     ToolRunInput,
 )
 
@@ -41,6 +42,7 @@ AGENT_RESPONSE_FIELDS = {
     "risk",
     "blocked",
     "references",
+    "sources",
     "reflections",
     "analysis_summary",
     "analysis",
@@ -107,3 +109,8 @@ def test_a_plan_answer_has_no_analysis_or_report() -> None:
 
     assert answer.analysis == [] and answer.analysis_summary == ""
     assert answer.executive_summary is None and answer.methodology is None
+
+
+def test_a_source_carries_what_an_app_shows_for_a_citation() -> None:
+    assert names(SourceRef) == {"ref_id", "title", "url", "source", "section"}
+    assert AgentAnswer(text="It is an SQL injection.").sources == []  # nothing cited

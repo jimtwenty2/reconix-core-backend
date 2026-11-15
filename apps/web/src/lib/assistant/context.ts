@@ -8,7 +8,7 @@
    stays within CONTEXT_LIMIT: the assessment data gives way to them. */
 import { assessmentView } from "../data/adapt";
 import { hourMinute, shortDay } from "../data/format";
-import { type Assessment, SEVERITIES as SEVERITY_ORDER } from "../data/schema";
+import { type Assessment, FINDING_SEVERITIES as SEVERITY_ORDER } from "../data/schema";
 import type { AssessmentView, FindingView } from "../data/view-types";
 import type { Passage } from "./knowledge/rank";
 import { MAX_CHUNK, MAX_NAME } from "./knowledge/schema";

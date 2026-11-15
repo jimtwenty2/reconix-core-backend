@@ -55,6 +55,7 @@ class AgentState(TypedDict, total=False):
     methodology: str
     answer: str  # CHAT
     chat_references: list[str]  # CHAT: ids the answer relies on, only known ones
+    memories: list[dict[str, str]]  # CHAT: this assessment's accepted findings, from memory
     # Totals for the current ask; ask_agent() starts them again.
     prompt_tokens: int
     completion_tokens: int

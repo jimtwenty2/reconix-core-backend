@@ -38,6 +38,10 @@ def test_passwords_are_masked(text: str, expected: str) -> None:
     ("text", "expected"),
     [
         ("Authorization: Bearer abcdef123456", "Authorization: Bearer [MASKED:token]"),
+        # A pure-letter base64 value in an auth header is still a secret.
+        ("Authorization: Basic dXNlcjpwYXNz", "Authorization: Basic [MASKED:token]"),
+        ("Bearer abcdef123456", "Bearer [MASKED:token]"),
+        ("the header says Bearer xyz12345678 end", "the header says Bearer [MASKED:token] end"),
         ("token=abc123xyz", "token=[MASKED:token]"),
         ('"access_token": "abc.def"', '"access_token": "[MASKED:token]"'),
         ("session_id=9f8e7d6c", "session_id=[MASKED:token]"),
@@ -97,6 +101,13 @@ def test_masking_twice_changes_nothing() -> None:
         "The password field has no rate limit",
         "Reset your password at /reset",
         "tokens are rotated every hour",
+        # Knowledge prose the old rules ate (T1134, CWE-1259, T1542, CWE-593 titles).
+        "Access Token Manipulation",
+        "Security Token mechanism to differentiate",
+        "expected Basic Constraints or other extensions",
+        "BIOS (Basic Input/Output System)",
+        "In a basic mutual-authentication scheme, a secret is known to both parties",
+        "Authentication Bypass: OpenSSL CTI Object Access Attack",
         "",
     ],
 )

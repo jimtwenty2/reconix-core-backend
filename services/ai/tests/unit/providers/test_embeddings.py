@@ -7,15 +7,22 @@ from reconix_ai.providers.embeddings import EmbeddingConfig, embed_texts
 litellm = client.litellm  # never imported directly: it must load after its settings
 
 
+class TokenLimitError(client.openai.OpenAIError):
+    status_code = 413
+
+
 class FakeEmbeddingModel:
     def __init__(self) -> None:
         self.calls: list[dict] = []
         self.error: Exception | None = None
+        self.refuse_over: int | None = None  # chars; a token-limit refusal above it
 
     async def aembedding(self, **kwargs: object) -> object:
         self.calls.append(kwargs)
         if self.error is not None:
             raise self.error
+        if self.refuse_over is not None and any(len(t) > self.refuse_over for t in kwargs["input"]):
+            raise TokenLimitError("inputs must have less than 512 tokens")
         data = [{"embedding": [float(i), 0.0]} for i, _ in enumerate(kwargs["input"])]
         return type("Response", (), {"data": data})()
 
@@ -79,3 +86,32 @@ async def test_unsafe_address_is_refused(model: FakeEmbeddingModel) -> None:
 
     assert raised.value.code == "PROVIDER_URL_NOT_ALLOWED"
     assert model.calls == []
+
+
+async def test_long_texts_are_clipped_for_the_vector(model: FakeEmbeddingModel) -> None:
+    # bge-small reads at most 512 tokens; the full text stays in the Qdrant payload.
+    await embed_texts(["x" * 5000])
+
+    assert len(model.calls[0]["input"][0]) == embeddings.EMBED_CHAR_LIMIT
+
+
+async def test_token_limit_refusal_halves_the_cut_and_retries(
+    model: FakeEmbeddingModel,
+) -> None:
+    model.refuse_over = embeddings.EMBED_CHAR_LIMIT // 2
+
+    vectors = await embed_texts(["x" * embeddings.EMBED_CHAR_LIMIT])
+
+    assert vectors == [[0.0, 0.0]]
+    assert len(model.calls) == 2
+    assert len(model.calls[1]["input"][0]) == embeddings.EMBED_CHAR_LIMIT // 2
+
+
+async def test_persistent_token_limit_still_fails_loudly(model: FakeEmbeddingModel) -> None:
+    model.refuse_over = 0
+
+    with pytest.raises(ProviderError) as raised:
+        await embed_texts(["x"])
+
+    assert raised.value.code == "MODEL_UNAVAILABLE"
+    assert len(model.calls) == embeddings.MAX_EMBED_RETRIES + 1

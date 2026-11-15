@@ -7,6 +7,7 @@ import "server-only";
 
 import { type Assessment, AssessmentSchema, STATUSES } from "../data/schema";
 import type { Library } from "../data/store";
+import { severityOf } from "./adapt";
 import { coreJson } from "./core";
 import { asMain } from "./sessions";
 
@@ -67,7 +68,7 @@ function findingOf(f: CoreFinding) {
   const score = typeof f.cvss_score === "string" ? Number(f.cvss_score) : (f.cvss_score ?? 0);
   return {
     id: f.code,
-    severity: f.severity_status,
+    severity: severityOf(f.severity_status),
     title: f.title,
     path: f.target,
     validation: f.validation_status,

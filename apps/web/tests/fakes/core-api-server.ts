@@ -21,8 +21,9 @@ export interface FakeCore {
   providers: Provider[];
   codes: Set<string>;
   calls: { method: string; path: string; body: unknown; token: string }[];
-  /** What the agent answers (pieces, then the saved reply); `error` sends an ERROR event. */
-  agent: { pieces: string[]; reply?: string; error?: string };
+  /** What the agent answers (pieces, then the saved reply); `error` sends an ERROR event,
+      `sources` the knowledge the answer cites (SourceRef rows on the DONE ChatOut). */
+  agent: { pieces: string[]; reply?: string; error?: string; sources?: Record<string, unknown>[] };
   /** Session id -> the newest agent run's status (GET /sessions/{id}/agent-runs). */
   runs: Map<string, string>;
   /** GET /llm-providers/{id}/models answers 503 MODEL_UNAVAILABLE (the server is down). */
@@ -131,7 +132,7 @@ export async function startFakeCore(): Promise<FakeCore> {
         for (const text of fake.agent.pieces) res.write(`event: PIECE\ndata: ${JSON.stringify({ text })}\n\n`);
         if (fake.agent.error) return res.end(`event: ERROR\ndata: ${JSON.stringify({ code: "AGENT_FAILED", message: fake.agent.error, details: {} })}\n\n`);
         const reply = save(id, "assistant", fake.agent.reply ?? fake.agent.pieces.join(""));
-        return res.end(`event: DONE\ndata: ${JSON.stringify({ message, reply, agent_run_id: randomUUID() })}\n\n`);
+        return res.end(`event: DONE\ndata: ${JSON.stringify({ message, reply, agent_run_id: randomUUID(), sources: fake.agent.sources ?? [] })}\n\n`);
       }
     }
 

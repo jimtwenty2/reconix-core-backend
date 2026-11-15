@@ -90,11 +90,11 @@ def build_draft(text: str, on_text: Optional[Callable[[str], None]] = None) -> D
 
     active = providers.active_model()
     try:
-        answer, api_notes = core_api.chat_reply(text, get_assessment())
+        answer, api_notes, sources = core_api.chat_reply(text, get_assessment())
     except LLMError as exc:
         return Draft("", error=str(exc))
-    return Draft(guardrail.check_response(answer), active=active, activity=tuple(api_notes),
-                 core=True)
+    return Draft(guardrail.check_response(answer), sources=tuple(sources), active=active,
+                 activity=tuple(api_notes), core=True)
 
 
 def record_draft(draft: Draft, placeholder: Optional[ChatEntry] = None) -> None:
@@ -114,6 +114,8 @@ def record_draft(draft: Draft, placeholder: Optional[ChatEntry] = None) -> None:
     else:
         entry = add_chat("text", "reconix", draft.text)
     entry.author = model_label(draft.active)
+    if draft.sources:
+        entry.text = entry.text + "\n\n" + "\n".join(draft.sources)
     for note in draft.activity:
         add_activity("AI", note)
 
@@ -149,13 +151,15 @@ def core_reply(text: str, on_update: Optional[Callable[[], None]] = None) -> str
     if on_update is not None:
         on_update()
     try:
-        answer, notes = core_api.chat_reply(text, get_assessment())
+        answer, notes, sources = core_api.chat_reply(text, get_assessment())
     except Exception:
         _drop(entry)
         raise
     from .providers import active_model
 
     entry.text, entry.tone = guardrail.check_response(answer), "default"
+    if sources:
+        entry.text = entry.text + "\n\n" + "\n".join(sources)
     entry.author = model_label(active_model())
     for note in notes:
         add_activity("AI", note)

@@ -37,9 +37,12 @@ VALUE = (
     r"""(?(quote)(?P=quote))"""
 )
 
-# A key name may have a prefix, as in DB_PASSWORD or GITHUB_TOKEN. The match
-# starts at the beginning of the name so it is never tried inside a long word.
-NAME_PREFIX = r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*?"
+# A key name may have a prefix, as in DB_PASSWORD or PGPASSWORD. A separated
+# prefix (ending in _ or -) is always allowed; a glued prefix only when it is
+# ALL CAPS, so prose like "Bypass: OpenSSL" is never read as "pass = OpenSSL".
+# (?-i:...) keeps the glued prefix strictly uppercase even though the rules
+# compile with re.IGNORECASE (under that flag [A-Z] would also match lowercase).
+NAME_PREFIX = r"(?<![A-Za-z0-9_-])(?:[A-Za-z0-9_-]*[_-]|(?-i:[A-Z0-9]+))?"
 ASSIGN = r"""["']?\s*[:=]\s*"""
 
 # Patterns for key names, not secrets themselves.
@@ -68,10 +71,26 @@ MASK_RULES = [
         ),
         "secret",
     ),
+    # An auth header: any value shape is a secret here (also pure-letter base64).
+    # Anchored to the header name like the Cookie rule above, so prose that merely
+    # starts with "Token ..." ("Token Impersonation/Theft") is never a credential.
     MaskRule(
         "token",
         re.compile(
-            r"\b(?:Bearer|Basic|Token)\s+(?P<secret>[A-Za-z0-9._~+/=-]{8,})",
+            r"(?:Authorization|Proxy-Authorization)[ \t]*:[ \t]*"
+            r"(?:Bearer|Basic|Token)[ \t]+(?P<secret>[A-Za-z0-9._~+/=-]{8,})",
+            re.IGNORECASE,
+        ),
+        "secret",
+    ),
+    # Elsewhere the value must contain a digit: real tokens do, English words
+    # ("Basic Input/Output", "Token mechanism") do not. Known token shapes
+    # (JWT, ghp_, AKIA, ...) are masked by their own rules below, digit or not.
+    MaskRule(
+        "token",
+        re.compile(
+            r"\b(?:Bearer|Basic|Token)\s+"
+            r"(?P<secret>(?=[A-Za-z0-9._~+/=-]*[0-9])[A-Za-z0-9._~+/=-]{8,})",
             re.IGNORECASE,
         ),
         "secret",

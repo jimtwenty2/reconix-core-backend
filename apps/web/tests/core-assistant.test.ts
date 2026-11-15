@@ -4,8 +4,10 @@
    Core API (tests/fakes/core-api-server.ts) runs on a free local port. */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pickCards } from "@/lib/assistant/cards";
+import { buildContext } from "@/lib/assistant/context";
+import { type CardOf, type Frame, parseFrame } from "@/lib/assistant/protocol";
 import { COOKIE, sessionValue } from "@/lib/auth/session";
-import { type Frame, parseFrame } from "@/lib/assistant/protocol";
 import { type FakeCore, startFakeCore } from "./fakes/core-api-server";
 
 const TOKEN = "route-test-token-0123456789";
@@ -88,6 +90,17 @@ describe("asking", () => {
     const chat = core.calls.find((c) => c.path.endsWith("/chat/stream"))!;
     expect(chat.path).toBe(`/sessions/${id}/chat/stream`);
     expect(core.tokens.get(chat.token)).toBe(id); // asked as the conversation's own session
+  });
+
+  it("sends the knowledge the answer cites as one sources frame, and none when it cites nothing", async () => {
+    await addLocalModel();
+    const cited = { ref_id: "CVE-2021-44228", title: "Apache Log4j2 JNDI features remote code execution", url: "https://nvd.nist.gov/vuln/detail/CVE-2021-44228", source: "CVE", section: "Description" };
+    core.agent = { pieces: ["Log4j "], reply: "Log4j is the one.", sources: [cited] };
+    const frames = await framesOf(await ask({ uid: null, question: "What is CVE-2021-44228?" }));
+    expect(frames).toContainEqual({ t: "sources", items: [cited] });
+    core.agent = { pieces: [], reply: "Nothing cited." };
+    const plain = await framesOf(await ask({ uid: null, question: "And now?" }));
+    expect(plain.some((f) => f.t === "sources")).toBe(false);
   });
 
   it("continues the same conversation in the same session", async () => {
@@ -382,7 +395,54 @@ function seedAssessment() {
   core.approvals.push({ approval_id: APPROVAL, kind: "action", subject_snapshot: { tool: "NMAP", target: "lab.example", args: ["-sV"] }, subject_hash: "h", risk_level: "MEDIUM", approval_status: "PENDING", reason: null, decided_by: null, decided_at: null, action_id: ACTION });
 }
 
+/** A run like the live RCX-2026-0001: 28 findings, 25 the tools gave no rating (UNKNOWN) and 2
+    informational (NONE). The API sends both; the assistant must show them, not lose the run. */
+function seedUnrated() {
+  const finding = (n: number, severity_status: string) => ({
+    code: `F-${String(n).padStart(3, "0")}`,
+    title: `Result ${n}`,
+    target: "https://lab.example",
+    description: "d",
+    severity_status,
+    cvss_score: null,
+    cwe_ids: [],
+    owasp_id: [],
+    cve_ids: [],
+    impact: null,
+    remediation: null,
+    validation_status: "UNCONFIRMED",
+    finding_status: "OPEN",
+    tools: ["NUCLEI"],
+  });
+  const unrated = (from: number, severity_status: string, count: number) => Array.from({ length: count }, (_, i) => finding(from + i, severity_status));
+  core.assessments.push({
+    row: { assessment_id: ASSESSMENT, engagement_code: "RCX-2026-0001", name: "Web app test", type: "WEB", assessment_status: "COMPLETED", created_by: "tester@host", created_at: "2026-11-12T09:30:15Z", updated_at: "2026-11-12T10:00:00Z", session_id: "s", targets: ["https://lab.example"], finding_count: 28, pending_approval_count: 0 },
+    overview: { targets: ["https://lab.example"], first_started_at: "2026-11-12T09:35:00Z", last_finished_at: "2026-11-12T09:59:00Z", request_count: 12, plan_step_count: 2, plan_step_done_count: 2 },
+    findings: [...unrated(1, "UNKNOWN", 25), ...unrated(26, "NONE", 2), finding(28, "HIGH")],
+    actions: [],
+    events: [],
+  });
+}
+
 describe("the assistant's data comes from the Core API", () => {
+  it("keeps a run whose findings the tools left unrated: UNKNOWN and NONE are shown, never dropped", async () => {
+    seedUnrated();
+    const { loadApiLibrary } = await import("@/lib/api/library");
+    const library = await loadApiLibrary();
+    expect(library.problems).toEqual([]); // before the fix the whole run was dropped here
+    expect(library.assessments).toHaveLength(1);
+    const [run] = library.assessments;
+    expect(run.findings.filter((f) => f.severity === "UNKNOWN")).toHaveLength(25);
+    expect(run.findings.filter((f) => f.severity === "NONE")).toHaveLength(2);
+    const cards = pickCards(library.assessments, run.uid, "Show me the findings of RCX-2026-0001");
+    const card = cards.find((c): c is CardOf<"findings"> => c.kind === "findings");
+    expect(card).toBeDefined();
+    expect(card?.total).toBe(28);
+    expect(card?.counts).toEqual({ CRITICAL: 0, HIGH: 1, MEDIUM: 0, LOW: 0, UNKNOWN: 25, NONE: 2 });
+    expect(card?.items.map((f) => f.severity)).toEqual(["HIGH", "UNKNOWN", "UNKNOWN", "UNKNOWN", "UNKNOWN"]); // worst first
+    expect(buildContext(library.assessments, run.uid)?.text).toContain("findings 28 (1 high, 25 unknown, 2 none)");
+  });
+
   it("reads each assessment as a run: id, status, findings, approvals", async () => {
     seedAssessment();
     const { loadApiLibrary } = await import("@/lib/api/library");

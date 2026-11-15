@@ -13,6 +13,15 @@ from reconix_ai.providers import embed_texts
 
 DEFAULT_LIMIT = 5
 MAX_LIMIT = 20
+# One document must not fill the list with its own sections (a long OWASP page took
+# 6 of 10 slots for "SQL injection"); exact-id hits are never capped.
+MAX_SECTIONS_PER_REF = 2
+# The list is fused deeper than the answer and then spread over the sources (below),
+# so a source's best passage still reaches the short list it answers from. The fusion
+# reaches at least this far so the spread has one passage per source to spread (a
+# 4 x limit-3 list is only 12 deep and can miss the CWE family entirely).
+SPREAD_DEPTH = 4
+SPREAD_MIN = 20
 # Keeps any one hit from filling the agent's prompt.
 MAX_HIT_CHARS = 4000
 # Above any fused score, so exact id matches sort first.
@@ -70,7 +79,11 @@ async def search_knowledge(
         # An exact id in the query ("CVE-2021-44228") is what the agent wants first.
         records = await store.find_by_ref_ids(client, ids, filters.sources) if ids else []
         points = await store.hybrid_search(
-            client, masked_query, query_vector, filters.sources, limit + len(records)
+            client,
+            masked_query,
+            query_vector,
+            filters.sources,
+            max(SPREAD_DEPTH * (limit + len(records)), SPREAD_MIN),
         )
     except store.QDRANT_ERRORS as error:
         failure = store.knowledge_error(error)
@@ -80,8 +93,44 @@ async def search_knowledge(
     exact = [hit(record.payload or {}, EXACT_MATCH_SCORE) for record in records]
     seen = {(h.ref_id, h.section) for h in exact}
     found = [hit(point.payload or {}, point.score) for point in points]
-    rest = [h for h in found if (h.ref_id, h.section) not in seen]
-    return (exact + rest)[:limit]
+    return (exact + spread(cap_sections(found, seen)))[:limit]
+
+
+def spread(hits: list[KnowledgeHit]) -> list[KnowledgeHit]:
+    """One hit per source each round, then the next of each (B2): "SQL injection" gave
+    its three slots to two OWASP sections and one CVE, and the defining CWE-89, the
+    best CWE hit of a one-line entry, came only fourth. Inside a source the order
+    stays as the fusion put it; a single source is left untouched."""
+    by_source: dict[str, list[KnowledgeHit]] = {}
+    for h in hits:
+        by_source.setdefault(str(h.source), []).append(h)
+    out: list[KnowledgeHit] = []
+    round_no = 0
+    while True:
+        picked = False
+        for source_hits in by_source.values():  # sources take turns, first seen first
+            if round_no < len(source_hits):
+                out.append(source_hits[round_no])
+                picked = True
+        if not picked:
+            return out
+        round_no += 1
+
+
+def cap_sections(hits: list[KnowledgeHit], seen: set[tuple[str, str]]) -> list[KnowledgeHit]:
+    """Keep at most MAX_SECTIONS_PER_REF passages per document, in score order, so one
+    long guide cannot fill the list. The exact-id hits (seen) are skipped, never capped."""
+    kept: list[KnowledgeHit] = []
+    per_ref: dict[str, int] = {}
+    for h in hits:
+        if (h.ref_id, h.section) in seen:
+            continue
+        count = per_ref.get(h.ref_id, 0)
+        if count >= MAX_SECTIONS_PER_REF:
+            continue
+        per_ref[h.ref_id] = count + 1
+        kept.append(h)
+    return kept
 
 
 def ref_ids_in(query: str) -> list[str]:

@@ -25,6 +25,7 @@ from reconix_api.core.interfaces import (
     OnPiece,
     PlanStep,
     RiskLevel,
+    SourceRef,
     ToolName,
 )
 from reconix_api.schemas.findings import FindingOut
@@ -47,6 +48,7 @@ class FakeAgent:
         self.suggest: Action | None = None  # set by a test: the step the next plan suggests
         self.reflections: list[str] = []  # set by a test: the ReflAct observations a plan returns
         self.verdict = "CONFIRMED"  # set by a test: the VALIDATE verdict the fake returns
+        self.sources: list[SourceRef] = []  # set by a test: the knowledge a CHAT cites
         self.down = False  # set by a test: the model is not running
         self.error: Exception | None = None  # set by a test: a bug, not an ApiError
         self.fail_after_pieces = False  # set by a test: a CHAT fails after it streamed
@@ -87,6 +89,7 @@ class FakeAgent:
         return AgentResponse(
             text=f"Fake answer to: {person[-1] if person else ''}",
             agent_run_id=request.agent_run_id,
+            sources=list(self.sources),
         )
 
     def analyze(self, request: AgentRequest) -> AgentResponse:

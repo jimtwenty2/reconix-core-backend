@@ -206,15 +206,46 @@ def test_semgrep_config_is_left_to_the_kali_wrapper_default():
     assert "config" not in args
 
 
-def test_nikto_port_comes_from_the_url():
+def test_nikto_url_target_is_split_into_host_and_port():
+    # The Kali wrapper always passes -port (default 80), and nikto stops with "ERROR: The
+    # -port option cannot be used with a full URI" when -host holds a URL, so Core sends
+    # the host on its own and the port of the URL with it.
     _, args = tool_call(job("nikto", "http://juice-shop:3000/", []))
-    assert args["host"] == "http://juice-shop:3000/"
+    assert args["host"] == "juice-shop"
     assert args["port"] == "3000"
+    assert args["opts"] == ""
 
 
-def test_nikto_https_defaults_to_443():
+def test_nikto_https_url_keeps_its_scheme_as_ssl():
     _, args = tool_call(job("nikto", "https://shop.example.com/", []))
+    assert args["host"] == "shop.example.com"
     assert args["port"] == "443"
+    assert args["opts"] == "-ssl"
+
+
+def test_nikto_url_path_stays_the_web_root():
+    # A scan must not reach above the path the person approved.
+    _, args = tool_call(job("nikto", "http://172.20.0.5:3000/admin", []))
+    assert args["host"] == "172.20.0.5"
+    assert args["port"] == "3000"
+    assert args["opts"] == "-root /admin"
+
+
+def test_nikto_keeps_the_approved_arguments():
+    _, args = tool_call(job("nikto", "https://172.20.0.5:8443/api", ["-Tuning", "9"]))
+    assert args["opts"] == "-Tuning 9 -ssl -root /api"
+
+
+def test_nikto_does_not_repeat_an_option_the_person_already_gave():
+    _, args = tool_call(job("nikto", "https://172.20.0.5:8443/api", ["-ssl", "-root", "/api"]))
+    assert args["opts"] == "-ssl -root /api"
+
+
+def test_nikto_bare_host_is_sent_as_the_target():
+    _, args = tool_call(job("nikto", "172.20.0.5", ["-p", "3000"]))
+    assert args["host"] == "172.20.0.5"
+    assert "port" not in args
+    assert args["opts"] == "-p 3000"
 
 
 def test_a_tool_without_these_inputs_is_unchanged():

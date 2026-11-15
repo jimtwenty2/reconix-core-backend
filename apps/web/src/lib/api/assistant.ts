@@ -16,8 +16,10 @@ import { asMain, chatToken, forgetChat } from "./sessions";
 export type CoreSession = { session_id: string; interface: string; session_status: string; created_at: string; closed_at: string | null };
 /** GET /sessions/{id}/messages answer (MessageOut). */
 export type CoreMessage = { message_id: string; sequence_no: number; role: string; content_masked: string; created_at: string; session_id: string };
+/** One knowledge piece the answer cites (SourceRef): masked text, `url` "" when nothing to open. */
+export type CoreSource = { ref_id: string; title: string; url: string; source: string; section: string };
 /** The DONE event of a chat stream (ChatOut). */
-export type CoreChat = { message: CoreMessage; reply: CoreMessage; agent_run_id: string };
+export type CoreChat = { message: CoreMessage; reply: CoreMessage; agent_run_id: string; sources?: CoreSource[] };
 
 export const ALL_RUNS: ScopeRef = { uid: null, label: "All assessments" };
 export const MAX_LISTED = 50; // conversations in the History menu

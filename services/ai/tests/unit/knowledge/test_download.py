@@ -69,6 +69,15 @@ CWE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </Weakness_Catalog>"""
 
 
+def test_cwe_reads_a_newer_schema_namespace() -> None:
+    # MITRE moved the namespace from cwe-7 to cwe-8 in CWE 5.0 (2026-10-28);
+    # a pinned namespace silently parsed zero weaknesses.
+    [item] = parse_cwe(CWE_XML.replace("cwe-7", "cwe-8"))
+
+    assert item.ref_id == "CWE-89"
+    assert "enough" in item.text
+
+
 def test_cwe_skips_deprecated_and_reads_xhtml_text() -> None:
     [item] = parse_cwe(CWE_XML)
 
@@ -157,3 +166,16 @@ def test_fetch_does_not_follow_redirects() -> None:
 def test_github_sources_are_pinned_to_a_commit() -> None:
     for url in (download.ATTACK_URL, download.OWASP_TOP10_URL, download.OWASP_API_URL):
         assert "/master/" not in url
+
+
+def test_an_empty_source_fails_loudly() -> None:
+    items = parse_kev({"vulnerabilities": [kev_entry("CVE-2021-44228", "2021-12-10")]})
+
+    with pytest.raises(ValueError, match="CWE"):
+        download.ensure_sources_not_empty({Source.CVE: items, Source.CWE: []})
+
+
+def test_full_sources_pass_the_empty_check() -> None:
+    items = parse_kev({"vulnerabilities": [kev_entry("CVE-2021-44228", "2021-12-10")]})
+
+    download.ensure_sources_not_empty({Source.CVE: items})

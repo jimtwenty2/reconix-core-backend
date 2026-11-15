@@ -8,13 +8,29 @@ from uuid import UUID
 
 import pytest
 
-from reconix_api.core.interfaces import Operator
+from reconix_api.core.interfaces import Operator, SourceRef
 from reconix_api.services import agent_runs
 from reconix_api.services import chat as chat_service
 from tests.fakes import fake_mask_secrets
 from tests.integration.test_action_flow import active_assessment, event_types
 from tests.integration.test_plan_flow import plan, runs
 from tests.integration.test_scope_flow import DRAFT, open_session, scopes_path
+
+# One knowledge piece an answer cites, as the AI Service sends it, and as the apps read it.
+CITED = SourceRef(
+    ref_id="CWE-89",
+    title="Improper Neutralization of Special Elements used in an SQL Command",
+    url="https://cwe.mitre.org/data/definitions/89.html",
+    source="CWE",
+    section="Description",
+)
+CITED_JSON = {
+    "ref_id": "CWE-89",
+    "title": "Improper Neutralization of Special Elements used in an SQL Command",
+    "url": "https://cwe.mitre.org/data/definitions/89.html",
+    "source": "CWE",
+    "section": "Description",
+}
 
 
 def session_id(client, headers) -> str:
@@ -41,6 +57,7 @@ def test_a_general_question_gets_an_answer_before_any_scope(db_client, db_app):
     assert body["reply"]["role"] == "assistant"
     assert body["reply"]["content_masked"] == "Fake answer to: What does nmap -sV do?"
     assert body["reply"]["sequence_no"] == body["message"]["sequence_no"] + 1
+    assert body["sources"] == []  # the answer cited no knowledge: nothing to show
     request = last_request(db_app)
     assert (request.task, request.assessment_id, request.chat_scope) == ("CHAT", None, None)
     [run] = runs(db_client, headers)
@@ -49,6 +66,17 @@ def test_a_general_question_gets_an_answer_before_any_scope(db_client, db_app):
         f"/sessions/{session_id(db_client, headers)}/messages", headers=headers
     ).json()
     assert [m["role"] for m in listed] == ["user", "assistant"]
+
+
+def test_an_answer_carries_the_knowledge_it_cites(db_client, db_app):
+    """An app shows where an answer came from, so the API passes the cited knowledge on:
+    a title and a link, not the bare id the agent used to cite it."""
+    db_app.state.parts["agent"].sources = [CITED]
+    headers = open_session(db_client)
+
+    body = chat(db_client, headers, "What is an SQL injection?").json()
+
+    assert body["sources"] == [CITED_JSON]
 
 
 def test_the_agent_sees_the_draft_scope(db_client, db_app):
@@ -213,6 +241,17 @@ def test_a_streamed_chat_sends_pieces_then_the_saved_answer(db_client, db_app):
     ).json()
     assert [m["role"] for m in listed] == ["user", "assistant"]
     assert event_types(db_app)[-1] == "AGENT_RUN_COMPLETED"  # still one line for the run
+
+
+def test_a_streamed_answer_ends_with_the_sources_it_cited(db_client, db_app):
+    """The streamed chat ends with the same saved answer, so it carries the same sources."""
+    db_app.state.parts["agent"].sources = [CITED]
+    headers = open_session(db_client)
+
+    response = chat_stream(db_client, headers, "What is an SQL injection?")
+
+    done = sse_events(response.text)[-1][1]
+    assert done["sources"] == [CITED_JSON]
 
 
 def test_a_failed_streamed_chat_ends_with_an_error_and_a_failed_run(db_client, db_app):

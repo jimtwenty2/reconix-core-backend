@@ -6,15 +6,16 @@
 import { redact } from "@/lib/assistant/redact";
 import { hourMinute, shortDay } from "@/lib/data/format";
 import { SEVERITIES } from "@/lib/data/schema";
-import type { AssessmentView, LibraryItem, Severity } from "@/lib/data/view-types";
+import type { AssessmentView, FindingSeverity, LibraryItem, Severity } from "@/lib/data/view-types";
 
 import { plural } from "./derive-shared";
 import type { AssessmentsCards, ReportRunRow } from "./report-types";
 
 const counted = (v: AssessmentView) => v.findings.filter((f) => !f.falsePositive);
 
-/** The worst severity among findings (false positives left out), or null. */
-export function worstOf(levels: Severity[]): Severity | null {
+/** The worst severity among findings (false positives left out), or null: a run whose findings are
+    all unrated (UNKNOWN, NONE) has no rated level to badge, and says so. */
+export function worstOf(levels: FindingSeverity[]): Severity | null {
   return SEVERITIES.find((s) => levels.includes(s)) ?? null; // CRITICAL first
 }
 

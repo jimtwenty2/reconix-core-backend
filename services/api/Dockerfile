@@ -31,8 +31,14 @@ COPY services/api services/api
 COPY services/ai services/ai
 RUN uv sync --frozen --no-dev --package reconix-api
 
-# Never run as root. data/ (audit log, reports, uploaded code) is a volume.
-RUN useradd --uid 1000 --create-home reconix && mkdir -p /app/data && chown reconix /app/data
+# Never run as root. data/ (audit log, reports, uploaded code) is a host folder; the
+# disclosure vault is a named volume (deploy/docker-compose.yml), so Docker gives it this
+# owner and these rights when it creates the volume. The API runs as uid 1000, which can
+# only chmod a folder it owns, and the harness needs 0700 for the values behind a mask.
+RUN useradd --uid 1000 --create-home reconix \
+    && mkdir -p /app/data/vault \
+    && chown -R reconix /app/data \
+    && chmod 700 /app/data/vault
 USER reconix
 
 # Inside the container the API listens on 0.0.0.0; Compose publishes it on 127.0.0.1 only.

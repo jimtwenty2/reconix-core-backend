@@ -77,7 +77,7 @@ def valid_id(source_id: str) -> bool:
 
 # --- reading -------------------------------------------------------------------------------
 
-def _read_private(path: Path, limit: int, problem: str) -> Optional[bytes]:
+def read_private(path: Path, limit: int, problem: str) -> Optional[bytes]:
     """The bytes of `path`, or None when it doesn't exist. Opened with no-follow and
     non-blocking flags and checked through the handle; any failed check raises `problem`."""
     flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -117,7 +117,7 @@ def _load_json(data: bytes, problem: str):
 
 def read_index() -> List[Source]:
     """Every source in `index.json`, in order; `[]` when the file does not exist yet."""
-    data = _read_private(index_path(), MAX_INDEX_BYTES, _CORRUPT_INDEX)
+    data = read_private(index_path(), MAX_INDEX_BYTES, _CORRUPT_INDEX)
     if data is None:
         return []
     body = _load_json(data, _CORRUPT_INDEX)
@@ -152,7 +152,7 @@ def read_chunks(source_id: str) -> List[str]:
     """The passages of one source; `[]` if its file is missing (the index is the record)."""
     path = source_path(source_id)
     problem = f"The add-on file {path.name} is corrupt."
-    data = _read_private(path, MAX_SOURCE_BYTES, problem)
+    data = read_private(path, MAX_SOURCE_BYTES, problem)
     if data is None:
         return []
     body = _load_json(data, problem)

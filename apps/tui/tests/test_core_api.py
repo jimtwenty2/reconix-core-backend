@@ -28,6 +28,7 @@ class FakeApi:
         self.calls: List[Tuple[str, str, Any, str]] = []
         self.providers: List[dict] = []
         self.reply = "The API's answer."
+        self.sources: Optional[List[dict]] = []  # ChatOut.sources; None: an older API has none
         self.fail: Optional[Tuple[int, str, str]] = None  # status, code, message
         self.down = False
         self.pending_activation = False  # activate answers 409 APPROVAL_PENDING
@@ -106,7 +107,10 @@ class FakeApi:
         if path.endswith("/submit"):
             return {"approval_id": "a-scope", "assessment": {"assessment_id": "as-1"}}
         if path.endswith("/chat"):
-            return {"reply": {"content_masked": self.reply}}
+            answer = {"reply": {"content_masked": self.reply}}
+            if self.sources is not None:
+                answer["sources"] = self.sources
+            return answer
         if path.endswith("/messages"):
             return {"message_id": "msg-1"}
         if "/plan" in path:

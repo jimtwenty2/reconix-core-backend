@@ -31,6 +31,9 @@ def kenv(tmp_path):
     env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
     env["RECONIX_KNOWLEDGE_DIR"] = str(tmp_path / "cli-knowledge")
     env["RECONIX_KNOWLEDGE_KEY_FILE"] = str(tmp_path / "cli-keys" / "knowledge.key")
+    # a closed local port: the CLI's best-effort Core API upload fails fast and stays local,
+    # so these subprocess tests never touch a real API or its knowledge store.
+    env["RECONIX_CORE_API"] = "http://127.0.0.1:1"
     return env
 
 

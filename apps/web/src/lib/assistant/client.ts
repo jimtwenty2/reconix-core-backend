@@ -19,7 +19,7 @@ import {
   MODELS_ROUTE,
   MODELS_TEST_ROUTE,
 } from "./paths";
-import { type Card, createFrameReader, type Frame, isConversationId } from "./protocol";
+import { type Card, createFrameReader, type Frame, isConversationId, type SourceRef } from "./protocol";
 
 /** A message of the open conversation, as the page holds it. */
 export type ChatMessage = {
@@ -28,6 +28,7 @@ export type ChatMessage = {
   content: string;
   cards?: Card[]; // verified cards shown with a reply (built by the server from the saved data)
   knowledge?: string[]; // the /add-on files whose passages the model was given (their names)
+  sources?: SourceRef[]; // the knowledge pieces the answer cites (ref_id, title, url)
   state?: "streaming" | "error" | "stopped"; // none: answered
   detail?: string; // what went wrong (state "error")
   question?: string; // the question a failed reply answers (for Retry)
@@ -45,6 +46,8 @@ export function toMessages(c: Conversation): ChatMessage[] {
           content: m.content,
           cards: m.cards,
           knowledge: m.knowledge,
+          // shortcut: the API's messages hold no sources (nor knowledge names), so a reloaded conversation shows neither; upgrade when GET /sessions/{id}/messages returns them
+          sources: m.sources,
           state: m.state === "done" ? undefined : m.state,
           detail: m.detail,
           question: questions.get(m.replyTo),

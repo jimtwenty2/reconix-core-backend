@@ -152,15 +152,17 @@ async def test_the_notice_says_when_the_file_was_cut(app, notes, tmp_path, monke
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line(f"/add-on {p}")
         await wait_until(pilot, lambda: notes, what="a notification")
-        assert notes[0][0] == "Added big.txt — 5 passages, cut to the first 5 passages."
+        assert notes[0][0] == ("Added big.txt — 5 passages, cut to the first 5 passages."
+                               " The Core API's agent can search it too.")
 
 
 async def test_a_remote_model_is_named_in_the_notice(app, notes, model_active, tmp_path):
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line(f"/add-on {_write(tmp_path)}")
         await wait_until(pilot, lambda: notes, what="a notification")
-        assert notes[0][0] == ("Added runbook.md — 1 passage. Passages from it may be sent "
-                               "to OpenAI with your questions.")
+        assert notes[0][0] == ("Added runbook.md — 1 passage. The Core API's agent can search "
+                               "it too. Passages from it may be sent to OpenAI with your "
+                               "questions.")
 
 
 async def test_a_local_model_is_not_named(app, notes, reachable, tmp_path):
@@ -170,7 +172,8 @@ async def test_a_local_model_is_not_named(app, notes, reachable, tmp_path):
     async with app.run_test(size=SIZE) as pilot:
         app.run_command_line(f"/add-on {_write(tmp_path)}")
         await wait_until(pilot, lambda: notes, what="a notification")
-        assert notes[0][0] == "Added runbook.md — 1 passage."
+        assert notes[0][0] == ("Added runbook.md — 1 passage. The Core API's agent can search "
+                               "it too.")
 
 
 # --- an unreadable index: the menu still opens, with only "Remove all" ---------------------

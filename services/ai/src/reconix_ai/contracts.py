@@ -185,6 +185,23 @@ class FindingAnalysis:
 
 
 @dataclass(frozen=True)
+class SourceRef:
+    """One knowledge piece a CHAT answer cites, as the apps show it under the answer.
+
+    references keeps the bare ids (a finding's code may be cited too); sources holds only
+    the knowledge hits behind those ids, with what a person needs to find the piece again.
+    Every field was masked when the knowledge was ingested (knowledge/chunks.py), so an
+    add-on's file name or a link never carries a secret (S8).
+    """
+
+    ref_id: str  # the knowledge id, e.g. "CWE-89", or an add-on's id
+    title: str = ""
+    url: str = ""  # "" for an add-on or a tool guide: there is nothing to open
+    source: str = ""  # knowledge.items.Source, e.g. "CWE", "USER_DOC"
+    section: str = ""  # the heading the piece was cut at
+
+
+@dataclass(frozen=True)
 class AgentAnswer:
     """The agent's answer. It only suggests.
 
@@ -200,6 +217,9 @@ class AgentAnswer:
     risk: str | None = None  # the harness risk of proposed_action: LOW, MEDIUM or HIGH
     blocked: list[BlockedStep] = field(default_factory=list)
     references: list[str] = field(default_factory=list)  # knowledge ids used, e.g. CWE-89
+    # CHAT: the knowledge behind those ids, so the apps can show a title and a link, not a
+    # bare id. Empty for every other task (their references are the hits they read).
+    sources: list[SourceRef] = field(default_factory=list)
     # The run's own ReflAct observations (masked), so the next step keeps the leads this one
     # spotted instead of re-reading them from the raw output each time.
     reflections: list[str] = field(default_factory=list)
