@@ -80,8 +80,11 @@ export function LiveAssessments({ initial, everyMs }: { initial: ReportRunRow[];
           {note}
           <AssessmentsView
             data={{
-              tag: `All ${plural(rows.length, "assessment")}`,
-              about: "Every assessment the Core API holds: search or filter them, and open one for its findings.",
+              tag: `All ${plural(rows.length, "run")}`,
+              about:
+                rows.length === 1
+                  ? "The one run the Core API holds: open it for its overview, findings and report."
+                  : "Every assessment the Core API holds: search or filter them, and open one for its overview, findings and report.",
               rows,
             }}
           />

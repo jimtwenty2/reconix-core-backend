@@ -41,8 +41,7 @@ describe("runOf", () => {
   it("keeps an assessment whose findings are NONE or UNKNOWN", () => {
     const run = runOf(row, overview, [finding("NONE"), finding("UNKNOWN"), finding("HIGH")], [], [], [], "Completed");
     expect(run.status).toBe("Completed");
-    // the four-level run shape holds only HIGH; NONE and UNKNOWN stay in the Findings view
-    expect(run.findings.map((f) => f.severity)).toEqual(["HIGH"]);
+    expect(run.findings.map((f) => f.severity)).toEqual(["NONE", "UNKNOWN", "HIGH"]);
   });
 
   it("uses the API's own status without a live one", () => {

@@ -1,72 +1,77 @@
-/* The Local Assessment Viewer at `/`, rendered per request from the local Core API; nothing
-   comes from saved files. The Overview, the top bar and the Run log read every assessment as a
-   run (lib/api/library.ts loadApiLibrary): with no `?uid=` the Overview totals every one
-   (derive-overall.ts); `?uid=` (the switcher's) opens one (derive.ts). The Assessments,
-   Findings and Report views read it too (components/dashboard/api-assessments.tsx,
-   api-findings.tsx, api-reports.tsx), the last two for the assessment `?assessment=<uuid>`
-   names. `?view=` is the open view, read by the client Viewer. There are no roles: signed in
-   (src/proxy.ts and requireSignedIn check), every view renders. When the Core API can't be
-   read, each view says what it said. The AI Assistant learns what it is about, which model
-   answers (lib/assistant/models/resolve.ts) and what to suggest, from the same assessments
-   (lib/assistant/prompts.ts). */
+/* The Local Assessment Viewer at `/`: with the Core API running, Overview, Assessments,
+   Findings, Run log and Reports read real assessments from the Core API (lib/api/library.ts).
+   When the Core API is unreachable or in mock mode (RECONIX_MOCK=1), it falls back to the
+   assessments saved on disk (lib/data/store.ts).
+   With no run chosen the Overview totals every run (derive-overall.ts); choosing one opens that run
+   (derive.ts). `?view=` is the open view, read by the client Viewer. There are no roles: signed in
+   (src/proxy.ts), every view renders. The AI Assistant learns what it is about, which model answers
+   and what to suggest, from the assessments in scope. */
 import { Suspense } from "react";
 
 import type { AssistantInfo } from "@/components/assistant/types";
 import { deriveDashboard } from "@/components/dashboard/derive";
 import { deriveOverall } from "@/components/dashboard/derive-overall";
+import { runRow } from "@/components/dashboard/derive-report";
 import { runLogData } from "@/components/dashboard/derive-run-log";
-import { ApiAssessments, AssessmentsLoading } from "@/components/dashboard/api-assessments";
 import { ApiFindings, FindingsLoading } from "@/components/dashboard/api-findings";
 import { ApiReports, ReportsLoading } from "@/components/dashboard/api-reports";
-import { CoreEmptyView } from "@/components/dashboard/core-empty-view";
+import { EmptyView } from "@/components/dashboard/empty-view";
+import { LiveAssessments } from "@/components/dashboard/live-assessments";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { RunLogView } from "@/components/dashboard/run-log-view";
 import { TopBar } from "@/components/dashboard/top-bar";
 import { Viewer } from "@/components/dashboard/viewer";
 import { KnowledgeView } from "@/components/knowledge/knowledge-view";
-import { CoreError } from "@/lib/api/core";
 import { isAssessmentId } from "@/lib/api/findings";
 import { loadApiLibrary } from "@/lib/api/library";
 import { activeModelSummary } from "@/lib/api/models";
 import { runRef, scopedViews, scopeOf } from "@/lib/assistant/insights";
 import { welcomePrompts } from "@/lib/assistant/prompts";
-import { requireSignedIn } from "@/lib/auth/guard";
 import { assessmentView, libraryItem } from "@/lib/data/adapt";
 import { clock } from "@/lib/data/format";
-import { type Library, UID } from "@/lib/data/store";
+import { type Library, loadLibrary, shownDir, UID } from "@/lib/data/store";
+import { liveRefreshMs } from "@/lib/live-refresh";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-/** Every Core API assessment as a run, or what the API said when it can't be read. */
-async function readLibrary(): Promise<{ library: Library; error: string | null }> {
-  try {
-    return { library: await loadApiLibrary(), error: null };
-  } catch (e) {
-    const error = e instanceof CoreError ? `${e.message} (${e.code})` : "The Core API's assessments could not be read.";
-    return { library: { dir: "Core API", readAt: Date.now(), assessments: [], problems: [] }, error };
-  }
-}
-
 export default async function Home({ searchParams }: Props) {
-  await requireSignedIn(); // a second lock behind src/proxy.ts
+  const params = await searchParams;
+  const wanted = typeof params.uid === "string" && UID.test(params.uid) ? params.uid : null;
+  const apiAssessment = isAssessmentId(params.assessment) ? params.assessment : null;
+
+  let library: Library;
+  if (process.env.RECONIX_MOCK === "1") {
+    library = await loadLibrary();
+  } else {
+    try {
+      library = await loadApiLibrary();
+    } catch {
+      library = await loadLibrary();
+    }
+  }
+
+  const views = library.assessments.map(assessmentView);
+  const chosen =
+    views.find(
+      (v) =>
+        (wanted && v.uid === wanted) ||
+        (apiAssessment && (v.coreId === apiAssessment || v.uid === apiAssessment)),
+    ) ?? null;
+
+  const dash = chosen ? deriveDashboard(chosen) : null;
+  const overall = !chosen && views.length ? deriveOverall(views) : null;
+  const items = library.assessments.map(libraryItem);
+  const dir = shownDir(library.dir);
+
   // its summary only (no API key comes back); without the Core API the assistant says so
-  const modelSummary = activeModelSummary().catch((error: unknown) => ({
+  const model = await activeModelSummary().catch((error: unknown) => ({
     configured: false,
     name: "",
     provider: "",
     local: false,
     reason: error instanceof Error ? error.message.slice(0, 600) : "The Core API is not running.",
   }));
-  const [params, { library, error }, model] = await Promise.all([searchParams, readLibrary(), modelSummary]);
-  const wanted = typeof params.uid === "string" && UID.test(params.uid) ? params.uid : null;
-  const views = library.assessments.map(assessmentView);
-  // Findings and reports name the Core API's own id (`?assessment=<uuid>`), not `?uid=`.
-  const apiAssessment = isAssessmentId(params.assessment) ? params.assessment : null;
-  const chosen = views.find((v) => v.uid === wanted) ?? null;
-  const dash = chosen ? deriveDashboard(chosen) : null;
-  const overall = !chosen && views.length ? deriveOverall(views) : null;
-  const items = library.assessments.map(libraryItem);
-  const dir = library.dir;
+
   const assistant: AssistantInfo = {
     scope: scopeOf(chosen),
     runs: scopedViews(views, null).map((v) => ({ ...runRef(v), status: v.status })),
@@ -74,10 +79,11 @@ export default async function Home({ searchParams }: Props) {
     retentionDays: 0, // the Core API keeps conversations until they are closed
     model,
   };
-  const empty = <CoreEmptyView error={error} problems={library.problems} compact />;
-  /* A stale or hand-typed ?uid= used to fall straight through to the all-runs view, with nothing
-     to say the run asked for was not there (QA-LOCAL-WEB-REPORT, QAL-003). */
-  const missing = wanted && !chosen && views.length > 0;
+
+  const empty = <EmptyView dir={dir} problems={library.problems} compact />;
+  const missing = Boolean((wanted || apiAssessment) && !chosen && views.length > 0);
+  const runs = views.map(runRow);
+  const every = liveRefreshMs();
 
   return (
     <Viewer
@@ -94,7 +100,7 @@ export default async function Home({ searchParams }: Props) {
       notice={
         missing ? (
           <p role="status" className="dash-missing-run">
-            The Core API has no such assessment — showing all of them.
+            That assessment isn&apos;t in this folder — showing all runs.
           </p>
         ) : null
       }
@@ -104,13 +110,15 @@ export default async function Home({ searchParams }: Props) {
         ) : overall ? (
           <OverviewView cards={overall.cards} />
         ) : (
-          <CoreEmptyView error={error} problems={library.problems} />
+          <EmptyView dir={dir} problems={library.problems} />
         )
       }
       assessments={
-        <Suspense fallback={<AssessmentsLoading />}>
-          <ApiAssessments />
-        </Suspense>
+        runs.length ? (
+          <LiveAssessments initial={runs} everyMs={every > 0 ? Math.min(every, 5000) : 0} />
+        ) : (
+          empty
+        )
       }
       findings={
         // streamed: the other views never wait on the API (a view switch is client-side only, so

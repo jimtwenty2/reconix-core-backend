@@ -44,6 +44,17 @@ const AssessmentListRow = z.object({
 });
 export type ApiAssessmentRow = z.infer<typeof AssessmentListRow>;
 
+/** A run id the dashboard's links accept: "<yyyymmdd-hhmmss>-<4 hex>_<code>". */
+export function uidOfRow(a: Pick<ApiAssessmentRow, "assessment_id" | "created_at" | "engagement_code">): string {
+  const t = new Date(a.created_at);
+  const two = (n: number) => String(n).padStart(2, "0");
+  const stamp = Number.isNaN(t.getTime())
+    ? "00000000-000000"
+    : `${t.getUTCFullYear()}${two(t.getUTCMonth() + 1)}${two(t.getUTCDate())}-${two(t.getUTCHours())}${two(t.getUTCMinutes())}${two(t.getUTCSeconds())}`;
+  const code = a.engagement_code.replace(/[^A-Za-z0-9-]/g, "-").slice(0, 64) || "assessment";
+  return `${stamp}-${a.assessment_id.replace(/-/g, "").slice(0, 4).toLowerCase()}_${code}`;
+}
+
 /** GET /assessments: every assessment the API knows, as the API orders them. */
 export async function listAssessmentRows(): Promise<ApiAssessmentRow[]> {
   await requireSignedIn(); // a second lock behind src/proxy.ts
@@ -118,16 +129,17 @@ export function typeLabel(type: string): string {
  *  status. Read on the page and again by the view's live poll (app/api/core-assessments/route.ts). */
 export async function loadAssessmentRows(): Promise<ReportRunRow[]> {
   const listed = (await listAssessmentRows()).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-  const runs = await Promise.all(listed.map((a) => (a.assessment_status === "ACTIVE" ? readPlanRun(a) : null)));
+  const runs = await Promise.all(listed.map((a) => (a.assessment_status === "ACTIVE" ? readPlanRun(a).catch(() => null) : null)));
   return listed.map((a, i) => assessmentRunRow(a, runs[i]));
 }
 
-/** One API assessment as an Assessments row; the row opens its findings. */
+/** One API assessment as an Assessments row; the row opens its overview. */
 export function assessmentRunRow(a: ApiAssessmentRow, run: PlanRun): ReportRunRow {
   const ms = Date.parse(a.created_at);
   const waiting = a.pending_approval_count;
+  const uid = uidOfRow(a);
   return {
-    uid: a.assessment_id,
+    uid,
     id: a.name || a.engagement_code,
     template: typeLabel(a.type),
     target: redact(a.targets.join(", ")),
@@ -137,6 +149,6 @@ export function assessmentRunRow(a: ApiAssessmentRow, run: PlanRun): ReportRunRo
     findings: a.finding_count, // the API leaves false positives out
     worst: a.worst_severity,
     steps: { done: a.plan_step_done_count, total: a.plan_step_count },
-    href: `/?view=findings&assessment=${encodeURIComponent(a.assessment_id)}`,
+    href: `/?uid=${encodeURIComponent(uid)}`,
   };
 }

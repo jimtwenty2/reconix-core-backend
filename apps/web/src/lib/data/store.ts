@@ -138,5 +138,16 @@ export function shownDir(dir: string): string {
 export async function loadAssessment(uid: string): Promise<Assessment | null> {
   if (!UID.test(uid)) return null;
   const { assessments } = await loadLibrary();
-  return assessments.find((a) => a.uid === uid) ?? null;
+  const local = assessments.find((a) => a.uid === uid);
+  if (local) return local;
+  if (process.env.RECONIX_MOCK !== "1") {
+    try {
+      const { loadApiLibrary } = await import("../api/library");
+      const apiLib = await loadApiLibrary();
+      return apiLib.assessments.find((a) => a.uid === uid) ?? null;
+    } catch {
+      // Core API offline or failed
+    }
+  }
+  return null;
 }

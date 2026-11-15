@@ -11,7 +11,7 @@ vi.mock("@/lib/assistant/access", async (original) => {
 });
 
 import { GET } from "@/app/api/core-assessments/route";
-import { assessmentRunRow, listAssessmentRows, liveStatus, type PlanRun, readPlanRun, STALE_MS, typeLabel } from "@/lib/api/assessments";
+import { assessmentRunRow, listAssessmentRows, liveStatus, type PlanRun, readPlanRun, STALE_MS, typeLabel, uidOfRow } from "@/lib/api/assessments";
 import { CoreApiError, NOT_RUNNING, resetSession } from "@/lib/api/client";
 
 import { ASSESSMENT_ID, assessmentRow, type FakeApi, installFakeApi, SESSION_ID } from "./fakes/core-api";
@@ -38,7 +38,8 @@ describe("listAssessmentRows", () => {
   });
 
   it("refuses a row missing a field the view shows", async () => {
-    const { plan_step_count: _gone, ...short } = assessmentRow;
+    const short: Record<string, unknown> = { ...assessmentRow };
+    delete short.plan_step_count;
     api.answers.set("/assessments", [{ status: 200, body: [short] }]);
     expect((await refusal(listAssessmentRows())).code).toBe("BAD_RESPONSE");
   });
@@ -124,10 +125,11 @@ describe("liveStatus (the newest plan run)", () => {
 });
 
 describe("assessmentRunRow", () => {
-  it("keeps the API's counts and opens the assessment's findings", () => {
+  it("keeps the API's counts and opens the assessment's overview", () => {
     const r = assessmentRunRow(base, ran);
-    expect(r).toMatchObject({ uid: ASSESSMENT_ID, id: "Juice Shop web", template: "Web", status: "Completed", findings: 2, worst: "HIGH", steps: { done: 3, total: 4 }, waiting: "" });
-    expect(r.href).toBe(`/?view=findings&assessment=${ASSESSMENT_ID}`);
+    const expectedUid = uidOfRow(base);
+    expect(r).toMatchObject({ uid: expectedUid, id: "Juice Shop web", template: "Web", status: "Completed", findings: 2, worst: "HIGH", steps: { done: 3, total: 4 }, waiting: "" });
+    expect(r.href).toBe(`/?uid=${encodeURIComponent(expectedUid)}`);
   });
 
   it("shows a NONE worst severity, never drops it", () => {
@@ -152,7 +154,7 @@ describe("GET /api/core-assessments (the view's live poll)", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const { rows } = await res.json();
-    expect(rows.map((r: { uid: string; status: string }) => [r.uid, r.status])).toEqual([[ASSESSMENT_ID, "New"]]);
+    expect(rows.map((r: { uid: string; status: string }) => [r.uid, r.status])).toEqual([[uidOfRow(assessmentRow), "New"]]);
   });
 
   it("refuses without a session", async () => {
