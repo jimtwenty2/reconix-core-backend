@@ -28,7 +28,11 @@ export function AssessmentsRows({ rows }: { rows: ReportRunRow[] }) {
       <ul role="list" aria-label="Saved assessments" className="asm-list">
         {rows.map((r) => (
           <li key={r.uid}>
-            <Link href={runOverviewHref(r.uid)} title={`Open the overview of ${runTitle(r)}`} className="asm-row ui-row focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Link
+              href={r.href ?? runOverviewHref(r.uid)}
+              title={`Open the overview of ${runTitle(r)}`}
+              className="asm-row ui-row focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               <RunCells row={r} Cell={Cell} />
             </Link>
           </li>

@@ -1,23 +1,22 @@
-/* The Local Assessment Viewer at `/`, rendered per request from the assessments the Reconix
-   TUI saved (src/lib/data/store.ts). With no `?uid=` the Overview totals every saved run
-   (derive-overall.ts); `?uid=` opens one run (derive.ts). The Findings and Report views read
-   the Core API instead (components/dashboard/api-findings.tsx, api-reports.tsx), for the
-   assessment `?assessment=<uuid>` names. `?view=` is
-   the open view, read by the client Viewer. There are no roles: signed in (src/proxy.ts and
-   loadLibrary check), every view renders. The AI Assistant learns what it is about, which model answers
-   (lib/assistant/models/resolve.ts) and what to suggest, from the data in scope
-   (lib/assistant/prompts.ts). */
+/* The Local Assessment Viewer at `/`: with the Core API running, Overview, Assessments,
+   Findings, Run log and Reports read real assessments from the Core API (lib/api/library.ts).
+   When the Core API is unreachable or in mock mode (RECONIX_MOCK=1), it falls back to the
+   assessments saved on disk (lib/data/store.ts).
+   With no run chosen the Overview totals every run (derive-overall.ts); choosing one opens that run
+   (derive.ts). `?view=` is the open view, read by the client Viewer. There are no roles: signed in
+   (src/proxy.ts), every view renders. The AI Assistant learns what it is about, which model answers
+   and what to suggest, from the assessments in scope. */
 import { Suspense } from "react";
 
 import type { AssistantInfo } from "@/components/assistant/types";
 import { deriveDashboard } from "@/components/dashboard/derive";
 import { deriveOverall } from "@/components/dashboard/derive-overall";
-import { assessmentsCards, runRow } from "@/components/dashboard/derive-report";
+import { runRow } from "@/components/dashboard/derive-report";
 import { runLogData } from "@/components/dashboard/derive-run-log";
 import { ApiFindings, FindingsLoading } from "@/components/dashboard/api-findings";
 import { ApiReports, ReportsLoading } from "@/components/dashboard/api-reports";
-import { AssessmentsView } from "@/components/dashboard/assessments-view";
 import { EmptyView } from "@/components/dashboard/empty-view";
+import { LiveAssessments } from "@/components/dashboard/live-assessments";
 import { OverviewView } from "@/components/dashboard/overview-view";
 import { RunLogView } from "@/components/dashboard/run-log-view";
 import { TopBar } from "@/components/dashboard/top-bar";
@@ -30,21 +29,40 @@ import { runRef, scopedViews, scopeOf } from "@/lib/assistant/insights";
 import { welcomePrompts } from "@/lib/assistant/prompts";
 import { assessmentView, libraryItem } from "@/lib/data/adapt";
 import { clock } from "@/lib/data/format";
-import { loadLibrary, shownDir, UID } from "@/lib/data/store";
+import { type Library, loadLibrary, shownDir, UID } from "@/lib/data/store";
+import { liveRefreshMs } from "@/lib/live-refresh";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export default async function Home({ searchParams }: Props) {
-  const [params, library] = await Promise.all([searchParams, loadLibrary()]);
+  const params = await searchParams;
   const wanted = typeof params.uid === "string" && UID.test(params.uid) ? params.uid : null;
-  const views = library.assessments.map(assessmentView);
-  // Findings come from the Core API, for its own assessment (`?assessment=<uuid>`), not `?uid=`.
   const apiAssessment = isAssessmentId(params.assessment) ? params.assessment : null;
-  const chosen = views.find((v) => v.uid === wanted) ?? null;
+
+  let library: Library;
+  if (process.env.RECONIX_MOCK === "1") {
+    library = await loadLibrary();
+  } else {
+    try {
+      library = await loadApiLibrary();
+    } catch {
+      library = await loadLibrary();
+    }
+  }
+
+  const views = library.assessments.map(assessmentView);
+  const chosen =
+    views.find(
+      (v) =>
+        (wanted && v.uid === wanted) ||
+        (apiAssessment && (v.coreId === apiAssessment || v.uid === apiAssessment)),
+    ) ?? null;
+
   const dash = chosen ? deriveDashboard(chosen) : null;
   const overall = !chosen && views.length ? deriveOverall(views) : null;
   const items = library.assessments.map(libraryItem);
   const dir = shownDir(library.dir);
+
   // its summary only (no API key comes back); without the Core API the assistant says so
   const model = await activeModelSummary().catch((error: unknown) => ({
     configured: false,
@@ -53,21 +71,19 @@ export default async function Home({ searchParams }: Props) {
     local: false,
     reason: error instanceof Error ? error.message.slice(0, 600) : "The Core API is not running.",
   }));
-  // the AI Assistant shows the Core API's real assessments, never the saved demo files
-  const apiViews = (await loadApiLibrary().catch(() => ({ assessments: [] }))).assessments.map(assessmentView);
-  const apiChosen = apiViews.find((v) => v.uid === wanted) ?? null;
+
   const assistant: AssistantInfo = {
-    scope: scopeOf(apiChosen),
-    runs: scopedViews(apiViews, null).map((v) => ({ ...runRef(v), status: v.status })),
-    prompts: welcomePrompts(scopedViews(apiViews, apiChosen?.uid ?? null)),
+    scope: scopeOf(chosen),
+    runs: scopedViews(views, null).map((v) => ({ ...runRef(v), status: v.status })),
+    prompts: welcomePrompts(scopedViews(views, chosen?.uid ?? null)),
     retentionDays: 0, // the Core API keeps conversations until they are closed
     model,
   };
+
   const empty = <EmptyView dir={dir} problems={library.problems} compact />;
-  /* A stale or hand-typed ?uid= used to fall straight through to the all-runs view, with nothing
-     to say the run asked for was not there (QA-LOCAL-WEB-REPORT, QAL-003). */
-  const missing = wanted && !chosen && views.length > 0;
+  const missing = Boolean((wanted || apiAssessment) && !chosen && views.length > 0);
   const runs = views.map(runRow);
+  const every = liveRefreshMs();
 
   return (
     <Viewer
@@ -97,7 +113,13 @@ export default async function Home({ searchParams }: Props) {
           <EmptyView dir={dir} problems={library.problems} />
         )
       }
-      assessments={runs.length ? <AssessmentsView data={assessmentsCards(runs)} /> : empty}
+      assessments={
+        runs.length ? (
+          <LiveAssessments initial={runs} everyMs={every > 0 ? Math.min(every, 5000) : 0} />
+        ) : (
+          empty
+        )
+      }
       findings={
         // streamed: the other views never wait on the API (a view switch is client-side only, so
         // every pane is rendered with the page)

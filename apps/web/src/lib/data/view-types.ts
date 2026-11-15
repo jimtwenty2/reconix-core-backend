@@ -78,6 +78,7 @@ export interface PhaseView {
 export interface AssessmentView {
   uid: string;
   id: string;
+  coreId?: string;
   name: string;
   target: string;
   template: string;
@@ -106,6 +107,7 @@ export interface AssessmentView {
 export interface LibraryItem {
   uid: string;
   id: string;
+  coreId?: string;
   template: string;
   target: string;
   status: Status;

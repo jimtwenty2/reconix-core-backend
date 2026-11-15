@@ -107,6 +107,7 @@ const SavedAssessmentSchema = z.object({
   waiting_for: text,
   stopped_reason: text,
   session_closed: z.boolean().default(false),
+  core_id: text.default(""),
   run: z.object({
     phase: text,
     started_at: isoTime.nullable(),

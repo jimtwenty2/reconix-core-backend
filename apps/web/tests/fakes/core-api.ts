@@ -4,7 +4,7 @@
 import { vi } from "vitest";
 
 export const ASSESSMENT_ID = "11111111-1111-4111-8111-111111111111";
-const SESSION_ID = "22222222-2222-4222-8222-222222222222";
+export const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const TOOL_RUN_ID = "33333333-3333-4333-8333-333333333333";
 const AT = "2026-11-10T09:00:00Z";
 
@@ -22,6 +22,9 @@ export const assessmentRow = {
   finding_count: 2,
   worst_severity: "HIGH",
   pending_approval_count: 0,
+  plan_step_count: 4,
+  plan_step_done_count: 3,
+  last_activity_at: AT,
 };
 
 const finding = {
@@ -123,6 +126,8 @@ function defaultAnswer(method: string, path: string): Answer {
   if (path === "/assessments") return { status: 200, body: [assessmentRow] };
   if (path === `/assessments/${ASSESSMENT_ID}/reports`) return { status: 200, body: [reportOut] };
   if (path === `/assessments/${ASSESSMENT_ID}/overview`) return { status: 200, body: overviewOut };
+  if (path === `/assessments/${ASSESSMENT_ID}/actions`) return { status: 200, body: [] };
+  if (path === `/sessions/${SESSION_ID}/agent-runs`) return { status: 200, body: [] };
   if (path.startsWith(`/reports/${REPORT_ID}/download`))
     return { status: 200, body: null, raw: "%PDF-1.4 fake", headers: { "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="ENG-TEST-v2.pdf"' } };
   if (path.startsWith("/findings")) return { status: 200, body: findings };
