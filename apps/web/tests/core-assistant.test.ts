@@ -99,9 +99,9 @@ describe("asking", () => {
     expect(core.messages.filter((m) => m.session_id === id && m.role === "user").map((m) => m.content_masked)).toEqual(["First", "Second"]);
   });
 
-  it("passes the API's refusal on (no model: 409) and its stream error", async () => {
+  it("passes the API's refusal on (no model: 503) and its stream error", async () => {
     const refused = await ask({ uid: null, question: "Hi" });
-    expect(refused.status).toBe(409);
+    expect(refused.status).toBe(503);
     expect((await refused.json()).detail).toBe("Choose a model first.");
 
     await addLocalModel();
@@ -254,18 +254,13 @@ describe("the model picker", () => {
     const unsaved = await (await fetchRoute.POST(request("/api/assistant/models/fetch", { method: "POST", body: JSON.stringify({ baseUrl: "http://127.0.0.1:1234/v1" }) }))).json();
     expect(unsaved.listed).toBe(false);
 
-    // in use: refused before anything is deleted (the API keeps the active row)
+    // in use: the API removes the active row too, and leaves no model active
     core.calls.length = 0;
-    const refused = await provider.DELETE(request(`/api/assistant/models/${id}`, { method: "DELETE" }), ctx(id));
-    expect(refused.status).toBe(409);
-    expect((await refused.json()).detail).toMatch(/choose another model first/);
-    expect(core.calls.some((c) => c.method === "DELETE")).toBe(false);
-    expect(core.providers).toHaveLength(1);
-
-    for (const p of core.providers) p.is_active = false; // another model answers now
     const removed = await (await provider.DELETE(request(`/api/assistant/models/${id}`, { method: "DELETE" }), ctx(id))).json();
+    expect(core.calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
     expect(removed.providers).toEqual([]);
     expect(removed.summary.configured).toBe(false);
+    expect(core.providers.some((p) => p.is_active)).toBe(false);
   });
 
   it("gives the rate slot back: many fetches and tests in a row all answer", async () => {

@@ -6,8 +6,8 @@ anywhere else would send prompts and findings off this computer, so a person app
 it first with a `configuration` approval, for exactly the settings they saw.
 
 The built-in RECONIX provider comes from the migration: it can be made active again, but
-never changed or removed. The active provider cannot be changed or removed either, so an
-approved address or key cannot be swapped afterwards.
+never changed or removed. The active provider cannot be changed, so an approved address or
+key cannot be swapped afterwards; it can be removed, which leaves no model active.
 
 Locks are always taken in the same order as approving: the approval first, then the
 provider.
@@ -42,6 +42,7 @@ from reconix_api.services.approvals import expires_at, snapshot_hash
 from reconix_api.services.audit import audit
 
 ACTIVATE = "ACTIVATE_LLM_PROVIDER"  # config_change["change"] of an activation approval
+ACTIVE_REMOVED = "no model is active until the person chooses one"  # audit reason
 # The 3 cloud services always need a key, and never count as local: an address on this
 # computer can still be a proxy or a tunnel to the cloud.
 CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEEK}
@@ -140,23 +141,30 @@ def delete_provider(
 ) -> None:
     """A provider no agent run used is deleted. One that runs used is archived instead: it
     leaves the lists and its key is removed, but its row stays, so their history keeps its
-    model. Its open activation approval, if any, is closed as EXPIRED."""
+    model. Its open activation approval, if any, is closed as EXPIRED.
+
+    The active provider can be removed: nothing is made active in its place, so the person's
+    next step chooses one. Until then a run says NO_ACTIVE_PROVIDER — no model is used that
+    the person did not pick."""
     open_approval = provider_repo.activation_approval(db, llm_provider_id, ACTIVATE, lock=True)
     provider = _get(db, llm_provider_id, lock=True)
-    _ensure_editable(provider)
+    _refuse_built_in(provider)
     expired = _expire(open_approval)
+    # The one audit line must say the model that was answering has stopped answering.
+    reason = ACTIVE_REMOVED if provider.is_active else None
     if provider_repo.run_count(db, llm_provider_id):
         provider.archived = True
+        provider.is_active = False  # an archived row must not stay the active one
         provider.api_key_encrypted = None
         provider.api_key_last4 = None
         db.commit()
         _audit_expired(write_audit, operator, provider, expired)
-        _audit(write_audit, "LLM_PROVIDER_ARCHIVED", operator, provider)
+        _audit(write_audit, "LLM_PROVIDER_ARCHIVED", operator, provider, reason=reason)
         return
     provider_repo.delete(db, provider)
     db.commit()
     _audit_expired(write_audit, operator, provider, expired)
-    _audit(write_audit, "LLM_PROVIDER_REMOVED", operator, provider)
+    _audit(write_audit, "LLM_PROVIDER_REMOVED", operator, provider, reason=reason)
 
 
 def activate(
@@ -411,16 +419,20 @@ def _validated(values: dict[str, Any]) -> LlmProviderIn:
         ) from None
 
 
-def _ensure_editable(provider: LlmProvider) -> None:
+def _refuse_built_in(provider: LlmProvider) -> None:
     if provider.provider_type == ProviderType.RECONIX:
         raise ApiError(
             409, "BUILT_IN_PROVIDER", "The built-in RECONIX provider cannot be changed or removed."
         )
+
+
+def _ensure_editable(provider: LlmProvider) -> None:
+    _refuse_built_in(provider)
     if provider.is_active:
         raise ApiError(
             409,
             "PROVIDER_IS_ACTIVE",
-            "Make another provider active before you change or remove this one.",
+            "Make another provider active before you change this one.",
         )
 
 
@@ -498,10 +510,13 @@ def _audit(
     approval: Approval | None = None,
     reason: str | None = None,
 ) -> None:
-    """Never the key or the address: only which provider, which approval, and why."""
+    """Never the key or the address: which provider, which model, which approval, and why.
+    The model name is kept because a removed row would otherwise leave no record of what
+    was answering."""
     details = {
         "llm_provider_id": str(provider.llm_provider_id),
         "provider_type": str(provider.provider_type),
+        "model_name": provider.model_name,
     }
     if approval is not None:
         details["approval_id"] = str(approval.approval_id)

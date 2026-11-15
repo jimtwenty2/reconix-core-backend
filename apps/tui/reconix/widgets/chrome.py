@@ -87,9 +87,11 @@ class SessionBar(Static):
         active = store.active_model()
         if active is None:
             return [Text.assemble(("llm: ", theme.DIM), ("off", theme.MUTED))]
-        color = {"REACHABLE": theme.GREEN, "UNREACHABLE": theme.CRITICAL}.get(
-            store.get_provider(active.provider_id).status, theme.MUTED
-        )
+        try:
+            status = store.get_provider(active.provider_id).status
+        except store.StoreValidationError:
+            status = ""  # the top bar never breaks the app: unread reachability is muted
+        color = {"REACHABLE": theme.GREEN, "UNREACHABLE": theme.CRITICAL}.get(status, theme.MUTED)
         model = active.model
         if len(model) > cls.MODEL_WIDTH:
             model = model[: cls.MODEL_WIDTH - 1] + "…"

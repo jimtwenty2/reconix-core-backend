@@ -340,7 +340,7 @@ def test_an_edit_changes_only_the_fields_sent(db_client, db_app, session_factory
     assert event_types(db_app).count("LLM_PROVIDER_EDITED") == 2
 
 
-def test_the_built_in_and_the_active_provider_cannot_change(db_client):
+def test_only_the_built_in_provider_cannot_be_removed(db_client, db_app):
     headers = open_session(db_client)
     reconix_id = built_in_id(db_client, headers)
     ollama_id = add(db_client, headers, OLLAMA)["llm_provider_id"]
@@ -357,8 +357,24 @@ def test_the_built_in_and_the_active_provider_cannot_change(db_client):
 
     assert edit_built_in.json()["code"] == "BUILT_IN_PROVIDER"
     assert remove_built_in.json()["code"] == "BUILT_IN_PROVIDER"
-    assert edit_active.json()["code"] == "PROVIDER_IS_ACTIVE"
-    assert remove_active.json()["code"] == "PROVIDER_IS_ACTIVE"
+    assert edit_active.json()["code"] == "PROVIDER_IS_ACTIVE"  # the active one never changes
+    assert remove_active.status_code == 204  # ...but Unset removes it
+    assert active(db_client, headers) == []  # nothing is active in its place
+
+    # With no model chosen, nothing runs: the person is told, not quietly served another one.
+    session_id = db_client.get("/operator", headers=headers).json()["session_id"]
+    refused = db_client.post(
+        f"/sessions/{session_id}/chat", json={"content": "who are you?"}, headers=headers
+    )
+    assert refused.status_code == 503
+    assert refused.json()["code"] == "NO_ACTIVE_PROVIDER"
+
+    # The one line still says what was answering and that the person is now model-less.
+    removed = [
+        e for e in db_app.state.parts["audit"].events if e.event_type == "LLM_PROVIDER_REMOVED"
+    ][-1]
+    assert removed.details["model_name"] == "llama3.1:8b"
+    assert removed.details["reason"] == "no model is active until the person chooses one"
     # The built-in one can always be made active again, at once.
     assert activate(db_client, headers, reconix_id)["approval"] is None
     assert active(db_client, headers) == ["RECONIX"]
@@ -399,6 +415,7 @@ def test_a_provider_that_agent_runs_used_is_archived(db_client, session_factory,
             AgentRun(model_name="llama3.1:8b", session_id=session_id, llm_provider_id=provider_id)
         )
         db.commit()
+    activate(db_client, headers, provider_id)  # the archived row must not stay the active one
 
     archived = db_client.delete(f"/llm-providers/{provider_id}", headers=headers)
 
@@ -406,9 +423,10 @@ def test_a_provider_that_agent_runs_used_is_archived(db_client, session_factory,
     assert db_client.get(f"/llm-providers/{provider_id}", headers=headers).status_code == 404
     listed = db_client.get("/llm-providers", headers=headers).json()
     assert provider_id not in [row["llm_provider_id"] for row in listed]
+    assert active(db_client, headers) == []
     with session_factory() as db:
         row = db.scalar(select(LlmProvider).where(LlmProvider.llm_provider_id == provider_id))
-        assert row is not None and row.archived is True
+        assert row is not None and row.archived is True and row.is_active is False
     assert event_types(db_app)[-1] == "LLM_PROVIDER_ARCHIVED"
 
 
