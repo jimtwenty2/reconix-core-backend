@@ -7892,7 +7892,7 @@
         ]
       },
       "patch": {
-        "description": "Updates a provider. Only the fields you send change.\n\nBusiness Rules:\n- The built-in RECONIX provider accepts only a new API key (and display name), even\n  while active. Any other active provider cannot be changed.\n\nState Changes:\n- Updates the provider.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Updates a provider. Only the fields you send change.\n\nBusiness Rules:\n- The built-in RECONIX provider accepts only a new API key, even\n  while active. Any other active provider cannot be changed.\n\nState Changes:\n- Updates the provider.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "update_provider_api_v1_llm_providers__llm_provider_id__patch",
         "parameters": [
           {

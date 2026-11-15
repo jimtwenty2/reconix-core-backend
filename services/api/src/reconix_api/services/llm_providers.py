@@ -445,7 +445,7 @@ def _update_reconix_key(
 ) -> LlmProviderOut:
     """Only RECONIX's key changes, even while it is active: its address is fixed by .env
     and never needed an approval. A blank key goes back to RECONIX_MODEL_API_KEY."""
-    other = changes.model_fields_set - {"api_key", "display_name"}
+    other = changes.model_fields_set - {"api_key"}
     if other:
         raise ApiError(
             409,

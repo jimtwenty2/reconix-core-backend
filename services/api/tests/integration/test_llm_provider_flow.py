@@ -347,6 +347,7 @@ def test_the_built_in_provider_can_be_rekeyed_removed_and_added_back(db_client):
 
     rekeyed = db_client.patch(url, json={"api_key": FAKE_API_KEY}, headers=headers)
     other_field = db_client.patch(url, json={"model_name": "other"}, headers=headers)
+    renamed = db_client.patch(url, json={"display_name": "Other"}, headers=headers)
     second = db_client.post(
         "/llm-providers", json={**OPENAI, "provider_type": "RECONIX"}, headers=headers
     )
@@ -361,6 +362,7 @@ def test_the_built_in_provider_can_be_rekeyed_removed_and_added_back(db_client):
     assert rekeyed.json()["api_key_last4"] == "wxyz"
     assert FAKE_API_KEY not in rekeyed.text
     assert (other_field.status_code, other_field.json()["code"]) == (409, "BUILT_IN_PROVIDER")
+    assert (renamed.status_code, renamed.json()["code"]) == (409, "BUILT_IN_PROVIDER")
     assert (second.status_code, second.json()["code"]) == (422, "PROVIDER_TYPE_NOT_ALLOWED")
     assert removed.status_code == 204
     assert (refused_url.status_code, refused_url.json()["code"]) == (422, "BUILT_IN_PROVIDER")

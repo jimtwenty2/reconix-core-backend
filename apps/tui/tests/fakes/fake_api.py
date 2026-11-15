@@ -29,23 +29,30 @@ TOKEN_PREFIX = "fake-session-token-"  # noqa: S105 - a fake
 _NAME = re.compile(rb'name="([^"]+)"')
 _FILENAME = re.compile(rb'filename="((?:[^"\\]|\\.)*)"')
 # KnowledgeAddOnKind: the API picks it from the uploaded file's own name.
-_KIND = {"txt": "TXT", "md": "MD", "json": "JSON", "yaml": "YAML", "yml": "YAML",
-         "docx": "DOCX", "pdf": "PDF"}
+_KIND = {
+    "txt": "TXT",
+    "md": "MD",
+    "json": "JSON",
+    "yaml": "YAML",
+    "yml": "YAML",
+    "docx": "DOCX",
+    "pdf": "PDF",
+}
 
 
 def form_of(data: bytes) -> Tuple[Dict[str, str], str, bytes]:
     """One multipart/form-data body as the API reads it: (text fields, file name, file)."""
     fields: Dict[str, str] = {}
     file_name, file_data = "", b""
-    boundary = data.split(b"\r\n", 1)[0]               # the leading "--<boundary>" line
+    boundary = data.split(b"\r\n", 1)[0]  # the leading "--<boundary>" line
     for part in data.split(boundary)[1:]:
-        if not part.startswith(b"\r\n"):               # the closing "--" and anything after
+        if not part.startswith(b"\r\n"):  # the closing "--" and anything after
             continue
         head, _, rest = part.partition(b"\r\n\r\n")
         key = _NAME.search(head)
         if key is None:
             continue
-        value = rest[:-2]                              # the \r\n before the next boundary
+        value = rest[:-2]  # the \r\n before the next boundary
         name = _FILENAME.search(head)
         if name:
             file_name = name.group(1).decode().replace('\\"', '"').replace("\\\\", "\\")
@@ -132,10 +139,15 @@ def code_finding_row() -> dict:
     """A CodeFindingOut (a finding with its place in the uploaded code and the AI review)."""
     return {
         **finding_row("SEMGREP-SQLI", "SQL injection", "/workspace/code/s", "HIGH", "SEMGREP"),
-        "path": "app/db.py", "line": 12, "end_line": 12,
-        "rule_id": "python.lang.security.audit.sqli", "snippet": "cur.execute(q + user)",
-        "file_sha256": "0" * 64, "verdict": "LIKELY_TRUE_POSITIVE",
-        "explanation": "User input reaches the query.", "fix_recommendation": "Use parameters.",
+        "path": "app/db.py",
+        "line": 12,
+        "end_line": 12,
+        "rule_id": "python.lang.security.audit.sqli",
+        "snippet": "cur.execute(q + user)",
+        "file_sha256": "0" * 64,
+        "verdict": "LIKELY_TRUE_POSITIVE",
+        "explanation": "User input reaches the query.",
+        "fix_recommendation": "Use parameters.",
     }
 
 
@@ -219,9 +231,13 @@ class FakeApi:
         gzipped = request.headers.get("Content-type") == "application/gzip"
         multipart = request.headers.get("Content-type", "").startswith("multipart/")
         body = (
-            {"multipart_bytes": len(request.data)} if multipart else
-            {"gzip_bytes": len(request.data)} if gzipped
-            else json.loads(request.data) if request.data else None
+            {"multipart_bytes": len(request.data)}
+            if multipart
+            else {"gzip_bytes": len(request.data)}
+            if gzipped
+            else json.loads(request.data)
+            if request.data
+            else None
         )
         if gzipped:
             self.uploads.append(request.data)
@@ -347,8 +363,11 @@ class FakeApi:
                 return {"missing": missing, "target": f"/workspace/code/{parts[1]}"}
             if method == "PUT":
                 self.code_files = dict(self._listed)
-                return {"files": 0, "size_bytes": body["gzip_bytes"],
-                        "target": f"/workspace/code/{parts[1]}"}
+                return {
+                    "files": 0,
+                    "size_bytes": body["gzip_bytes"],
+                    "target": f"/workspace/code/{parts[1]}",
+                }
             if parts[3:] == ["clone"]:
                 raise self.error(503, "GIT_NOT_FOUND", "git is not installed on this computer")
         if parts[0] == "sessions" and parts[2] == "code-scans":
@@ -387,8 +406,12 @@ class FakeApi:
         if method == "POST":
             fields, file_name, file_data = form_of(self.add_on_bodies[-1])
             if not file_name:
-                raise self.error(422, "VALIDATION_ERROR", "The request is not valid.",
-                                 fields=[{"field": "body.file", "message": "Field required"}])
+                raise self.error(
+                    422,
+                    "VALIDATION_ERROR",
+                    "The request is not valid.",
+                    fields=[{"field": "body.file", "message": "Field required"}],
+                )
             if fields.get("interface") not in ("web", "cli"):
                 raise self.error(422, "VALIDATION_ERROR", "The request is not valid.")
             add_on_id = self._add_on_id()
@@ -444,7 +467,7 @@ class FakeApi:
     def _patch_provider(self, provider_id: str, body: dict) -> dict:
         row = self._provider(provider_id)
         if row["provider_type"] == "RECONIX":
-            extra = set(body) - {"api_key", "display_name"}
+            extra = set(body) - {"api_key"}
             if extra:
                 raise self.error(409, "BUILT_IN_PROVIDER", "Only the key of Reconix can change.")
         elif row["is_active"]:

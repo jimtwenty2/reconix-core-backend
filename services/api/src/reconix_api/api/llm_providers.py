@@ -90,7 +90,7 @@ def update_provider(
     """Updates a provider. Only the fields you send change.
 
     Business Rules:
-    - The built-in RECONIX provider accepts only a new API key (and display name), even
+    - The built-in RECONIX provider accepts only a new API key, even
       while active. Any other active provider cannot be changed.
 
     State Changes:
