@@ -15,6 +15,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { EMPTY_REPLY, isEmptyReply, NO_EXPLANATION } from "./empty-reply";
 import { KnowledgeUsed } from "./knowledge-used";
 import { MessageText } from "./message-text";
+import { SourcesUsed } from "./sources-used";
 import type { ChatMessage } from "./types";
 
 const failed = (detail: string | undefined): CardOf<"notice"> => ({
@@ -51,6 +52,7 @@ export function Message({ m, onRetry }: { m: ChatMessage; onRetry?: () => void }
         {m.cards?.map((card, i) => <CardView key={i} card={card} />)}
         {m.content ? <MessageText text={m.content} /> : null}
         {m.content.trim() ? <KnowledgeUsed names={m.knowledge} /> : null}
+        {m.content.trim() ? <SourcesUsed sources={m.sources} /> : null}
         {waiting && (
           <span className="ai-typing" role="status" aria-label="The assistant is answering">
             <span />

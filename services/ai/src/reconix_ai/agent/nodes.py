@@ -12,7 +12,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langgraph.runtime import Runtime
 from langgraph.types import interrupt
@@ -91,8 +91,12 @@ DEFAULT_GOAL = (
     "assessment type, discovery first."
 )
 
+if TYPE_CHECKING:
+    from reconix_ai.memory.findings import FindingHit
+
 Complete = Callable[..., Awaitable[Completion]]
 Search = Callable[..., Awaitable[list[KnowledgeHit]]]
+SearchMemory = Callable[..., Awaitable[list["FindingHit"]]]
 
 
 class AgentError(Exception):
@@ -112,6 +116,10 @@ class AgentDeps:
     provider: ProviderConfig = field(default_factory=reconix_provider)
     complete: Complete = complete
     search: Search = search_knowledge
+    # CHAT only: the accepted findings of one assessment (reconix_ai.memory). None means
+    # the real search_findings, imported when used: memory reads agent state, so a
+    # top-level import here would be an import cycle that breaks one side's first import.
+    search_memory: SearchMemory | None = None
     now: Callable[[], datetime] = lambda: datetime.now(UTC)
     token_budget: int = DEFAULT_TOKEN_BUDGET
     # CHAT only: gets the answer's text in masked pieces while the model writes it.
@@ -320,8 +328,15 @@ async def report(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, An
 
 
 async def chat(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
-    """One answer to the person's last message. It only answers: no step, no wait."""
+    """One answer to the person's last message. It only answers: no step, no wait.
+
+    It first reads this assessment's accepted-finding memory, so a finding the person
+    reviewed earlier can be answered again. The hits are masked (memory does that when
+    saving) and untrusted, like knowledge hits. If the memory search is down the chat
+    goes on without it.
+    """
     deps = runtime.context
+    state = {**state, "memories": await find_memories(state, deps)}
     on_piece = ChatPieces(deps.on_piece) if deps.on_piece else None
     answer, usage = await ask_json(
         deps, chat_messages(state), read_chat, tokens_used(state), on_piece=on_piece
@@ -329,14 +344,51 @@ async def chat(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]
     if answer is None:
         raise AgentError("BAD_MODEL_ANSWER", "The model did not give a usable answer.")
     text, named = answer
-    # The knowledge index's own ids and the findings' codes; any other id was made up.
-    known = {hit["ref_id"] for hit in state.get("knowledge", [])} | {
-        finding["code"] for finding in state.get("findings", [])
-    }
+    # The knowledge index's own ids, the findings' codes and the remembered ones;
+    # any other id was made up.
+    known = (
+        {hit["ref_id"] for hit in state.get("knowledge", [])}
+        | {finding["code"] for finding in state.get("findings", [])}
+        | {memory["code"] for memory in state.get("memories", [])}
+    )
     return {
         "answer": text,
         "chat_references": [ref for ref in named if ref in known],
+        "memories": state.get("memories", []),
         **added(state, usage),
+    }
+
+
+async def find_memories(state: AgentState, deps: AgentDeps) -> list[dict[str, str]]:
+    """This assessment's accepted findings, from the AI's memory (the chat calls it; no
+    assessment, no memory). Their text came from a target, so the prompt fences it as
+    data, like a knowledge hit; it was masked when it was saved, and the search masks
+    the question. A memory search that is down leaves the chat without memory."""
+    assessment_id = state.get("assessment_id") or ""
+    query = (state.get("queries") or [""])[0]
+    if not assessment_id or not query.strip():
+        return []
+    search = deps.search_memory
+    if search is None:
+        from reconix_ai.memory import search_findings  # here, not at the top: import cycle
+
+        search = search_findings
+    try:
+        found = await search(query, assessment_id, limit=HITS_PER_QUERY)
+    except Exception:  # KnowledgeError, ProviderError or anything else: chat without it
+        return []
+    return [memory_dict(hit) for hit in found]
+
+
+def memory_dict(hit: "FindingHit") -> dict[str, str]:
+    return {
+        "finding_id": hit.finding_id,
+        "code": hit.code,
+        "title": hit.title,
+        "target": hit.target,
+        "severity_status": hit.severity_status,
+        "finding_status": hit.finding_status,
+        "text": hit.text[:MAX_PROMPT_HIT_CHARS],
     }
 
 

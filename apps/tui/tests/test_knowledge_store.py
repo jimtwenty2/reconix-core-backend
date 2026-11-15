@@ -565,3 +565,85 @@ def test_clear_removes_every_source_file_even_with_a_corrupt_index(tmp_path):
     assert store.clear_knowledge() == 2
     assert _json_files() == []
     assert (folder / "keep-me.txt").exists()                 # only <id>.json and the index
+
+
+# --- cross-platform /add-on paths (Windows <-> WSL/Linux) ----------------------------------
+def _xplat_module():
+    import importlib
+
+    return importlib.import_module("reconix.store.knowledge.extract")
+
+
+def test_windows_drive_path_maps_to_wsl(monkeypatch):
+    mod = _xplat_module()
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    assert mod.to_local_path("D:\\Reconix\\file.md") == "/mnt/d/Reconix/file.md"
+    assert mod.to_local_path("C:/Users/x/f.txt") == "/mnt/c/Users/x/f.txt"
+
+
+def test_wsl_unc_maps_to_root(monkeypatch):
+    mod = _xplat_module()
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    assert mod.to_local_path("\\\\wsl.localhost\\Ubuntu\\home\\x\\f.md") == "/home/x/f.md"
+    assert mod.to_local_path("\\\\wsl$\\Ubuntu\\tmp\\f.md") == "/tmp/f.md"
+
+
+def test_linux_and_home_paths_pass_through(monkeypatch):
+    mod = _xplat_module()
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+    for p in ("/mnt/d/x/f.md", "~/f.md", "relative/f.md", "/home/x/f.md"):
+        assert mod.to_local_path(p) == p
+
+
+def test_windows_native_maps_wsl_mount_back(monkeypatch):
+    mod = _xplat_module()
+    monkeypatch.setattr(mod.sys, "platform", "win32")
+    assert mod.to_local_path("/mnt/d/x/f.md") == "D:\\x\\f.md"
+    assert mod.to_local_path("D:\\x\\f.md") == "D:\\x\\f.md"
+
+
+def test_add_accepts_a_windows_unc_path(tmp_path):
+    import sys
+
+    if sys.platform == "win32":
+        pytest.skip("WSL UNC mapping")
+    p = tmp_path / "note.md"
+    p.write_text("# Title\n\nsome body text for the chunker to keep\n", encoding="utf-8")
+    unc = "\\\\wsl.localhost\\Ubuntu" + str(p).replace("/", "\\")
+    source = store.add_source(unc)
+    assert source.kind == "md"
+
+
+def test_translated_path_still_refuses_a_symlink(tmp_path):
+    import sys
+
+    if sys.platform == "win32":
+        pytest.skip("WSL UNC mapping")
+    target = tmp_path / "real.md"
+    target.write_text("# real\n\nbody text here for the chunk\n", encoding="utf-8")
+    link = tmp_path / "link.md"
+    link.symlink_to(target)
+    unc = "\\\\wsl.localhost\\Ubuntu" + str(link).replace("/", "\\")
+    with pytest.raises(store.StoreValidationError, match="symlink"):
+        store.add_source(unc)
+
+
+def test_missing_windows_drive_path_is_refused_clearly():
+    import sys
+
+    if sys.platform == "win32":
+        pytest.skip("WSL drive mapping")
+    with pytest.raises(store.StoreValidationError, match="No file at that path"):
+        store.add_source("D:\\nonexistent-reconix\\file.md")
+
+
+def test_quoted_path_is_accepted(tmp_path):
+    import sys
+
+    if sys.platform == "win32":
+        pytest.skip("WSL UNC mapping")
+    p = tmp_path / "note.md"
+    p.write_text("# Title\n\nbody text for the chunker to keep\n", encoding="utf-8")
+    unc = "\\\\wsl.localhost\\Ubuntu" + str(p).replace("/", "\\")
+    source = store.add_source('"' + unc + '"')   # wrapped like Windows "Copy as path"
+    assert source.kind == "md"

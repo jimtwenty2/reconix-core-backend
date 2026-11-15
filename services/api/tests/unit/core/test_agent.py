@@ -11,6 +11,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
 from reconix_ai import agent
+from reconix_ai.knowledge import KnowledgeHit, Source
 from reconix_ai.providers import (
     Completion,
     Message,
@@ -69,6 +70,21 @@ class ScriptedModel:
 
 async def no_knowledge(query: str, limit: int = 5) -> list:
     return []
+
+
+async def cwe_89_only(query: str, limit: int = 5) -> list:
+    """One public knowledge piece, as the Qdrant search hands it back."""
+    return [
+        KnowledgeHit(
+            Source.CWE,
+            "CWE-89",
+            "Improper Neutralization of Special Elements used in an SQL Command",
+            "An SQL injection lets a person read the database behind the query.",
+            "https://cwe.mitre.org/data/definitions/89.html",
+            "Description",
+            0.9,
+        )
+    ]
 
 
 def make_ask(model: ScriptedModel, provider: ProviderConfig = PROVIDER, **deps_overrides):

@@ -89,6 +89,19 @@ def _key_hint(last4: Optional[str]) -> str:
     return f"…{last4}" if last4 else ""
 
 
+def _rows(api_type: Optional[str] = None) -> List[dict]:
+    """The API's provider rows, all of them or only this type.
+
+    A Core API that is down or refuses answers with a CoreApiError, which no screen catches:
+    the screens and the form catch StoreValidationError only, so it must be translated here,
+    at the seam (see store/errors.py)."""
+    try:
+        rows = api.fetch_rows()
+    except CoreApiError as exc:
+        raise StoreValidationError(str(exc)) from None
+    return rows if api_type is None else api.rows_for_type(rows, api_type)
+
+
 # --- views ------------------------------------------------------------------------------------
 
 
@@ -138,14 +151,14 @@ def _default_base(entry: catalog.Provider) -> str:
 
 def list_providers() -> List[ProviderView]:
     """Every catalog provider, configured or not, from the API's current rows."""
-    rows = api.fetch_rows()
+    rows = _rows()
     active = api.active_row(rows)
     return [_view(entry, rows, active) for entry in catalog.all_providers()]
 
 
 def get_provider(provider_id: str) -> ProviderView:
     entry = _entry(provider_id)
-    rows = api.fetch_rows()
+    rows = _rows()
     return _view(entry, rows, api.active_row(rows))
 
 
@@ -174,26 +187,29 @@ def set_provider(
     final_base = _resolve_base(entry, base_url)
 
     api_type = api.TYPE_FOR_ID[entry.id]
-    existing = {r["model_name"]: r for r in api.rows_for_type(api.fetch_rows(), api_type)}
-    for model in final_models:
-        row = existing.get(model)
-        if row is None:
-            if entry.needs_key and not api_key:
-                raise StoreValidationError(f"{entry.label} needs an API key.")
-            api.create(
-                api_type, f"{entry.label} · {model}", model, final_base or None, api_key or None
-            )
-        elif api_key or (final_base and final_base != (row.get("base_url") or "")):
-            if row.get("is_active"):
-                raise StoreValidationError(
-                    f"{entry.label} · {model} is active; stop using it before changing its key."
+    existing = {r["model_name"]: r for r in _rows(api_type)}
+    try:
+        for model in final_models:
+            row = existing.get(model)
+            if row is None:
+                if entry.needs_key and not api_key:
+                    raise StoreValidationError(f"{entry.label} needs an API key.")
+                api.create(
+                    api_type, f"{entry.label} · {model}", model, final_base or None, api_key or None
                 )
-            fields = {}
-            if api_key:
-                fields["api_key"] = api_key
-            if final_base:
-                fields["base_url"] = final_base
-            api.patch(row["llm_provider_id"], fields)
+            elif api_key or (final_base and final_base != (row.get("base_url") or "")):
+                if row.get("is_active"):
+                    raise StoreValidationError(
+                        f"{entry.label} · {model} is active; stop using it before changing its key."
+                    )
+                fields = {}
+                if api_key:
+                    fields["api_key"] = api_key
+                if final_base:
+                    fields["base_url"] = final_base
+                api.patch(row["llm_provider_id"], fields)
+    except CoreApiError as exc:
+        raise StoreValidationError(str(exc)) from None
     if api_key:  # keep it masked if typed again in chat
         known_secrets.set_keys(provider_id, {api_key})
     log_event("llm.provider.set", provider_id)
@@ -214,12 +230,16 @@ def _resolve_base(entry: catalog.Provider, base_url: Optional[str]) -> str:
 
 def unset_provider(provider_id: str) -> None:
     entry = _entry(provider_id)
-    group = api.rows_for_type(api.fetch_rows(), api.TYPE_FOR_ID[entry.id])
+    group = _rows(api.TYPE_FOR_ID[entry.id])
     if not group:
         raise StoreValidationError(f"{entry.label} is not configured.")
-    for row in group:
-        api.delete(row["llm_provider_id"])
-    api.fetch_rows()
+    # The API removes the active row too, and leaves no model active: the next /model picks one.
+    try:
+        for row in group:
+            api.delete(row["llm_provider_id"])
+        api.fetch_rows()
+    except CoreApiError as exc:
+        raise StoreValidationError(str(exc)) from None
     known_secrets.forget_provider(provider_id)
     log_event("llm.provider.unset", provider_id)
     add_activity("SYS", f"LLM provider removed: {entry.label}")
@@ -228,12 +248,15 @@ def unset_provider(provider_id: str) -> None:
 def test_provider(provider_id: str, model: Optional[str] = None) -> ProviderView:
     """Run the API's reachability test for one of the provider's models and show the result."""
     entry = _entry(provider_id)
-    group = api.rows_for_type(api.fetch_rows(), api.TYPE_FOR_ID[entry.id])
+    group = _rows(api.TYPE_FOR_ID[entry.id])
     if not group:
         raise StoreValidationError(f"{entry.label} is not configured.")
     model = (model or "").strip()
     row = next((r for r in group if r["model_name"] == model), group[0])
-    result = api.test(row["llm_provider_id"])
+    try:
+        result = api.test(row["llm_provider_id"])
+    except CoreApiError as exc:
+        raise StoreValidationError(str(exc)) from None
     status = "REACHABLE" if result.get("ok") else "UNREACHABLE"
     log_event("llm.provider.tested", f"{provider_id}:{status}")
     add_activity("SYS", f"LLM provider {entry.label}: {status.lower()}")
@@ -244,8 +267,7 @@ def activate(provider_id: str, model: str) -> ActiveModel:
     """Make (provider, model) the active choice through the API. A model on this computer is
     active at once; a model off this computer is left waiting for your OK (`core_api_needs_ok`)."""
     entry = _entry(provider_id)
-    rows = api.fetch_rows()
-    group = api.rows_for_type(rows, api.TYPE_FOR_ID[entry.id])
+    group = _rows(api.TYPE_FOR_ID[entry.id])
     model = (model or "").strip()
     row = next((r for r in group if r["model_name"] == model), None)
     if row is None:
@@ -266,7 +288,7 @@ def activate(provider_id: str, model: str) -> ActiveModel:
     if approval:
         api.set_pending(approval["approval_id"], provider_id, model)
     else:
-        api.fetch_rows()
+        _rows()  # refresh the cache; a Core API that died here is a store error, not a crash
         add_chat("text", "reconix", f"Switched to {entry.label} · {model}", tone="muted")
         add_activity("SYS", f"LLM model active: {entry.label} · {model}")
         log_event("llm.model.activated", f"{provider_id}/{model}")

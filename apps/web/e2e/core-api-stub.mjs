@@ -191,7 +191,7 @@ function save(sessionId, role, content) {
 /** Ask the active provider's model, as the real API's agent does, and stream its words. */
 async function chat(res, sessionId, content) {
   const active = providers.find((p) => p.is_active);
-  if (!active) return refuse(res, 409, "NO_ACTIVE_PROVIDER", "Choose a model first.");
+  if (!active) return refuse(res, 503, "NO_ACTIVE_PROVIDER", "Choose a model first.");
   const earlier = messages.filter((m) => m.session_id === sessionId).map((m) => ({ role: m.role, content: m.content_masked }));
   const message = save(sessionId, "user", content);
   const system = `You answer questions about the assessments. ALL SAVED ASSESSMENTS: ${assessments.length}`;
@@ -251,7 +251,7 @@ async function provider(req, res, url, body, rest, row) {
     return send(res, 200, row);
   }
   if (m === "DELETE" && rest === "") {
-    if (row.is_active) return refuse(res, 409, "LLM_PROVIDER_IN_USE", "Choose another model before removing this one.");
+    // the real API removes the active row too and leaves no model active
     providers.splice(providers.indexOf(row), 1);
     res.writeHead(204);
     return res.end();

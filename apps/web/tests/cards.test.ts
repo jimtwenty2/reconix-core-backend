@@ -10,7 +10,7 @@ import { welcomePrompts } from "@/lib/assistant/prompts";
 import { type Card, CardSchema } from "@/lib/assistant/protocol";
 import { MASK } from "@/lib/assistant/redact";
 import { assessmentView } from "@/lib/data/adapt";
-import { type Assessment, STATUSES } from "@/lib/data/schema";
+import { type Assessment, FINDING_SEVERITIES, STATUSES } from "@/lib/data/schema";
 
 import { sampleAssessments } from "./fixtures";
 
@@ -104,8 +104,8 @@ describe("pickCards", () => {
     expect(kinds(cards)).toEqual(["findings"]);
     const card = of(cards, "findings");
     expect(card.total).toBe(samples.reduce((n, a) => n + real(a).length, 0));
-    expect(Object.keys(card.counts)).toEqual(["CRITICAL", "HIGH", "MEDIUM", "LOW"]);
-    for (const s of ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const) {
+    expect(Object.keys(card.counts)).toEqual([...FINDING_SEVERITIES]); // the whole scale, so nothing unrated is lost
+    for (const s of FINDING_SEVERITIES) {
       expect(card.counts[s]).toBe(samples.reduce((n, a) => n + real(a).filter((f) => (f.effective_severity || f.severity) === s).length, 0));
     }
     const top = rankFindings(scopedViews(views, null))[0];

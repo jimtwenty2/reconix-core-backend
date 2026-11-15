@@ -110,12 +110,14 @@ def delete_provider(
     """Deletes a provider, or archives it when agent runs used it.
 
     Business Rules:
-    - You cannot delete the built-in provider or the active provider.
+    - You cannot delete the built-in provider. The active provider can be deleted: that
+      leaves no active model until the person chooses the next one.
     - A provider that agent runs used is archived: it leaves the lists and its API key is
       removed, but its row stays so the runs keep their history.
 
     State Changes:
-    - Deletes the provider, or archives it (its key is removed).
+    - Deletes the provider, or archives it (its key is removed). Removing the active one
+      leaves no provider with `is_active`.
 
     Security:
     - Requires a valid session token.

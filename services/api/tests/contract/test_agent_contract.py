@@ -11,6 +11,7 @@ from reconix_api.core import interfaces
 # Shared shape in core/interfaces.py -> the AI Service's shape in reconix_ai/contracts.py
 SAME_SHAPES = [
     (interfaces.AgentResponse, contracts.AgentAnswer),
+    (interfaces.SourceRef, contracts.SourceRef),
     (interfaces.ChatMessage, contracts.ChatMessage),
     (interfaces.FindingInput, contracts.FindingInput),
     (interfaces.ToolRunInput, contracts.ToolRunInput),

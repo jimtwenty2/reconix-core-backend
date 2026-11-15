@@ -16,7 +16,7 @@ import { buildContext } from "@/lib/assistant/context";
 import { severityCounts as cardCounts } from "@/lib/assistant/insights";
 import { welcomePrompts } from "@/lib/assistant/prompts";
 import { assessmentView } from "@/lib/data/adapt";
-import { AssessmentSchema, isInfoFinding, SAVED_SEVERITIES, SEVERITIES } from "@/lib/data/schema";
+import { AssessmentSchema, FINDING_SEVERITIES, isInfoFinding, SAVED_SEVERITIES, SEVERITIES } from "@/lib/data/schema";
 import { allFindings, attentionItems, effectiveSeverity, overview, severityCounts } from "@/lib/data/stats";
 import { readAssessmentFile } from "@/lib/data/store";
 import { renderReportDocx } from "@/lib/report/docx/report";
@@ -102,15 +102,15 @@ describe("the dropped findings appear nowhere", () => {
     expect(parseFindingFilter({ sev: "INFO,HIGH", val: "", q: "" }).sev).toEqual(["HIGH"]);
   });
 
-  it("in the counts: four levels, and the strip, the card and the Findings view agree", () => {
+  it("in the counts: the whole severity scale (never INFO), and the strip, the card and the Findings view agree", () => {
     const real = a.findings.filter((f) => f.status !== "false-positive");
-    expect(Object.keys(severityCounts(a.findings))).toEqual([...SEVERITIES]);
+    expect(Object.keys(severityCounts(a.findings))).toEqual([...FINDING_SEVERITIES]);
     expect(Object.values(severityCounts(a.findings)).reduce((n, c) => n + c, 0)).toBe(a.findings.length);
     expect(overview([a]).findings).toBe(real.length);
     const review = attentionItems([a]).items.find((i) => i.kind === "review");
-    if (review?.kind === "review") expect(Object.keys(review.bySeverity)).toEqual([...SEVERITIES]);
+    if (review?.kind === "review") expect(Object.keys(review.bySeverity)).toEqual([...FINDING_SEVERITIES]);
     for (const d of [deriveDashboard(v), deriveOverall(views)]) {
-      expect(d.cards.findings.severity.map((s) => s.level)).toEqual([...SEVERITIES]);
+      expect(d.cards.findings.severity.map((s) => s.level)).toEqual([...SEVERITIES]); // the Overview card's four rows
       expect(d.cards.findings.total).toBe(d.cards.summary.findings.total);
       expect(d.findingTotal).toBe(d.cards.findings.total);
       expect(d.cards.findings.top.some((t) => t.title.includes(INFO_MARK))).toBe(false); // CVSS 9.9 would top it
@@ -135,9 +135,9 @@ describe("the dropped findings appear nowhere", () => {
 
   it("for the AI Assistant: cards, counts, suggestions and the model's context", () => {
     const card = findingsCard(views);
-    expect(Object.keys(card.counts)).toEqual([...SEVERITIES]);
+    expect(Object.keys(card.counts)).toEqual([...FINDING_SEVERITIES]);
     expect(Object.values(card.counts).reduce((n, c) => n + c, 0)).toBe(card.total);
-    expect(Object.keys(cardCounts(views))).toEqual([...SEVERITIES]);
+    expect(Object.keys(cardCounts(views))).toEqual([...FINDING_SEVERITIES]);
     for (const uid of [a.uid, null]) {
       clean(JSON.stringify(pickCards(library, uid, "Analyze the findings and explain the top finding")));
       clean(JSON.stringify(pickCards(library, uid, "Explain INFO-1")));

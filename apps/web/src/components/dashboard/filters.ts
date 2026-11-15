@@ -2,16 +2,16 @@
    no React), so the views and the unit tests share them. Filter values come from the address
    (`?sev=HIGH,LOW&val=review&q=sql`), so anything unknown is ignored rather than trusted. */
 import type { ListedFinding } from "@/components/dashboard/derive";
-import { SEVERITIES } from "@/lib/data/schema";
+import { FINDING_SEVERITIES } from "@/lib/data/schema";
 import type { FindingSeverity, LibraryItem } from "@/lib/data/view-types";
 import { type Paging, pageOf, paginate, slicePage } from "@/lib/paging";
 import { FINDING_REVIEW, RUN_STATUS, SEVERITY_META, toneColor } from "@/lib/status";
 
 import { plural } from "./derive-shared";
 
-/** Worst first: the schema's four levels (lib/data/schema.ts), then the Core API's UNKNOWN and
-    NONE; `?sev=INFO` is ignored. */
-export const SEVERITY_ORDER: readonly FindingSeverity[] = [...SEVERITIES, "UNKNOWN", "NONE"];
+/** Worst first: the schema's whole finding scale — the four levels, then the Core API's UNKNOWN
+    and NONE (lib/data/schema.ts); `?sev=INFO` is ignored. */
+export const SEVERITY_ORDER: readonly FindingSeverity[] = FINDING_SEVERITIES;
 
 /** Validation buckets: confirmed; open and not confirmed (to review); closed by triage. */
 export const VALIDATION = ["confirmed", "review", "closed"] as const;

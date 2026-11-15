@@ -352,6 +352,21 @@ class AgentRequest(BaseModel):
         return self
 
 
+class SourceRef(BaseModel):
+    """One knowledge piece a CHAT answer cites, as the apps show it under the answer.
+
+    references keeps the bare ids (a finding's code may be cited too); sources holds only
+    the knowledge hits behind those ids. Every field was masked when the knowledge was
+    ingested, so an add-on's file name or a link never carries a secret (S8).
+    """
+
+    ref_id: str  # the knowledge id, e.g. "CWE-89", or an add-on's id
+    title: str = ""
+    url: str = ""  # "" for an add-on or a tool guide: there is nothing to open
+    source: str = ""  # the knowledge source, UPPERCASE, e.g. "CWE", "USER_DOC"
+    section: str = ""  # the heading the piece was cut at
+
+
 class AgentResponse(BaseModel):
     """What the AI Service sends back. It only suggests; the backend decides.
 
@@ -365,6 +380,9 @@ class AgentResponse(BaseModel):
     risk: RiskLevel | None = None  # the harness risk of proposed_action
     blocked: list[BlockedStep] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)  # knowledge ids, e.g. CWE-89
+    # CHAT: the knowledge behind those ids, so an app can show a title and a link, not a
+    # bare id. Empty for every other task.
+    sources: list[SourceRef] = Field(default_factory=list)
     reflections: list[str] = Field(default_factory=list)  # the run's own ReflAct observations
     analysis_summary: str = ""  # ANALYZE
     analysis: list[FindingAnalysis] = Field(default_factory=list)  # ANALYZE

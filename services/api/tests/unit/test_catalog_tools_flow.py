@@ -30,7 +30,9 @@ CASES = [
     ("rustscan", "172.20.0.5", []),
     ("sqlmap", "http://172.20.0.5:3000/?id=1", ["--batch"]),
     ("whatweb", "http://172.20.0.5:3000/", []),
-    ("nikto", "http://172.20.0.5:3000/", []),
+    # a URL target for nikto becomes its host + port (clients/test_mcp.py), so this case
+    # is the bare host, which the tool gets as it was approved
+    ("nikto", "172.20.0.5", ["-p", "3000"]),
     ("hydra", "172.20.0.5", []),
     ("trivy", "/workspace/code/s1", []),
 ]

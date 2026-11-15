@@ -25,12 +25,20 @@ def session_id() -> str:
     return _session["session_id"]
 
 
-def request(method: str, path: str, body: Any = None, gzip_body: Optional[bytes] = None) -> Any:
+def request(
+    method: str,
+    path: str,
+    body: Any = None,
+    gzip_body: Optional[bytes] = None,
+    raw_body: Optional[bytes] = None,
+    content_type: Optional[str] = None,
+) -> Any:
     """A call as this app's session. A session the API no longer knows (it restarted) is
     opened again once; the call is not repeated, because the caller's ids are stale."""
     session_id()
     try:
-        return call(method, path, body, _session["token"], gzip_body=gzip_body)
+        return call(method, path, body, _session["token"], gzip_body=gzip_body,
+                    raw_body=raw_body, content_type=content_type)
     except CoreApiError as exc:
         if exc.status == 401:
             reset()

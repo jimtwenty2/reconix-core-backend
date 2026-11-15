@@ -8,7 +8,7 @@ import "server-only";
 
 import { createEventReader } from "../api/assistant";
 import type { ScopeRef } from "./protocol";
-import { type Card, encodeFrame, type Frame } from "./protocol";
+import { type Card, encodeFrame, type Frame, SourcesSchema } from "./protocol";
 
 export interface ReplyInput {
   body: ReadableStream<Uint8Array>; // the API's SSE answer
@@ -42,6 +42,8 @@ export function replyStream({ body, meta, cards, abort, release }: ReplyInput): 
         const text = event.chat.reply.content_masked.slice(0, 20_000);
         if (text.trim()) send({ t: "final", text });
         else send({ t: "error", detail: "The model sent an empty answer." }); // empty-reply.ts
+        const cited = SourcesSchema.safeParse(event.chat.sources); // nothing cited, or a bad list: no frame, never a throw
+        if (cited.success) send({ t: "sources", items: cited.data });
       } else {
         ended = true;
         send({ t: "error", detail: event.message });

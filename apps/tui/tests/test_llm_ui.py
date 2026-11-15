@@ -60,3 +60,76 @@ async def test_unset_dialog_defaults_to_keep(app, reachable):
         await pilot.press("enter")  # the default is "No, keep it"
         await settle(pilot)
         assert store.get_provider("ollama").configured  # still there
+
+
+async def test_unset_the_active_model_removes_it_without_crashing(app, reachable):
+    store.set_provider("openai", api_key="sk-1234", models=["gpt-4o-mini"])
+    store.test_provider("openai")
+    store.activate("openai", "gpt-4o-mini")
+    store.core_api_approve()
+    async with app.run_test(size=SIZE) as pilot:
+        app.confirm_unset("openai")
+        await settle(pilot)
+        await pilot.press("down")  # "Yes, remove it"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert store.get_provider("openai").configured is False
+        assert "off" in _bar_text(app)  # the top bar says there is no model now
+
+
+# --- the whole flow, keys only ------------------------------------------------------------------
+
+
+async def test_the_unset_flow_from_the_command_line(app, reachable):
+    """The reported path, walked as a person does it: /provider → the provider → Unset →
+    Yes, remove it. It removes the provider, leaves no model active, and does not crash."""
+    store.set_provider("anthropic", api_key="sk-ant-1234")
+    store.test_provider("anthropic")
+    store.activate("anthropic", "claude-sonnet-5-5")
+    store.core_api_approve()
+    async with app.run_test(size=SIZE) as pilot:
+        app.run_command_line("/provider anthropic")
+        await settle(pilot)
+        assert isinstance(app.screen, ChoiceScreen)  # the provider's submenu
+        for _ in range(3):  # down to "4. Unset"
+            await pilot.press("down")
+        await pilot.press("enter")
+        await settle(pilot)
+        assert isinstance(app.screen, ChoiceScreen)  # "REMOVE ANTHROPIC?"
+        await pilot.press("down")  # "Yes, remove it"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert not isinstance(app.screen, ChoiceScreen)  # the dialog closed, the app lives
+        assert store.get_provider("anthropic").configured is False
+        assert "off" in _bar_text(app)  # no model now: the next /model picks one
+
+
+async def test_unset_after_choosing_another_model_removes_it(app, reachable):
+    """What the refusal tells you to do works: choose another model, then Unset removes it."""
+    store.set_provider("anthropic", api_key="sk-ant-1234")
+    store.test_provider("anthropic")
+    store.activate("anthropic", "claude-sonnet-5-5")
+    store.core_api_approve()
+    store.set_provider("ollama", base_url="http://127.0.0.1:11434", models=["llama3.1"])
+    store.test_provider("ollama")
+    store.activate("ollama", "llama3.1")
+    async with app.run_test(size=SIZE) as pilot:
+        app.provider_command("unset anthropic")
+        await settle(pilot)
+        await pilot.press("down")  # "Yes, remove it"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert store.get_provider("anthropic").configured is False
+        assert "llama3.1" in _bar_text(app)
+
+
+async def test_the_provider_menu_with_the_core_api_down(app, fake_api):
+    """Opening /provider must not crash when the API is not running: it says so and stays put."""
+    async with app.run_test(size=SIZE) as pilot:
+        fake_api.down = True
+        app.run_command_line("/provider")
+        await settle(pilot)
+        assert not isinstance(app.screen, ChoiceScreen)
+        app.run_command_line("/model")
+        await settle(pilot)
+        assert not isinstance(app.screen, ChoiceScreen)

@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from reconix_api.core.interfaces import SourceRef
+
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=20000)  # masked before it is saved
@@ -32,3 +34,6 @@ class ChatOut(BaseModel):
     message: MessageOut
     reply: MessageOut
     agent_run_id: UUID  # the CHAT run: the model that answered, its status and end
+    # The knowledge the answer cites, so an app can show where it came from: a title and a
+    # link, not the bare id. Empty when the answer cited no knowledge piece.
+    sources: list[SourceRef] = Field(default_factory=list)

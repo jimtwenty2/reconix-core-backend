@@ -39,6 +39,7 @@ from reconix_ai.contracts import (
     FindingAnalysis,
     PlanStep,
     ProposedAction,
+    SourceRef,
 )
 from reconix_ai.harness.checks.input import check_input
 from reconix_ai.harness.checks.result import Decision
@@ -360,6 +361,7 @@ async def answer_for(graph: CompiledStateGraph, run_id: str) -> AgentAnswer:
         risk=values.get("risk"),
         blocked=[BlockedStep(**step) for step in values.get("blocked", [])],
         references=references(values),
+        sources=sources(values),
         reflections=list(values.get("reflections", [])),
         agent_run_id=run_id,
         checkpoint_id=snapshot.config["configurable"].get("checkpoint_id"),
@@ -382,6 +384,32 @@ def references(values: dict[str, Any]) -> list[str]:
     if values.get("task") == "CHAT":
         return list(values.get("chat_references", []))
     return [hit["ref_id"] for hit in values.get("knowledge", [])]
+
+
+def sources(values: dict[str, Any]) -> list[SourceRef]:
+    """The knowledge behind the ids a CHAT answer names, so the apps can show a title and a
+    link instead of a bare id. A cited finding (or a remembered one) is no knowledge hit, so
+    it stays an id in references. The other tasks read every hit they found and name them
+    there, so they carry no sources."""
+    if values.get("task") != "CHAT":
+        return []
+    best: dict[str, dict[str, str]] = {}
+    for hit in values.get("knowledge", []):
+        best.setdefault(hit["ref_id"], hit)  # one piece per id: its best-scoring section
+    cited: list[SourceRef] = []
+    for ref in values.get("chat_references", []):
+        hit = best.get(ref)
+        if hit is not None:
+            cited.append(
+                SourceRef(
+                    ref_id=ref,
+                    title=hit.get("title", ""),
+                    url=hit.get("url", ""),
+                    source=hit.get("source", ""),
+                    section=hit.get("section", ""),
+                )
+            )
+    return cited
 
 
 def finding_analysis(item: dict[str, Any]) -> FindingAnalysis:

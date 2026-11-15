@@ -1034,6 +1034,13 @@
           },
           "reply": {
             "$ref": "#/components/schemas/MessageOut"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceRef"
+            },
+            "title": "Sources",
+            "type": "array"
           }
         },
         "required": [
@@ -4327,6 +4334,40 @@
         ],
         "title": "SeverityStatus",
         "type": "string"
+      },
+      "SourceRef": {
+        "description": "One knowledge piece a CHAT answer cites, as the apps show it under the answer.\n\nreferences keeps the bare ids (a finding's code may be cited too); sources holds only\nthe knowledge hits behind those ids. Every field was masked when the knowledge was\ningested, so an add-on's file name or a link never carries a secret (S8).",
+        "properties": {
+          "ref_id": {
+            "title": "Ref Id",
+            "type": "string"
+          },
+          "section": {
+            "default": "",
+            "title": "Section",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref_id"
+        ],
+        "title": "SourceRef",
+        "type": "object"
       },
       "SummaryResult": {
         "description": "Open findings of the latest code scan, counted. No model writes any of it.",
@@ -7764,7 +7805,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}": {
       "delete": {
-        "description": "Deletes a provider, or archives it when agent runs used it.\n\nBusiness Rules:\n- You cannot delete the built-in provider or the active provider.\n- A provider that agent runs used is archived: it leaves the lists and its API key is\n  removed, but its row stays so the runs keep their history.\n\nState Changes:\n- Deletes the provider, or archives it (its key is removed).\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Deletes a provider, or archives it when agent runs used it.\n\nBusiness Rules:\n- You cannot delete the built-in provider. The active provider can be deleted: that\n  leaves no active model until the person chooses the next one.\n- A provider that agent runs used is archived: it leaves the lists and its API key is\n  removed, but its row stays so the runs keep their history.\n\nState Changes:\n- Deletes the provider, or archives it (its key is removed). Removing the active one\n  leaves no provider with `is_active`.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_provider_api_v1_llm_providers__llm_provider_id__delete",
         "parameters": [
           {

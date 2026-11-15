@@ -73,17 +73,23 @@ def call(
     token: str = "",
     timeout: int = TIMEOUT_SECONDS,
     gzip_body: Optional[bytes] = None,
+    raw_body: Optional[bytes] = None,
+    content_type: Optional[str] = None,
 ) -> Any:
     """One API call: the decoded JSON answer (None for 204). Raises CoreApiError with the
     API's own code and message, which are safe to show (the API masks them).
-    `gzip_body` is a ready tar.gz sent as it is (the code upload) instead of JSON `body`."""
+    `gzip_body` and `raw_body` are bytes sent as they are instead of JSON `body` (a tar.gz
+    code upload, a multipart form); `content_type` says what `raw_body` is."""
     url = base_url()
-    data = gzip_body if gzip_body is not None else (
-        None if body is None else json.dumps(body).encode())
+    if raw_body is not None and content_type is None:
+        raise CoreApiError("NO_CONTENT_TYPE", "a raw_body call must say what those bytes are")
+    data = raw_body if raw_body is not None else gzip_body
+    if data is None and body is not None:
+        data = json.dumps(body).encode()
     headers = {"Accept": "application/json"}
     if data is not None:
-        headers["Content-Type"] = "application/gzip" if gzip_body is not None \
-            else "application/json"
+        headers["Content-Type"] = content_type or (
+            "application/gzip" if gzip_body is not None else "application/json")
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(

@@ -2,14 +2,15 @@
    the reply cards (cards.ts) use, so a suggestion and the card it leads to always agree (the
    "top finding" a suggestion names is the one its card explains). Pure. */
 import { hourMinute, shortDay } from "../data/format";
-import { SEVERITIES, type Severity } from "../data/schema";
+import { FINDING_SEVERITIES, type FindingSeverity } from "../data/schema";
 import type { AssessmentView, FindingView } from "../data/view-types";
 import type { RunRef, ScopeRef } from "./protocol";
 import { redact } from "./redact";
 
-/** Worst first: the schema's four levels (lib/data/schema.ts). */
-export const SEVERITY_ORDER: readonly Severity[] = SEVERITIES;
-const rank = (s: Severity) => SEVERITY_ORDER.indexOf(s);
+/** Worst first: the schema's whole finding scale, so UNKNOWN and NONE rank after LOW (they are
+    shown, never dropped). */
+export const SEVERITY_ORDER: readonly FindingSeverity[] = FINDING_SEVERITIES;
+const rank = (s: FindingSeverity) => SEVERITY_ORDER.indexOf(s);
 
 /** A run as card rows name it: its label and when it was created ("5 Oct 14:03"). */
 export function runRef(v: AssessmentView): RunRef {
@@ -61,14 +62,14 @@ export function rankFindings(views: AssessmentView[]): Located[] {
     );
 }
 
-export function severityCounts(views: AssessmentView[]): Record<Severity, number> {
-  const counts: Record<Severity, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+export function severityCounts(views: AssessmentView[]): Record<FindingSeverity, number> {
+  const counts = Object.fromEntries(SEVERITY_ORDER.map((s) => [s, 0])) as Record<FindingSeverity, number>;
   for (const v of views) for (const f of realFindings(v)) counts[f.severity] += 1;
   return counts;
 }
 
 /** "2 critical, 12 high" (the two worst levels present), or "". */
-export function worstWords(counts: Record<Severity, number>): string {
+export function worstWords(counts: Record<FindingSeverity, number>): string {
   return SEVERITY_ORDER.filter((s) => counts[s] > 0)
     .slice(0, 2)
     .map((s) => `${counts[s]} ${s.toLowerCase()}`)
