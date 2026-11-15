@@ -20,6 +20,17 @@ def test_the_built_in_provider_is_the_local_reconix_model():
     assert provider_config(SETTINGS, row(ProviderType.RECONIX), "reconix") == reconix_provider()
 
 
+def test_a_key_saved_on_the_built_in_row_replaces_the_env_key():
+    saved = row(
+        ProviderType.RECONIX, api_key_encrypted=provider_keys.encrypt(SETTINGS, FAKE_API_KEY)
+    )
+
+    config = provider_config(SETTINGS, saved, "reconix")
+
+    assert config.api_key == FAKE_API_KEY
+    assert config.base_url == reconix_provider().base_url  # the address stays RECONIX_MODEL_URL
+
+
 def test_a_cloud_provider_gets_its_decrypted_key_and_the_runs_model():
     encrypted = provider_keys.encrypt(SETTINGS, FAKE_API_KEY)
     openai = row(ProviderType.OPENAI, api_key_encrypted=encrypted)

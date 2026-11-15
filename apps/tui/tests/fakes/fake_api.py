@@ -420,6 +420,11 @@ class FakeApi:
         return next(r for r in self.providers if r["llm_provider_id"] == provider_id)
 
     def _add_provider(self, body: dict) -> dict:
+        if body["provider_type"] == "RECONIX":
+            if any(r["provider_type"] == "RECONIX" for r in self.providers):
+                raise self.error(422, "PROVIDER_TYPE_NOT_ALLOWED", "Reconix is already there.")
+            if body.get("base_url"):
+                raise self.error(422, "BUILT_IN_PROVIDER", "Reconix takes only a key.")
         row = {
             "llm_provider_id": self._id("p"),
             "provider_type": body["provider_type"],
@@ -438,9 +443,11 @@ class FakeApi:
 
     def _patch_provider(self, provider_id: str, body: dict) -> dict:
         row = self._provider(provider_id)
-        if row["created_by"] == "system":
-            raise self.error(409, "BUILT_IN_PROVIDER", "The built-in provider can't be changed.")
-        if row["is_active"]:
+        if row["provider_type"] == "RECONIX":
+            extra = set(body) - {"api_key", "display_name"}
+            if extra:
+                raise self.error(409, "BUILT_IN_PROVIDER", "Only the key of Reconix can change.")
+        elif row["is_active"]:
             raise self.error(409, "PROVIDER_IS_ACTIVE", "The active provider can't be changed.")
         if body.get("api_key"):
             row["api_key_last4"] = body["api_key"][-4:]
@@ -451,8 +458,6 @@ class FakeApi:
 
     def _delete_provider(self, provider_id: str) -> None:
         row = self._provider(provider_id)
-        if row["created_by"] == "system":
-            raise self.error(409, "BUILT_IN_PROVIDER", "The built-in provider can't be deleted.")
         # The active row goes too: nothing is left active, exactly as the Core API answers.
         self.providers.remove(row)
         return None

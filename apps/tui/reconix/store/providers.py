@@ -107,7 +107,6 @@ def _rows(api_type: Optional[str] = None) -> List[dict]:
 
 def _view(entry: catalog.Provider, rows: List[dict], active: Optional[dict]) -> ProviderView:
     group = api.rows_for_type(rows, api.TYPE_FOR_ID[entry.id])
-    built_in = entry.id == "reconix"
     status, detail = api.group_status(group)
     active_here = active and active in group
     facts = dict(
@@ -115,7 +114,6 @@ def _view(entry: catalog.Provider, rows: List[dict], active: Optional[dict]) -> 
         key_optional=entry.key_requirement == catalog.OPTIONAL,
         base_mode=entry.base_mode,
         multi_model=entry.multi_model,
-        built_in=built_in,
     )
     if not group:
         return ProviderView(
@@ -174,13 +172,11 @@ def set_provider(
     """Add or update a provider on the API: one row per model. A blank key on a model that
     already exists keeps its saved key."""
     entry = _entry(provider_id)
-    if entry.id == "reconix":
-        raise StoreValidationError(
-            "Reconix is the Core API's own model (set by RECONIX_MODEL_* in its .env)."
-        )
     api_key = (api_key or "").strip()
     if len(api_key) > MAX_KEY:
         raise StoreValidationError("That API key is too long.")
+    if entry.id == "reconix":  # its address and model are the Core API's .env: only the key is sent
+        return _set_reconix(entry, api_key)
     if entry.multi_model and not models:
         models = list(entry.default_models)
     final_models = _parse_models(entry, models)
@@ -215,6 +211,25 @@ def set_provider(
     log_event("llm.provider.set", provider_id)
     add_activity("SYS", f"LLM provider saved: {entry.label}")
     return get_provider(provider_id)
+
+
+def _set_reconix(entry: catalog.Provider, api_key: str) -> ProviderView:
+    """Update the key of the Reconix row, or add the row back after it was unset."""
+    if not api_key:
+        raise StoreValidationError(f"{entry.label} needs an API key.")
+    rows = _rows(api.TYPE_FOR_ID[entry.id])
+    try:
+        if rows:
+            api.patch(rows[0]["llm_provider_id"], {"api_key": api_key})
+        else:
+            model = catalog.reconix_model() or "reconix"
+            api.create(api.TYPE_FOR_ID[entry.id], "Reconix", model, None, api_key)
+    except CoreApiError as exc:
+        raise StoreValidationError(str(exc)) from None
+    known_secrets.set_keys(entry.id, {api_key})
+    log_event("llm.provider.set", entry.id)
+    add_activity("SYS", f"LLM provider saved: {entry.label}")
+    return get_provider(entry.id)
 
 
 def _resolve_base(entry: catalog.Provider, base_url: Optional[str]) -> str:

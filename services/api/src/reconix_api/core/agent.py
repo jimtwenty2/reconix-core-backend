@@ -87,7 +87,12 @@ def provider_config(settings: Settings, provider: LlmProvider, model_name: str) 
     """A provider row as the AI Service's model settings, key decrypted. model_name is
     the run's copy."""
     if provider.provider_type == ProviderType.RECONIX:
-        return reconix_provider()
+        config = reconix_provider()
+        if provider.api_key_encrypted:  # a key typed in the apps replaces RECONIX_MODEL_API_KEY
+            config = replace(
+                config, api_key=provider_keys.decrypt(settings, provider.api_key_encrypted)
+            )
+        return config
     api_key = None
     if provider.api_key_encrypted:
         api_key = provider_keys.decrypt(settings, provider.api_key_encrypted)

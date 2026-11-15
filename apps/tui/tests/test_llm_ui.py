@@ -133,3 +133,40 @@ async def test_the_provider_menu_with_the_core_api_down(app, fake_api):
         app.run_command_line("/model")
         await settle(pilot)
         assert not isinstance(app.screen, ChoiceScreen)
+
+
+async def test_the_reconix_menu_has_set_test_model_and_unset(app):
+    async with app.run_test(size=SIZE) as pilot:
+        app.open_provider_submenu("reconix")
+        await settle(pilot)
+        choices = {c.id: c for c in app.screen._choices}
+        assert list(choices) == ["set", "test", "model", "unset"]
+        assert choices["set"].label == "Set up Reconix (default)"
+        assert choices["set"].hint == "API key"
+        assert choices["test"].disabled and choices["unset"].disabled  # not set up yet
+        store.set_provider("reconix", api_key="sk-reconix-1111")
+        app.open_provider_submenu("reconix")
+        await settle(pilot)
+        choices = {c.id: c for c in app.screen._choices}
+        assert choices["set"].label == "Update Reconix (default)"
+        assert not choices["test"].disabled and not choices["unset"].disabled
+
+
+async def test_update_then_unset_then_set_up_reconix_again(app):
+    store.set_provider("reconix", api_key="sk-reconix-1111")
+    async with app.run_test(size=SIZE) as pilot:
+        app.open_provider_form("reconix")
+        await settle(pilot)
+        assert isinstance(app.screen, ProviderForm)
+        assert not app.screen.query("#base_url") and not app.screen.query("#models")
+        app.screen.query_one("#api_key", Input).value = "sk-reconix-2222"
+        app.screen.query_one("#submit").press()
+        await settle(pilot)
+        assert store.get_provider("reconix").api_key_hint == "…2222"
+        store.unset_provider("reconix")
+        assert not store.get_provider("reconix").configured
+        app.open_provider_submenu("reconix")
+        await settle(pilot)
+        assert app.screen._choices[0].label == "Set up Reconix (default)"
+        store.set_provider("reconix", api_key="sk-reconix-3333")
+        assert store.get_provider("reconix").configured

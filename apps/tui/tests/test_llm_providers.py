@@ -68,9 +68,19 @@ def test_unset_removes_the_active_provider_and_all_its_models():
     assert store.active_model() is None  # nothing was chosen in its place
 
 
-def test_reconix_is_the_core_apis_own_model():
+def test_reconix_takes_only_a_key_and_can_be_updated_and_unset():
+    view = store.set_provider("reconix", api_key=SECRET_KEY)  # no row yet: it is added
+    assert view.configured and view.api_key_hint == "…ff9a" and view.base_url == ""
+    view = store.set_provider("reconix", api_key="sk-other-key-1234")  # a row: its key is replaced
+    assert view.api_key_hint == "…1234" and len(view.models) == 1
+    store.unset_provider("reconix")
+    assert store.get_provider("reconix").configured is False
+    assert store.set_provider("reconix", api_key=SECRET_KEY).configured  # and set up again
+
+
+def test_reconix_needs_a_key():
     with pytest.raises(store.StoreValidationError):
-        store.set_provider("reconix", api_key=SECRET_KEY)
+        store.set_provider("reconix")
 
 
 # --- testing ----------------------------------------------------------------------------------

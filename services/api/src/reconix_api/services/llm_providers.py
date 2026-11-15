@@ -5,9 +5,11 @@ are ever shown. A provider on this computer becomes active at once. One that run
 anywhere else would send prompts and findings off this computer, so a person approves
 it first with a `configuration` approval, for exactly the settings they saw.
 
-The built-in RECONIX provider comes from the migration: it can be made active again, but
-never changed or removed. The active provider cannot be changed, so an approved address or
-key cannot be swapped afterwards; it can be removed, which leaves no model active.
+The built-in RECONIX provider comes from the migration. Its address and model are always
+RECONIX_MODEL_* in .env; only its key can be changed (a typed key replaces
+RECONIX_MODEL_API_KEY), and it can be removed and added back. The active provider of any
+other type cannot be changed, so an approved address or key cannot be swapped afterwards;
+it can be removed, which leaves no model active.
 
 Locks are always taken in the same order as approving: the approval first, then the
 provider.
@@ -69,9 +71,7 @@ def create_provider(
 ) -> LlmProviderOut:
     """Saved inactive, with the key encrypted. Activate it to use it."""
     if body.provider_type == ProviderType.RECONIX:
-        raise ApiError(
-            422, "PROVIDER_TYPE_NOT_ALLOWED", "The built-in RECONIX provider is already there."
-        )
+        _check_reconix_add(db, body)
     api_key = body.api_key.get_secret_value() if body.api_key else None
     base_url = body.base_url or None
     source = _key_source(db, body, base_url)
@@ -106,6 +106,8 @@ def update_provider(
 ) -> LlmProviderOut:
     """Only the fields sent change. The type cannot change: add a new provider instead."""
     provider = _get(db, llm_provider_id, lock=True)
+    if provider.provider_type == ProviderType.RECONIX:
+        return _update_reconix_key(db, write_audit, settings, operator, provider, changes)
     _ensure_editable(provider)
     merged = _validated(
         {
@@ -148,7 +150,6 @@ def delete_provider(
     the person did not pick."""
     open_approval = provider_repo.activation_approval(db, llm_provider_id, ACTIVATE, lock=True)
     provider = _get(db, llm_provider_id, lock=True)
-    _refuse_built_in(provider)
     expired = _expire(open_approval)
     # The one audit line must say the model that was answering has stopped answering.
     reason = ACTIVE_REMOVED if provider.is_active else None
@@ -419,15 +420,49 @@ def _validated(values: dict[str, Any]) -> LlmProviderIn:
         ) from None
 
 
-def _refuse_built_in(provider: LlmProvider) -> None:
-    if provider.provider_type == ProviderType.RECONIX:
+def _check_reconix_add(db: Db, body: LlmProviderIn) -> None:
+    """RECONIX can be added back after it was removed, once. Its address is always
+    RECONIX_MODEL_URL, so none is taken here."""
+    if any(p.provider_type == ProviderType.RECONIX for p in provider_repo.list_visible(db)):
         raise ApiError(
-            409, "BUILT_IN_PROVIDER", "The built-in RECONIX provider cannot be changed or removed."
+            422, "PROVIDER_TYPE_NOT_ALLOWED", "The built-in RECONIX provider is already there."
+        )
+    if body.base_url or body.copy_key_from is not None:
+        raise ApiError(
+            422,
+            "BUILT_IN_PROVIDER",
+            "The RECONIX address is set by RECONIX_MODEL_URL in .env; only a key can be given.",
         )
 
 
+def _update_reconix_key(
+    db: Db,
+    write_audit: WriteAudit,
+    settings: Settings,
+    operator: Operator,
+    provider: LlmProvider,
+    changes: LlmProviderUpdate,
+) -> LlmProviderOut:
+    """Only RECONIX's key changes, even while it is active: its address is fixed by .env
+    and never needed an approval. A blank key goes back to RECONIX_MODEL_API_KEY."""
+    other = changes.model_fields_set - {"api_key", "display_name"}
+    if other:
+        raise ApiError(
+            409,
+            "BUILT_IN_PROVIDER",
+            "Only the key of the built-in RECONIX provider can be changed.",
+            {"fields": sorted(other)},
+        )
+    if "api_key" in changes.model_fields_set:
+        _set_key(
+            settings, provider, changes.api_key.get_secret_value() if changes.api_key else None
+        )
+    db.commit()
+    _audit(write_audit, "LLM_PROVIDER_EDITED", operator, provider)
+    return provider_out(provider)
+
+
 def _ensure_editable(provider: LlmProvider) -> None:
-    _refuse_built_in(provider)
     if provider.is_active:
         raise ApiError(
             409,
