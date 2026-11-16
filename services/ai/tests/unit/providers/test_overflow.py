@@ -1,7 +1,9 @@
 """A "prompt too long" error: recognised, retried once, then PROMPT_TOO_LONG."""
 
+import asyncio
 import socket
 
+import httpx
 import pytest
 
 from reconix_ai.providers import client, window
@@ -9,6 +11,7 @@ from reconix_ai.providers.client import Message, ProviderError, complete, comple
 from reconix_ai.providers.overflow import is_overflow, learned_window
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, reconix_provider
 
+REAL_PROBE = window.probe  # conftest swaps window.probe out for every test
 litellm = client.litellm  # through the client: litellm must load after its settings
 
 TOOLS = [{"type": "function", "function": {"name": "read", "parameters": {}}}]
@@ -228,3 +231,159 @@ async def test_ollama_uses_the_bundled_window_capped_at_the_baseline() -> None:
 
     assert await window.context_window(small, "m", "http://ollama:11434", {}) == 8_192
     assert await window.context_window(big, "m", "http://ollama:11434", {}) == 32_000
+
+
+async def test_a_learned_window_not_below_the_one_used_is_ignored(served) -> None:
+    huge = "This model's maximum context length is 9999999 tokens."
+    fake = served(bad_request(huge))
+
+    with pytest.raises(ProviderError) as caught:
+        await complete([Message("user", "hi")], reconix_provider())
+
+    assert caught.value.code == "PROMPT_TOO_LONG"
+    assert len(fake.calls) == 1  # nothing to retry with
+    assert window._remembered == {}
+
+
+async def test_tool_loop_ignores_a_huge_learned_window_but_still_cuts(served) -> None:
+    huge = "This model's maximum context length is 9999999 tokens."
+    fake = served(bad_request(huge), answer("done"))
+    ollama = ProviderConfig(ProviderType.OLLAMA, "llama3")
+
+    await complete_with_tools(tool_chat(["a" * 5_000]), TOOLS, ollama)
+
+    assert window._remembered == {}
+    assert fake.calls[1]["num_ctx"] == window.BASELINE_WINDOW  # not 9,999,999
+    assert client.CUT_MARKER in fake.calls[1]["messages"][-1]["content"]
+
+
+async def test_tool_loop_with_nothing_to_cut_does_not_resend_the_same_request(served) -> None:
+    fake = served(bad_request("prompt is too long"))
+
+    with pytest.raises(ProviderError) as caught:
+        await complete_with_tools(tool_chat(["short"]), TOOLS, reconix_provider())
+
+    assert caught.value.code == "PROMPT_TOO_LONG"
+    assert len(fake.calls) == 1
+
+
+async def test_tool_loop_retry_works_on_the_streaming_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An overflow comes when the call is made, before any piece, so nothing was shown yet.
+    # (If one ever came mid-stream, pieces already shown stay shown and the retry streams
+    # the whole answer again: the caller's on_piece is not told to take anything back.)
+    requests: list[dict] = []
+
+    async def streamed(request: dict, on_piece, on_thinking=None) -> litellm.ModelResponse:
+        requests.append(request)
+        if len(requests) == 1:
+            raise bad_request("prompt is too long")
+        await on_piece("streamed answer")
+        return answer("streamed answer")
+
+    monkeypatch.setattr(client, "streamed", streamed)
+    monkeypatch.setenv("RECONIX_MODEL_URL", "https://models.reconix.example/v1")
+    monkeypatch.setenv("RECONIX_MODEL_API_KEY", "fake-reconix-key")
+    pieces: list[str] = []
+
+    async def on_piece(piece: str) -> None:
+        pieces.append(piece)
+
+    got = await complete_with_tools(
+        tool_chat(["a" * 5_000]), TOOLS, reconix_provider(), on_piece=on_piece
+    )
+
+    assert got.text == "streamed answer"
+    assert len(requests) == 2
+    assert client.CUT_MARKER in requests[1]["messages"][-1]["content"]
+    assert pieces == ["streamed answer"]  # nothing from the failed call
+
+
+class Server:
+    """Stands in for window.probe; each call gives the next outcome."""
+
+    def __init__(self, *outcomes: int | None | Exception) -> None:
+        self.outcomes = list(outcomes)
+        self.asked = 0
+
+    async def probe(self, config: object, base_url: object) -> int | None:
+        self.asked += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+OPENAI_COMPATIBLE = ProviderConfig(ProviderType.OPENAI_API_COMPATIBLE, "my-model")
+SERVER_URL = "http://127.0.0.1:8000/v1"
+
+
+async def test_a_failed_probe_is_remembered_for_five_minutes_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = Server(window.ProbeFailed(), 65_536)
+    monkeypatch.setattr(window, "probe", server.probe)
+    now = [1_000.0]
+    monkeypatch.setattr(window.time, "monotonic", lambda: now[0])
+
+    first = await window.context_window(OPENAI_COMPATIBLE, "m", SERVER_URL, {})
+    now[0] += 60
+    again = await window.context_window(OPENAI_COMPATIBLE, "m", SERVER_URL, {})
+    now[0] += window.PROBE_RETRY_SECONDS
+    later = await window.context_window(OPENAI_COMPATIBLE, "m", SERVER_URL, {})
+
+    assert (first, again) == (window.BASELINE_WINDOW, window.BASELINE_WINDOW)
+    assert server.asked == 2  # not asked in the first five minutes
+    assert later == 65_536  # the server was back: the failure was not kept for good
+
+
+async def test_an_answer_without_a_window_is_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = Server(None)
+    monkeypatch.setattr(window, "probe", server.probe)
+
+    for _ in range(3):
+        got = await window.context_window(OPENAI_COMPATIBLE, "m", SERVER_URL, {})
+
+    assert got == window.BASELINE_WINDOW
+    assert server.asked == 1
+
+
+async def test_a_slow_probe_is_cut_off_as_a_whole(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def slow(config: object, base_url: object) -> int:
+        await asyncio.sleep(5)
+        return 65_536
+
+    monkeypatch.setattr(window, "probe", slow)
+    monkeypatch.setattr(window, "PROBE_TIMEOUT_SECONDS", 0.01)
+
+    got = await window.context_window(OPENAI_COMPATIBLE, "m", SERVER_URL, {})
+
+    assert got == window.BASELINE_WINDOW
+    assert window._probed == {}
+
+
+@pytest.mark.parametrize(
+    ("answer_from_server", "outcome"),
+    [
+        (httpx.Response(500), "failed"),
+        (httpx.Response(200, text="not json"), None),
+        (httpx.Response(200, json={"data": []}), None),
+    ],
+)
+async def test_the_real_probe_tells_a_failure_from_an_answer(
+    monkeypatch: pytest.MonkeyPatch, answer_from_server: httpx.Response, outcome: object
+) -> None:
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        window.httpx,
+        "AsyncClient",
+        lambda **kw: real_client(transport=httpx.MockTransport(lambda r: answer_from_server), **kw),
+    )
+    real_probe = REAL_PROBE
+
+    if outcome == "failed":
+        with pytest.raises(window.ProbeFailed):
+            await real_probe(OPENAI_COMPATIBLE, SERVER_URL)
+    else:
+        assert await real_probe(OPENAI_COMPATIBLE, SERVER_URL) is None

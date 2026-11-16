@@ -166,7 +166,8 @@ async def complete(
         except openai.BadRequestError as error:
             # Nothing here can be cut, so retry only when the server names its window.
             learned = learned_window(error) if is_overflow(error) else None
-            if learned is None:
+            # An overflow can only mean the window is smaller than the one used.
+            if learned is None or learned >= window:
                 raise
             remember_window(config, base_url, learned)
             request = {
@@ -277,10 +278,14 @@ async def complete_with_tools(
             if not is_overflow(error):
                 raise
             # One more try with every tool result cut, and the window the server named.
-            if (learned := learned_window(error)) is not None:
+            learned = learned_window(error)
+            if learned is not None and learned < window:
                 remember_window(config, base_url, learned)
                 window = learned
-            request = build_request(window, force=True)
+            retry = build_request(window, force=True)
+            if retry == request:
+                raise  # nothing left to cut: an identical request would fail the same way
+            request = retry
             response = await attempt(request)
     except openai.OpenAIError as error:
         failure = provider_error(error, config)

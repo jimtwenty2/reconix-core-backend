@@ -6,7 +6,9 @@ do not list windows, so theirs come from LiteLLM's bundled list. When nothing sa
 BASELINE_WINDOW is used.
 """
 
+import asyncio
 import os
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -18,7 +20,8 @@ PROBED_TYPES = {ProviderType.OLLAMA, ProviderType.OPENAI_API_COMPATIBLE, Provide
 ANTHROPIC_URL = "https://api.anthropic.com"
 RECONIX_WINDOW = 64_000
 BASELINE_WINDOW = 32_000  # Ollama, OpenAI-compatible or an unknown cloud model
-PROBE_TIMEOUT_SECONDS = 5.0
+PROBE_TIMEOUT_SECONDS = 5.0  # for the whole probe (httpx's own timeout is per read)
+PROBE_RETRY_SECONDS = 300.0  # a probe that failed is not asked again for this long
 # What OpenAI-compatible servers call the window in their /models entry (vLLM and SGLang,
 # OpenRouter and others, LM Studio). llama.cpp lists only its training length: baseline.
 WINDOW_FIELDS = (
@@ -29,9 +32,12 @@ WINDOW_FIELDS = (
     "max_context_length",
 )
 
-# (provider type, address, model) -> window; a failed probe is kept too (as the baseline),
-# so a server without the answer is not asked again on every call.
+# (provider type, address, model) -> window, kept only for a probe the server answered
+# (even with nothing usable), so it is not asked again on every call.
 _probed: dict[tuple[str, str, str], int] = {}
+# When a probe last failed (down, refused, an error status, too slow). A failure is
+# passing, so it is remembered for PROBE_RETRY_SECONDS only, not for the process.
+_failed: dict[tuple[str, str, str], float] = {}
 # The window a server named in its own "prompt too long" error: it beats every other source.
 _remembered: dict[tuple[str, str, str], int] = {}
 
@@ -75,11 +81,19 @@ async def context_window(
     if config.provider_type != ProviderType.ANTHROPIC and not base_url:
         return BASELINE_WINDOW
     key = window_key(config, base_url)
-    if key not in _probed:
-        # A new Claude model is known to its API before LiteLLM's bundled list.
-        _probed[key] = (
-            await probe(config, base_url) or listed or bundled_window(config) or BASELINE_WINDOW
-        )
+    if key in _probed:
+        return _probed[key]
+    # A new Claude model is known to its API before LiteLLM's bundled list.
+    fallback = listed or bundled_window(config) or BASELINE_WINDOW
+    if time.monotonic() - _failed.get(key, -PROBE_RETRY_SECONDS) < PROBE_RETRY_SECONDS:
+        return fallback  # failed a moment ago: do not wait for it again
+    try:
+        found = await asyncio.wait_for(probe(config, base_url), PROBE_TIMEOUT_SECONDS)
+    except (ProbeFailed, TimeoutError):
+        _failed[key] = time.monotonic()
+        return fallback
+    _failed.pop(key, None)
+    _probed[key] = found or fallback
     return _probed[key]
 
 
@@ -105,9 +119,14 @@ def bundled_window(config: ProviderConfig) -> int | None:
     return found
 
 
+class ProbeFailed(Exception):
+    """The server could not be asked: down, refused, an error status or too slow."""
+
+
 async def probe(config: ProviderConfig, base_url: str | None) -> int | None:
-    """What the server says the model's window is, or None when it does not say. Only the
-    address the model call itself goes to is asked, with the same key."""
+    """What the server says the model's window is, or None when it answers without one.
+    Raises ProbeFailed when it cannot be asked. Only the address the model call itself
+    goes to is asked, with the same key."""
     try:
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS) as http:
             if config.provider_type == ProviderType.ANTHROPIC:
@@ -128,7 +147,9 @@ async def probe(config: ProviderConfig, base_url: str | None) -> int | None:
             response = await http.get(f"{base_url.rstrip('/')}/models", headers=headers)
             response.raise_for_status()
             return listed_window(response.json(), config.model_name)
-    except (httpx.HTTPError, ValueError, AttributeError):  # down, refused or not JSON
+    except httpx.HTTPError:  # down, refused, an error status or a timeout
+        raise ProbeFailed from None
+    except (ValueError, AttributeError):  # answered, but not JSON or not the shape
         return None
 
 
