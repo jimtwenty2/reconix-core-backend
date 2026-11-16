@@ -13,3 +13,4 @@ def no_window_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(window, "probe", unknown)
     monkeypatch.setattr(window, "_probed", {})
+    monkeypatch.setattr(window, "_remembered", {})

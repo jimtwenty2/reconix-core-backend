@@ -32,6 +32,17 @@ WINDOW_FIELDS = (
 # (provider type, address, model) -> window; a failed probe is kept too (as the baseline),
 # so a server without the answer is not asked again on every call.
 _probed: dict[tuple[str, str, str], int] = {}
+# The window a server named in its own "prompt too long" error: it beats every other source.
+_remembered: dict[tuple[str, str, str], int] = {}
+
+
+def window_key(config: ProviderConfig, base_url: str | None) -> tuple[str, str, str]:
+    return (config.provider_type.value, base_url or "", config.model_name)
+
+
+def remember_window(config: ProviderConfig, base_url: str | None, tokens: int) -> None:
+    """Keep the window a server reported for this model, while the API runs."""
+    _remembered[window_key(config, base_url)] = tokens
 
 
 def reconix_window() -> int:
@@ -53,6 +64,8 @@ async def context_window(
 ) -> int:
     """The model's window. model_info is LiteLLM's entry for a cloud model ({} if unknown);
     base_url is the checked address the call goes to."""
+    if (remembered := _remembered.get(window_key(config, base_url))) is not None:
+        return remembered
     if config.provider_type == ProviderType.RECONIX:
         return reconix_window()
     known = model_info.get("max_input_tokens")
@@ -61,11 +74,35 @@ async def context_window(
         return listed or BASELINE_WINDOW  # OpenAI and DeepSeek do not list windows
     if config.provider_type != ProviderType.ANTHROPIC and not base_url:
         return BASELINE_WINDOW
-    key = (config.provider_type.value, base_url or "", config.model_name)
+    key = window_key(config, base_url)
     if key not in _probed:
         # A new Claude model is known to its API before LiteLLM's bundled list.
-        _probed[key] = await probe(config, base_url) or listed or BASELINE_WINDOW
+        _probed[key] = (
+            await probe(config, base_url) or listed or bundled_window(config) or BASELINE_WINDOW
+        )
     return _probed[key]
+
+
+def bundled_window(config: ProviderConfig) -> int | None:
+    """For Ollama and an OpenAI-compatible server the window of the bare model name in
+    LiteLLM's bundled list (gpt-4o behind a proxy: 128,000), when the probe found nothing.
+    The list is local (LITELLM_LOCAL_MODEL_COST_MAP), so this makes no network call. A name
+    that starts with ollama is skipped: LiteLLM would ask the Ollama server for it. Ollama
+    is capped at the baseline, as in ollama_window."""
+    if config.provider_type not in {ProviderType.OLLAMA, ProviderType.OPENAI_API_COMPATIBLE}:
+        return None
+    name = config.model_name
+    if name.lower().startswith("ollama"):
+        return None
+    import litellm  # only called after providers.client has set litellm's settings
+
+    try:
+        found = positive(litellm.get_model_info(name).get("max_input_tokens"))
+    except Exception:  # not mapped: LiteLLM raises its own error for an unknown model
+        return None
+    if found and config.provider_type == ProviderType.OLLAMA:
+        return min(found, BASELINE_WINDOW)
+    return found
 
 
 async def probe(config: ProviderConfig, base_url: str | None) -> int | None:
