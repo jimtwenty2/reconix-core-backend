@@ -160,7 +160,7 @@ async def test_older_tool_results_are_cut_when_the_window_fills(model: FakeModel
     await complete_with_tools(chat, TOOLS, reconix_provider())
 
     sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
-    assert all(text == text[:400] + client.CUT_MARKER for text in sent[:-1])
+    assert all(text == text[:300] + client.CUT_MARKER + text[-100:] for text in sent[:-1])
     assert sent[-1] == "5" * 30_000  # the newest is kept whole
     assert [m["content"] for m in chat if m["role"] == "tool"][0] == "0" * 30_000  # not changed
     assert model.calls[0]["max_tokens"] > client.MIN_ANSWER_TOKENS
