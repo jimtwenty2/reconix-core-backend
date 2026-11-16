@@ -12,9 +12,11 @@ returns None and the chat goes on with the last MAX_MESSAGES, as before.
 """
 
 import hashlib
+import logging
 from dataclasses import dataclass
 
 from reconix_ai.agent.nodes import AgentDeps
+from reconix_ai.agent.prompts import fenced
 from reconix_ai.agent.state import MAX_INPUT_CHARS
 from reconix_ai.harness import mask_secrets
 from reconix_ai.harness.checks.input import check_input
@@ -35,6 +37,10 @@ SUMMARY_TOKENS = 2_000
 MESSAGE_CHARS = 2_000  # each older message, before the summary call
 INPUT_CHARS = 60_000  # the older part as a whole; longer keeps its head and tail
 MAX_ENTRIES = 256
+# Messages the agent itself wrote; the input check is for what a person wrote.
+AGENT_SPEAKERS = ("Reconix: ", "Reconix note: ")
+
+log = logging.getLogger(__name__)
 
 SECTIONS = (
     "## Objective",
@@ -113,34 +119,42 @@ async def chat_memory(
 ) -> ChatMemory | None:
     """None: the chat is short, or no summary could be made; use the last MAX_MESSAGES."""
     try:
-        masked, hidden = [], 0
+        masked, counts = [], []
         for text in messages:
             clean, count = mask_secrets(text)
             masked.append(clean)
-            hidden += count
+            counts.append(count)
         size = sum(min(len(text), MAX_INPUT_CHARS) for text in masked)
         if size <= await window_of(deps) * CHARS_PER_TOKEN // WINDOW_SHARE:
             return None
         cut = len(masked) - kept_count(masked)
         if cut <= 0:
             return None
-        return await summarised(masked[:cut], masked[cut:], assessment_id, deps, hidden)
-    except Exception:  # the summary is a help: whatever fails, the chat still answers
+        return await summarised(masked[:cut], masked[cut:], assessment_id, deps, counts[:cut])
+    except Exception as error:  # the summary is a help: whatever fails, the chat still answers
+        log.warning("Chat summary skipped: %s", type(error).__name__)  # never the text
         return None
 
 
 async def summarised(
-    older: list[str], kept: list[str], assessment_id: str, deps: AgentDeps, hidden: int
+    older: list[str], kept: list[str], assessment_id: str, deps: AgentDeps, counts: list[int]
 ) -> ChatMemory | None:
-    key = (assessment_id, digest(older))
+    # A summary belongs to one assessment and one model: a new model reads it fresh.
+    owner = f"{assessment_id}|{deps.provider.provider_type}|{deps.provider.model_name}"
+    key = (owner, digest(older))
     if key in _summaries:
-        return ChatMemory(_summaries[key][1], kept, hidden, 0, 0)
-    covered, before = previous(older, assessment_id)
+        return ChatMemory(_summaries[key][1], kept, 0, 0, 0)  # its secrets were counted then
+    covered, before = previous(older, owner)
+    # A message the input check blocks stays in the API's history; it never reaches the model.
+    fresh = [
+        text
+        for text in older[covered:]
+        if text.startswith(AGENT_SPEAKERS) or check_input(text).decision != Decision.BLOCKED
+    ]
+    lines = "\n".join(f"- {text[:MESSAGE_CHARS]}" for text in fresh)
     prompt = (
         f"Summary so far:\n{before}\n\nNew messages:\n" if before else "Conversation:\n"
-    ) + head_and_tail(
-        "\n".join(f"- {text[:MESSAGE_CHARS]}" for text in older[covered:]), INPUT_CHARS
-    )
+    ) + fenced("chat", head_and_tail(lines, INPUT_CHARS))
     completion = await deps.complete(
         [Message("system", INSTRUCTIONS), Message("user", prompt)], deps.provider
     )
@@ -151,17 +165,17 @@ async def summarised(
     return ChatMemory(
         summary,
         kept,
-        hidden + count + completion.masked_count,
+        sum(counts[covered:]) + count + completion.masked_count,
         completion.prompt_tokens,
         completion.completion_tokens,
     )
 
 
-def previous(older: list[str], assessment_id: str) -> tuple[int, str]:
+def previous(older: list[str], owner: str) -> tuple[int, str]:
     """The longest earlier summary of this assessment that covers the start of `older`."""
     best_count, best = 0, ""
-    for (owner, known), (count, summary) in _summaries.items():
-        if owner == assessment_id and best_count < count < len(older):
+    for (known_owner, known), (count, summary) in _summaries.items():
+        if known_owner == owner and best_count < count < len(older):
             if digest(older[:count]) == known:
                 best_count, best = count, summary
     return best_count, best
