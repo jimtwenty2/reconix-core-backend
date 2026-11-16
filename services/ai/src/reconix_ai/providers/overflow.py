@@ -8,7 +8,6 @@ import re
 
 import openai
 
-# Adapted from Strix 1.7.0 (usestrix/strix, Apache-2.0), strix/llm/compaction.py.
 RATE_LIMIT_PHRASES = (
     "rate limit",
     "too many requests",
