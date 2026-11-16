@@ -1,6 +1,5 @@
 import importlib.util
 import json
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -55,3 +54,49 @@ def test_get_session_token_requests_and_caches(rcx, tmp_path, monkeypatch):
         token2 = rcx.get_session_token(force_refresh=False)
         assert token2 == "fake-session-token-123"
         mock_req.assert_not_called()
+
+
+def test_compute_action_hash_deterministic(rcx):
+    action = {
+        "tool": "nmap",
+        "params": {"target": "10.0.0.1", "ports": "80,443"},
+        "risk": "MEDIUM",
+    }
+    h1 = rcx.compute_action_hash(action)
+    action_permuted = {
+        "risk": "MEDIUM",
+        "tool": "nmap",
+        "params": {"ports": "80,443", "target": "10.0.0.1"},
+    }
+    h2 = rcx.compute_action_hash(action_permuted)
+    assert h1 == h2
+    assert len(h1) == 64
+
+
+def test_create_scope_validates_and_posts(rcx):
+    with (
+        patch.object(rcx, "request") as mock_req,
+        patch.object(rcx, "get_session_token") as mock_tok,
+    ):
+        mock_tok.return_value = "fake-token"
+        mock_req.return_value = {"id": "scope-1", "targets": ["10.0.0.1"], "max_risk": "MEDIUM"}
+        res = rcx.create_scope("10.0.0.1", max_risk="MEDIUM")
+        assert res["id"] == "scope-1"
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "/api/v1/scopes"
+        assert call_args[1]["data"]["targets"] == ["10.0.0.1"]
+
+
+def test_submit_approval_posts_hash(rcx):
+    with (
+        patch.object(rcx, "request") as mock_req,
+        patch.object(rcx, "get_session_token") as mock_tok,
+    ):
+        mock_tok.return_value = "fake-token"
+        mock_req.return_value = {"status": "APPROVED", "action_id": "act-1"}
+        res = rcx.submit_approval("act-1", "abc123hash", target_confirmation="10.0.0.1")
+        assert res["status"] == "APPROVED"
+        mock_req.assert_called_once()
+        assert mock_req.call_args[1]["data"]["action_hash"] == "abc123hash"
+
