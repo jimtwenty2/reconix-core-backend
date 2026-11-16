@@ -151,6 +151,49 @@ def submit_approval(
     return res if isinstance(res, dict) else {}
 
 
+def list_findings(
+    assessment_id: str,
+    severity: str | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve discovered findings for an assessment, optionally filtered by severity."""
+    token = get_session_token()
+    query = f"assessment_id={urllib.parse.quote(assessment_id)}"
+    if severity:
+        query += f"&severity={urllib.parse.quote(severity.upper())}"
+    res = request(f"/api/v1/findings?{query}", token=token)
+    return res if isinstance(res, list) else []
+
+
+def generate_report(
+    assessment_id: str,
+    format_type: str = "html",
+) -> dict[str, Any]:
+    """Request compilation of an executive/technical report."""
+    token = get_session_token()
+    payload = {
+        "assessment_id": assessment_id,
+        "format": format_type.upper(),
+    }
+    res = request("/api/v1/reports", method="POST", data=payload, token=token)
+    return res if isinstance(res, dict) else {}
+
+
+def download_report(report_id: str, output_path: str) -> str:
+    """Download compiled report deliverable to local output path."""
+    token = get_session_token()
+    base = get_base_url()
+    url = f"{base}/api/v1/reports/{urllib.parse.quote(report_id)}/download"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})  # noqa: S310
+
+    with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
+        content = resp.read()
+
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(content)
+    return str(out.resolve())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reconix Operator Assistant CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -183,6 +226,22 @@ def main() -> None:
         "--confirm-target", help="Explicit target confirmation string (required for HIGH risk)"
     )
 
+    # findings
+    find_parser = subparsers.add_parser("findings", help="List assessment findings")
+    find_parser.add_argument("--assessment-id", required=True, help="Assessment ID")
+    find_parser.add_argument(
+        "--severity", choices=["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    )
+
+    # report
+    rep_parser = subparsers.add_parser("report", help="Generate or download a report")
+    rep_parser.add_argument("--assessment-id", help="Assessment ID to generate report for")
+    rep_parser.add_argument(
+        "--format", default="html", choices=["html", "pdf", "json"], help="Report format"
+    )
+    rep_parser.add_argument("--download-id", help="Report ID to download")
+    rep_parser.add_argument("--output", help="Output file path for download")
+
     args = parser.parse_args()
 
     if args.command == "status":
@@ -208,6 +267,23 @@ def main() -> None:
             args.action_id, args.action_hash, target_confirmation=args.confirm_target
         )
         print(json.dumps(res, indent=2))
+    elif args.command == "findings":
+        items = list_findings(args.assessment_id, severity=args.severity)
+        print(json.dumps(items, indent=2))
+    elif args.command == "report":
+        if args.download_id and args.output:
+            saved = download_report(args.download_id, args.output)
+            print(f"Report downloaded: {saved}")
+        elif args.assessment_id:
+            rep = generate_report(args.assessment_id, format_type=args.format)
+            print(json.dumps(rep, indent=2))
+        else:
+            msg = (
+                "Specify either --assessment-id to generate, "
+                "or --download-id and --output to download."
+            )
+            print(msg, file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

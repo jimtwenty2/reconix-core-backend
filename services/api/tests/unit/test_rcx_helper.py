@@ -100,3 +100,50 @@ def test_submit_approval_posts_hash(rcx):
         mock_req.assert_called_once()
         assert mock_req.call_args[1]["data"]["action_hash"] == "abc123hash"
 
+
+def test_list_findings_filters_by_severity(rcx):
+    with (
+        patch.object(rcx, "request") as mock_req,
+        patch.object(rcx, "get_session_token") as mock_tok,
+    ):
+        mock_tok.return_value = "fake-token"
+        mock_req.return_value = [{"id": "f-1", "severity": "HIGH", "title": "SQLi"}]
+        res = rcx.list_findings("test-assess-1", severity="HIGH")
+        assert len(res) == 1
+        assert res[0]["title"] == "SQLi"
+        mock_req.assert_called_once()
+        assert "severity=HIGH" in mock_req.call_args[0][0]
+
+
+def test_generate_report_requests_compilation(rcx):
+    with (
+        patch.object(rcx, "request") as mock_req,
+        patch.object(rcx, "get_session_token") as mock_tok,
+    ):
+        mock_tok.return_value = "fake-token"
+        mock_req.return_value = {"id": "rep-1", "status": "COMPLETED"}
+        res = rcx.generate_report("test-assess-1", format_type="html")
+        assert res["id"] == "rep-1"
+        mock_req.assert_called_once()
+        assert mock_req.call_args[0][0] == "/api/v1/reports"
+        assert mock_req.call_args[1]["data"]["format"] == "HTML"
+
+
+def test_download_report_writes_file(rcx, tmp_path):
+    out_file = tmp_path / "report.html"
+    with (
+        patch.object(rcx, "get_base_url") as mock_base,
+        patch.object(rcx, "get_session_token") as mock_tok,
+        patch("urllib.request.urlopen") as mock_urlopen,
+    ):
+        mock_base.return_value = "http://127.0.0.1:8000"
+        mock_tok.return_value = "fake-token"
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"<html>Report Content</html>"
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+        saved_path = rcx.download_report("rep-1", str(out_file))
+        assert Path(saved_path).exists()
+        assert Path(saved_path).read_text() == "<html>Report Content</html>"
+
+
