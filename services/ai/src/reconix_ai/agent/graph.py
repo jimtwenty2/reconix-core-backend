@@ -19,7 +19,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from reconix_ai.agent import nodes
-from reconix_ai.agent.chat_summary import chat_memory
+from reconix_ai.agent.chat_summary import AGENT_SPEAKERS, chat_memory
 from reconix_ai.agent.nodes import AgentDeps, AgentError
 from reconix_ai.agent.state import (
     MAX_MESSAGES,
@@ -288,7 +288,6 @@ def analyze_queries(findings: list[dict[str, Any]]) -> list[str]:
 
 # A CHAT's own earlier answers, as the API names them. They are not the person's
 # words: an answer that says it "can't skip the safety checks" must not block the chat.
-AGENT_SPEAKERS = ("Reconix: ", "Reconix note: ")
 
 
 def check_chat(messages: list[str]) -> None:
