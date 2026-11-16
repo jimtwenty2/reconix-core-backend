@@ -108,3 +108,20 @@ def test_compaction_never_touches_the_scope_findings_or_reflections() -> None:
     assert nodes.compaction(
         {**state, **update}, lambda s: [nodes.Message("user", "z" * 100_000)]
     ) == {**update}  # running it again changes nothing
+
+
+def test_shortened_keeps_the_head_and_the_tail_and_counts_the_cut() -> None:
+    text = "a" * 300 + "m" * 1000 + "z" * 100  # 1,400 characters, 1,000 of them cut
+
+    assert nodes.shortened(text) == "a" * 300 + "\n[compacted: 1000 chars cut]\n" + "z" * 100
+
+
+def test_shortening_again_changes_nothing() -> None:
+    once = nodes.shortened("a" * 300 + "m" * 1000 + "z" * 100)
+
+    assert nodes.shortened(once) == once
+
+
+def test_a_text_of_at_most_400_characters_is_unchanged() -> None:
+    assert nodes.shortened("x" * 400) == "x" * 400
+    assert nodes.shortened("x" * 401) != "x" * 401

@@ -9,6 +9,7 @@ until a person approves or rejects the step.
 """
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -77,11 +78,13 @@ HITS_PER_QUERY = 3
 # prompt near 8,000 tokens, so this trims the heaviest ones (to about 6,000).
 COMPACT_AT_PROMPT_TOKENS = 6_000
 CHARS_PER_TOKEN = 4
-COMPACT_KEEP_CHARS = 400  # of each older tool result or knowledge text
+COMPACT_MIN_CHARS = 400  # a text this short or shorter is kept whole
+COMPACT_HEAD_CHARS = 300  # kept from the start of each older tool result or knowledge text
+COMPACT_TAIL_CHARS = 100  # kept from the end: tool output often ends with the useful part
+CUT_MARKER = re.compile(r"\n\[compacted: \d+ chars cut\]\n")
 KEEP_NEWEST_HITS = 3
 KEEP_NEWEST_REASONING = 2
 REASONING_MARKER = "(older notes compacted away)"
-CUT_MARKER_END = " cut]"
 MAX_HITS = 6
 MAX_REFLECTIONS = 5
 MAX_KNOWLEDGE_HITS = 12  # find's hits plus what reflect looks up
@@ -224,8 +227,8 @@ def compaction(state: AgentState, build: Callable[[AgentState], list[Message]]) 
     """The state fields to replace when the prompt `build` makes is too big, else {}.
 
     Deterministic cuts, no model call, and safe to run again on its own result: an older
-    tool result or knowledge text keeps its first COMPACT_KEEP_CHARS and a marker; only
-    the newest earlier reasoning is kept.
+    tool result or knowledge text keeps its head and tail with a marker (see shortened);
+    only the newest earlier reasoning is kept.
     Reflections are left alone: they are short, and reflect counts them to stop.
     """
     if prompt_tokens(build(state)) <= COMPACT_AT_PROMPT_TOKENS:
@@ -245,12 +248,15 @@ def compaction(state: AgentState, build: Callable[[AgentState], list[Message]]) 
 
 
 def shortened(text: str) -> str:
-    """The first COMPACT_KEEP_CHARS and a marker; a text already shortened stays as it is,
-    so plan compacting after reflect did changes nothing more."""
-    if len(text) <= COMPACT_KEEP_CHARS or text.endswith(CUT_MARKER_END):
+    """The first COMPACT_HEAD_CHARS, the last COMPACT_TAIL_CHARS and a marker between them.
+    A text already shortened (marker in the middle) stays as it is, so compacting again
+    after reflect changes nothing more."""
+    if len(text) <= COMPACT_MIN_CHARS or CUT_MARKER.search(text):
         return text
-    cut = len(text) - COMPACT_KEEP_CHARS
-    return f"{text[:COMPACT_KEEP_CHARS]}\n[compacted: {cut} chars{CUT_MARKER_END}"
+    cut = len(text) - COMPACT_HEAD_CHARS - COMPACT_TAIL_CHARS
+    return (
+        f"{text[:COMPACT_HEAD_CHARS]}\n[compacted: {cut} chars cut]\n{text[-COMPACT_TAIL_CHARS:]}"
+    )
 
 
 def suggest(state: AgentState, runtime: Runtime[AgentDeps]) -> dict[str, Any]:
