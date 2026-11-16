@@ -53,7 +53,7 @@ class LlmMixin:
             Choice(
                 "skip",
                 "Use the Core API's model",
-                "The model set in .env (RECONIX_MODEL_*). /provider changes it later.",
+                "The built-in Reconix model. /provider sets its key or another provider later.",
                 recommended=True,
                 separated=True,
             ),
