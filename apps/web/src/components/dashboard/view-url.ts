@@ -139,6 +139,7 @@ export function runHref(search: string, uid: string | null): string {
   else next.delete("uid");
   next.delete("finding");
   next.delete("page");
+  next.delete("assessment");
   const query = next.toString();
   return query ? `/?${query}` : "/";
 }

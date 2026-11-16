@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { COOKIE, launchToken, readSession } from "@/lib/auth/session";
 import { loadAssessment } from "@/lib/data/store";
 
-export async function GET(_request: Request, ctx: RouteContext<"/api/assessments/[uid]">) {
+export async function GET(_request: Request, ctx: { params: Promise<{ uid: string }> }) {
   const token = launchToken();
   if (!token || !readSession((await cookies()).get(COOKIE)?.value, token)) return NextResponse.json({ detail: "Sign in first." }, { status: 401 });
 

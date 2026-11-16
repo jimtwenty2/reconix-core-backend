@@ -16,7 +16,7 @@
 //   GET  /api/v1/assessments/{id}/actions|timeline, /api/v1/approvals
 // Every call but opening a session needs a token it issued (401 INVALID_TOKEN otherwise).
 // Test code only.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
@@ -31,6 +31,7 @@ const tokens = new Map(); // token -> session id
 const sessions = new Map(); // session id -> SessionRead
 const messages = []; // MessageOut, every session
 const providers = []; // LlmProviderOut
+const knowledgeAddOns = [];
 /** What GET /llm-providers/{id}/models answers for a cloud service. */
 const CLOUD_MODELS = ["gpt-4.1", "gpt-4o", "gpt-4o-mini"];
 
@@ -62,6 +63,7 @@ function findingOut(a, f, i) {
     remediation: (f.remediation ?? "").split(/;\s+/).map((r) => r.trim()).filter(Boolean).map(cap).join("\n") || null,
     validation_status: f.validation || "UNCONFIRMED",
     finding_status: TRIAGE[f.status] ?? "OPEN",
+    triage_note: f.triage_note ?? null,
     reviewed_by: null,
     reviewed_at: null,
     created_at: a.created_at,
@@ -81,24 +83,123 @@ function findingOut(a, f, i) {
 
 const findings = runs.flatMap((a) => a.findings.filter((f) => !isInfo(f)).map((f, i) => findingOut(a, f, i)));
 
+function createdAtOf(a) {
+  const m = a.uid.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-/);
+  if (m) {
+    return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z`;
+  }
+  return a.created_at;
+}
+
+function statusMap(status) {
+  if (status === "Completed") return "COMPLETED";
+  if (status === "Stopped") return "CANCELLED";
+  if (status === "New") return "DRAFT";
+  return "ACTIVE";
+}
+
+function actionsOf(a) {
+  const runId = apiId(a.uid);
+  return (a.plan ?? []).map((p, idx) => {
+    const actId = `${runId.slice(0, 24)}${String(idx).padStart(12, "0")}`;
+    const stepMap = { done: "COMPLETED", active: "APPROVED", pending: "PENDING" };
+    const waitingApp = a.approvals?.find((app) => app.request_id === a.waiting_request_id);
+    const isStepWaiting = (p.status === "active" || (!a.plan.some((x) => x.status === "active") && p.status === "pending")) && waitingApp;
+    return {
+      action_id: actId,
+      tool: p.label || p.key,
+      args: [],
+      target: a.target || "",
+      purpose: p.label,
+      risk_level: isStepWaiting ? waitingApp?.risk || null : null,
+      action_status: stepMap[p.status] ?? "PENDING",
+      guardrail_report: {},
+      created_at: a.created_at,
+      approval_id: isStepWaiting ? waitingApp.request_id : null,
+      tool_runs: [{ request_count: 1 }],
+    };
+  });
+}
+
+function approvalsOf(a) {
+  const actions = actionsOf(a);
+  return (a.approvals ?? []).map((app, idx) => {
+    const dec = a.decisions?.find((d) => d.request_id === app.request_id);
+    const matchedAct = actions.find((act) => act.approval_id === app.request_id) || actions[Math.min(idx, Math.max(0, actions.length - 1))];
+    const isWaiting = a.status === "Awaiting input" && a.waiting_request_id === app.request_id;
+    return {
+      approval_id: app.request_id,
+      kind: "action",
+      subject_snapshot: { action: app.action, tool: app.action, target: app.target || "" },
+      subject_hash: app.command_hash || "",
+      risk_level: app.risk || "MEDIUM",
+      approval_status: dec ? dec.decision : isWaiting ? "PENDING" : "REJECTED",
+      reason: app.purpose || null,
+      decided_by: dec ? dec.operator : null,
+      decided_at: dec ? dec.at : null,
+      action_id: matchedAct ? matchedAct.action_id : null,
+    };
+  });
+}
+
+function sessionId(s) {
+  const h = createHash("sha1").update(`reconix-session:${s}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+for (const a of runs) {
+  const sid = sessionId(a.session || a.uid);
+  if (!sessions.has(sid)) {
+    sessions.set(sid, {
+      session_id: sid,
+      session_status: "ACTIVE",
+      interface: "web",
+      created_by: "tester@lab",
+      created_at: a.created_at,
+      updated_at: a.saved_at || a.created_at,
+      closed_at: null,
+    });
+  }
+}
+
+const sampleMessages = runs.flatMap((a) => {
+  const sid = sessionId(a.session || a.uid);
+  return (a.timeline ?? [])
+    .filter((e) => e.type === "chat")
+    .map((e, idx) => ({
+      message_id: `${apiId(a.uid).slice(0, 24)}${String(idx).padStart(12, "0")}`,
+      session_id: sid,
+      sequence_no: e.seq || idx + 1,
+      role: e.who === "you" ? "user" : "assistant",
+      content_masked: e.text,
+      created_at: e.at || a.created_at,
+    }));
+});
+messages.push(...sampleMessages);
+
 const assessments = runs.map((a) => {
   const mine = findings.filter((f) => f.assessment_id === apiId(a.uid) && f.finding_status !== "FALSE_POSITIVE");
+  const isAwaiting = a.status === "Awaiting input";
   return {
     assessment_id: apiId(a.uid),
-    engagement_code: a.assessment_id || a.uid,
-    name: a.label || a.uid,
-    type: "WEB",
-    assessment_status: "ACTIVE",
+    engagement_code: a.label || a.assessment_id || a.uid,
+    name: a.template?.name || a.label || a.uid,
+    type: a.target_kind || a.template?.id || "WEB",
+    assessment_status: statusMap(a.status),
     created_by: "tester@lab",
-    created_at: a.created_at,
+    created_at: createdAtOf(a),
     updated_at: a.saved_at || a.created_at,
-    session_id: SESSION_ID,
+    session_id: sessionId(a.session || a.uid),
     targets: a.target ? [a.target] : [],
     finding_count: mine.length,
     worst_severity: mine[0]?.severity_status ?? null,
-    pending_approval_count: 0,
+    pending_approval_count: isAwaiting ? 1 : 0,
+    plan_step_count: a.plan?.length ?? 5,
+    plan_step_done_count: a.plan?.filter((p) => p.status === "done").length ?? 2,
+    last_activity_at: a.saved_at || a.created_at,
   };
 });
+const allApprovals = runs.flatMap((a) => approvalsOf(a));
 
 const SEVERITY = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "NONE"];
 const byId = new Map(runs.map((a) => [apiId(a.uid), a]));
@@ -109,7 +210,7 @@ function overviewOf(a) {
   const counted = mine.filter((f) => f.finding_status !== "FALSE_POSITIVE");
   const tally = (key, values) => Object.fromEntries(values.map((v) => [v, counted.filter((f) => f[key] === v).length]));
   return {
-    assessment: { assessment_id: row.assessment_id, engagement_code: row.engagement_code, name: row.name, type: row.type, assessment_status: row.assessment_status, created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at, session_id: SESSION_ID },
+    assessment: { assessment_id: row.assessment_id, engagement_code: row.engagement_code, name: row.name, type: row.type, assessment_status: row.assessment_status, created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at, session_id: row.session_id },
     targets: row.targets,
     finding_count: counted.length,
     findings_by_severity: tally("severity_status", SEVERITY),
@@ -119,13 +220,13 @@ function overviewOf(a) {
     plan_step_count: a.plan.length,
     plan_step_done_count: a.plan.filter((p) => p.status === "done").length,
     tool_run_count: a.timeline.filter((e) => e.type === "activity" && e.who === "TOOL").length,
-    request_count: a.requests.length,
+    request_count: a.requests?.length ?? a.run?.requests ?? 0,
     masked_count: 0,
-    pending_approval_count: 0,
-    first_started_at: a.created_at,
-    last_finished_at: null,
+    pending_approval_count: row.pending_approval_count,
+    first_started_at: a.run?.started_at || a.created_at,
+    last_finished_at: a.run?.finished_at || null,
     duration_seconds: 0,
-    time_window_seconds: null,
+    time_window_seconds: a.scope?.time_limit_minutes ? a.scope.time_limit_minutes * 60 : null,
     over_time_window: false,
   };
 }
@@ -323,8 +424,14 @@ async function handle(req, res, raw) {
     if (!a) return refuse(res, 404, "ASSESSMENT_NOT_FOUND", "No assessment with this id.");
     if (hit[2] === "overview") return send(res, 200, overviewOf(a));
     if (hit[2] === "reports") return send(res, 200, reportOf(a));
-    if (hit[2] === "actions") return send(res, 200, []);
-    return send(res, 200, { events: [], has_older: false });
+    if (hit[2] === "actions") return send(res, 200, actionsOf(a));
+    const events = (a.timeline ?? []).map((e) => ({
+      event_type: e.type === "activity" ? (e.who === "TOOL" ? "TOOL_RUN_COMPLETED" : "FINDING_CREATED") : "LOG_INFO",
+      at: e.at || a.created_at,
+      actor: e.who || "SYSTEM",
+      details: { target: a.target || "" },
+    }));
+    return send(res, 200, { events, has_older: false });
   }
   hit = p.match(/^\/reports\/([^/]+)\/download$/);
   if (m === "GET" && hit) {
@@ -342,7 +449,26 @@ async function handle(req, res, raw) {
     const id = url.searchParams.get("assessment_id");
     return send(res, 200, id ? findings.filter((f) => f.assessment_id === id) : findings);
   }
-  if (m === "GET" && p === "/approvals") return send(res, 200, []);
+  if (m === "GET" && p === "/approvals") {
+    const status = url.searchParams.get("status");
+    if (status) return send(res, 200, allApprovals.filter((a) => a.approval_status === status));
+    return send(res, 200, allApprovals);
+  }
+  if (m === "GET" && p === "/knowledge-add-ons") return send(res, 200, knowledgeAddOns);
+  if (m === "POST" && p === "/knowledge-add-ons") {
+    const row = {
+      knowledge_add_on_id: randomUUID(),
+      name: body.name || "document.txt",
+      kind: body.kind || "txt",
+      size_bytes: 100,
+      chunk_count: 1,
+      interface: body.interface || "web",
+      created_at: now(),
+      ingest_status: "COMPLETED",
+    };
+    knowledgeAddOns.push(row);
+    return send(res, 201, row);
+  }
 
   if (m === "GET" && p === "/llm-providers") return send(res, 200, providers);
   if (m === "POST" && p === "/llm-providers") {

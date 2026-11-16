@@ -10,14 +10,16 @@ export function generateStaticParams() {
   return DOCS_NAV.map((g) => ({ group: g.id }));
 }
 
-export async function generateMetadata({ params }: PageProps<"/docs/[group]">): Promise<Metadata> {
+type Props = { params: Promise<{ group: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { group } = await params;
   const g = DOCS_NAV.find((x) => x.id === group);
   return { title: g ? `${g.title} · Reconix docs` : "Reconix docs" };
 }
 
 /** A group's page: every page of the group, in order, in place. */
-export default async function DocGroupPage({ params }: PageProps<"/docs/[group]">) {
+export default async function DocGroupPage({ params }: Props) {
   const { group } = await params;
   return <DocsGroupPage groupId={group} />;
 }

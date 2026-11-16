@@ -167,6 +167,7 @@ export function assessmentView(a: Assessment): AssessmentView {
   return {
     uid: a.uid,
     id: a.assessment_id || a.label || a.uid, // never empty: the RUN column and every run link name it
+    coreId: a.core_id || "",
     name: [a.client, a.template.name || "Reconix", "assessment"].filter(Boolean).join(" "),
     target: a.target,
     template: a.template.name || "—",
@@ -199,6 +200,7 @@ export function libraryItem(a: Assessment): LibraryItem {
   return {
     uid: a.uid,
     id: a.assessment_id || a.label || a.uid, // never empty: the RUN column and every run link name it
+    coreId: a.core_id || "",
     template: a.template.name || "—",
     target: a.target,
     status: a.status,
