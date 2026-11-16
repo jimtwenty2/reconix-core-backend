@@ -1,0 +1,44 @@
+{
+  "protect-openapi": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/protect-openapi.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "protect-main": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/protect-main.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "scan-staged-secrets": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/scan-staged-secrets.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
