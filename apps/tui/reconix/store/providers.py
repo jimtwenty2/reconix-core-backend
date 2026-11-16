@@ -214,21 +214,27 @@ def set_provider(
 
 
 def _set_reconix(entry: catalog.Provider, api_key: str) -> ProviderView:
-    """Update the key of the Reconix row, or add the row back after it was unset."""
-    if not api_key:
-        raise StoreValidationError(f"{entry.label} needs an API key.")
+    """Save the Reconix key, or add the row back after it was unset. A blank key unsets the
+    key: Reconix is then called with no key."""
     rows = _rows(api.TYPE_FOR_ID[entry.id])
     try:
         if rows:
-            api.patch(rows[0]["llm_provider_id"], {"api_key": api_key})
+            row = rows[0]
+            if api_key or row.get("api_key_last4"):
+                api.patch(row["llm_provider_id"], {"api_key": api_key or None})
         else:
             model = catalog.reconix_model() or "reconix"
-            api.create(api.TYPE_FOR_ID[entry.id], "Reconix", model, None, api_key)
+            api.create(api.TYPE_FOR_ID[entry.id], "Reconix", model, None, api_key or None)
     except CoreApiError as exc:
         raise StoreValidationError(str(exc)) from None
-    known_secrets.set_keys(entry.id, {api_key})
-    log_event("llm.provider.set", entry.id)
-    add_activity("SYS", f"LLM provider saved: {entry.label}")
+    if api_key:
+        known_secrets.set_keys(entry.id, {api_key})
+        log_event("llm.provider.set", entry.id)
+        add_activity("SYS", f"LLM provider saved: {entry.label}")
+    else:
+        known_secrets.forget_provider(entry.id)
+        log_event("llm.provider.key_cleared", entry.id)
+        add_activity("SYS", f"LLM provider key removed: {entry.label}")
     return get_provider(entry.id)
 
 

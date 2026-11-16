@@ -170,3 +170,22 @@ async def test_update_then_unset_then_set_up_reconix_again(app):
         assert app.screen._choices[0].label == "Set up Reconix (default)"
         store.set_provider("reconix", api_key="sk-reconix-3333")
         assert store.get_provider("reconix").configured
+
+
+async def test_the_reconix_form_has_no_env_wording_and_clears_the_key(app):
+    store.set_provider("reconix", api_key="sk-reconix-1111")
+    async with app.run_test(size=SIZE) as pilot:
+        app.open_provider_form("reconix")
+        await settle(pilot)
+        assert ".env" not in str(app.screen.note() or "")
+        field = app.screen.query_one("#api_key", Input)
+        assert field.placeholder == "saved key …1111 · leave blank to remove it"
+        field.value = ""  # cleared: the key is unset
+        app.screen.query_one("#submit").press()
+        await settle(pilot)
+        assert store.get_provider("reconix").api_key_hint == ""
+        app.screen.dismiss(None)  # the "test it now?" prompt
+        await settle(pilot)
+        app.open_provider_form("reconix")
+        await settle(pilot)
+        assert app.screen.query_one("#api_key", Input).placeholder == "no key set · sk-…"

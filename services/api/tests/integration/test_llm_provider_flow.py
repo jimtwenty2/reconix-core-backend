@@ -348,6 +348,7 @@ def test_the_built_in_provider_can_be_rekeyed_removed_and_added_back(db_client):
     rekeyed = db_client.patch(url, json={"api_key": FAKE_API_KEY}, headers=headers)
     other_field = db_client.patch(url, json={"model_name": "other"}, headers=headers)
     renamed = db_client.patch(url, json={"display_name": "Other"}, headers=headers)
+    cleared = db_client.patch(url, json={"api_key": None}, headers=headers)
     second = db_client.post(
         "/llm-providers", json={**OPENAI, "provider_type": "RECONIX"}, headers=headers
     )
@@ -360,6 +361,8 @@ def test_the_built_in_provider_can_be_rekeyed_removed_and_added_back(db_client):
 
     assert rekeyed.status_code == 200, rekeyed.json()  # even while it is the active one
     assert rekeyed.json()["api_key_last4"] == "wxyz"
+    assert cleared.status_code == 200, cleared.json()  # unset: RECONIX has no key now
+    assert cleared.json()["api_key_last4"] is None
     assert FAKE_API_KEY not in rekeyed.text
     assert (other_field.status_code, other_field.json()["code"]) == (409, "BUILT_IN_PROVIDER")
     assert (renamed.status_code, renamed.json()["code"]) == (409, "BUILT_IN_PROVIDER")

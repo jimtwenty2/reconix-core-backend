@@ -6,10 +6,10 @@ anywhere else would send prompts and findings off this computer, so a person app
 it first with a `configuration` approval, for exactly the settings they saw.
 
 The built-in RECONIX provider comes from the migration. Its address and model are always
-RECONIX_MODEL_* in .env; only its key can be changed (a typed key replaces
-RECONIX_MODEL_API_KEY), and it can be removed and added back. The active provider of any
-other type cannot be changed, so an approved address or key cannot be swapped afterwards;
-it can be removed, which leaves no model active.
+RECONIX_MODEL_URL and RECONIX_MODEL_NAME; its key is only the one saved from the apps
+(RECONIX_MODEL_API_KEY is not used), and it can be removed and added back. The active
+provider of any other type cannot be changed, so an approved address or key cannot be
+swapped afterwards; it can be removed, which leaves no model active.
 
 Locks are always taken in the same order as approving: the approval first, then the
 provider.
@@ -444,7 +444,7 @@ def _update_reconix_key(
     changes: LlmProviderUpdate,
 ) -> LlmProviderOut:
     """Only RECONIX's key changes, even while it is active: its address is fixed by .env
-    and never needed an approval. A blank key goes back to RECONIX_MODEL_API_KEY."""
+    and never needed an approval. A null key removes it: RECONIX is then called with no key."""
     other = changes.model_fields_set - {"api_key"}
     if other:
         raise ApiError(

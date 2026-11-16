@@ -78,9 +78,17 @@ def test_reconix_takes_only_a_key_and_can_be_updated_and_unset():
     assert store.set_provider("reconix", api_key=SECRET_KEY).configured  # and set up again
 
 
-def test_reconix_needs_a_key():
-    with pytest.raises(store.StoreValidationError):
-        store.set_provider("reconix")
+def test_reconix_can_be_set_up_without_a_key():
+    view = store.set_provider("reconix")  # no row, no key: added with no key
+    assert view.configured and view.api_key_hint == ""
+
+
+def test_clearing_the_reconix_key_unsets_it():
+    view = store.set_provider("reconix", api_key=SECRET_KEY)
+    assert view.api_key_hint == "…ff9a"
+    view = store.set_provider("reconix", api_key="")  # cleared in the form
+    assert view.configured and view.api_key_hint == ""  # the provider stays, with no key
+    store.set_provider("reconix", api_key=None)  # clearing again is not an error
 
 
 # --- testing ----------------------------------------------------------------------------------

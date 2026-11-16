@@ -474,6 +474,8 @@ class FakeApi:
             raise self.error(409, "PROVIDER_IS_ACTIVE", "The active provider can't be changed.")
         if body.get("api_key"):
             row["api_key_last4"] = body["api_key"][-4:]
+        elif "api_key" in body:  # null: the saved key is removed
+            row["api_key_last4"] = None
         if body.get("base_url"):
             row["base_url"] = body["base_url"]
         row["updated_at"] = now()
