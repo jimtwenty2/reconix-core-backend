@@ -8,7 +8,7 @@ Set-Location $TuiDir
 
 function Say($text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cyan }
 
-Say "Checking Python (3.9 or newer)"
+Say "Checking Python (3.12 or newer)"
 $Py = $null
 foreach ($candidate in @("py", "python")) {
     if (Get-Command $candidate -ErrorAction SilentlyContinue) { $Py = $candidate; break }
@@ -18,9 +18,9 @@ if (-not $Py) {
     Write-Host "(then close and reopen the terminal)"
     exit 1
 }
-& $Py -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)"
+& $Py -c "import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Your Python is older than 3.9. Install 3.12:  winget install -e --id Python.Python.3.12"
+    Write-Host "Your Python is older than 3.12. Install 3.12:  winget install -e --id Python.Python.3.12"
     exit 1
 }
 Write-Host ("OK: " + (& $Py -V))

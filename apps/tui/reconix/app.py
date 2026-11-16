@@ -10,6 +10,7 @@ The app's behaviour lives in `reconix/shell/` (navigation, run hosting, actions,
 this module wires it together.
 """
 
+import sys
 from typing import Dict, Optional
 
 from textual.app import App
@@ -17,6 +18,7 @@ from textual.binding import Binding
 
 from . import store, theme
 from .commands import COMMANDS, Command, CommandCheck, check_command_line, find, parse
+from .models import Choice
 from .screens import ChoiceScreen, CommandBarScreen, HelpScreen, StartScreen
 from .shell import (
     ActionsMixin,
@@ -91,7 +93,7 @@ class ReconixApp(
         # The stylesheet's $variables come from theme.py, the one place colors are defined.
         return {**super().get_css_variables(), **theme.CSS_TOKENS}
 
-    KALI_POLL_SECONDS = 15   # how often the top bar's kali chip refreshes from the Core API
+    KALI_POLL_SECONDS = 15  # how often the top bar's kali chip refreshes from the Core API
 
     def on_mount(self) -> None:
         self.push_screen(StartScreen())
@@ -153,6 +155,32 @@ class ReconixApp(
 
     def action_command_bar(self) -> None:
         self.open_dialog(CommandBarScreen(), self._on_command_bar)
+
+    def show_doctor(self) -> None:
+        """Show TUI-safe installation diagnostics without blocking the event loop."""
+        from .doctor import run_diagnostics
+
+        self.notify("Running Reconix Doctor…", markup=False)
+
+        def work() -> None:
+            report = run_diagnostics(include_local_services=False)
+            self.from_worker(self._doctor_done, report)
+
+        self.run_worker(work, thread=True, group="doctor", exit_on_error=False)
+
+    def _doctor_done(self, report) -> None:
+        """Open the completed doctor report on the UI thread."""
+        from .doctor import report_lines
+
+        self.open_dialog(
+            ChoiceScreen(
+                "◆ RECONIX DOCTOR",
+                "Installation and health checks",
+                [Choice("close", "Close")],
+                body=report_lines(report),
+                chip="/doctor",
+            )
+        )
 
     def _on_command_bar(self, line: Optional[str]) -> None:
         if line:  # runs after the bar has closed
@@ -233,6 +261,10 @@ class ReconixApp(
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "doctor":
+        from .doctor import doctor_main
+
+        raise SystemExit(doctor_main())
     ReconixApp().run()
 
 

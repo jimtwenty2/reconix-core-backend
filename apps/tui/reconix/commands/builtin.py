@@ -12,24 +12,31 @@ if TYPE_CHECKING:
 
 # --- argument choices ----------------------------------------------------------
 def _finding_choices(app: "ReconixApp") -> List[Choice]:
-    return [Choice(f.fid.lower(), f"{f.fid}  {f.title}", f.effective_severity)
-            for f in store.list_findings()]
+    return [
+        Choice(f.fid.lower(), f"{f.fid}  {f.title}", f.effective_severity)
+        for f in store.list_findings()
+    ]
 
 
 def _template_choices(app: "ReconixApp") -> List[Choice]:
-    return [Choice(t.id, t.name, t.description, disabled=not t.available)
-            for t in store.list_templates()]
+    return [
+        Choice(t.id, t.name, t.description, disabled=not t.available)
+        for t in store.list_templates()
+    ]
 
 
 def _export_choices(app: "ReconixApp") -> List[Choice]:
-    return [Choice(f.id, f.name, f.description, disabled=not f.available)
-            for f in store.list_report_formats()]
+    return [
+        Choice(f.id, f.name, f.description, disabled=not f.available)
+        for f in store.list_report_formats()
+    ]
 
 
 # --- handlers --------------------------------------------------------------------
 def _goto(name: str) -> Callable[["ReconixApp", Optional[str]], None]:
     def run(app: "ReconixApp", arg: Optional[str]) -> None:
         app.goto(name)
+
     return run
 
 
@@ -48,45 +55,108 @@ def _open_finding(app: "ReconixApp", fid: Optional[str]) -> None:
 
 COMMANDS = (
     Command("help", "Show shortcuts for this screen", lambda app, arg: app.action_help()),
-    Command("new", "Start a new assessment (optionally on a target)",
-            lambda app, arg: app.new_assessment(arg), aliases=("start",),
-            arg="OPTIONAL", arg_name="target"),
-    Command("template", "Pick a template, then type its target",
-            lambda app, tid: app.open_template(tid), choices=_template_choices,
-            question="Which kind of target?", aliases=("templates",), ask=False,
-            arg="OPTIONAL", arg_name="template"),
+    Command(
+        "new",
+        "Start a new assessment (optionally on a target)",
+        lambda app, arg: app.new_assessment(arg),
+        aliases=("start",),
+        arg="OPTIONAL",
+        arg_name="target",
+    ),
+    Command(
+        "template",
+        "Pick a template, then type its target",
+        lambda app, tid: app.open_template(tid),
+        choices=_template_choices,
+        question="Which kind of target?",
+        aliases=("templates",),
+        ask=False,
+        arg="OPTIONAL",
+        arg_name="template",
+    ),
     Command("plan", "Review and run the test plan", _open_plan),
     Command("approval", "Open the approval gate", _goto("approval")),
-    Command("status", "Live execution (after the plan runs)", _goto("execution"),
-            aliases=("execution",)),
-    Command("stop", "Stop the running assessment (asks first)",
-            lambda app, arg: app.confirm_stop()),
+    Command(
+        "status", "Live execution (after the plan runs)", _goto("execution"), aliases=("execution",)
+    ),
+    Command(
+        "stop", "Stop the running assessment (asks first)", lambda app, arg: app.confirm_stop()
+    ),
     Command("findings", "List all findings", _goto("findings")),
-    Command("finding", "Open one finding…", _open_finding,
-            choices=_finding_choices, question="Which finding?",
-            empty="No findings yet. They appear as testing finds them.",
-            arg="OPTIONAL", arg_name="finding"),
+    Command(
+        "finding",
+        "Open one finding…",
+        _open_finding,
+        choices=_finding_choices,
+        question="Which finding?",
+        empty="No findings yet. They appear as testing finds them.",
+        arg="OPTIONAL",
+        arg_name="finding",
+    ),
     Command("report", "Open the assessment report", _goto("report")),
-    Command("export", "Export the report…", lambda app, fmt: app.export_report(fmt),
-            choices=_export_choices, question="Export the report as…",
-            arg="OPTIONAL", arg_name="format"),
+    Command(
+        "export",
+        "Export the report…",
+        lambda app, fmt: app.export_report(fmt),
+        choices=_export_choices,
+        question="Export the report as…",
+        arg="OPTIONAL",
+        arg_name="format",
+    ),
     Command("summary", "Show the assessment summary", lambda app, arg: app.show_summary()),
-    Command("assessments", "List and reopen assessments",
-            lambda app, arg: app.open_assessments(), aliases=("list",)),
-    Command("audit", "Activity log and audit trail", lambda app, arg: app.show_audit(),
-            aliases=("activity", "log")),
-    Command("add-on", "Add reference files for the AI (knowledge add-ons)",
-            lambda app, path: app.add_on_command(path), aliases=("addon",), ask=False,
-            arg="OPTIONAL", arg_name="file"),
-    Command("provider", "Manage LLM providers (set / test / use a model / unset)",
-            lambda app, arg: app.provider_command(arg), aliases=("providers",),
-            arg="OPTIONAL", arg_name="action"),
-    Command("model", "Pick the active LLM model (provider/model)",
-            lambda app, arg: app.model_command(arg), aliases=("models",),
-            arg="OPTIONAL", arg_name="provider/model"),
-    Command("web", "Open the web dashboard in your browser (starts it if needed)",
-            lambda app, arg: app.open_web_dashboard(), aliases=("dashboard",)),
-    Command("tests", "Evaluator checklist: every flow and case, mark Pass/Fail/Skip",
-            lambda app, arg: app.open_test_guide(), aliases=("test-guide",)),
+    Command(
+        "assessments",
+        "List and reopen assessments",
+        lambda app, arg: app.open_assessments(),
+        aliases=("list",),
+    ),
+    Command(
+        "audit",
+        "Activity log and audit trail",
+        lambda app, arg: app.show_audit(),
+        aliases=("activity", "log"),
+    ),
+    Command(
+        "add-on",
+        "Add reference files for the AI (knowledge add-ons)",
+        lambda app, path: app.add_on_command(path),
+        aliases=("addon",),
+        ask=False,
+        arg="OPTIONAL",
+        arg_name="file",
+    ),
+    Command(
+        "provider",
+        "Manage LLM providers (set / test / use a model / unset)",
+        lambda app, arg: app.provider_command(arg),
+        aliases=("providers",),
+        arg="OPTIONAL",
+        arg_name="action",
+    ),
+    Command(
+        "model",
+        "Pick the active LLM model (provider/model)",
+        lambda app, arg: app.model_command(arg),
+        aliases=("models",),
+        arg="OPTIONAL",
+        arg_name="provider/model",
+    ),
+    Command(
+        "web",
+        "Open the web dashboard in your browser (starts it if needed)",
+        lambda app, arg: app.open_web_dashboard(),
+        aliases=("dashboard",),
+    ),
+    Command(
+        "doctor",
+        "Check the Reconix installation and local services",
+        lambda app, arg: app.show_doctor(),
+    ),
+    Command(
+        "tests",
+        "Evaluator checklist: every flow and case, mark Pass/Fail/Skip",
+        lambda app, arg: app.open_test_guide(),
+        aliases=("test-guide",),
+    ),
     Command("quit", "Quit Reconix", lambda app, arg: app.exit(), aliases=("exit",)),
 )

@@ -1,6 +1,6 @@
 {
   "source": "reconix/commands/builtin.py",
-  "count": 20,
+  "count": 21,
   "groups": [
     {
       "id": "start",
@@ -212,6 +212,15 @@
             "dashboard"
           ],
           "description": "Open the web dashboard in your browser (starts it if needed)",
+          "takes_argument": false,
+          "ask": false,
+          "question": "",
+          "empty": ""
+        },
+        {
+          "name": "doctor",
+          "aliases": [],
+          "description": "Check the Reconix installation and local services",
           "takes_argument": false,
           "ask": false,
           "question": "",
