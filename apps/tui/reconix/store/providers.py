@@ -223,8 +223,9 @@ def _set_reconix(entry: catalog.Provider, api_key: str) -> ProviderView:
             if api_key or row.get("api_key_last4"):
                 api.patch(row["llm_provider_id"], {"api_key": api_key or None})
         else:
-            model = catalog.reconix_model() or "reconix"
-            api.create(api.TYPE_FOR_ID[entry.id], "Reconix", model, None, api_key or None)
+            # The name the migration gives it. The Core API calls RECONIX_MODEL_NAME whatever
+            # this says, so never take it from this computer's environment (LLM_MODEL).
+            api.create(api.TYPE_FOR_ID[entry.id], "Reconix", "reconix", None, api_key or None)
     except CoreApiError as exc:
         raise StoreValidationError(str(exc)) from None
     if api_key:

@@ -83,6 +83,14 @@ def test_reconix_can_be_set_up_without_a_key():
     assert view.configured and view.api_key_hint == ""
 
 
+def test_reconix_is_added_back_with_the_migrations_model_name(monkeypatch):
+    from reconix.llm import config
+
+    monkeypatch.setattr(config, "RECONIX_MODEL", "openai/qwen/qwen3-14b")  # a stale LLM_MODEL
+    view = store.set_provider("reconix", api_key=SECRET_KEY)
+    assert view.models == ("reconix",)
+
+
 def test_clearing_the_reconix_key_unsets_it():
     view = store.set_provider("reconix", api_key=SECRET_KEY)
     assert view.api_key_hint == "…ff9a"
