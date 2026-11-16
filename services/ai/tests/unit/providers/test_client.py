@@ -4,6 +4,7 @@ import os
 import pytest
 
 from reconix_ai.providers import client
+from reconix_ai.providers import window as client_window
 from reconix_ai.providers.client import Message, ProviderError, complete
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, reconix_provider
 
@@ -94,14 +95,76 @@ async def test_json_answer_asks_for_a_json_object(model: FakeModel) -> None:
     assert model.calls[1]["response_format"] == {"type": "json_object"}
 
 
-async def test_every_call_caps_the_answer_length(model: FakeModel) -> None:
+QUESTION_TOKENS = len(QUESTION[0].content) // client.CHARS_PER_TOKEN
+
+
+async def test_every_call_caps_the_answer_length_within_the_window(model: FakeModel) -> None:
     short = ProviderConfig(ProviderType.RECONIX, "reconix", RECONIX_URL, max_tokens=300)
 
     await complete(QUESTION, reconix_provider())
     await complete(QUESTION, short)
 
-    assert model.calls[0]["max_tokens"] == 128_000
+    # 128,000 asked, but the Reconix model holds 64,000: the answer gets what the prompt leaves.
+    assert model.calls[0]["max_tokens"] == 64_000 - QUESTION_TOKENS - client.WINDOW_MARGIN_TOKENS
     assert model.calls[1]["max_tokens"] == 300
+
+
+async def test_the_reconix_window_comes_from_the_environment(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RECONIX_CONTEXT_WINDOW", "200000")
+
+    await complete(QUESTION, reconix_provider())
+
+    assert model.calls[0]["max_tokens"] == 128_000
+
+
+@pytest.mark.parametrize("value", ["lots", "10"])
+async def test_a_bad_reconix_window_fails_loudly(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("RECONIX_CONTEXT_WINDOW", value)
+
+    with pytest.raises(ValueError, match="RECONIX_CONTEXT_WINDOW"):
+        await complete(QUESTION, reconix_provider())
+    assert model.calls == []
+
+
+async def test_a_prompt_that_fills_the_window_still_asks_for_a_short_answer(
+    model: FakeModel,
+) -> None:
+    huge = [Message("user", "x" * 64_000 * client.CHARS_PER_TOKEN)]
+
+    await complete(huge, reconix_provider())
+
+    assert model.calls[0]["max_tokens"] == client.MIN_ANSWER_TOKENS
+
+
+async def test_ollama_is_sent_its_window_as_num_ctx(model: FakeModel) -> None:
+    await complete(QUESTION, ProviderConfig(ProviderType.OLLAMA, "llama3.1:8b"))
+    await complete(QUESTION, reconix_provider())
+
+    assert model.calls[0]["num_ctx"] == 32_000  # the baseline: the probe found nothing
+    assert "num_ctx" not in model.calls[1]
+
+
+async def test_a_probed_window_is_used_and_asked_only_once(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked = []
+
+    async def server_says(config: ProviderConfig, base_url: str) -> int:
+        asked.append(base_url)
+        return 8_192
+
+    monkeypatch.setattr(client_window, "probe", server_says)
+    config = ProviderConfig(ProviderType.OPENAI_API_COMPATIBLE, "qwen3", "http://127.0.0.1:1234/v1")
+
+    await complete(QUESTION, config)
+    await complete(QUESTION, config)
+
+    assert asked == ["http://127.0.0.1:1234/v1"]
+    assert model.calls[1]["max_tokens"] == 8_192 - QUESTION_TOKENS - client.WINDOW_MARGIN_TOKENS
 
 
 @pytest.mark.parametrize(
@@ -129,7 +192,8 @@ def test_a_max_output_tokens_that_is_not_a_number_fails_loudly(
     [
         (ProviderType.ANTHROPIC, "claude-sonnet-5-5", 128_000),  # its own limit is 128,000
         (ProviderType.OPENAI, "gpt-4o", 16_384),  # lowered to its own limit
-        (ProviderType.OPENAI, "not-a-known-model", 128_000),  # unknown: as set
+        # unknown: as set, within the baseline window
+        (ProviderType.OPENAI, "not-a-known-model", 32_000 - QUESTION_TOKENS - 1_000),
     ],
 )
 async def test_a_cloud_model_gets_at_most_its_own_output_limit(
@@ -353,7 +417,8 @@ async def test_an_answer_cut_off_by_the_length_says_so(
         await complete(QUESTION, reconix_provider())
 
     assert raised.value.code == "ANSWER_CUT_OFF"
-    assert "128000" in raised.value.message
+    fitted = 64_000 - QUESTION_TOKENS - client.WINDOW_MARGIN_TOKENS
+    assert f"{fitted}-token limit" in raised.value.message
 
 
 @pytest.mark.parametrize(

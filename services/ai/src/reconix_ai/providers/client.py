@@ -48,6 +48,7 @@ import openai  # noqa: E402  (all LiteLLM errors extend openai.OpenAIError)
 from reconix_ai.harness import StreamMasker, mask_secrets, mask_value  # noqa: E402
 from reconix_ai.providers.base_url import BaseUrlError, call_address, check_base_url  # noqa: E402
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, ollama_url  # noqa: E402
+from reconix_ai.providers.window import context_window  # noqa: E402
 
 litellm.suppress_debug_info = True  # no "Give Feedback" banner on every error
 litellm.turn_off_message_logging = True
@@ -69,6 +70,16 @@ CLOUD_TYPES = {ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.DEEPSEE
 # Servers that may refuse response_format json_object (LM Studio takes only json_schema or
 # text): asked again without it once, since the caller parses the JSON itself.
 JSON_FORMAT_OPTIONAL = {ProviderType.OPENAI_API_COMPATIBLE, ProviderType.RECONIX}
+# Fitting a call into the model's window. The prompt is estimated at 3 characters a token
+# (code and JSON run denser than prose's 4, and too high is the safe side).
+CHARS_PER_TOKEN = 3
+WINDOW_MARGIN_TOKENS = 1_000  # the estimate's error and the chat template's own tokens
+MIN_ANSWER_TOKENS = 1_024
+# A tool loop whose prompt is above window - ANSWER_RESERVE_TOKENS has its older tool
+# results cut to their first TOOL_RESULT_KEEP_CHARS (as Pi keeps 16,384 for the answer).
+ANSWER_RESERVE_TOKENS = 16_384
+TOOL_RESULT_KEEP_CHARS = 400
+CUT_MARKER = "\n[older tool result cut to fit the model's context window]"
 
 
 OnPiece = Callable[[str], Awaitable[None]]
@@ -116,14 +127,17 @@ async def complete(
     base_url = checked_base_url(config)
     check_key(config)
     masked_messages, masked_count = mask_messages(messages)
+    info = cloud_info(model, config)
+    window = await context_window(config, model, base_url, info)
     request = {
         "model": model,
         "messages": masked_messages,
         "api_base": base_url,
         "api_key": config.api_key or NO_KEY,
         "timeout": config.timeout_seconds,
-        "max_tokens": answer_limit(model, config),
+        "max_tokens": answer_limit(config, info, window, estimated_tokens(masked_messages)),
         "response_format": {"type": "json_object"} if json_answer else None,
+        **ollama_options(config, window),
     }
 
     def fail(code: str, message: str) -> ProviderError:
@@ -203,11 +217,16 @@ async def complete_with_tools(
     arguments are masked before they leave, and the answer's text and arguments are
     masked before they come back. With on_piece / on_thinking the answer and the model's
     reasoning are streamed in masked pieces, for showing only. Errors are the same
-    ProviderError codes as complete()."""
+    ProviderError codes as complete(). When the prompt grows past the model's window less
+    ANSWER_RESERVE_TOKENS, older tool results are cut in what is sent (not in messages)."""
     model = litellm_model(config)
     base_url = checked_base_url(config)
     check_key(config)
     masked_messages, masked_count = mask_chat(messages)
+    info = cloud_info(model, config)
+    window = await context_window(config, model, base_url, info)
+    masked_messages = fitted_tool_results(masked_messages, tools, window)
+    prompt = estimated_tokens(masked_messages, tools)
     request = {
         "model": model,
         "messages": masked_messages,
@@ -215,7 +234,8 @@ async def complete_with_tools(
         "api_base": base_url,
         "api_key": config.api_key or NO_KEY,
         "timeout": config.timeout_seconds,
-        "max_tokens": answer_limit(model, config),
+        "max_tokens": answer_limit(config, info, window, prompt),
+        **ollama_options(config, window),
     }
     failure = None
     try:
@@ -305,19 +325,65 @@ def tool_call_arguments(message: object) -> str:
     return arguments if isinstance(arguments, str) and arguments.strip() else ""
 
 
-def answer_limit(model: str, config: ProviderConfig) -> int:
-    """max_tokens, lowered for a cloud model to its own output limit when LiteLLM's bundled
-    price list knows it (gpt-4o: 16,384), so a high setting never gets a 400. Only cloud
-    types are looked up: for Ollama LiteLLM would ask the server. A self-hosted model gets
-    max_tokens as set (lower RECONIX_MAX_OUTPUT_TOKENS if its server refuses it)."""
-    max_tokens = config.max_tokens
+def cloud_info(model: str, config: ProviderConfig) -> dict[str, Any]:
+    """LiteLLM's bundled entry for a cloud model, {} when unknown. Only cloud types are
+    looked up: for Ollama LiteLLM would ask the server."""
     if config.provider_type not in CLOUD_TYPES:
-        return max_tokens
+        return {}
     try:
-        known = litellm.get_model_info(model).get("max_output_tokens")
+        return dict(litellm.get_model_info(model))
     except Exception:  # not mapped: LiteLLM raises its own error for an unknown model
-        return max_tokens
-    return min(max_tokens, known) if isinstance(known, int) and known > 0 else max_tokens
+        return {}
+
+
+def answer_limit(config: ProviderConfig, info: dict[str, Any], window: int, prompt: int) -> int:
+    """max_tokens: as set, lowered to a cloud model's own output limit (gpt-4o: 16,384),
+    then to what the window leaves after the prompt, so a 64k model is never asked for
+    a 128k answer. The window never takes it below MIN_ANSWER_TOKENS: a prompt that big
+    fails at the server either way."""
+    max_tokens = config.max_tokens
+    known = info.get("max_output_tokens")
+    if isinstance(known, int) and known > 0:
+        max_tokens = min(max_tokens, known)
+    room = window - prompt - WINDOW_MARGIN_TOKENS
+    return min(max_tokens, max(MIN_ANSWER_TOKENS, room))
+
+
+def ollama_options(config: ProviderConfig, window: int) -> dict[str, int]:
+    """Ollama's num_ctx: without it Ollama runs its own small default and quietly drops
+    the start of a longer prompt."""
+    return {"num_ctx": window} if config.provider_type == ProviderType.OLLAMA else {}
+
+
+def estimated_tokens(
+    messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
+) -> int:
+    """A prompt's tokens, estimated high enough to fit a call into the window."""
+    chars = len(json.dumps(tools)) if tools else 0
+    for message in messages:
+        chars += len(str(message.get("content") or ""))
+        chars += len(json.dumps(message["tool_calls"])) if message.get("tool_calls") else 0
+    return chars // CHARS_PER_TOKEN
+
+
+def fitted_tool_results(
+    messages: list[dict[str, Any]], tools: list[dict[str, Any]], window: int
+) -> list[dict[str, Any]]:
+    """messages with every tool result but the newest cut down, when the prompt is above
+    window - ANSWER_RESERVE_TOKENS; else messages as they are. The system and user
+    messages and the model's own turns are kept whole."""
+    limit = max(window - ANSWER_RESERVE_TOKENS, window // 2)
+    if estimated_tokens(messages, tools) <= limit:
+        return messages
+    tool_turns = [n for n, message in enumerate(messages) if message.get("role") == "tool"]
+    older = set(tool_turns[:-1])
+    fitted = []
+    for n, message in enumerate(messages):
+        content = str(message.get("content") or "")
+        if n in older and len(content) > TOOL_RESULT_KEEP_CHARS:
+            message = {**message, "content": content[:TOOL_RESULT_KEEP_CHARS] + CUT_MARKER}
+        fitted.append(message)
+    return fitted
 
 
 def mask_json(text: str) -> tuple[str, int]:

@@ -141,3 +141,35 @@ async def test_a_cloud_model_gets_at_most_its_own_output_limit(model: FakeModel)
     await complete_with_tools([{"role": "user", "content": "x"}], TOOLS, config)
 
     assert model.calls[0]["max_tokens"] == 16_384  # gpt-4o's own limit, not the 128k default
+
+
+def tool_chat(results: list[str]) -> list[dict]:
+    """A fix-loop chat: the task, then one tool call and its result per entry."""
+    chat: list[dict] = [{"role": "system", "content": "fix"}, {"role": "user", "content": "task"}]
+    for n, result in enumerate(results):
+        call = {"id": f"c{n}", "type": "function", "function": {"name": "read", "arguments": "{}"}}
+        chat.append({"role": "assistant", "content": "", "tool_calls": [call]})
+        chat.append({"role": "tool", "tool_call_id": f"c{n}", "content": result})
+    return chat
+
+
+async def test_older_tool_results_are_cut_when_the_window_fills(model: FakeModel) -> None:
+    # The Reconix model holds 64,000: six 30,000-character results (~60,000 tokens) do not fit.
+    chat = tool_chat([f"{n}" * 30_000 for n in range(6)])
+
+    await complete_with_tools(chat, TOOLS, reconix_provider())
+
+    sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
+    assert all(text == text[:400] + client.CUT_MARKER for text in sent[:-1])
+    assert sent[-1] == "5" * 30_000  # the newest is kept whole
+    assert [m["content"] for m in chat if m["role"] == "tool"][0] == "0" * 30_000  # not changed
+    assert model.calls[0]["max_tokens"] > client.MIN_ANSWER_TOKENS
+
+
+async def test_tool_results_that_fit_are_sent_whole(model: FakeModel) -> None:
+    chat = tool_chat(["a" * 3_000, "b" * 3_000])
+
+    await complete_with_tools(chat, TOOLS, reconix_provider())
+
+    sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
+    assert sent == ["a" * 3_000, "b" * 3_000]
