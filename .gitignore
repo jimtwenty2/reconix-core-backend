@@ -3,6 +3,7 @@
 
 # local only: your tasks and rehearsal notes
 /plan.md
+.superpowers/
 
 # python
 __pycache__/
