@@ -31,11 +31,17 @@ from reconix_ai.providers.client import (
 from reconix_ai.providers.window import context_window
 
 WINDOW_SHARE = 4  # summarise when the chat is over 1/4 of the window
+# The limits below are for a window of 64k or more; a smaller window gets its share
+# (an eighth kept whole, a sixteenth for the summary, half for the summary request), so a
+# 4k model is not sent an 8k chat.
 KEEP_TOKENS = 8_000
+KEEP_SHARE = 8
 MIN_KEPT = 2
 SUMMARY_TOKENS = 2_000
+SUMMARY_SHARE = 16
 MESSAGE_CHARS = 2_000  # each older message, before the summary call
 INPUT_CHARS = 60_000  # the older part as a whole; longer keeps its head and tail
+INPUT_SHARE = 2
 MAX_ENTRIES = 256
 # Messages the agent itself wrote; the input check is for what a person wrote.
 AGENT_SPEAKERS = ("Reconix: ", "Reconix note: ")
@@ -90,9 +96,26 @@ def remember(key: tuple[str, str], covered: int, summary: str) -> None:
         del _summaries[next(iter(_summaries))]  # dicts keep order: the oldest goes
 
 
-def kept_count(texts: list[str]) -> int:
-    """How many of the newest messages fit in KEEP_TOKENS (each as the prompt cuts it)."""
-    budget, count = KEEP_TOKENS * CHARS_PER_TOKEN, 0
+@dataclass(frozen=True)
+class Limits:
+    """KEEP_TOKENS, SUMMARY_TOKENS and INPUT_CHARS, lowered to fit a small window."""
+
+    keep_tokens: int
+    summary_tokens: int
+    input_chars: int
+
+
+def limits_for(window: int) -> Limits:
+    return Limits(
+        keep_tokens=min(KEEP_TOKENS, window // KEEP_SHARE),
+        summary_tokens=min(SUMMARY_TOKENS, window // SUMMARY_SHARE),
+        input_chars=min(INPUT_CHARS, window // INPUT_SHARE * CHARS_PER_TOKEN),
+    )
+
+
+def kept_count(texts: list[str], keep_tokens: int = KEEP_TOKENS) -> int:
+    """How many of the newest messages fit in keep_tokens (each as the prompt cuts it)."""
+    budget, count = keep_tokens * CHARS_PER_TOKEN, 0
     for text in reversed(texts):
         budget -= min(len(text), MAX_INPUT_CHARS)
         if budget < 0 and count >= MIN_KEPT:
@@ -125,19 +148,27 @@ async def chat_memory(
             masked.append(clean)
             counts.append(count)
         size = sum(min(len(text), MAX_INPUT_CHARS) for text in masked)
-        if size <= await window_of(deps) * CHARS_PER_TOKEN // WINDOW_SHARE:
+        window = await window_of(deps)
+        if size <= window * CHARS_PER_TOKEN // WINDOW_SHARE:
             return None
-        cut = len(masked) - kept_count(masked)
+        limits = limits_for(window)
+        cut = len(masked) - kept_count(masked, limits.keep_tokens)
         if cut <= 0:
             return None
-        return await summarised(masked[:cut], masked[cut:], assessment_id, deps, counts[:cut])
+        older, kept = masked[:cut], masked[cut:]
+        return await summarised(older, kept, assessment_id, deps, counts[:cut], limits)
     except Exception as error:  # the summary is a help: whatever fails, the chat still answers
         log.warning("Chat summary skipped: %s", type(error).__name__)  # never the text
         return None
 
 
 async def summarised(
-    older: list[str], kept: list[str], assessment_id: str, deps: AgentDeps, counts: list[int]
+    older: list[str],
+    kept: list[str],
+    assessment_id: str,
+    deps: AgentDeps,
+    counts: list[int],
+    limits: Limits,
 ) -> ChatMemory | None:
     # A summary belongs to one assessment and one model: a new model reads it fresh.
     owner = f"{assessment_id}|{deps.provider.provider_type}|{deps.provider.model_name}"
@@ -154,11 +185,16 @@ async def summarised(
     lines = "\n".join(f"- {text[:MESSAGE_CHARS]}" for text in fresh)
     prompt = (
         f"Summary so far:\n{before}\n\nNew messages:\n" if before else "Conversation:\n"
-    ) + fenced("chat", head_and_tail(lines, INPUT_CHARS))
-    completion = await deps.complete(
-        [Message("system", INSTRUCTIONS), Message("user", prompt)], deps.provider
+    ) + fenced("chat", head_and_tail(lines, limits.input_chars))
+    instructions = INSTRUCTIONS.replace(
+        f"{SUMMARY_TOKENS} tokens", f"{limits.summary_tokens} tokens"
     )
-    summary, count = mask_secrets(completion.text.strip()[: SUMMARY_TOKENS * CHARS_PER_TOKEN])
+    completion = await deps.complete(
+        [Message("system", instructions), Message("user", prompt)], deps.provider
+    )
+    summary, count = mask_secrets(
+        completion.text.strip()[: limits.summary_tokens * CHARS_PER_TOKEN]
+    )
     if not summary or check_input(summary).decision == Decision.BLOCKED:
         return None
     remember(key, len(older), summary)

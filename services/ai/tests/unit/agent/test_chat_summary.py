@@ -199,3 +199,27 @@ async def test_a_failed_summary_logs_only_the_error_type(graph, caplog) -> None:
 
     assert "ProviderError" in caplog.text
     assert "secret detail" not in caplog.text and "m0 " not in caplog.text
+
+
+def test_the_limits_shrink_with_a_small_window() -> None:
+    big = chat_summary.limits_for(64_000)
+    small = chat_summary.limits_for(4_096)
+
+    assert (big.keep_tokens, big.summary_tokens, big.input_chars) == (8_000, 2_000, 60_000)
+    # A 4k model: what is kept, the summary and its request all fit the window.
+    assert small.keep_tokens == 512
+    assert small.summary_tokens == 256
+    assert small.input_chars // 3 + small.summary_tokens < 4_096
+
+
+async def test_a_small_window_keeps_less_and_asks_for_a_shorter_summary(graph, monkeypatch) -> None:
+    monkeypatch.setenv("RECONIX_CONTEXT_WINDOW", "4096")
+    model = ChatModel("## Objective\nTest the lab.")
+
+    await ask(graph, model, chat(14))
+
+    assert "at most 256 tokens" in model.summary_prompts[0]
+    kept = prompt(model).split("</conversation-checkpoint>")[-1]
+    # 512 tokens keep only the last 2 messages (MIN_KEPT), not the 8k of a big window.
+    assert "m12 " in kept and "m13 " in kept
+    assert "m11 " not in kept
