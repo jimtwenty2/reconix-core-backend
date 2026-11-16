@@ -25,6 +25,7 @@ class AgentState(TypedDict, total=False):
     assessment_id: str
     scope: dict[str, Any] | None  # the approved scope, see scope_to_dict(); CHAT: maybe none
     scope_status: str  # CHAT: APPROVED, DRAFT or NONE
+    chat_summary: str  # CHAT: masked summary of the older chat, see chat_summary.py
     plan_lines: list[str]  # CHAT: the current plan, masked, written by the agent earlier
     messages: list[str]  # masked chat, oldest first
     tool_results: list[str]  # masked raw output of earlier runs
