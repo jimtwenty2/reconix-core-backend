@@ -55,10 +55,11 @@ def test_listed_window(entry: dict, expected: int | None) -> None:
     assert window.listed_window({"data": [entry]}, "qwen3") == expected
 
 
-async def test_a_server_that_cannot_be_reached_gives_none() -> None:
+async def test_a_server_that_cannot_be_reached_is_a_failed_probe() -> None:
     config = ProviderConfig(ProviderType.OPENAI_API_COMPATIBLE, "qwen3", "http://127.0.0.1:9/v1")
 
-    assert await REAL_PROBE(config, "http://127.0.0.1:9/v1") is None
+    with pytest.raises(window.ProbeFailed):
+        await REAL_PROBE(config, "http://127.0.0.1:9/v1")
 
 
 async def test_anthropic_says_a_new_models_window(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,7 +74,8 @@ async def test_a_model_name_cannot_leave_the_models_path(monkeypatch: pytest.Mon
     asked = fake_server(monkeypatch, httpx.Response(404))
     config = ProviderConfig(ProviderType.ANTHROPIC, "../../admin?x=1", api_key="sk-fake-1")
 
-    assert await REAL_PROBE(config, None) is None
+    with pytest.raises(window.ProbeFailed):  # a 404 is an error status
+        await REAL_PROBE(config, None)
     assert asked[0].url.raw_path == b"/v1/models/..%2F..%2Fadmin%3Fx%3D1"
 
 
