@@ -490,4 +490,13 @@ describe("the assistant's data comes from the Core API", () => {
     const frames = await framesOf(await ask({ uid: null, question: "Show me the findings" }));
     expect(JSON.stringify(frames)).not.toContain("RCX-DEMO");
   });
+
+  it("deduplicates concurrent mainToken sign-in requests into a single session", async () => {
+    const { mainToken } = await import("@/lib/api/sessions");
+    core.codes.add("code-once");
+    resetSessions("code-once");
+    const [t1, t2] = await Promise.all([mainToken(), mainToken()]);
+    expect(t1).toBe(t2);
+    expect(core.calls.filter((c) => c.path === "/sessions/web-sign-in" || (c.path === "/sessions" && c.method === "POST"))).toHaveLength(1);
+  });
 });

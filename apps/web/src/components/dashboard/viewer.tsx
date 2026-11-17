@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AssistantProvider } from "@/components/assistant/assistant-provider";
 import { AssistantStage } from "@/components/assistant/assistant-stage";
@@ -54,6 +54,7 @@ export function Viewer({
   knowledge: React.ReactNode;
   assistant: AssistantInfo;
 }) {
+  const frameRef = useRef<HTMLDivElement>(null);
   const view = parseView(useSearchParams().get("view"));
   const [shown, setShown] = useState<View>(view);
   const [knowledgeOpened, setKnowledgeOpened] = useState(view === "knowledge");
@@ -61,6 +62,10 @@ export function Viewer({
   const backdrop = shown === "assistant"; // the Overview under the open assistant
 
   useEffect(() => watchHistory(), []);
+  useEffect(() => {
+    const bar = frameRef.current?.querySelector<HTMLElement>(".dash-topbar");
+    if (bar) bar.inert = backdrop;
+  }, [backdrop, shown]);
   useEffect(() => {
     holdGlobe("view", shown !== "overview" && !backdrop);
     return () => holdGlobe("view", false);
@@ -81,7 +86,7 @@ export function Viewer({
         <HydratedMark />
         <CardCursorLight />
         <Intro />
-        <div className="dash-frame" data-assistant-open={shown === "assistant" ? "" : undefined} data-no-bar={shown === "knowledge" ? "" : undefined}>
+        <div ref={frameRef} className="dash-frame" data-assistant-open={shown === "assistant" ? "" : undefined} data-no-bar={shown === "knowledge" ? "" : undefined}>
           <Sidebar active={view} onSelect={select} />
           {shown !== "knowledge" && topBar /* the filters choose runs; Security knowledge has none */}
           {/* tabIndex -1: focusable by script and click, so the keys scroll it (no tab stop) */}
