@@ -19,7 +19,7 @@ from reconix_ai.agent.nodes import AgentDeps
 from reconix_ai.agent.prompts import fenced
 from reconix_ai.agent.state import MAX_INPUT_CHARS
 from reconix_ai.harness import mask_secrets
-from reconix_ai.harness.checks.input import check_input
+from reconix_ai.harness.checks.input import MAX_INPUT_LENGTH, check_input
 from reconix_ai.harness.checks.result import Decision
 from reconix_ai.providers import Message
 from reconix_ai.providers.client import (
@@ -37,7 +37,7 @@ WINDOW_SHARE = 4  # summarise when the chat is over 1/4 of the window
 KEEP_TOKENS = 8_000
 KEEP_SHARE = 8
 MIN_KEPT = 2
-SUMMARY_TOKENS = 2_000
+SUMMARY_TOKENS = 1_200  # about 3,600 chars: under MAX_INPUT_LENGTH, which the summary must pass
 SUMMARY_SHARE = 16
 MESSAGE_CHARS = 2_000  # each older message, before the summary call
 INPUT_CHARS = 60_000  # the older part as a whole; longer keeps its head and tail
@@ -124,6 +124,15 @@ def kept_count(texts: list[str], keep_tokens: int = KEEP_TOKENS) -> int:
     return count
 
 
+def cut_at_line(text: str, limit: int) -> str:
+    """Cut to `limit` chars, at a line break when one is in the second half."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    line_end = head.rfind("\n")
+    return head[:line_end] if line_end > limit // 2 else head
+
+
 def head_and_tail(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
@@ -177,12 +186,13 @@ async def summarised(
         return ChatMemory(_summaries[key][1], kept, 0, 0, 0)  # its secrets were counted then
     covered, before = previous(older, owner)
     # A message the input check blocks stays in the API's history; it never reaches the model.
+    # It is cut first: a long harmless one must not be blocked only for its length.
     fresh = [
         text
-        for text in older[covered:]
+        for text in (text[:MESSAGE_CHARS] for text in older[covered:])
         if text.startswith(AGENT_SPEAKERS) or check_input(text).decision != Decision.BLOCKED
     ]
-    lines = "\n".join(f"- {text[:MESSAGE_CHARS]}" for text in fresh)
+    lines = "\n".join(f"- {text}" for text in fresh)
     prompt = (
         f"Summary so far:\n{before}\n\nNew messages:\n" if before else "Conversation:\n"
     ) + fenced("chat", head_and_tail(lines, limits.input_chars))
@@ -192,9 +202,10 @@ async def summarised(
     completion = await deps.complete(
         [Message("system", instructions), Message("user", prompt)], deps.provider
     )
-    summary, count = mask_secrets(
-        completion.text.strip()[: limits.summary_tokens * CHARS_PER_TOKEN]
-    )
+    # Masked first (a mask can be longer than its secret), then cut to what check_input takes.
+    masked, count = mask_secrets(completion.text.strip())
+    limit = min(limits.summary_tokens * CHARS_PER_TOKEN, MAX_INPUT_LENGTH)
+    summary = cut_at_line(masked, limit).strip()
     if not summary or check_input(summary).decision == Decision.BLOCKED:
         return None
     remember(key, len(older), summary)
