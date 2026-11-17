@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canRetryLast, createEpochGuard, isStaleStream } from "@/lib/assistant/chat-state";
+import { canRetryLast, createEpochGuard, isStaleStream, scrollTriggerKey, viewSessionKey } from "@/lib/assistant/chat-state";
 
 describe("chat state guards", () => {
   it("blocks retry before slicing messages when reading is active or model is unconfigured", () => {
@@ -30,5 +30,22 @@ describe("chat state guards", () => {
     expect(guard.isCurrent(req1)).toBe(true);
     guard.next();
     expect(guard.isCurrent(req1)).toBe(false);
+  });
+
+  it("scrollTriggerKey depends on the latest user message, not server conversationId assignment", () => {
+    const msgs = [
+      { id: "u1", role: "user" as const, content: "hi" },
+      { id: "a1", role: "assistant" as const, content: "", state: "streaming" as const },
+    ];
+    expect(scrollTriggerKey(msgs)).toBe("u1");
+    expect(scrollTriggerKey([])).toBeNull();
+  });
+
+  it("keeps a distinct viewSessionKey when switching between saved conversations so seen mark resets", () => {
+    const m1 = [{ id: "u1", role: "user" as const, content: "q1" }];
+    const m2 = [{ id: "u2", role: "user" as const, content: "q2" }];
+    expect(viewSessionKey(m1, "c1")).not.toBe(viewSessionKey(m2, "c2"));
+    expect(viewSessionKey(m1, null)).toBe("u1");
+    expect(viewSessionKey(m1, "c1")).toBe("u1");
   });
 });

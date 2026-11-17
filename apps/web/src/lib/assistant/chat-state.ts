@@ -31,3 +31,11 @@ export function createEpochGuard() {
     isCurrent: (value: number) => value === epoch,
   };
 }
+
+export function scrollTriggerKey(messages: readonly ChatStateMessage[]): string | null {
+  return [...messages].reverse().find((message) => message.role === "user")?.id ?? null;
+}
+
+export function viewSessionKey(messages: readonly ChatStateMessage[], conversationId: string | null): string {
+  return messages[0]?.id ?? conversationId ?? "new";
+}
