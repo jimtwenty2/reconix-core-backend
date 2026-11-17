@@ -562,7 +562,7 @@ async def _run_tools(
         if not _next_step(db, agent_run_id, "SCANNING", 10 + 70 * index // len(targets)):
             return None
         try:
-            action = await actions.send_action(
+            action, _ = await actions.send_action(
                 db,
                 interfaces,
                 mask,

@@ -3,7 +3,7 @@
 import logging
 import re
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session as Db
 
@@ -21,6 +21,7 @@ from reconix_api.models import Approval, ToolRun
 from reconix_api.models.enums import ActionStatus, ToolRunStatus
 from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import agent_runs as agent_run_repo
+from reconix_api.repositories import findings as finding_repo
 from reconix_api.services.approvals import approval_state, ensure_can_use
 from reconix_api.services.audit import audit
 from reconix_api.services.findings import CONTROL, KeptValues, parse_run, save_findings
@@ -36,6 +37,9 @@ TERMINAL_CODES = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 # failed, but their output holds real findings, so a FAILED/TIMED_OUT run with output is
 # still parsed. Catalog (canonical) names.
 FINDINGS_ON_NONZERO_EXIT = {"schemathesis", "sqlmap", "dalfox"}
+
+# An action's purpose: a validation step judges an existing finding, a scan looks for new ones.
+VALIDATION_PURPOSE = "validation"
 
 
 def _should_parse(run: ToolRun, action: Action) -> bool:
@@ -181,6 +185,8 @@ def _save_findings(
     """
     try:
         new, run.request_count = parse_run(action.tool, run.output_masked or "")
+        if row.purpose == VALIDATION_PURPOSE:
+            new = _without_validated(db, row.assessment_id, new)
         with db.begin_nested():  # a savepoint: a failure drops the findings, not the run
             raw = _parse_raw(action, result) if vault is not None else None
             saved, kept = save_findings(db, mask, row.assessment_id, run, new, raw)
@@ -194,6 +200,21 @@ def _save_findings(
     if vault is not None:
         _keep_values(vault, kept)
     return len(saved)
+
+
+def _without_validated(db: Db, assessment_id: UUID, new: list[NewFinding]) -> list[NewFinding]:
+    """A validation step's own findings, minus the ones it only confirms: a finding with the
+    same dedupe_key, target and CWE as one the assessment already has is that finding being
+    validated, not a second one. `save_findings` would only add this run as its source and
+    its evidence anyway; here the verdict decides, not a fresh finding."""
+    kept: list[NewFinding] = []
+    for item in new:
+        existing = finding_repo.get_by_dedupe_key(db, assessment_id, item.dedupe_key)
+        if existing is not None and existing.target == item.target:
+            if not item.cwe_ids or set(item.cwe_ids) <= set(existing.cwe_ids or []):
+                continue
+        kept.append(item)
+    return kept
 
 
 def _parse_raw(action: Action, result: ToolResult) -> list[NewFinding] | None:

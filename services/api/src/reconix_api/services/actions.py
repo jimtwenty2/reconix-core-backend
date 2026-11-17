@@ -119,9 +119,12 @@ async def send_action(
     body: ActionIn,
     source: str = "operator",
     agent_run_id: UUID | None = None,
-) -> ActionOut:
+) -> tuple[ActionOut, UUID]:
     """source is who asked: "operator", or "agent" for the step a plan suggested, which
     passes its own agent_run_id so the action is filed under that plan's run.
+
+    Returns the action and the agent run it was filed under, so a caller can continue from
+    it (a validation step's verdict, services/validation.py).
 
     The assessment row is locked from the loop check until a LOW action's tool run is
     saved, so actions sent at once are checked one at a time and each sees the runs
@@ -187,7 +190,7 @@ async def send_action(
         await tool_runs.run_action(
             db, interfaces, mask, settings, operator, row, action, action_hash(action), None
         )
-        return read_action(db, row.action_id, mask)
+        return read_action(db, row.action_id, mask), row.agent_run_id
 
     snapshot = masked_snapshot(action, mask)
     approval = approval_repo.add(
@@ -208,7 +211,7 @@ async def send_action(
         assessment_id,
         {**details, "approval_id": str(approval.approval_id)},
     )
-    return read_action(db, row.action_id, mask)
+    return read_action(db, row.action_id, mask), row.agent_run_id
 
 
 def _fits_auto_scope(

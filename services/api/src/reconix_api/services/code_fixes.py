@@ -538,7 +538,7 @@ async def _run_check(
 ) -> str | None:
     """SEMGREP on the copy, as an action of this fix run; its masked output, or None."""
     try:
-        action = await actions.send_action(
+        action, _ = await actions.send_action(
             db,
             interfaces,
             mask,

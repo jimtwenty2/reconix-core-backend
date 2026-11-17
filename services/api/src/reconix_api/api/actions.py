@@ -43,7 +43,9 @@ async def send_action(
     Security:
     - Requires a valid session token.
     """
-    return await actions.send_action(db, interfaces, mask, settings, operator, assessment_id, body)
+    return await actions.send_action(db, interfaces, mask, settings, operator, assessment_id, body)[
+        0
+    ]
 
 
 @router.get("/assessments/{assessment_id}/actions")
