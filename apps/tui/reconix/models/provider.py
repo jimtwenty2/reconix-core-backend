@@ -30,7 +30,6 @@ class ProviderView:
     key_optional: bool = False  # a key may be given but isn't required
     base_mode: str = ""  # readonly | optional | default | required
     multi_model: bool = False  # holds a list of models (frontier)
-    built_in: bool = False  # the Core API's own provider: shown, never edited from here
 
     @property
     def reachable(self) -> bool:

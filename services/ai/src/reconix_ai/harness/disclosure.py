@@ -201,7 +201,7 @@ class DisclosureVault:
         self.folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         if not stat.S_ISDIR(os.lstat(self.folder).st_mode):
             raise NotADirectoryError(f"{self.folder} is not a folder")  # e.g. a symlink
-        os.chmod(self.folder, 0o700)  # also fixes a folder made earlier with other rights
+        os.chmod(self.folder, stat.S_IRWXU)  # also fixes a folder made earlier with other rights
 
     def read(self, evidence_id: UUID | str) -> list[dict]:
         path = self.path(evidence_id)

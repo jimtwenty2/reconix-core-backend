@@ -124,7 +124,7 @@ def _private_dir(folder: Path) -> None:
     if hasattr(os, "getuid") and info.st_uid != os.getuid():
         raise PermissionError(f"{folder} belongs to another user")
     if info.st_mode & 0o077:
-        os.chmod(folder, 0o700)                  # ours: tighten it (raises if it can't)
+        os.chmod(folder, stat.S_IRWXU)           # ours: tighten it (raises if it can't)
 
 
 def _write_private(path: Path, text: str) -> None:

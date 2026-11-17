@@ -10,6 +10,7 @@ damaged) is skipped, never shown half.
 
 import json
 import os
+import stat
 from dataclasses import asdict
 from pathlib import Path
 from uuid import UUID
@@ -26,7 +27,7 @@ SUFFIX = ".json.enc"
 def _folder(settings: Settings) -> Path:
     folder = Path(settings.knowledge_pending_dir)
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(folder, 0o700)  # whatever the umask made it
+    os.chmod(folder, stat.S_IRWXU)  # whatever the umask made it
     return folder
 
 

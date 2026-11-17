@@ -89,7 +89,8 @@ def call(
     headers = {"Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = content_type or (
-            "application/gzip" if gzip_body is not None else "application/json")
+            "application/gzip" if gzip_body is not None else "application/json"
+        )
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(
@@ -111,6 +112,7 @@ def _send(request: urllib.request.Request, timeout: int = TIMEOUT_SECONDS) -> An
     """The network call itself (tests replace this)."""
     try:
         # The address was checked to be this computer in base_url().
+        # nosemgrep: dynamic-urllib-use-detected
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             raw = response.read()
     except urllib.error.HTTPError as exc:

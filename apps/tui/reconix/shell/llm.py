@@ -53,7 +53,7 @@ class LlmMixin:
             Choice(
                 "skip",
                 "Use the Core API's model",
-                "The model set in .env (RECONIX_MODEL_*). /provider changes it later.",
+                "The built-in Reconix model. /provider sets its key or another provider later.",
                 recommended=True,
                 separated=True,
             ),
@@ -144,27 +144,6 @@ class LlmMixin:
             p = store.get_provider(provider_id)
         except store.StoreValidationError as exc:
             self._warn(exc)
-            return
-        if p.built_in:
-            # The Core API's own model (RECONIX_MODEL_* in its .env): shown, never edited here.
-            choices = [
-                Choice(
-                    "model",
-                    "Use this model",
-                    "Make the Core API's model the active choice",
-                    disabled=not p.models,
-                    reason="the Core API has no model set",
-                ),
-            ]
-            self.open_dialog(
-                ChoiceScreen(
-                    f"◆ {p.label.upper()}",
-                    f"{p.label} · the Core API's own model",
-                    choices,
-                    chip="Provider",
-                ),
-                lambda choice: self._submenu_chosen(provider_id, choice),
-            )
             return
         setup = "Update" if p.configured else "Set up"
         if not p.configured:

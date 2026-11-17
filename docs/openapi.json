@@ -7729,7 +7729,7 @@
     },
     "/api/v1/llm-providers": {
       "get": {
-        "description": "Retrieves the LLM providers, oldest first.\n\nBusiness Rules:\n- The built-in RECONIX provider is always present.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Retrieves the LLM providers, oldest first.\n\nBusiness Rules:\n- The built-in RECONIX provider is there until it is deleted; it can be added back.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "list_providers_api_v1_llm_providers_get",
         "responses": {
           "200": {
@@ -7805,7 +7805,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}": {
       "delete": {
-        "description": "Deletes a provider, or archives it when agent runs used it.\n\nBusiness Rules:\n- You cannot delete the built-in provider. The active provider can be deleted: that\n  leaves no active model until the person chooses the next one.\n- A provider that agent runs used is archived: it leaves the lists and its API key is\n  removed, but its row stays so the runs keep their history.\n\nState Changes:\n- Deletes the provider, or archives it (its key is removed). Removing the active one\n  leaves no provider with `is_active`.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Deletes a provider, or archives it when agent runs used it.\n\nBusiness Rules:\n- The built-in RECONIX provider can be deleted and added back. The active provider can be\n  deleted: that leaves no active model until the person chooses the next one.\n- A provider that agent runs used is archived: it leaves the lists and its API key is\n  removed, but its row stays so the runs keep their history.\n\nState Changes:\n- Deletes the provider, or archives it (its key is removed). Removing the active one\n  leaves no provider with `is_active`.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "delete_provider_api_v1_llm_providers__llm_provider_id__delete",
         "parameters": [
           {
@@ -7892,7 +7892,7 @@
         ]
       },
       "patch": {
-        "description": "Updates a provider. Only the fields you send change.\n\nBusiness Rules:\n- The built-in provider and the active provider cannot be changed.\n\nState Changes:\n- Updates the provider.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Updates a provider. Only the fields you send change.\n\nBusiness Rules:\n- The built-in RECONIX provider accepts only a new API key, even\n  while active. Any other active provider cannot be changed.\n\nState Changes:\n- Updates the provider.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "update_provider_api_v1_llm_providers__llm_provider_id__patch",
         "parameters": [
           {

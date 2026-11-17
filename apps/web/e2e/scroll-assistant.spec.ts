@@ -26,7 +26,7 @@ async function ask(page: Page, n: number) {
   }).toPass({ timeout: 15_000 });
   const log = page.getByRole("log", { name: "Conversation" });
   // the question, then the answer that repeats it
-  await expect.poll(async () => ((await log.innerText()).match(new RegExp(`Q${n}: line 0`, "g")) ?? []).length, { timeout: 15_000 }).toBe(2);
+  await expect.poll(async () => (await log.innerText()).split(`Q${n}: line 0`).length - 1, { timeout: 15_000 }).toBe(2);
   await expect(log).not.toHaveAttribute("aria-busy", "true");
 }
 

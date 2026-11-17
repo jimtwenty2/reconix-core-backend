@@ -95,7 +95,7 @@ def test_a_new_provider_is_saved_inactive_with_its_key_encrypted(
 def test_bad_settings_are_refused_without_echoing_the_key(db_client):
     headers = open_session(db_client)
     cases = [
-        ({**OPENAI, "provider_type": "RECONIX"}, "PROVIDER_TYPE_NOT_ALLOWED"),
+        ({**OPENAI, "provider_type": "RECONIX"}, "PROVIDER_TYPE_NOT_ALLOWED"),  # already there
         ({**OPENAI, "api_key": None}, "PROVIDER_KEY_MISSING"),
         ({**OLLAMA, "provider_type": "OPENAI_API_COMPATIBLE"}, "PROVIDER_URL_MISSING"),
         ({**OPENAI, "base_url": "http://llm.example.com"}, "PROVIDER_URL_NOT_ALLOWED"),
@@ -340,23 +340,50 @@ def test_an_edit_changes_only_the_fields_sent(db_client, db_app, session_factory
     assert event_types(db_app).count("LLM_PROVIDER_EDITED") == 2
 
 
-def test_only_the_built_in_provider_cannot_be_removed(db_client, db_app):
+def test_the_built_in_provider_can_be_rekeyed_removed_and_added_back(db_client):
+    headers = open_session(db_client)
+    reconix_id = built_in_id(db_client, headers)
+    url = f"/llm-providers/{reconix_id}"
+
+    rekeyed = db_client.patch(url, json={"api_key": FAKE_API_KEY}, headers=headers)
+    other_field = db_client.patch(url, json={"model_name": "other"}, headers=headers)
+    renamed = db_client.patch(url, json={"display_name": "Other"}, headers=headers)
+    cleared = db_client.patch(url, json={"api_key": None}, headers=headers)
+    second = db_client.post(
+        "/llm-providers", json={**OPENAI, "provider_type": "RECONIX"}, headers=headers
+    )
+    removed = db_client.delete(url, headers=headers)
+    with_url = {**OPENAI, "provider_type": "RECONIX", "base_url": "http://127.0.0.1:1"}
+    refused_url = db_client.post("/llm-providers", json=with_url, headers=headers)
+    added = db_client.post(
+        "/llm-providers", json={**OPENAI, "provider_type": "RECONIX"}, headers=headers
+    )
+
+    assert rekeyed.status_code == 200, rekeyed.json()  # even while it is the active one
+    assert rekeyed.json()["api_key_last4"] == "wxyz"
+    assert cleared.status_code == 200, cleared.json()  # unset: RECONIX has no key now
+    assert cleared.json()["api_key_last4"] is None
+    assert FAKE_API_KEY not in rekeyed.text
+    assert (other_field.status_code, other_field.json()["code"]) == (409, "BUILT_IN_PROVIDER")
+    assert (renamed.status_code, renamed.json()["code"]) == (409, "BUILT_IN_PROVIDER")
+    assert (second.status_code, second.json()["code"]) == (422, "PROVIDER_TYPE_NOT_ALLOWED")
+    assert removed.status_code == 204
+    assert (refused_url.status_code, refused_url.json()["code"]) == (422, "BUILT_IN_PROVIDER")
+    assert added.status_code == 201, added.json()
+    assert added.json()["provider_type"] == "RECONIX"
+
+
+def test_only_the_active_provider_cannot_be_changed(db_client, db_app):
     headers = open_session(db_client)
     reconix_id = built_in_id(db_client, headers)
     ollama_id = add(db_client, headers, OLLAMA)["llm_provider_id"]
     activate(db_client, headers, ollama_id)
 
-    edit_built_in = db_client.patch(
-        f"/llm-providers/{reconix_id}", json={"model_name": "other"}, headers=headers
-    )
-    remove_built_in = db_client.delete(f"/llm-providers/{reconix_id}", headers=headers)
     edit_active = db_client.patch(
         f"/llm-providers/{ollama_id}", json={"base_url": "https://gpu.example.com"}, headers=headers
     )
     remove_active = db_client.delete(f"/llm-providers/{ollama_id}", headers=headers)
 
-    assert edit_built_in.json()["code"] == "BUILT_IN_PROVIDER"
-    assert remove_built_in.json()["code"] == "BUILT_IN_PROVIDER"
     assert edit_active.json()["code"] == "PROVIDER_IS_ACTIVE"  # the active one never changes
     assert remove_active.status_code == 204  # ...but Unset removes it
     assert active(db_client, headers) == []  # nothing is active in its place

@@ -29,7 +29,7 @@ def list_providers(db: Db, _: CurrentOperator) -> list[LlmProviderOut]:
     """Retrieves the LLM providers, oldest first.
 
     Business Rules:
-    - The built-in RECONIX provider is always present.
+    - The built-in RECONIX provider is there until it is deleted; it can be added back.
 
     Security:
     - Requires a valid session token.
@@ -90,7 +90,8 @@ def update_provider(
     """Updates a provider. Only the fields you send change.
 
     Business Rules:
-    - The built-in provider and the active provider cannot be changed.
+    - The built-in RECONIX provider accepts only a new API key, even
+      while active. Any other active provider cannot be changed.
 
     State Changes:
     - Updates the provider.
@@ -110,8 +111,8 @@ def delete_provider(
     """Deletes a provider, or archives it when agent runs used it.
 
     Business Rules:
-    - You cannot delete the built-in provider. The active provider can be deleted: that
-      leaves no active model until the person chooses the next one.
+    - The built-in RECONIX provider can be deleted and added back. The active provider can be
+      deleted: that leaves no active model until the person chooses the next one.
     - A provider that agent runs used is archived: it leaves the lists and its API key is
       removed, but its row stays so the runs keep their history.
 

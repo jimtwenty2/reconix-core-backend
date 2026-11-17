@@ -10,6 +10,7 @@
 # rotated, not ignored. Get the fingerprint from the Gitleaks job log or JSON report.
 00ebb8a7e7c77fc55c1ebc9c26c3042d7f7cdf1f:apps/tui/tests/test_qa_security_review.py:generic-api-key:146
 02cf718d34b8a4f5078bcdbf785f0b855b0cf784:services/api/tests/unit/core/test_timeline.py:generic-api-key:62
+1de6db85b478957785ab05a61d28b0dfb356797c:apps/web/tests/core-assistant.test.ts:generic-api-key:300
 2fa1428e470229e08cb221d996f9a92a20f2fba8:services/ai/tests/unit/providers/test_client.py:generic-api-key:121
 45b5dd887f69d58ec0b7c6550c8c2b9c469e51ff:services/api/tests/unit/core/test_masking.py:generic-api-key:10
 715058323371387e0fa9b1b1c7703bb34a96ee6e:apps/web/tests/redact-vectors.json:jwt:24
@@ -35,6 +36,10 @@ b308420bd06d3369e50a28790e56accdb8c87a65:apps/web/tests/redact-vectors.json:jwt:
 b308420bd06d3369e50a28790e56accdb8c87a65:apps/web/tests/redact-vectors.json:jwt:4
 b308420bd06d3369e50a28790e56accdb8c87a65:apps/web/tests/redact-vectors.json:jwt:8
 b308420bd06d3369e50a28790e56accdb8c87a65:apps/web/tests/redact-vectors.json:stripe-access-token:14
+c5fac2a6fdc47fbc865fb3fafa029a73b2560ce1:apps/web/tests/core-assistant.test.ts:generic-api-key:232
+c5fac2a6fdc47fbc865fb3fafa029a73b2560ce1:apps/web/tests/core-assistant.test.ts:generic-api-key:292
+c5fac2a6fdc47fbc865fb3fafa029a73b2560ce1:apps/web/tests/core-assistant.test.ts:generic-api-key:306
+c5fac2a6fdc47fbc865fb3fafa029a73b2560ce1:apps/web/tests/core-assistant.test.ts:generic-api-key:349
 d14cfd07eaa2423678b3076be89d67603789838d:services/ai/tests/unit/providers/test_client.py:generic-api-key:234
 ed5d0511ac7e31f7ddd9673047ed74591c1415bc:apps/web/tests/redact-vectors.json:jwt:24
 f1f05a59c565247177c01a42ded933b594137be2:services/api/tests/fixtures/osv/kali_probe.json:generic-api-key:1

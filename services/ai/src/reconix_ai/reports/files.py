@@ -18,6 +18,7 @@ from reconix_ai.contracts import SEVERITY_ORDER, finding_rank
 from reconix_ai.harness import mask_secrets
 
 TEMPLATE_DIR = Path(__file__).resolve().parent
+# nosemgrep: direct-use-of-jinja2
 TEMPLATES = Environment(
     loader=FileSystemLoader(TEMPLATE_DIR),
     autoescape=select_autoescape(["html"]),  # every value is escaped in the HTML
