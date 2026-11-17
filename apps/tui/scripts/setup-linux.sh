@@ -9,14 +9,14 @@ cd "$TUI_DIR"
 
 say() { printf '\n==> %s\n' "$*"; }
 
-say "Checking Python (3.9 or newer)"
+say "Checking Python (3.12 or newer)"
 PY="$(command -v python3 || true)"
 if [ -z "$PY" ]; then
     echo "python3 not found. Install it:  sudo apt install -y python3 python3-venv python3-pip"
     exit 1
 fi
-if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'; then
-    echo "Python $("$PY" -V 2>&1) is too old: Reconix needs 3.9 or newer."
+if ! "$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then
+    echo "Python $("$PY" -V 2>&1) is too old: Reconix needs 3.12 or newer."
     exit 1
 fi
 if ! "$PY" -c 'import venv, ensurepip' 2>/dev/null; then

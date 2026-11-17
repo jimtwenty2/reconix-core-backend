@@ -14,8 +14,8 @@ run and are decided here, in the TUI.
 
 ## Run it
 
-Needs **Python 3.9+**; the local web (`/web`) also needs **Node.js 20+** with npm. The TUI
-lives in `apps/tui` of the Reconix-Core repo.
+Needs **uv** and **Python 3.12+**; the local web (`/web`) also needs **Node.js 20+** with npm.
+The TUI lives in `apps/tui` of the Reconix-Core repo.
 
 **Evaluating the static version?** Start at
 [docs/evaluator/README.md](docs/evaluator/README.md): setup per OS (with a setup script), the
@@ -26,10 +26,9 @@ flows one at a time, every test case, and the `/tests` checklist inside the app.
 ```bash
 git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
 cd reconix-core-backend/apps/tui
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-reconix                    # or: python -m reconix
+uv tool install .
+reconix doctor             # available globally after installation
+reconix
 ```
 
 **Windows 10 / 11** (PowerShell; use Windows Terminal for the TUI)
@@ -37,11 +36,14 @@ reconix                    # or: python -m reconix
 ```powershell
 git clone https://github.com/14th-Generation-Advanced-Course/reconix-core-backend.git
 cd reconix-core-backend\apps\tui
-py -m venv .venv               # or: python -m venv .venv
-.venv\Scripts\Activate.ps1     # if scripts are blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-python -m pip install -e .
+uv tool install .
+reconix doctor
 reconix
 ```
+
+`uv tool install .` creates an isolated environment and adds the `reconix` executable to
+uv's global tool directory. Update it after pulling changes with `uv tool install --force .`,
+or remove it with `uv tool uninstall reconix`.
 
 At the first start Reconix asks **"Set an AI provider?"**: choose **Use the mock model
 (offline)** to chat without a model or a network (`reconix-mock-1`, prepared answers), or
@@ -50,7 +52,7 @@ Skip.
 Tests (Textual Pilot, no terminal needed):
 
 ```bash
-pip install -r requirements-dev.txt     # pytest + pytest-asyncio
+uv run --with pytest --with pytest-asyncio pytest tests
 pytest -q
 ```
 
@@ -61,9 +63,8 @@ mid-run with preserved context, and have an agent run real Kali tools through an
 Without a model configured, the scripted demo above still runs.
 
 ```bash
-# 1. TUI deps (as above) + the backend pentest harness
-source .venv/bin/activate
-python -m pip install -e .
+# 1. Install the globally available TUI command and the backend pentest harness
+uv tool install .
 pip install -e backend            # installs the harness (adds litellm, mcp, pyyaml)
 
 # 2. one .env at the repo root for the whole app
@@ -72,7 +73,7 @@ cp .env.example .env              # set LLM_BASE_URL / LLM_MODEL (the default "r
                                   # the provider API key is entered in the TUI, never in .env
 
 # 3. run
-python -m reconix
+reconix
 ```
 
 Then, in the TUI:
@@ -109,10 +110,10 @@ npm run dev -- --no-open                # don't open a browser
 On Windows (PowerShell) the sample data is `$env:RECONIX_DATA_DIR = "sample-data"; npm run dev`.
 
 The dashboard has no terminal of its own: run assessments and decide their gates in the TUI
-(`python -m reconix`); what it saves shows up on the dashboard's pages
+(`reconix`); what it saves shows up on the dashboard's pages
 (`docs/WEB_NO_TERMINAL_BELL_LOGO_PLAN.md`).
 
-> Requires Python 3.9+. For the intended look, use a terminal with a
+> Requires Python 3.12+. For the intended look, use a terminal with a
 > **JetBrains Mono** (or any Nerd/▮ box-drawing) font and a dark background.
 
 ## How an assessment runs

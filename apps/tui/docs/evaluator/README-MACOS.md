@@ -4,7 +4,7 @@ Back to the guide: [README.md](README.md)
 
 ## 1. Set up (one time)
 
-You need **git** and **Python 3.9+**. Node.js 20+ with npm is only needed for the local web
+You need **git** and **Python 3.12+**. Node.js 20+ with npm is only needed for the local web
 (Flow 4).
 
 ```bash
@@ -17,8 +17,8 @@ git checkout sokpiseth/static-ui-parity
 bash apps/tui/scripts/setup-macos.sh
 ```
 
-The script creates `apps/tui/.venv`, installs the TUI into it and checks Node.js. (By hand:
-`cd apps/tui && python3 -m venv .venv && .venv/bin/pip install -e .`)
+The evaluator script creates an isolated `apps/tui/.venv` and checks Node.js. For a
+system-global command, install with `uv tool install ./apps/tui`.
 
 ## 2. Start
 
