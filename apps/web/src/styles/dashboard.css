@@ -440,17 +440,23 @@
 }
 .dash-globe-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; transition: opacity 0.8s ease; }
 .dash-hero-title { position: relative; z-index: 2; align-self: flex-start; padding: 20px 0 0 22px; }
-.dash-hero-title > * { text-shadow: 0 0 2px var(--background), 0 2px 18px var(--background); }
-/* Phones: the globe sits right behind the title, so a scrim keeps the title readable. */
+.dash-hero-title > * { text-shadow: 0 0 4px var(--background), 0 2px 18px var(--background); }
+.dash-hero-title > p { color: color-mix(in oklab, var(--foreground) 78%, var(--background)); }
+/* Subtle scrim behind the title so text stays readable over the globe glow at every viewport. */
+.dash-hero::after {
+  content: "";
+  position: absolute;
+  inset: -8px 0 auto;
+  height: 55%;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse 480px 160px at 14% 18%, color-mix(in oklab, var(--background) 82%, transparent), color-mix(in oklab, var(--background) 42%, transparent) 60%, transparent);
+}
+/* Phones: the globe sits right behind the full width of the title, so strengthen the top scrim. */
 @media (max-width: 767.98px) {
   .dash-hero-title { padding: 14px 0 0 4px; }
   .dash-hero::after {
-    content: "";
-    position: absolute;
-    inset: -8px 0 auto;
     height: 58%;
-    z-index: 1;
-    pointer-events: none;
     background: linear-gradient(to bottom, color-mix(in oklab, var(--background) 92%, transparent), color-mix(in oklab, var(--background) 70%, transparent) 55%, transparent);
   }
   .dash-hero-title > p { color: color-mix(in oklab, var(--foreground) 80%, var(--background)); }

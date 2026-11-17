@@ -10,7 +10,7 @@ import { ZodError } from "zod";
 import { type Assessment, AssessmentSchema, STATUSES } from "../data/schema";
 import type { Library } from "../data/store";
 import { severityOf } from "./adapt";
-import { liveStatus, newestPlanRun } from "./assessments";
+import { liveStatus, newestPlanRun, typeLabel } from "./assessments";
 import { CoreError, coreJson } from "./core";
 import { asMain } from "./sessions";
 
@@ -216,7 +216,7 @@ export function runOf(
     target,
     target_url: target,
     target_kind: row.type,
-    template: { id: row.type, name: row.name, confirmed: true },
+    template: { id: row.type, name: typeLabel(row.type), confirmed: true },
     operator: row.created_by,
     created_at: row.created_at,
     saved_at: row.updated_at,
