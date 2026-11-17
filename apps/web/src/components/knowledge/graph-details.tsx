@@ -250,6 +250,8 @@ export function GraphDetails({ graph, node, onFocus, passages }: Props) {
                   </button>
                   {!c || c.status === "loading" ? (
                     <Loader className="kn-mention-wait animate-spin" aria-label="Reading" />
+                  ) : c.status === "error" ? (
+                    <p className="kn-error">{c.error ?? "Could not read this document."}</p>
                   ) : hits.length === 0 ? (
                     <p className="kn-details-empty">Named in a part not read here.</p>
                   ) : (

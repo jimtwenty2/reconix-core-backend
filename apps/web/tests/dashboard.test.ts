@@ -360,6 +360,15 @@ describe("deriveDashboard", () => {
       const fp = { ...completed, findings: [{ ...completed.findings[0], severity: "CRITICAL" as const, effective_severity: "CRITICAL" as const, status: "false-positive" }] };
       expect(rows(fp).severity[0]).toMatchObject({ level: "CRITICAL", count: 0 });
       expect(deriveDashboard(assessmentView(fp)).cards.summary.findings).toMatchObject({ total: 0, worst: null });
+      // unrated findings (UNKNOWN / NONE) still appear as worst in summary instead of "No findings yet"
+      const unrated = {
+        ...completed,
+        findings: [{ ...completed.findings[0], severity: "UNKNOWN" as const, severity_override: "" as const, effective_severity: "" as const, status: "open" }],
+      };
+      expect(deriveDashboard(assessmentView(unrated)).cards.summary.findings).toMatchObject({
+        total: 1,
+        worst: { level: "UNKNOWN", count: 1 },
+      });
     });
   });
 });

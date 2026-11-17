@@ -17,13 +17,25 @@ import { hostname, userInfo } from "node:os";
 import { coreJson, CoreError } from "./core";
 
 type Opened = { session_id: string; token: string };
-type State = { main: Opened | null; chats: Map<string, string>; code: string | null };
+type State = {
+  main: Opened | null;
+  mainPending: Promise<string> | null;
+  chats: Map<string, string>;
+  chatPending: Map<string, Promise<string>>;
+  code: string | null;
+};
 
 const KEY = Symbol.for("reconix.web.coreSessions");
 const g = globalThis as unknown as Record<symbol, State | undefined>;
 
 function state(): State {
-  g[KEY] ??= { main: null, chats: new Map(), code: process.env.RECONIX_WEB_SIGN_IN_CODE?.trim() || null };
+  g[KEY] ??= {
+    main: null,
+    mainPending: null,
+    chats: new Map(),
+    chatPending: new Map(),
+    code: process.env.RECONIX_WEB_SIGN_IN_CODE?.trim() || null,
+  };
   return g[KEY];
 }
 
@@ -52,24 +64,32 @@ export async function signInWithCode(): Promise<void> {
   }
 }
 
-/** The main session's token, opened on first use. */
+/** The main session's token, opened on first use (deduplicated across concurrent callers). */
 export async function mainToken(): Promise<string> {
   const s = state();
-  if (!s.main) {
-    await signInWithCode();
-    s.main ??= await openSession();
-  }
-  return s.main.token;
+  if (s.main) return s.main.token;
+  s.mainPending ??= (async () => {
+    try {
+      await signInWithCode();
+      s.main ??= await openSession();
+      return s.main.token;
+    } finally {
+      s.mainPending = null;
+    }
+  })();
+  return s.mainPending;
 }
 
 /** Runs `call` as the main session; a token the API no longer knows (it restarted) is
     replaced once. */
 export async function asMain<T>(call: (token: string) => Promise<T>): Promise<T> {
+  const used = await mainToken();
   try {
-    return await call(await mainToken());
+    return await call(used);
   } catch (error) {
     if (!(error instanceof CoreError) || error.status !== 401) throw error;
-    state().main = null;
+    const s = state();
+    if (s.main?.token === used) s.main = null;
     return call(await mainToken());
   }
 }
@@ -84,19 +104,32 @@ export async function openChat(): Promise<string> {
 /** The token of a conversation, resumed when this server has none (it restarted, or the API
     did). `fresh`: the one held is known to be gone. */
 export async function chatToken(id: string, fresh = false): Promise<string> {
-  const held = fresh ? null : state().chats.get(id);
+  const s = state();
+  const held = fresh ? null : s.chats.get(id);
   if (held) return held;
-  const resumed = await asMain((token) => coreJson<Opened>(`/sessions/${id}/resume`, { method: "POST", token }));
-  state().chats.set(id, resumed.token);
-  return resumed.token;
+  const inflight = s.chatPending.get(id);
+  if (inflight) return inflight;
+  const pending = (async () => {
+    try {
+      const resumed = await asMain((token) => coreJson<Opened>(`/sessions/${id}/resume`, { method: "POST", token }));
+      s.chats.set(id, resumed.token);
+      return resumed.token;
+    } finally {
+      s.chatPending.delete(id);
+    }
+  })();
+  s.chatPending.set(id, pending);
+  return pending;
 }
 
 /** Forgets a conversation's token (closed, or the API no longer knows it). */
 export const forgetChat = (id: string): void => {
-  state().chats.delete(id);
+  const s = state();
+  s.chats.delete(id);
+  s.chatPending.delete(id);
 };
 
 /** Only for tests: start again from nothing. */
 export function resetSessions(code: string | null = null): void {
-  g[KEY] = { main: null, chats: new Map(), code };
+  g[KEY] = { main: null, mainPending: null, chats: new Map(), chatPending: new Map(), code };
 }

@@ -62,6 +62,7 @@ export function useAsking({
             { conversationId: opened?.id ?? undefined, uid: now.scope.uid, question, retry },
             controller.signal,
             (frame) => {
+              if (controller.signal.aborted) return;
               if (frame.t === "meta") {
                 setOpened({ id: frame.conversationId, title: frame.title, scope: frame.scope });
                 const used = frame.knowledge;
@@ -73,8 +74,11 @@ export function useAsking({
               else if (frame.t === "error") patch(reply.id, (m) => ({ ...m, state: "error", detail: frame.detail }));
             },
             // known before the first frame: a Stop right away still belongs to this conversation
-            (id) => setOpened((o) => (o?.id === id ? o : { id, title: o?.title || cleanTitle(question, AUTO_TITLE), scope })),
+            (id) => {
+              if (!controller.signal.aborted) setOpened((o) => (o?.id === id ? o : { id, title: o?.title || cleanTitle(question, AUTO_TITLE), scope }));
+            },
           );
+          if (controller.signal.aborted) return;
           if (!result.ok) {
             patch(reply.id, (m) => ({ ...m, state: "error", detail: result.detail }));
             if (result.status === 404 && opened?.id) setOpened(null); // gone: Retry starts a new conversation
@@ -87,7 +91,7 @@ export function useAsking({
           patch(reply.id, (m) => (controller.signal.aborted ? { ...m, state: "stopped" } : { ...m, state: "error", detail: "The connection to the assistant broke off." }));
         } finally {
           if (stream.get() === controller) stream.set(null);
-          setBusy(false);
+          if (!stream.get()) setBusy(false);
           refreshHistory();
         }
       })();

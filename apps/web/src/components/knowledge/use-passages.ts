@@ -15,16 +15,20 @@ const MENTION_PAGES = 4;
 export function usePassages() {
   const [content, setContent] = useState<Record<string, DocContent>>({});
   const asked = useRef(new Set<string>());
+  const genRef = useRef(new Map<string, number>());
+  const pagingRef = useRef(new Set<string>());
+  const genOf = (id: string) => genRef.current.get(id) ?? 0;
 
-  const page = useCallback(async (id: string, offset: number): Promise<boolean> => {
+  const page = useCallback(async (id: string, offset: number, gen = genOf(id)): Promise<{ ok: boolean; more: boolean }> => {
     const result = await api.loadPassages(id, offset, PAGE);
+    if ((genRef.current.get(id) ?? 0) !== gen) return { ok: false, more: false };
     setContent((c) => {
       const was = c[id];
       if (!result.ok) return { ...c, [id]: { status: "error", total: was?.total ?? 0, passages: was?.passages ?? [], error: result.detail } };
       const passages = [...(offset === 0 ? [] : (was?.passages ?? [])), ...result.value.passages];
       return { ...c, [id]: { status: "ready", total: result.value.total, passages, error: null } };
     });
-    return result.ok && offset + PAGE < result.value.total;
+    return { ok: result.ok, more: result.ok && offset + PAGE < result.value.total };
   }, []);
 
   /** The first page of a document's passages (once). */
@@ -32,8 +36,9 @@ export function usePassages() {
     (id: string) => {
       if (asked.current.has(id)) return;
       asked.current.add(id);
+      const gen = genOf(id);
       setContent((c) => ({ ...c, [id]: { status: "loading", total: 0, passages: [], error: null } }));
-      void page(id, 0);
+      void page(id, 0, gen);
     },
     [page],
   );
@@ -41,8 +46,11 @@ export function usePassages() {
   /** The next page. */
   const more = useCallback(
     (id: string) => {
+      if (pagingRef.current.has(id)) return;
+      pagingRef.current.add(id);
       const have = content[id]?.passages.length ?? 0;
-      void page(id, have);
+      const gen = genOf(id);
+      void page(id, have, gen).finally(() => pagingRef.current.delete(id));
     },
     [content, page],
   );
@@ -53,9 +61,17 @@ export function usePassages() {
       if (asked.current.has(`all:${id}`)) return;
       asked.current.add(`all:${id}`);
       asked.current.add(id);
+      const gen = genOf(id);
       setContent((c) => (c[id] ? c : { ...c, [id]: { status: "loading", total: 0, passages: [], error: null } }));
       void (async () => {
-        for (let p = 0, go = true; go && p < MENTION_PAGES; p++) go = await page(id, p * PAGE);
+        for (let p = 0, go = true; go && p < MENTION_PAGES; p++) {
+          const step = await page(id, p * PAGE, gen);
+          if (!step.ok) {
+            if ((genRef.current.get(id) ?? 0) === gen) asked.current.delete(`all:${id}`);
+            return;
+          }
+          go = step.more;
+        }
       })();
     },
     [page],
@@ -63,6 +79,8 @@ export function usePassages() {
 
   /** Forget a document (removed, or reloaded). */
   const forget = useCallback((id: string) => {
+    genRef.current.set(id, (genRef.current.get(id) ?? 0) + 1);
+    pagingRef.current.delete(id);
     asked.current.delete(id);
     asked.current.delete(`all:${id}`);
     setContent((c) => {

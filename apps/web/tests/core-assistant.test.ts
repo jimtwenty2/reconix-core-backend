@@ -112,6 +112,13 @@ describe("asking", () => {
     expect(core.messages.filter((m) => m.session_id === id && m.role === "user").map((m) => m.content_masked)).toEqual(["First", "Second"]);
   });
 
+  it("keeps the asked assessment uid in meta scope instead of resetting to all runs", async () => {
+    await addLocalModel();
+    const uid = "20261105-120000-0001_target";
+    const frames = await framesOf(await ask({ uid, question: "Summarize this assessment" }));
+    expect(frames[0]).toMatchObject({ t: "meta", scope: { uid } });
+  });
+
   it("passes the API's refusal on (no model: 503) and its stream error", async () => {
     const refused = await ask({ uid: null, question: "Hi" });
     expect(refused.status).toBe(503);
@@ -482,5 +489,14 @@ describe("the assistant's data comes from the Core API", () => {
     await addLocalModel();
     const frames = await framesOf(await ask({ uid: null, question: "Show me the findings" }));
     expect(JSON.stringify(frames)).not.toContain("RCX-DEMO");
+  });
+
+  it("deduplicates concurrent mainToken sign-in requests into a single session", async () => {
+    const { mainToken } = await import("@/lib/api/sessions");
+    core.codes.add("code-once");
+    resetSessions("code-once");
+    const [t1, t2] = await Promise.all([mainToken(), mainToken()]);
+    expect(t1).toBe(t2);
+    expect(core.calls.filter((c) => c.path === "/sessions/web-sign-in" || (c.path === "/sessions" && c.method === "POST"))).toHaveLength(1);
   });
 });

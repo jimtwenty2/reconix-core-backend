@@ -11,12 +11,14 @@ import { ALL_RUNS, askStream, readConversation } from "@/lib/api/assistant";
 import { coreFailure } from "@/lib/api/respond";
 import { openChat } from "@/lib/api/sessions";
 import { pickCards } from "@/lib/assistant/cards";
+import { scopeOf } from "@/lib/assistant/insights";
 import { fail, NO_STORE, readJson, refuse } from "@/lib/assistant/access";
 import { AUTO_TITLE, cleanTitle } from "@/lib/assistant/history-schema";
 import { NDJSON } from "@/lib/assistant/protocol";
 import { createLimiter, limitsFromEnv } from "@/lib/assistant/rate";
 import { replyStream } from "@/lib/assistant/reply";
 import { ChatRequestSchema, MAX_BODY } from "@/lib/assistant/request";
+import { assessmentView } from "@/lib/data/adapt";
 import { loadApiLibrary } from "@/lib/api/library";
 
 const limiter = createLimiter(...limitsFromEnv());
@@ -39,10 +41,17 @@ export async function POST(request: Request) {
     // cards are facts from the Core API's assessments, picked for the question; the model never
     // makes one. Picked before asking, so the API's answer is read as soon as it starts
     let cards: ReturnType<typeof pickCards> = [];
+    let scope = ALL_RUNS;
     try {
-      cards = pickCards((await loadApiLibrary()).assessments, uid, question);
+      const library = await loadApiLibrary();
+      cards = pickCards(library.assessments, uid, question);
+      if (uid) {
+        const chosen = library.assessments.find((a) => a.uid === uid);
+        scope = chosen ? scopeOf(assessmentView(chosen)) : { uid, label: uid };
+      }
     } catch {
       cards = [];
+      if (uid) scope = { uid, label: uid };
     }
 
     let id: string;
@@ -62,7 +71,7 @@ export async function POST(request: Request) {
       return coreFailure(error, "The assistant could not answer.");
     }
 
-    const stream = replyStream({ body: answer, meta: { conversationId: id, title, scope: ALL_RUNS }, cards, abort, release });
+    const stream = replyStream({ body: answer, meta: { conversationId: id, title, scope }, cards, abort, release });
     streaming = true;
     return new Response(stream, {
       headers: { ...NO_STORE, "Content-Type": NDJSON, "X-Content-Type-Options": "nosniff", "X-Conversation-Id": id },

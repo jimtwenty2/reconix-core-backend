@@ -25,7 +25,7 @@ export function FindingsCard({ data, id = "findings-card" }: { data: FindingsSli
     >
       {/* the mix as one stacked bar (the rows below are its legend) */}
       <div role="img" aria-label={`Findings by severity: ${data.words}`} className="dash-stack">
-        {data.total ? (
+        {data.severity.some((s) => s.count > 0) ? (
           data.severity
             .filter((s) => s.count > 0)
             .map((s) => (
