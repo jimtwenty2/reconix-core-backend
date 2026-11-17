@@ -147,9 +147,10 @@ async function modelsOf(row: CoreProvider): Promise<readonly string[]> {
   }
 }
 
-/** The picker's view, with every model of every provider. */
-export async function modelsView(): Promise<ModelsView> {
+/** The picker's view; `probe` false skips live provider `/models` lookups for an instant initial list. */
+export async function modelsView({ probe = true }: { probe?: boolean } = {}): Promise<ModelsView> {
   const rows = await rowsOf();
+  if (!probe) return toModelsView(rows);
   const groups = groupRows(rows);
   const found = new Map(await Promise.all(groups.map(async (g) => [g[0].llm_provider_id, await modelsOf(g[0])] as const)));
   return toModelsView(rows, found);

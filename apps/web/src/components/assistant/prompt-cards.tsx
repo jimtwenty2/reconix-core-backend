@@ -3,7 +3,7 @@
 /* The welcome screen's suggestions as cards: each names real numbers from the data in scope
    (lib/assistant/prompts.ts). Picking one asks it. When asking isn't possible here (a viewer,
    no model) they are disabled, with the reason as their tooltip. */
-import { Bug, Compass, FileText, Hand, ListChecks, ShieldAlert, type LucideIcon } from "lucide-react";
+import { ArrowUpRight, Bug, Compass, FileText, Hand, ListChecks, ShieldAlert, type LucideIcon } from "lucide-react";
 import type { PromptKind, WelcomePrompt } from "@/lib/assistant/prompts";
 
 const ICONS: Record<PromptKind, LucideIcon> = {
@@ -27,10 +27,11 @@ export function PromptCards({ prompts, onPick, disabled }: { prompts: WelcomePro
               <span className="ai-prompt-icon" aria-hidden>
                 <Icon className="size-4" strokeWidth={1.8} />
               </span>
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="ai-prompt-title block">{p.title}</span>
                 <span className="ai-prompt-detail">{p.detail}</span>
               </span>
+              <ArrowUpRight className="ai-prompt-arrow size-3.5 shrink-0" aria-hidden />
             </button>
           </li>
         );
