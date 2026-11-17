@@ -4,7 +4,7 @@ Back to the guide: [README.md](README.md)
 
 ## 1. Set up (one time)
 
-You need **git** and **Python 3.9+**. Node.js 20+ with npm is only needed for the local web
+You need **git** and **Python 3.12+**. Node.js 20+ with npm is only needed for the local web
 (Flow 4).
 
 Use **Windows Terminal** with PowerShell (the old console window draws the screens badly).
@@ -20,8 +20,8 @@ git checkout sokpiseth/static-ui-parity
 powershell -ExecutionPolicy Bypass -File apps\tui\scripts\setup-windows.ps1
 ```
 
-The script creates `apps/tui/.venv`, installs the TUI into it and checks Node.js. (By hand:
-`cd apps\tui; py -m venv .venv; .venv\Scripts\pip install -e .`)
+The evaluator script creates an isolated `apps\tui\.venv` and checks Node.js. For a
+system-global command, install with `uv tool install .\apps\tui`.
 
 ## 2. Start
 

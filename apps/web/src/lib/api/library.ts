@@ -5,12 +5,13 @@
    records is filled in; the rest stays empty. Server only. */
 import "server-only";
 
+import { cache } from "react";
 import { ZodError } from "zod";
 
 import { type Assessment, AssessmentSchema, STATUSES } from "../data/schema";
 import type { Library } from "../data/store";
 import { severityOf } from "./adapt";
-import { liveStatus, newestPlanRun } from "./assessments";
+import { liveStatus, newestPlanRun, typeLabel } from "./assessments";
 import { CoreError, coreJson } from "./core";
 import { asMain } from "./sessions";
 
@@ -216,7 +217,7 @@ export function runOf(
     target,
     target_url: target,
     target_kind: row.type,
-    template: { id: row.type, name: row.name, confirmed: true },
+    template: { id: row.type, name: typeLabel(row.type), confirmed: true },
     operator: row.created_by,
     created_at: row.created_at,
     saved_at: row.updated_at,
@@ -279,13 +280,37 @@ export function runOf(
 /** An ACTIVE assessment's status from its newest plan run (GET /sessions/{id}/agent-runs), as
  *  the Assessments view shows it. null for one that isn't ACTIVE, or when its session's runs
  *  can't be read (then runOf keeps the API's own status, so the run is not dropped for it). */
-async function liveOf(row: Row, get: <T>(path: string) => Promise<T>): Promise<(typeof STATUSES)[number] | null> {
+async function liveOf(
+  row: Row,
+  get: <T>(path: string) => Promise<T>,
+  agentRunsBySession: Map<string, Promise<unknown>>,
+): Promise<(typeof STATUSES)[number] | null> {
   if (row.assessment_status !== "ACTIVE") return null;
   try {
-    return liveStatus(row, newestPlanRun(await get<unknown>(`/sessions/${row.session_id}/agent-runs`), row.assessment_id));
+    let pending = agentRunsBySession.get(row.session_id);
+    if (!pending) {
+      pending = get<unknown>(`/sessions/${row.session_id}/agent-runs`);
+      agentRunsBySession.set(row.session_id, pending);
+    }
+    return liveStatus(row, newestPlanRun(await pending, row.assessment_id));
   } catch {
     return null;
   }
+}
+
+const LIBRARY_CONCURRENCY = 8;
+
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 /** Why one assessment could not be shown: the API's refusal as it said it, or which of its
@@ -300,29 +325,29 @@ function problemOf(error: unknown): string {
 }
 
 /** Every assessment the Core API has (newest first, at most MAX_ASSESSMENTS), as runs. */
-export async function loadApiLibrary(): Promise<Library> {
+export const loadApiLibrary = cache(async (): Promise<Library> => {
   const get = <T>(path: string) => asMain((token) => coreJson<T>(path, { token }));
   const rows = (await get<Row[]>("/assessments")).slice(0, MAX_ASSESSMENTS);
+  if (rows.length === 0) return { dir: "Core API", readAt: Date.now(), assessments: [], problems: [] };
   const approvals = (await Promise.all(["PENDING", "APPROVED", "REJECTED"].map((s) => get<CoreApproval[]>(`/approvals?status=${s}`).catch(() => [])))).flat();
+  const agentRunsBySession = new Map<string, Promise<unknown>>();
   const problems: Library["problems"] = [];
-  const runs = await Promise.all(
-    rows.map(async (row) => {
-      const id = row.assessment_id;
-      try {
-        const [overview, findings, actions, timeline, messages, live] = await Promise.all([
-          get<Overview>(`/assessments/${id}/overview`),
-          get<CoreFinding[]>(`/findings?assessment_id=${id}`),
-          get<CoreAction[]>(`/assessments/${id}/actions`),
-          get<{ events: CoreEvent[] }>(`/assessments/${id}/timeline`),
-          get<CoreMessage[]>(`/sessions/${row.session_id}/messages`).catch(() => []),
-          liveOf(row, get),
-        ]);
-        return runOf(row, overview, findings, actions, approvals, timeline.events, messages, live);
-      } catch (error) {
-        problems.push({ file: row.engagement_code, reason: problemOf(error) });
-        return null;
-      }
-    }),
-  );
+  const runs = await mapLimit(rows, LIBRARY_CONCURRENCY, async (row) => {
+    const id = row.assessment_id;
+    try {
+      const [overview, findings, actions, timeline, messages, live] = await Promise.all([
+        get<Overview>(`/assessments/${id}/overview`),
+        get<CoreFinding[]>(`/findings?assessment_id=${id}`),
+        get<CoreAction[]>(`/assessments/${id}/actions`),
+        get<{ events: CoreEvent[] }>(`/assessments/${id}/timeline`),
+        get<CoreMessage[]>(`/sessions/${row.session_id}/messages`).catch(() => []),
+        liveOf(row, get, agentRunsBySession),
+      ]);
+      return runOf(row, overview, findings, actions, approvals, timeline.events, messages, live);
+    } catch (error) {
+      problems.push({ file: row.engagement_code, reason: problemOf(error) });
+      return null;
+    }
+  });
   return { dir: "Core API", readAt: Date.now(), assessments: runs.filter((r): r is Assessment => r !== null), problems };
-}
+});

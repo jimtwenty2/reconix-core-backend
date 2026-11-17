@@ -19,49 +19,62 @@ export function useReingest(shown: boolean, onDone: () => void) {
     done.current = onDone;
   }, [onDone]);
 
+  const startedRef = useRef(0);
+
   // read it when the page is shown
   useEffect(() => {
     if (!shown) return;
     let live = true;
+    const seq = startedRef.current;
     void api.loadReingest().then((r) => {
-      if (live && r.ok) setJob(r.value);
+      if (live && r.ok && startedRef.current === seq) setJob(r.value);
     });
     return () => {
       live = false;
     };
   }, [shown]);
 
-  // follow it while it runs
+  // follow it sequentially while the page is shown and it runs
   const running = job?.status === "RUNNING";
   useEffect(() => {
-    if (!running) return;
+    if (!shown || !running) return;
     let live = true;
-    const timer = setInterval(() => {
-      void api.loadReingest().then((r) => {
-        if (!live || !r.ok) return;
-        setJob(r.value);
-        if (r.value.status === "COMPLETED") {
-          const n = r.value.new_ingested;
-          toast(
-            r.value.scope === "NEW"
-              ? `Ingested ${n} ${n === 1 ? "document" : "documents"}: the AI Assistant can search ${n === 1 ? "it" : "them"} now.`
-              : `Re-ingest done: ${r.value.public_pieces} built-in pieces, ${r.value.add_ons_done} ${r.value.add_ons_done === 1 ? "document" : "documents"} (${n} new).`,
-          );
-          done.current();
-        } else if (r.value.status === "FAILED") {
-          toast(`Re-ingest failed: ${r.value.error_message ?? "the Core API could not finish it."}`, "error");
-          done.current();
-        }
-      });
-    }, POLL_MS);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      const r = await api.loadReingest();
+      if (!live) return;
+      if (!r.ok) {
+        setError(r.detail);
+        timer = setTimeout(() => void tick(), POLL_MS);
+        return;
+      }
+      setError(null);
+      setJob(r.value);
+      if (r.value.status === "COMPLETED") {
+        const n = r.value.new_ingested;
+        toast(
+          r.value.scope === "NEW"
+            ? `Ingested ${n} ${n === 1 ? "document" : "documents"}: the AI Assistant can search ${n === 1 ? "it" : "them"} now.`
+            : `Re-ingest done: ${r.value.public_pieces} built-in pieces, ${r.value.add_ons_done} ${r.value.add_ons_done === 1 ? "document" : "documents"} (${n} new).`,
+        );
+        done.current();
+      } else if (r.value.status === "FAILED") {
+        toast(`Re-ingest failed: ${r.value.error_message ?? "the Core API could not finish it."}`, "error");
+        done.current();
+      } else {
+        timer = setTimeout(() => void tick(), POLL_MS);
+      }
+    };
+    timer = setTimeout(() => void tick(), POLL_MS);
     return () => {
       live = false;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
-  }, [running]);
+  }, [shown, running]);
 
   /** NEW: only the documents waiting; ALL: the built-in knowledge and every document. */
   const start = useCallback(async (scope: "NEW" | "ALL") => {
+    startedRef.current += 1;
     setStarting(true);
     setError(null);
     const r = await api.startReingest(scope);

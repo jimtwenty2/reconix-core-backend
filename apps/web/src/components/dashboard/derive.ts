@@ -15,7 +15,7 @@
  */
 import { redact } from "@/lib/assistant/redact";
 import { clock, duration, hourMinute, minutesLimit, shortDay } from "@/lib/data/format";
-import { SEVERITIES } from "@/lib/data/schema";
+import { FINDING_SEVERITIES, SEVERITIES } from "@/lib/data/schema";
 import type { ApprovalView, AssessmentView, FindingSeverity, FindingView, PhaseView, ScopeView } from "@/lib/data/view-types";
 
 import { activityCard } from "./derive-activity";
@@ -113,7 +113,7 @@ export function findingsSlice(rows: FindingRow[]): FindingsSlice {
     total as Findings by Severity), the worst severity present and how many need review. */
 export function findingsSummary(rows: Pick<FindingView, "severity" | "falsePositive" | "needsReview">[]): SummaryStrip["findings"] {
   const counted = rows.filter((f) => !f.falsePositive);
-  const worst = SEVERITIES.find((level) => counted.some((f) => f.severity === level)) ?? null;
+  const worst = FINDING_SEVERITIES.find((level) => counted.some((f) => f.severity === level)) ?? null;
   return {
     total: counted.length,
     worst: worst ? { level: worst, count: counted.filter((f) => f.severity === worst).length } : null,
@@ -156,9 +156,9 @@ export function deriveDashboard(v: AssessmentView): Dashboard {
   const findingCards = findingsSlice(findings);
 
   // run budget
-  const windowLimit = v.scope ? minutesLimit(v.scope.windowMinutes) : null;
+  const maxMinutes = v.scope && v.scope.windowMinutes > 0 ? v.scope.windowMinutes : null;
+  const windowLimit = maxMinutes !== null ? minutesLimit(maxMinutes) : null;
   const usedMinutes = Math.round(v.durationSec / 60);
-  const maxMinutes = v.scope ? v.scope.windowMinutes : null;
   const over = maxMinutes !== null && v.durationSec > maxMinutes * 60;
   const minutes = { used: usedMinutes, max: maxMinutes, over };
   const planSteps = { done: v.phases.filter((p) => p.status === "done").length, total: v.phases.length };

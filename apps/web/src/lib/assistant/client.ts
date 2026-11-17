@@ -172,7 +172,8 @@ async function viewOf(url: string, init: RequestInit): Promise<ModelsAnswer> {
 }
 const send = (method: string, body?: unknown): RequestInit => (body === undefined ? { method } : { method, headers: json, body: JSON.stringify(body) });
 
-export const listModels = (signal?: AbortSignal) => viewOf(MODELS_ROUTE, { signal });
+export const listModels = (signal?: AbortSignal, options?: { fast?: boolean }) =>
+  viewOf(options?.fast ? `${MODELS_ROUTE}?fast=1` : MODELS_ROUTE, { signal });
 export const addModelProvider = (body: AddProvider) => viewOf(MODELS_ROUTE, send("POST", body));
 export const updateModelProvider = (id: string, body: UpdateProvider) => viewOf(modelRoute(id), send("PATCH", body));
 export const removeModelProvider = (id: string) => viewOf(modelRoute(id), send("DELETE"));

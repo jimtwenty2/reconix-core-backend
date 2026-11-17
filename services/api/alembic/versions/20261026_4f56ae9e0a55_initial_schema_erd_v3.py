@@ -701,7 +701,7 @@ def upgrade() -> None:
     # The built-in provider runs with Ollama on this computer, so it has no URL or key.
     op.execute(
         "INSERT INTO llm_providers (provider_type, display_name, model_name, is_active, created_by)"
-        " VALUES ('RECONIX', 'Reconix', 'reconix', true, 'system')"
+        " VALUES ('RECONIX', 'Reconix', 'reconix', false, 'system')"
     )
 
 

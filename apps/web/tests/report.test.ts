@@ -23,8 +23,10 @@ describe("a run's row", () => {
     }
   });
 
-  it("names the worst severity, or none", () => {
+  it("names the worst severity, including UNKNOWN and NONE, or null", () => {
     expect(worstOf(["LOW", "HIGH", "MEDIUM"])).toBe("HIGH");
+    expect(worstOf(["NONE", "UNKNOWN"])).toBe("UNKNOWN");
+    expect(worstOf(["NONE"])).toBe("NONE");
     expect(worstOf([])).toBeNull();
   });
 });

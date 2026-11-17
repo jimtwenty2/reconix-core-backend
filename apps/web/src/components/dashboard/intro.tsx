@@ -60,9 +60,14 @@ export function Intro() {
     // server text, so opening it later never shows a count stuck partway
     const counts = q("[data-countup]").filter((el) => el.getClientRects().length > 0);
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const overview = document.querySelector<HTMLElement>('[data-view-pane="overview"]');
+    const assistantOpen = document.querySelector(".dash-frame[data-assistant-open]") !== null;
+    const onOverview = Boolean(overview && !overview.hidden && !assistantOpen);
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !onOverview) {
       // autoAlpha sets visibility to inherit, not visible: a hidden parent (the top bar under
-      // the open assistant) keeps its controls out of reach
+      // the open assistant) keeps its controls out of reach. Secondary views reveal immediately
+      // without waiting on the Overview's staggered intro.
       if (reveal.length) gsap.set(reveal, { autoAlpha: 1 });
       return;
     }

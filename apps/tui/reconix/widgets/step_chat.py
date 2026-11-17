@@ -18,6 +18,17 @@ from textual.widget import Widget
 from textual.widgets import Input, Static
 
 from .. import theme
+from .stream_text import StreamLine, reply_line, speaker_label
+
+__all__ = [
+    "ChatBar",
+    "StepChat",
+    "StreamLine",
+    "THINKING",
+    "reply_line",
+    "speaker_label",
+    "you_line",
+]
 
 THINKING = "thinking…"
 
@@ -30,6 +41,12 @@ class _ChatInput(Input):
         Binding("left", "arrow(-1)", "cursor left", show=False),
         Binding("right", "arrow(1)", "cursor right", show=False),
     ]
+
+    async def _on_key(self, event) -> None:
+        chats = self.screen.query(StepChat)
+        if chats:
+            chats.first(StepChat).flush_streaming()
+        await super()._on_key(event)
 
     def action_arrow(self, direction: int) -> None:
         """Move the cursor one place (-1 left, 1 right); with nothing typed, skip this
@@ -44,17 +61,6 @@ class _ChatInput(Input):
 
 def you_line(text: str) -> Text:
     return Text.assemble(("you        ", f"bold {theme.TEAL}"), (text, theme.TEXT))
-
-
-def speaker_label(author: str = "") -> str:
-    """ "◆ reconix  " for Reconix's own lines, "◆ <model>  " for a model's (`author`)."""
-    return f"◆ {author or 'reconix'}  "
-
-
-def reply_line(text: str, tone: str = "default", author: str = "") -> Text:
-    return Text.assemble(
-        (speaker_label(author), f"bold {theme.CYAN}"), (text, theme.TONE.get(tone, theme.TEXT))
-    )
 
 
 class StepChat(Vertical):
@@ -81,7 +87,7 @@ class StepChat(Vertical):
 
     def compose(self) -> ComposeResult:
         if self._first:
-            yield Static(reply_line(self._first), classes="chat-line")
+            yield StreamLine(self._first, classes="chat-line")
 
     @property
     def input(self) -> Input:
@@ -91,18 +97,43 @@ class StepChat(Vertical):
         self.input.focus()
 
     def add_you(self, text: str) -> None:
+        self.flush_streaming()
         self.add(Static(you_line(text), classes="chat-line"))
 
-    def add_reply(self, text: str, tone: str = "default", author: str = "") -> Static:
+    def flush_streaming(self) -> None:
+        """Instantly reveal any active streaming line in this chat."""
+        for stream_line in self.query(StreamLine):
+            if not stream_line.is_finished:
+                stream_line.flush()
+
+    def add_reply(
+        self, text: str, tone: str = "default", author: str = "", stream: bool = True
+    ) -> Static:
         """A Reconix line (or a model's: `author`); keep it to grow it in place
         (`show_reply`)."""
-        line = Static(reply_line(text, tone, author), classes="chat-line")
+        self.flush_streaming()
+        if stream and text != THINKING:
+            line: Static = StreamLine(text, tone=tone, author=author, classes="chat-line")
+        else:
+            line = Static(reply_line(text, tone, author), classes="chat-line")
         self.add(line)
         return line
 
-    def show_reply(self, line: Static, text: str, tone: str = "default",
-                   author: str = "") -> None:
-        line.update(reply_line(text, tone, author))
+    def show_reply(
+        self,
+        line: Static,
+        text: str,
+        tone: str = "default",
+        author: str = "",
+        stream: bool = True,
+    ) -> None:
+        if isinstance(line, StreamLine):
+            line.update_text(text, tone=tone, author=author)
+        elif stream and text != THINKING and hasattr(line, "replace"):
+            # If line is regular static, update directly
+            line.update(reply_line(text, tone, author))
+        else:
+            line.update(reply_line(text, tone, author))
         self.scroll_to_end()
 
     def add(self, widget: Widget) -> None:
@@ -111,6 +142,7 @@ class StepChat(Vertical):
         self.scroll_to_end()
 
     def action_close(self) -> None:
+        self.flush_streaming()
         self.post_message(StepChat.Closed(self))
 
     def scroll_to_end(self) -> None:

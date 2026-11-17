@@ -6,6 +6,7 @@
    (openapi-typescript) is set up; switch to the generated types then. */
 import "server-only";
 
+import { cache } from "react";
 import { z } from "zod";
 
 import { requireSignedIn } from "../auth/guard";
@@ -44,8 +45,8 @@ const FindingOut = z.object({
   remediation: opt,
   validation_status: str,
   finding_status: str,
-  tools: z.array(str),
-  evidence: z.array(Evidence),
+  tools: z.array(str).optional().default([]),
+  evidence: z.array(Evidence).optional().default([]),
 });
 export type ApiFinding = z.infer<typeof FindingOut>;
 
@@ -59,15 +60,15 @@ export function parse<T>(schema: z.ZodType<T>, value: unknown, what: string): T 
 }
 
 /** GET /assessments: every assessment the API knows, as the API orders them. */
-export async function listAssessments(): Promise<ApiAssessment[]> {
+export const listAssessments = cache(async (): Promise<ApiAssessment[]> => {
   await requireSignedIn(); // a second lock behind src/proxy.ts, as lib/data/store.ts
   return parse(z.array(AssessmentRow), await apiGet("/assessments"), "assessments");
-}
+});
 
 /** GET /findings, for one assessment or (null) every one. */
-export async function listFindings(assessmentId: string | null): Promise<ApiFinding[]> {
+export const listFindings = cache(async (assessmentId: string | null): Promise<ApiFinding[]> => {
   await requireSignedIn();
   if (assessmentId !== null && !isAssessmentId(assessmentId)) throw new CoreApiError("BAD_REQUEST", "Not an assessment id.");
   const query = assessmentId ? `?assessment_id=${encodeURIComponent(assessmentId)}` : "";
   return parse(z.array(FindingOut), await apiGet(`/findings${query}`), "findings");
-}
+});

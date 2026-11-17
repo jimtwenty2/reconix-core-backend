@@ -44,6 +44,11 @@ describe("runOf", () => {
     expect(run.findings.map((f) => f.severity)).toEqual(["NONE", "UNKNOWN", "HIGH"]);
   });
 
+  it("uses the formatted template type label rather than the assessment name", () => {
+    const run = runOf(row, overview, [], [], [], []);
+    expect(run.template.name).toBe("Web URL");
+  });
+
   it("uses the API's own status without a live one", () => {
     expect(runOf(row, overview, [], [], [], []).status).toBe("Running");
   });

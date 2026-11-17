@@ -7,19 +7,20 @@ import { z } from "zod";
 import { isSameOrigin } from "@/lib/auth/origin";
 import { COOKIE, MAX_AGE_SECONDS, launchToken, sessionValue, tokenMatches } from "@/lib/auth/session";
 
+const NO_STORE = { "Cache-Control": "no-store" };
 const Body = z.object({ token: z.string().min(1).max(200) });
 
 export async function POST(request: Request) {
   const token = launchToken();
-  if (!token) return NextResponse.json({ detail: "The dashboard was not started with npm start." }, { status: 503 });
+  if (!token) return NextResponse.json({ detail: "The dashboard was not started with npm start." }, { status: 503, headers: NO_STORE });
 
   if (!isSameOrigin(request)) {
-    return NextResponse.json({ detail: "Sign in from the dashboard page." }, { status: 403 });
+    return NextResponse.json({ detail: "Sign in from the dashboard page." }, { status: 403, headers: NO_STORE });
   }
 
   const body = Body.safeParse(await request.json().catch(() => null));
   if (!body.success || !tokenMatches(body.data.token, token)) {
-    return NextResponse.json({ detail: "This sign-in link is not valid any more." }, { status: 401 });
+    return NextResponse.json({ detail: "This sign-in link is not valid any more." }, { status: 401, headers: NO_STORE });
   }
 
   const jar = await cookies();
@@ -30,5 +31,5 @@ export async function POST(request: Request) {
     path: "/",
     maxAge: MAX_AGE_SECONDS,
   });
-  return NextResponse.json({ signedIn: true });
+  return NextResponse.json({ signedIn: true }, { headers: NO_STORE });
 }

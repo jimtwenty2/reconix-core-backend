@@ -32,7 +32,7 @@ export type DrillDown = { view: "findings"; filters: Record<string, string>; lab
 export interface SummaryStrip {
   findings: {
     total: number;
-    worst: { level: Severity; count: number } | null; // the highest severity present
+    worst: { level: FindingSeverity; count: number } | null; // the highest severity present
     needsReview: number;
     link: DrillDown;
   };

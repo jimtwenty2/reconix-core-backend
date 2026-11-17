@@ -72,6 +72,19 @@ export function presetFor(provider: ProviderView): Preset {
     fit (the cloud's name never vouches for another address): "OpenAI (llm.example.com)". */
 export const savedName = (provider: ProviderView) => (presetFor(provider).id === provider.preset ? provider.name : `${provider.name} (${hostOf(provider.baseUrl)})`);
 
+/** The host (and port, if any) of a provider's base URL, or `fallback` when it has none. */
+export const endpointHost = (baseUrl: string, fallback = ""): string => hostOf(baseUrl) || fallback;
+
+/** A short label for a provider badge: replaces auto-generated "<Preset> · <model>" names
+    with the endpoint host (for Custom) or preset label so badges don't repeat the model name. */
+export function badgeLabel(provider: Pick<ProviderView, "baseUrl" | "name" | "preset">): string {
+  const preset = presetOf(provider.preset);
+  const host = hostOf(provider.baseUrl);
+  if (preset.id === "custom" && provider.name.startsWith("Custom OpenAI-compatible") && host) return host;
+  if (provider.name.startsWith(`${preset.label} · `)) return preset.label;
+  return provider.name;
+}
+
 /** Every saved model, provider by provider in the order they were saved: ✓ on the one that
     answers next. */
 export function modelRows(view: ModelsView): ModelRow[] {

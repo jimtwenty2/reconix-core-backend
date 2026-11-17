@@ -3,7 +3,7 @@
 /* The Security knowledge page's data: every document (the list) and what each talks about (the
    graph), in one read from the Core API. Read when the page is shown (every time it is shown
    again), and again after an upload or a removal. A failed read keeps what it had and says why. */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as api from "@/lib/knowledge/client";
 import type { KnowledgeItem } from "@/lib/knowledge/types";
@@ -16,17 +16,23 @@ export interface KnowledgeData {
 
 export function useKnowledgeGraph(shown: boolean) {
   const [state, setState] = useState<KnowledgeData>({ status: "loading", data: null, error: null });
+  const epochRef = useRef(0);
 
-  const apply = useCallback((result: api.Result<api.KnowledgeGraphAnswer>) => {
+  const apply = useCallback((epoch: number, result: api.Result<api.KnowledgeGraphAnswer>) => {
+    if (epochRef.current !== epoch) return;
     setState((s) => (result.ok ? { status: "ready", data: result.value, error: null } : { status: s.data ? "ready" : "error", data: s.data, error: result.detail }));
   }, []);
-  const load = useCallback(() => api.loadKnowledgeGraph().then(apply), [apply]);
+  const load = useCallback(() => {
+    const epoch = ++epochRef.current;
+    return api.loadKnowledgeGraph().then((result) => apply(epoch, result));
+  }, [apply]);
 
   useEffect(() => {
     if (!shown) return;
+    const epoch = ++epochRef.current;
     let live = true;
     void api.loadKnowledgeGraph().then((result) => {
-      if (live) apply(result);
+      if (live) apply(epoch, result);
     });
     return () => {
       live = false;
@@ -43,7 +49,12 @@ export function useKnowledgeGraph(shown: boolean) {
     async (item: KnowledgeItem): Promise<string | null> => {
       const result = await api.removeKnowledge(item.id);
       if (!result.ok && result.status !== 404) return result.detail;
-      setState((s) => (s.data ? { ...s, data: { ...s.data, items: s.data.items.filter((i) => i.id !== item.id) } } : s));
+      setState((s) => {
+        if (!s.data) return s;
+        const rest = { ...s.data.references };
+        delete rest[item.id];
+        return { ...s, data: { ...s.data, items: s.data.items.filter((i) => i.id !== item.id), references: rest } };
+      });
       void load();
       return null;
     },

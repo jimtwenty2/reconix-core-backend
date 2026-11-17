@@ -91,8 +91,7 @@ export function UploadDialog({ open, onClose, onAdded }: { open: boolean; onClos
           </IconButton>
         </header>
         <p id={`${id}-about`} className="ui-dialog-text">
-          The AI Assistant quotes the passages that match a question. Secrets in the text are masked before it is saved, and the
-          original is kept encrypted on this computer.
+          The AI Assistant quotes the passages that match a question. Secrets in the text are masked before the Core API saves its passages; no copy of the file itself is kept.
         </p>
 
         <div className="kn-field">

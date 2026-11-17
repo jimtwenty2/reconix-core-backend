@@ -360,6 +360,15 @@ describe("deriveDashboard", () => {
       const fp = { ...completed, findings: [{ ...completed.findings[0], severity: "CRITICAL" as const, effective_severity: "CRITICAL" as const, status: "false-positive" }] };
       expect(rows(fp).severity[0]).toMatchObject({ level: "CRITICAL", count: 0 });
       expect(deriveDashboard(assessmentView(fp)).cards.summary.findings).toMatchObject({ total: 0, worst: null });
+      // unrated findings (UNKNOWN / NONE) still appear as worst in summary instead of "No findings yet"
+      const unrated = {
+        ...completed,
+        findings: [{ ...completed.findings[0], severity: "UNKNOWN" as const, severity_override: "" as const, effective_severity: "" as const, status: "open" }],
+      };
+      expect(deriveDashboard(assessmentView(unrated)).cards.summary.findings).toMatchObject({
+        total: 1,
+        worst: { level: "UNKNOWN", count: 1 },
+      });
     });
   });
 });
@@ -393,7 +402,21 @@ describe("deriveOverall", () => {
     const { duration } = all.cards.summary;
     expect(duration).not.toHaveProperty("caption");
     expect(duration.value).toBeTruthy();
-    expect(duration.over).toBe(views.filter((v) => v.scope && v.durationSec > v.scope.windowMinutes * 60).length);
+    expect(duration.over).toBe(views.filter((v) => v.scope && v.scope.windowMinutes > 0 && v.durationSec > v.scope.windowMinutes * 60).length);
+  });
+
+  it("never flags a 0-minute (unlimited) scope window as over the time limit", () => {
+    const unlimited = {
+      ...views[0],
+      durationSec: 12,
+      scope: views[0].scope ? { ...views[0].scope, windowMinutes: 0 } : null,
+    };
+    const single = deriveDashboard(unlimited);
+    expect(single.minutes.max).toBeNull();
+    expect(single.minutes.over).toBe(false);
+    expect(single.cards.summary.duration.meter).toBeNull();
+    expect(single.cards.summary.duration.over).toBe(0);
+    expect(deriveOverall([unlimited]).cards.summary.duration.over).toBe(0);
   });
 
   it("shows the share of runs completed", () => {

@@ -12,25 +12,24 @@ export function CardCursorLight() {
     if (window.matchMedia("(pointer: coarse)").matches) return;
     let raf = 0;
     let el: HTMLElement | null = null;
-    let x = 0;
-    let y = 0;
+    let clientX = 0;
+    let clientY = 0;
     const apply = () => {
       raf = 0;
-      if (el) {
-        el.style.setProperty("--mx", `${x}px`);
-        el.style.setProperty("--my", `${y}px`);
-      }
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${clientX - r.left}px`);
+      el.style.setProperty("--my", `${clientY - r.top}px`);
     };
     const onMove = (e: PointerEvent) => {
       const card = (e.target as Element)?.closest?.(".dash-card") as HTMLElement | null;
       el = card;
       if (!card) return;
-      const r = card.getBoundingClientRect();
-      x = e.clientX - r.left;
-      y = e.clientY - r.top;
+      clientX = e.clientX;
+      clientY = e.clientY;
       if (!raf) raf = requestAnimationFrame(apply);
     };
-    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointermove", onMove, { passive: true });
     return () => {
       document.removeEventListener("pointermove", onMove);
       cancelAnimationFrame(raf);

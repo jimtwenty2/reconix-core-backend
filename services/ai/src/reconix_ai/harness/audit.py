@@ -12,6 +12,7 @@ and GET /assessments/{id}/timeline returns:
     read_timeline(settings.audit_log_path, assessment_id)
 """
 
+import errno
 import json
 import os
 import threading
@@ -52,9 +53,25 @@ def make_audit_writer(path: str | Path) -> Callable[[AuditRecord], None]:
         with lock:
             # 0o600: only the user running Reconix can read the audit log.
             # O_NOFOLLOW: never write through a symlink planted at the log path.
-            flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW
+            flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
             descriptor = os.open(path, flags, 0o600)
-            os.fchmod(descriptor, 0o600)  # also fixes a file made earlier with other rights
+            try:
+                if hasattr(os, "fchmod"):
+                    try:
+                        os.fchmod(
+                            descriptor, 0o600
+                        )  # also fixes a file made earlier with other rights
+                    except OSError as error:
+                        if error.errno not in (
+                            errno.ENOTSUP,
+                            errno.EOPNOTSUPP,
+                            errno.ENOSYS,
+                            errno.EINVAL,
+                        ):
+                            raise
+            except BaseException:
+                os.close(descriptor)
+                raise
             with os.fdopen(descriptor, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
 
@@ -100,7 +117,7 @@ def read_timeline(
     types = {str(event_type) for event_type in event_types} if event_types else None
     try:
         # O_NOFOLLOW: never read a symlink planted at the log path.
-        descriptor = os.open(Path(path), os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(Path(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except FileNotFoundError:
         return []
     with os.fdopen(descriptor, encoding="utf-8", errors="replace") as file:

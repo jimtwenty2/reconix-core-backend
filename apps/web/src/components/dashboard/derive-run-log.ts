@@ -68,12 +68,15 @@ function stepText(e: TimelineEntry): string {
   return e.text;
 }
 
+const labelFor = (map: Record<string, string>, key: string): string | undefined =>
+  Object.hasOwn(map, key) ? map[key] : undefined;
+
 function step(e: TimelineEntry): RunLogStep {
   const ms = parseTime(e.at);
   return {
     key: `s${e.seq}`,
     time: ms === null ? "—" : clock(ms),
-    who: (e.type === "activity" ? SOURCE_NAME[e.who] : SPEAKER_NAME[e.who]) ?? "ai",
+    who: labelFor(e.type === "activity" ? SOURCE_NAME : SPEAKER_NAME, e.who) ?? "ai",
     text: redact(stepText(e)),
     tone: e.tone,
   };
@@ -113,7 +116,7 @@ export function runLogData(v: AssessmentView): RunLogData {
   });
   const messages = items.filter((i) => i.type === "message").length;
   return {
-    tag: `${v.id} · ${v.target}`,
+    tag: `${v.id} · ${redact(v.target)}`,
     caption: `${plural(messages, "message")} · ${plural(items.length - messages, "block")} of steps`,
     items,
   };

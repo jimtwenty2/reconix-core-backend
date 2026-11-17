@@ -15,9 +15,11 @@ import {
   addressOf,
   afterFetch,
   afterTest,
+  badgeLabel,
   chipState,
   choiceProblem,
   credentialsProblem,
+  endpointHost,
   firstPreset,
   freeName,
   initialChoice,
@@ -337,5 +339,13 @@ describe("the list with many models", () => {
     expect(shownRows(rows, "", "openai")).toEqual([]);
     expect(shownRows(rows, "qwen", "custom").map((r) => r.model)).toEqual(["qwen:7b"]);
     expect(shownRows(rows, "nope")).toEqual([]);
+  });
+  it("formats endpoint hosts and shortens auto-named custom badges", () => {
+    expect(endpointHost("https://openrouter.ai/api/v1")).toBe("openrouter.ai");
+    expect(endpointHost("http://127.0.0.1:1234/v1")).toBe("127.0.0.1:1234");
+    expect(endpointHost("", "Reconix")).toBe("Reconix");
+    expect(badgeLabel(provider({ name: "Custom OpenAI-compatible · gemma-4-e4b", baseUrl: "https://openrouter.ai/api/v1" }))).toBe("openrouter.ai");
+    expect(badgeLabel(provider({ name: "Ollama · gemma-4-e4b", preset: "ollama", baseUrl: "http://localhost:11434" }))).toBe("Ollama");
+    expect(badgeLabel(provider({ name: "Stub", baseUrl: "http://127.0.0.1:3195/v1" }))).toBe("Stub");
   });
 });

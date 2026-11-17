@@ -30,10 +30,13 @@ async def test_the_logo_shows_until_the_first_line(app, local_model):
         assert isinstance(app.screen, StartScreen)
         assert not app.screen.query("#logo") and not app.screen.query("#quickstart")
         assert "› hello" in str(app.screen.query_one(".user-msg").render())
-        await wait_until(pilot, lambda: "The API's answer." in str(
-            app.screen.query_one("#start-reply").render()), what="the Core API's answer")
+        await wait_until(
+            pilot,
+            lambda: "The API's answer." in str(app.screen.query_one("#start-reply").render()),
+            what="the Core API's answer",
+        )
         await settle(pilot)
-        assert not app.screen.query_one("#start-activity").display     # answered, not working
+        assert not app.screen.query_one("#start-activity").display  # answered, not working
 
 
 async def test_a_new_assessment_brings_the_logo_back(app):
@@ -58,7 +61,7 @@ async def test_working_shows_the_request_on_top_and_one_spinner_line(app):
         assert status.display and not app.screen.query_one("#start-reply").display
         shown = str(status.render())
         assert current in shown and first not in shown and "ctrl+o to expand" in shown
-        assert app.screen.query_one(PromptBox).locked                  # Enter can't re-send
+        assert app.screen.query_one(PromptBox).locked  # Enter can't re-send
 
 
 async def test_ctrl_o_lists_the_finished_steps_and_hides_them_again(app):
@@ -78,7 +81,7 @@ async def test_ctrl_o_lists_the_finished_steps_and_hides_them_again(app):
 async def test_the_template_screen_spinner_keeps_the_expanded_choice(app):
     store.start_run(ASK_REQUEST)
     assert play_until_gate() == "template"
-    store.select_template(store.get_assessment().template_id)        # now drafting the scope
+    store.select_template(store.get_assessment().template_id)  # now drafting the scope
     async with app.run_test(size=SIZE) as pilot:
         await pilot.press("ctrl+o")
         await show(app, pilot, "template")
@@ -97,3 +100,22 @@ def local_model(reachable):
     store.set_provider("ollama", base_url="http://127.0.0.1:11434", models=["llama3.2"])
     store.test_provider("ollama")
     store.activate("ollama", "llama3.2")
+
+
+async def test_start_screen_streaming_reply(app, local_model):
+    """StartScreen displays its latest reply as StreamLine and flushes on prompt submit."""
+    from reconix.widgets.stream_text import StreamLine
+
+    async with app.run_test(size=SIZE) as pilot:
+        await settle(pilot)
+        app.screen.query_one(PromptBox).input.value = "hello"
+        await pilot.press("enter")
+        await settle(pilot)
+        await wait_until(
+            pilot,
+            lambda: bool(app.screen.query("#start-reply")),
+            what="the reply",
+        )
+        reply = app.screen.query_one("#start-reply")
+        assert isinstance(reply, StreamLine)
+        assert reply.is_finished

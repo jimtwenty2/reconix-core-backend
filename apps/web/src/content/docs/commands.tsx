@@ -393,6 +393,21 @@ export const COMMAND_DOCS: Record<string, CommandDoc> = {
       { message: "Couldn't open a browser. The sign-in link is in <file>", meaning: "The dashboard runs but no browser could be launched here: open the link in that file yourself." },
     ],
   },
+  doctor: {
+    purpose: "Checks the Reconix installation and local services for setup or runtime issues.",
+    when: "When setting up Reconix, after changing .env, or if the Core API, Qdrant, database or Kali MCP doesn't answer.",
+    syntax: "/doctor",
+    example: "/doctor",
+    behaviour: (
+      <>
+        Opens a read-only diagnostic dialog showing <Mono>✓</Mono>, <Mono>⚠</Mono> or <Mono>✗</Mono> for Python,{" "}
+        <Mono>uv</Mono>, <Mono>.env</Mono>, Core API health, Node.js, <Mono>npm</Mono> and secure directory modes (0700),
+        along with remediation hints when a check warns or fails. Running <Mono>reconix doctor</Mono> in a terminal runs
+        the local-service checks (PostgreSQL, Qdrant, Docker and Kali MCP) as well.
+      </>
+    ),
+    errors: [],
+  },
   tests: {
     purpose: "Opens the evaluator checklist: every flow and test case, to mark Pass, Fail or Skip.",
     when: "While testing Reconix against the evaluator guide (apps/tui/docs/evaluator).",

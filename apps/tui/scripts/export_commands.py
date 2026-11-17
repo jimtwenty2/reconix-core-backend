@@ -29,7 +29,7 @@ GROUPS = (
     ("findings", "Findings & reports", ("findings", "finding", "report", "export", "summary")),
     ("data", "Assessments & data", ("assessments", "audit")),
     ("ai", "AI models", ("add-on", "provider", "model")),
-    ("dashboard", "Dashboard", ("web",)),
+    ("dashboard", "Dashboard", ("web", "doctor")),
     ("session", "Session", ("tests", "quit")),
 )
 
@@ -94,8 +94,11 @@ def stale(expected: str, on_disk: Optional[str]) -> List[str]:
     new_entries = {c["name"]: c for g in new["groups"] for c in g["commands"]}
     reasons = [f"added /{n}" for n in _names(new) if n not in old_entries]
     reasons += [f"removed /{n}" for n in old_entries if n not in new_entries]
-    reasons += [f"changed /{n}" for n in _names(new)
-                if n in old_entries and old_entries[n] != new_entries[n]]
+    reasons += [
+        f"changed /{n}"
+        for n in _names(new)
+        if n in old_entries and old_entries[n] != new_entries[n]
+    ]
     return reasons or ["the file differs (order, grouping or formatting)"]
 
 
@@ -106,7 +109,7 @@ def check() -> int:
         try:
             on_disk = OUT.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
-            on_disk = ""                       # unreadable: stale, like a file that isn't JSON
+            on_disk = ""  # unreadable: stale, like a file that isn't JSON
     reasons = stale(render(build()), on_disk)
     if not reasons:
         print(f"{OUT.relative_to(ROOT.parent)} is up to date")
