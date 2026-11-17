@@ -77,12 +77,43 @@ export function usePassages() {
     [page],
   );
 
+  /** Load enough pages so passage `index` is included. */
+  const ensure = useCallback(
+    (id: string, index: number) => {
+      if (index < PAGE) {
+        load(id);
+        return;
+      }
+      const needed = Math.min(25, Math.floor(index / PAGE) + 1);
+      const key = `ensure:${id}:${needed}`;
+      if (asked.current.has(key)) return;
+      asked.current.add(key);
+      asked.current.add(id);
+      const gen = genOf(id);
+      setContent((c) => (c[id] ? c : { ...c, [id]: { status: "loading", total: 0, passages: [], error: null } }));
+      void (async () => {
+        for (let p = 0, go = true; go && p < needed; p++) {
+          const step = await page(id, p * PAGE, gen);
+          if (!step.ok) {
+            if ((genRef.current.get(id) ?? 0) === gen) asked.current.delete(key);
+            return;
+          }
+          go = step.more;
+        }
+      })();
+    },
+    [load, page],
+  );
+
   /** Forget a document (removed, or reloaded). */
   const forget = useCallback((id: string) => {
     genRef.current.set(id, (genRef.current.get(id) ?? 0) + 1);
     pagingRef.current.delete(id);
     asked.current.delete(id);
     asked.current.delete(`all:${id}`);
+    for (const key of asked.current) {
+      if (key.startsWith(`ensure:${id}:`)) asked.current.delete(key);
+    }
     setContent((c) => {
       const next = { ...c };
       delete next[id];
@@ -90,7 +121,7 @@ export function usePassages() {
     });
   }, []);
 
-  return { content, load, more, all, forget };
+  return { content, load, more, all, ensure, forget };
 }
 
 export type Passages = ReturnType<typeof usePassages>;

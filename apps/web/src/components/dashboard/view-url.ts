@@ -15,11 +15,14 @@ export type View = (typeof VIEWS)[number];
 export const ASSESSMENT_KEYS = ["q", "status", "template", "page"] as const;
 /** The Findings view's own address parameters (its filters, the selected finding, its page). */
 export const FINDINGS_KEYS = ["sev", "val", "q", "fp", "finding", "page"] as const;
+/** The Security knowledge view's own address parameters (focused document, optional 1-based part). */
+export const KNOWLEDGE_KEYS = ["doc", "part"] as const;
 /** Each view's own filter parameters (cleared when a link opens that view with new ones). The
     one list per view: the views read their parameters from these same constants. */
 export const VIEW_FILTERS: Partial<Record<View, readonly string[]>> = {
   assessments: ASSESSMENT_KEYS,
   findings: FINDINGS_KEYS,
+  knowledge: KNOWLEDGE_KEYS,
 };
 
 export type ViewParams = Record<string, string | undefined>;
@@ -164,7 +167,7 @@ export const runFindingHref = (uid: string, findingId: string): string =>
 
 let assistantPushed = false; // this page pushed the entry the assistant sits on
 let ownEntryLength = -1; // history.length right after that push (Forward lands on it again)
-let afterBack: View | null = null; // the view to open once that Back has landed
+let afterBack: { view: View; filters?: ViewParams } | null = null; // the view to open once that Back has landed
 let waitingBack = false; // history.back() is in flight, popstate hasn't landed yet
 
 const viewNow = (): View => parseView(new URLSearchParams(window.location.search).get("view"));
@@ -181,20 +184,21 @@ export function openAssistant(): void {
 }
 
 /** Leave the assistant for `target`, or (no target) for wherever it was opened from. */
-export function leaveAssistant(target?: View): void {
-  if (viewNow() !== "assistant") return showView(target ?? "overview");
+export function leaveAssistant(target?: View, filters?: ViewParams): void {
+  if (viewNow() !== "assistant") return showView(target ?? "overview", filters);
+  const next = target ? { view: target, filters } : null;
   if (waitingBack) {
-    afterBack = target ?? null;
+    afterBack = next;
     return;
   }
   if (assistantPushed) {
     assistantPushed = false;
     waitingBack = true;
-    afterBack = target ?? null;
+    afterBack = next;
     window.history.back();
     return;
   }
-  showView(target ?? "overview"); // opened directly (a link or a reload): nothing to go back to
+  showView(target ?? "overview", filters); // opened directly (a link or a reload): nothing to go back to
 }
 
 /** Keeps the bookkeeping right when the browser moves through history (Back, Forward). */
@@ -206,7 +210,7 @@ export function watchHistory(): () => void {
     assistantPushed = now === "assistant" && window.history.length === ownEntryLength;
     const target = afterBack;
     afterBack = null;
-    if (target && target !== now) showView(target);
+    if (target && (target.view !== now || target.filters)) showView(target.view, target.filters);
   };
   window.addEventListener("popstate", onPop);
   return () => window.removeEventListener("popstate", onPop);
