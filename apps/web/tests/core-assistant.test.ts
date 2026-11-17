@@ -499,4 +499,16 @@ describe("the assistant's data comes from the Core API", () => {
     expect(t1).toBe(t2);
     expect(core.calls.filter((c) => c.path === "/sessions/web-sign-in" || (c.path === "/sessions" && c.method === "POST"))).toHaveLength(1);
   });
+
+  it("forwards the selected run's core_id as assessment_id to POST /sessions/{id}/chat/stream when uid is chosen, and omits it for All assessments", async () => {
+    seedAssessment();
+    await addLocalModel();
+    await ask({ uid: "20261105-093015-7d1c_RCX-2026-0042", question: "Analyze the current findings" });
+    const scopedCall = core.calls.filter((c) => c.path.endsWith("/chat/stream")).at(-1);
+    expect(scopedCall?.body).toEqual({ content: "Analyze the current findings", assessment_id: ASSESSMENT });
+
+    await ask({ uid: null, question: "Analyze the current findings" });
+    const allCall = core.calls.filter((c) => c.path.endsWith("/chat/stream")).at(-1);
+    expect(allCall?.body).toEqual({ content: "Analyze the current findings" });
+  });
 });

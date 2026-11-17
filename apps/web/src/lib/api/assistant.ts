@@ -168,8 +168,9 @@ export function createEventReader(onEvent: (event: ChatEvent) => void) {
 
 /** Asks in a conversation; the open SSE body. A refusal before the stream starts is a
     CoreError (a chat already running: 409). */
-export async function askStream(id: string, question: string, signal: AbortSignal): Promise<ReadableStream<Uint8Array>> {
-  const response = await asChat(id, (token) => coreFetch(`/sessions/${id}/chat/stream`, { method: "POST", body: { content: question }, token, signal, stream: true }));
+export async function askStream(id: string, question: string, signal: AbortSignal, assessmentId?: string): Promise<ReadableStream<Uint8Array>> {
+  const body = assessmentId ? { content: question, assessment_id: assessmentId } : { content: question };
+  const response = await asChat(id, (token) => coreFetch(`/sessions/${id}/chat/stream`, { method: "POST", body, token, signal, stream: true }));
   if (!response.body) throw new CoreError(502, "NO_STREAM", "The Core API sent no answer.");
   return response.body;
 }
