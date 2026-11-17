@@ -8,13 +8,13 @@ never from the request, and everything sent to it is already masked.
 
 import asyncio
 import logging
+from collections import Counter
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
 
-from reconix_api.core.config import get_settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import (
     AgentRequest,
@@ -27,8 +27,17 @@ from reconix_api.core.interfaces import (
     Operator,
 )
 from reconix_api.core.masking import MaskSecrets
-from reconix_api.models import AgentRun, Finding, Message, ScopeManifest, ScopeTarget
+from reconix_api.models import (
+    Action,
+    AgentRun,
+    Assessment,
+    Finding,
+    Message,
+    ScopeManifest,
+    ScopeTarget,
+)
 from reconix_api.models.enums import AgentRunStatus, FindingStatus, SeverityStatus
+from reconix_api.repositories import actions as action_repo
 from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
@@ -47,8 +56,10 @@ logger = logging.getLogger(__name__)
 
 ASSISTANT = "assistant"  # messages.role of the agent's answer
 CHAT_ROLES = ("user", "assistant")
+DEFAULT_APPROVAL_TTL_MINUTES = 30
 MAX_CHAT_ASSESSMENTS = 10
 MAX_CHAT_FINDINGS = 50
+MAX_CHAT_PLAN_LINES = 10
 _SEVERITY_RANK = {
     SeverityStatus.CRITICAL: 0,
     SeverityStatus.HIGH: 1,
@@ -68,6 +79,7 @@ class StartedChat:
     message: MessageOut  # the person's message, saved
     run: AgentRun  # the CHAT run, RUNNING
     chat_scope: ChatScope | None
+    ttl_minutes: int = DEFAULT_APPROVAL_TTL_MINUTES
 
 
 async def chat(
@@ -78,10 +90,18 @@ async def chat(
     session_id: UUID,
     content: str,
     assessment_id: UUID | None = None,
+    ttl_minutes: int = DEFAULT_APPROVAL_TTL_MINUTES,
 ) -> ChatOut:
     """Saves the message, asks the agent and saves its answer (see start and finish)."""
     started = start(
-        db, interfaces, mask, operator, session_id, content, assessment_id=assessment_id
+        db,
+        interfaces,
+        mask,
+        operator,
+        session_id,
+        content,
+        assessment_id=assessment_id,
+        ttl_minutes=ttl_minutes,
     )
     return await finish(db, interfaces, mask, operator, started)
 
@@ -94,6 +114,7 @@ def start(
     session_id: UUID,
     content: str,
     assessment_id: UUID | None = None,
+    ttl_minutes: int = DEFAULT_APPROVAL_TTL_MINUTES,
 ) -> StartedChat:
     """The message is saved first, so it is kept even when the agent fails. One chat per
     session asks the agent at a time: 409 CHAT_IN_PROGRESS, and the refused message is not
@@ -105,13 +126,13 @@ def start(
         raise ApiError(409, "CHAT_IN_PROGRESS", "The agent is still answering. Try again soon.")
     chat_scope = session_scope(db, session_id, mask)
     resolved_id = resolve_assessment_id(db, session_id, chat_scope, assessment_id)
-    if chat_scope is None and resolved_id is not None:
-        chat_scope = assessment_scope(db, resolved_id, mask)
+    if resolved_id is not None and (chat_scope is None or chat_scope.assessment_id != resolved_id):
+        chat_scope = assessment_scope(db, resolved_id, mask) or chat_scope
     run = agent_runs.new_agent_run(db, operator, resolved_id, task="CHAT")
     db.commit()
     messages.audit_message(interfaces.write_audit, operator, saved, hidden)
     message = MessageOut.model_validate(saved, from_attributes=True)
-    return StartedChat(message, run, chat_scope)
+    return StartedChat(message, run, chat_scope, ttl_minutes)
 
 
 async def finish(
@@ -135,6 +156,7 @@ async def finish(
             started.message,
             started.chat_scope,
             on_piece,
+            started.ttl_minutes,
         )
     except (Exception, asyncio.CancelledError) as error:
         agent_runs.fail(db, interfaces, operator, started.run, error)
@@ -163,7 +185,7 @@ def ask_in_background(
     async def run() -> ChatOut:
         with Db(bind=db.get_bind(), expire_on_commit=False) as own_db:
             run = agent_run_repo.get(own_db, started.run.agent_run_id)
-            own = StartedChat(started.message, run, started.chat_scope)
+            own = StartedChat(started.message, run, started.chat_scope, started.ttl_minutes)
             return await finish(own_db, interfaces, mask, operator, own, on_piece)
 
     task = asyncio.ensure_future(run())
@@ -213,6 +235,7 @@ async def answer(
     message: MessageOut,
     chat_scope: ChatScope | None,
     on_piece: OnPiece | None = None,
+    ttl_minutes: int = DEFAULT_APPROVAL_TTL_MINUTES,
 ) -> ChatOut:
     provider, model = agent_runs.agent_provider(db, run)
     scope = chat_scope or assessment_scope(db, run.assessment_id, mask)
@@ -224,7 +247,7 @@ async def answer(
         model=model,
         messages=history(db, run.session_id),
         chat_scope=scope,
-        plan=plan_lines(db, run.assessment_id),
+        plan=plan_lines(db, run.assessment_id, mask, ttl_minutes),
         findings=chat_findings(db, run.assessment_id),
     )
     response = await agent_runs.ask_agent(db, interfaces, request, on_piece)
@@ -328,39 +351,83 @@ def history(db: Db, session_id: UUID) -> list[ChatMessage]:
     ]
 
 
-def all_assessments_summary(db: Db) -> list[str]:
+def assessment_summary_line(row: Assessment, waiting_count: int) -> str:
+    status = getattr(row.assessment_status, "value", str(row.assessment_status))
+    return (
+        f"{row.engagement_code} ({row.name}, {row.type}): "
+        f"{status}, {waiting_count} waiting approval"
+    )
+
+
+def all_assessments_summary(db: Db, ttl_minutes: int) -> list[str]:
     """Brief status and pending-approval summary when chat runs across All assessments."""
     assessments = assessment_repo.list_all(db)[:MAX_CHAT_ASSESSMENTS]
     if not assessments:
         return []
-    ttl_minutes = get_settings().approval_ttl_minutes
     ids = [row.assessment_id for row in assessments]
     waiting = approval_repo.count_waiting(db, ids, still_open_after(ttl_minutes))
-    return [
-        f"{row.engagement_code} ({row.name}, {row.type}): "
-        f"{row.assessment_status.value}, {waiting.get(row.assessment_id, 0)} waiting approval"
-        for row in assessments
-    ]
+    return [assessment_summary_line(row, waiting.get(row.assessment_id, 0)) for row in assessments]
 
 
-def plan_lines(db: Db, assessment_id: UUID | None) -> list[str]:
-    """The newest saved plan, one line a step, or an assessment status summary when global."""
+def action_key(tool: str, target: str, args: list[str]) -> tuple[str, str, tuple[str, ...]]:
+    return (tool, target, tuple(args))
+
+
+def action_status_map(actions: list[Action]) -> dict[tuple[str, str, tuple[str, ...]], str]:
+    """Map each tool/target/args tuple to its newest ActionStatus value (newest-first input)."""
+    statuses: dict[tuple[str, str, tuple[str, ...]], str] = {}
+    for row in actions:
+        key = action_key(row.tool, row.target, list(row.args or []))
+        statuses.setdefault(key, getattr(row.action_status, "value", str(row.action_status)))
+    return statuses
+
+
+def plan_lines(
+    db: Db,
+    assessment_id: UUID | None,
+    mask: MaskSecrets,
+    ttl_minutes: int = DEFAULT_APPROVAL_TTL_MINUTES,
+) -> list[str]:
+    """The newest saved plan + action status (masked), or assessment status when global."""
     if assessment_id is None:
-        return all_assessments_summary(db)
+        lines = all_assessments_summary(db, ttl_minutes)
+        return [mask(line)[0] for line in lines][:MAX_CHAT_PLAN_LINES]
+
+    lines: list[str] = []
     run = agent_run_repo.latest_plan(db, assessment_id)
-    if run is None:
-        return []
-    lines = [f"Summary: {run.plan['text']}"] if run.plan.get("text") else []
-    return lines + [step_line(step) for step in run.plan.get("steps", [])]
+    actions = action_repo.list_by_assessment(db, assessment_id)
+    if run is not None:
+        if run.plan.get("text"):
+            lines.append(f"Summary: {run.plan['text']}")
+        statuses = action_status_map(actions)
+        lines.extend(step_line(step, statuses) for step in run.plan.get("steps", []))
+    elif actions:
+        counts = Counter(getattr(a.action_status, "value", str(a.action_status)) for a in actions)
+        parts = ", ".join(f"{count} {status}" for status, count in sorted(counts.items()))
+        lines.append(f"Actions: {parts}")
+
+    assessment = assessment_repo.get(db, assessment_id)
+    if assessment is not None:
+        waiting = approval_repo.count_waiting(db, [assessment_id], still_open_after(ttl_minutes))
+        summary = assessment_summary_line(assessment, waiting.get(assessment_id, 0))
+        lines = lines[: MAX_CHAT_PLAN_LINES - 1] + [summary]
+
+    return [mask(line)[0] for line in lines][:MAX_CHAT_PLAN_LINES]
 
 
-def step_line(step: dict) -> str:
+def step_line(
+    step: dict, action_statuses: dict[tuple[str, str, tuple[str, ...]], str] | None = None
+) -> str:
     line = f"{step['order']}. {step['title']}"
+    status = step.get("status")
     action = step.get("action")
     if action:
         command = " ".join([action["tool"], action["target"], *action.get("arguments", [])])
         line += f" ({command})"
-    status = step.get("status")
+        if not status and action_statuses:
+            status = action_statuses.get(
+                action_key(action["tool"], action["target"], list(action.get("arguments", [])))
+            )
     if status:
         line += f" [{status}]"
     return line

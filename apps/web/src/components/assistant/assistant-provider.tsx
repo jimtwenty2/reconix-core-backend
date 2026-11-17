@@ -85,8 +85,9 @@ export function AssistantProvider({ info: page, children }: { info: AssistantInf
   const [stream] = useState(() => createSlot<AbortController>()); // the reply being streamed
   const onHaltRef = useRef<() => void>(() => {});
 
+  const onHalt = useCallback(() => onHaltRef.current(), []);
   const list = useHistoryList();
-  const open = useOpenConversation(page, stream, list.forget, () => onHaltRef.current());
+  const open = useOpenConversation(page, stream, list.forget, onHalt);
   const asking = useAsking({ info, open, stream, draft, clearDraft, refreshHistory: list.refreshHistory });
   useEffect(() => {
     onHaltRef.current = asking.clearBusy;

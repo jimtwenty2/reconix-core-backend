@@ -13,7 +13,7 @@ import { AUTO_TITLE, cleanTitle } from "@/lib/assistant/history-schema";
 import { MAX_CARDS } from "@/lib/assistant/protocol";
 import { redact } from "@/lib/assistant/redact";
 import { MAX_QUESTION } from "@/lib/assistant/request";
-import { canRetryLast, canStartAsk, isStaleStream } from "@/lib/assistant/chat-state";
+import { canRetryLast, canStartAsk, completedStreamOutcome, isStaleStream, resolveAskScope } from "@/lib/assistant/chat-state";
 import type { AssistantInfo, ChatMessage } from "./types";
 import { useLatest } from "./use-latest";
 import type { Slot } from "./slot";
@@ -56,12 +56,12 @@ export function useAsking({
       setBusy(true);
       const controller = new AbortController();
       stream.set(controller);
-      const scope = opened?.scope ?? pageScope(now);
+      const scope = resolveAskScope(opened?.scope, pageScope(now));
 
       void (async () => {
         try {
           const result = await api.askQuestion(
-            { conversationId: opened?.id ?? undefined, uid: now.scope.uid, question, retry },
+            { conversationId: opened?.id ?? undefined, uid: scope.uid, question, retry },
             controller.signal,
             (frame) => {
               if (isStaleStream(stream.get(), controller)) return;
@@ -77,10 +77,17 @@ export function useAsking({
             },
             // known before the first frame: a Stop right away still belongs to this conversation
             (id) => {
-              if (!controller.signal.aborted) setOpened((o) => (o?.id === id ? o : { id, title: o?.title || cleanTitle(question, AUTO_TITLE), scope }));
+              if (!isStaleStream(stream.get(), controller)) {
+                setOpened((o) => (o?.id === id ? o : { id, title: o?.title || cleanTitle(question, AUTO_TITLE), scope }));
+              }
             },
           );
-          if (isStaleStream(stream.get(), controller)) return;
+          const outcome = completedStreamOutcome(stream.get(), controller);
+          if (outcome === "drop") return;
+          if (outcome === "stopped") {
+            patch(reply.id, (m) => ({ ...m, state: "stopped" }));
+            return;
+          }
           if (!result.ok) {
             patch(reply.id, (m) => ({ ...m, state: "error", detail: result.detail }));
             if (result.status === 404 && opened?.id) setOpened(null); // gone: Retry starts a new conversation

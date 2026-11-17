@@ -39,3 +39,12 @@ export function scrollTriggerKey(messages: readonly ChatStateMessage[]): string 
 export function viewSessionKey(messages: readonly ChatStateMessage[], conversationId: string | null): string {
   return messages[0]?.id ?? conversationId ?? "new";
 }
+
+export function resolveAskScope<T extends { uid: string | null }>(openedScope: T | null | undefined, dashboardScope: T): T {
+  return openedScope ?? dashboardScope;
+}
+
+export function completedStreamOutcome(active: AbortController | null, mine: AbortController): "drop" | "stopped" | "apply" {
+  if (active !== mine) return "drop";
+  return mine.signal.aborted ? "stopped" : "apply";
+}

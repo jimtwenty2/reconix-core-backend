@@ -1,10 +1,12 @@
 """Chat with the agent in a session."""
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 
+from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
 from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
@@ -12,6 +14,7 @@ from reconix_api.schemas.messages import ChatOut, MessageCreate
 from reconix_api.services import chat as chat_service
 
 router = APIRouter(prefix="/sessions/{session_id}/chat", tags=["messages"])
+CurrentSettings = Annotated[Settings, Depends(get_settings)]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -22,6 +25,7 @@ async def chat(
     operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
+    settings: CurrentSettings,
 ) -> ChatOut:
     """Saves the person's message and returns the agent's answer.
 
@@ -40,7 +44,14 @@ async def chat(
     - Secrets in the message are masked before it is saved.
     """
     return await chat_service.chat(
-        db, interfaces, mask, operator, session_id, body.content, assessment_id=body.assessment_id
+        db,
+        interfaces,
+        mask,
+        operator,
+        session_id,
+        body.content,
+        assessment_id=body.assessment_id,
+        ttl_minutes=settings.approval_ttl_minutes,
     )
 
 
@@ -56,6 +67,7 @@ async def chat_stream(
     operator: CurrentOperator,
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
+    settings: CurrentSettings,
 ) -> StreamingResponse:
     """Streams the agent's answer as Server-Sent Events while it is written, like POST /chat.
 
@@ -77,7 +89,14 @@ async def chat_stream(
     - Requires a valid session token.
     """
     started = chat_service.start(
-        db, interfaces, mask, operator, session_id, body.content, assessment_id=body.assessment_id
+        db,
+        interfaces,
+        mask,
+        operator,
+        session_id,
+        body.content,
+        assessment_id=body.assessment_id,
+        ttl_minutes=settings.approval_ttl_minutes,
     )
     ask = chat_service.ask_in_background(db, interfaces, mask, operator, started)
     events = chat_service.stream_events(ask)

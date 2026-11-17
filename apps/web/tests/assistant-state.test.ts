@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { canRetryLast, createEpochGuard, isStaleStream, scrollTriggerKey, viewSessionKey } from "@/lib/assistant/chat-state";
+import {
+  canRetryLast,
+  completedStreamOutcome,
+  createEpochGuard,
+  isStaleStream,
+  resolveAskScope,
+  scrollTriggerKey,
+  viewSessionKey,
+} from "@/lib/assistant/chat-state";
 
 describe("chat state guards", () => {
   it("blocks retry before slicing messages when reading is active or model is unconfigured", () => {
@@ -47,5 +55,23 @@ describe("chat state guards", () => {
     expect(viewSessionKey(m1, "c1")).not.toBe(viewSessionKey(m2, "c2"));
     expect(viewSessionKey(m1, null)).toBe("u1");
     expect(viewSessionKey(m1, "c1")).toBe("u1");
+  });
+
+  it("keeps the open conversation scope when continuing a chat after switching the page run", () => {
+    const openedScope = { uid: "run-a", label: "RCX-001" };
+    const dashboardScope: { uid: string | null; label: string } = { uid: "run-b", label: "RCX-002" };
+    expect(resolveAskScope(openedScope, dashboardScope)).toEqual(openedScope);
+    expect(resolveAskScope({ uid: null, label: "All assessments" }, dashboardScope)).toEqual({ uid: null, label: "All assessments" });
+    expect(resolveAskScope(undefined, dashboardScope)).toEqual(dashboardScope);
+  });
+
+  it("marks a resolved aborted stream as stopped unless superseded or halted", () => {
+    const c1 = new AbortController();
+    const c2 = new AbortController();
+    expect(completedStreamOutcome(c1, c1)).toBe("apply");
+    expect(completedStreamOutcome(null, c1)).toBe("drop");
+    expect(completedStreamOutcome(c2, c1)).toBe("drop");
+    c1.abort();
+    expect(completedStreamOutcome(c1, c1)).toBe("stopped");
   });
 });
