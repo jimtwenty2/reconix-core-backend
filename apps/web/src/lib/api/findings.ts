@@ -45,8 +45,8 @@ const FindingOut = z.object({
   remediation: opt,
   validation_status: str,
   finding_status: str,
-  tools: z.array(str),
-  evidence: z.array(Evidence),
+  tools: z.array(str).optional().default([]),
+  evidence: z.array(Evidence).optional().default([]),
 });
 export type ApiFinding = z.infer<typeof FindingOut>;
 
