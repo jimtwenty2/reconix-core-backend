@@ -20,7 +20,7 @@ import { useFitAbove } from "./use-fit-above";
 import type { Models } from "./use-models";
 import type { PresetId } from "@/lib/assistant/models/presets";
 
-type Step = { kind: "list"; fromForm: boolean } | { kind: "add"; preset?: PresetId };
+type Step = { kind: "list"; fromForm: boolean } | { kind: "add"; preset?: PresetId; baseUrl?: string };
 
 interface Props {
   id: string;
@@ -94,9 +94,16 @@ export function ModelPicker({ id, models, chip, onClose }: Props) {
         </IconButton>
       </div>
       {adding ? (
-        <ModelProviderForm view={view} models={models} start={step.kind === "add" ? step.preset : undefined} onCancel={toList} onDone={() => onClose(true)} />
+        <ModelProviderForm
+          view={view}
+          models={models}
+          start={step.kind === "add" ? step.preset : undefined}
+          startBaseUrl={step.kind === "add" ? step.baseUrl : undefined}
+          onCancel={toList}
+          onDone={() => onClose(true)}
+        />
       ) : (
-        <ModelList models={models} fromForm={step.kind === "list" && step.fromForm} onChosen={() => onClose(true)} onAdd={(preset) => setStep({ kind: "add", preset })} />
+        <ModelList models={models} fromForm={step.kind === "list" && step.fromForm} onChosen={() => onClose(true)} onAdd={(preset, baseUrl) => setStep({ kind: "add", preset, baseUrl })} />
       )}
     </div>
   );

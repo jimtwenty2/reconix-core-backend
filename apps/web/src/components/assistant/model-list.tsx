@@ -101,8 +101,8 @@ interface Props {
   /** Back from Set the provider: focus goes to + Model. */
   fromForm: boolean;
   onChosen: () => void;
-  /** Opens Set the provider (on `preset`, when one was picked). */
-  onAdd: (preset?: PresetId) => void;
+  /** Opens Set the provider (on `preset` and optional `baseUrl` when editing an endpoint). */
+  onAdd: (preset?: PresetId, baseUrl?: string) => void;
 }
 
 export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
@@ -445,7 +445,7 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
                     </div>
                     {page.kind !== "reconix" && (
                       <div className="ai-picker-endpoint-actions">
-                        <button type="button" onClick={() => onAdd(page.id)} className="ai-btn ai-btn-small ai-btn-outline ai-page-action">
+                        <button type="button" onClick={() => onAdd(page.id, p.baseUrl)} className="ai-btn ai-btn-small ai-btn-outline ai-page-action">
                           <Pencil className="size-3" aria-hidden />
                           Edit
                         </button>

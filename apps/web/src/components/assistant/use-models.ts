@@ -42,12 +42,13 @@ export function useModels(setModel: (model: ModelSummary) => void) {
   const load = useCallback(() => {
     const epoch = ++epochRef.current;
     const cold = !hasView.current;
+    let fullDone = false;
     setState((s) => ({ ...s, status: s.view ? "ready" : "loading", error: null }));
 
     if (cold) {
       // Phase 1: return saved providers immediately without waiting for live /models probes.
       void api.listModels(undefined, { fast: true }).then((fast) => {
-        if (epochRef.current !== epoch) return;
+        if (epochRef.current !== epoch || fullDone) return;
         if (fast.ok) take(fast.view);
       });
     }
@@ -55,6 +56,7 @@ export function useModels(setModel: (model: ModelSummary) => void) {
     // Phase 2: probe live model lists in the background and merge if nothing newer superseded it.
     void api.listModels().then((result) => {
       if (epochRef.current !== epoch) return;
+      fullDone = true;
       if (result.ok) take(result.view);
       else if (!hasView.current) setState((s) => ({ ...s, status: "error", error: result.detail }));
     });
@@ -108,7 +110,13 @@ export function useModels(setModel: (model: ModelSummary) => void) {
   );
 
   /** Takes a view the form got itself ("Test connection" saved a provider). */
-  const accept = useCallback((view: ModelsView) => take(view), [take]);
+  const accept = useCallback(
+    (view: ModelsView) => {
+      epochRef.current += 1;
+      take(view);
+    },
+    [take],
+  );
   /** Removes a provider "Test connection" saved and the form then left (Cancel). */
   const discard = useCallback((id: string) => run(`remove:${id}`, () => api.removeModelProvider(id)), [run]);
 

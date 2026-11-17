@@ -29,7 +29,9 @@ export function useOpenConversation(info: AssistantInfo, stream: Slot<AbortContr
   const conversation = useMemo<OpenConversation>(() => opened ?? { id: null, title: "", scope: pageScope(info) }, [opened, info]);
 
   const halt = useCallback(() => {
-    stream.get()?.abort();
+    const active = stream.get();
+    stream.set(null);
+    active?.abort();
     reading.current?.abort();
   }, [stream]);
 
