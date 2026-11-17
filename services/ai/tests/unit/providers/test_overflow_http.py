@@ -255,7 +255,8 @@ def tool_loop(sizes: list[int]) -> list[dict[str, Any]]:
                 ],
             }
         )
-        body = f"HEAD{n}-" + "m" * size + f"-TAIL{n}"
+        # prose-like filler: text without spaces counts as dense and would be cut up front
+        body = f"HEAD{n}-" + ("more " * (size // 5)) + f"-TAIL{n}"
         messages.append({"role": "tool", "tool_call_id": f"call_{n}", "content": body})
     return messages
 
