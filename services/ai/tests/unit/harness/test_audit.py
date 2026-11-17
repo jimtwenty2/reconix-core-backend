@@ -1,4 +1,6 @@
+import errno
 import json
+import os
 import stat
 import threading
 from dataclasses import dataclass, field
@@ -124,6 +126,39 @@ def test_writer_tightens_rights_on_an_existing_file(tmp_path: Path) -> None:
     path.chmod(0o644)
     make_audit_writer(path)(Event())
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_writer_ignores_unsupported_filesystem_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "audit.jsonl"
+
+    def fake_fchmod(fd: int, mode: int) -> None:
+        raise OSError(errno.ENOTSUP, "Operation not supported")
+
+    monkeypatch.setattr(os, "fchmod", fake_fchmod, raising=False)
+    make_audit_writer(path)(Event(event_type="TEST"))
+    assert len(read_lines(path)) == 1
+
+
+def test_writer_raises_and_closes_descriptor_on_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "audit.jsonl"
+    closed_fds: list[int] = []
+    orig_close = os.close
+    monkeypatch.setattr(os, "close", lambda fd: (closed_fds.append(fd), orig_close(fd)))
+
+    def fake_fchmod(fd: int, mode: int) -> None:
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(os, "fchmod", fake_fchmod, raising=False)
+
+    with pytest.raises(OSError) as exc_info:
+        make_audit_writer(path)(Event(event_type="TEST"))
+
+    assert exc_info.value.errno == errno.EPERM
+    assert len(closed_fds) == 1
 
 
 def test_writes_from_many_threads_do_not_mix(tmp_path: Path) -> None:
