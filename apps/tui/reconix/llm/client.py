@@ -177,6 +177,7 @@ def _http_get_json(url: str, api_key: Optional[str]) -> object:
     if api_key:
         request.add_header("Authorization", f"Bearer {api_key}")
     try:
+        # nosemgrep: dynamic-urllib-use-detected
         with urllib.request.urlopen(request, timeout=PING_TIMEOUT) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:

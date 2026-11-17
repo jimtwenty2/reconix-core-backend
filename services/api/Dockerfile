@@ -47,5 +47,8 @@ ENV RECONIX_IN_CONTAINER=1 \
     RECONIX_PORT=8000
 EXPOSE 8000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
+
 # Migrate the database, then serve.
 CMD ["sh", "-c", "alembic -c services/api/alembic.ini upgrade head && exec python -m reconix_api.main"]

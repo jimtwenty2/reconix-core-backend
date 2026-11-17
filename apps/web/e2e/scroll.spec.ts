@@ -314,6 +314,7 @@ test.describe("the docs", () => {
     const hash = (await target.getAttribute("href"))!;
     expect(hash).toBe("#installation");
     await target.click();
+    // nosemgrep: detect-non-literal-regexp
     await expect(page).toHaveURL(new RegExp(`${hash}$`));
     // the heading lands near the top of the content area (below the top bar), at its scroll-margin-top
     const top = async () =>

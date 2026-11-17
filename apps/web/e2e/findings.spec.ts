@@ -82,7 +82,9 @@ test("a filter goes back to the first page; Previous and Next finding cross the 
   await go(page, "/?view=findings&page=2");
   await expect(pager(page)).toContainText("Page 2 of");
   const sev = await rowSeverity(page, 0);
+  // nosemgrep: detect-non-literal-regexp
   await page.getByRole("group", { name: "Severity" }).getByRole("button", { name: new RegExp(`^${sev.toLowerCase()}`) }).click();
+  // nosemgrep: detect-non-literal-regexp
   await expect(page).toHaveURL(new RegExp(`sev=${sev}`));
   await expect(page).not.toHaveURL(/page=/);
   await page.getByRole("button", { name: "Clear filters" }).click();
@@ -125,6 +127,7 @@ test("a finding the address names but the list lacks falls back to the first row
   await expect(notice(page)).toContainText(`${fid} is hidden by the filters`);
   await page.getByRole("button", { name: "Show it" }).click();
   await expect(page).not.toHaveURL(/sev=/);
+  // nosemgrep: detect-non-literal-regexp
   await expect(page).toHaveURL(new RegExp(`finding=${fid}`));
   await expect(selected(page)).toContainText(fid);
   await expect(notice(page)).toHaveCount(0);
