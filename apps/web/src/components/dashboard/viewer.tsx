@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { AssistantProvider } from "@/components/assistant/assistant-provider";
 import { AssistantStage } from "@/components/assistant/assistant-stage";
 import type { AssistantInfo } from "@/components/assistant/types";
+import { holdGlobe } from "@/components/assistant/use-globe";
 import { CardCursorLight } from "@/components/dashboard/card-cursor-light";
 import { HydratedMark } from "@/components/dashboard/hydrated-mark";
 import { Intro } from "@/components/dashboard/intro";
@@ -60,6 +61,10 @@ export function Viewer({
   const backdrop = shown === "assistant"; // the Overview under the open assistant
 
   useEffect(() => watchHistory(), []);
+  useEffect(() => {
+    holdGlobe("view", shown !== "overview" && !backdrop);
+    return () => holdGlobe("view", false);
+  }, [shown, backdrop]);
 
   // The sidebar: the assistant gets its own history entry; leaving it goes back that entry. It
   // reads the address, not this render's `view`, which can lag a quick click behind.

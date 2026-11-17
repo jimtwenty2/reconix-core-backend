@@ -39,16 +39,27 @@ export default async function Home({ searchParams }: Props) {
   const wanted = typeof params.uid === "string" && UID.test(params.uid) ? params.uid : null;
   const apiAssessment = isAssessmentId(params.assessment) ? params.assessment : null;
 
-  let library: Library;
-  if (process.env.RECONIX_MOCK === "1") {
-    library = await loadLibrary();
-  } else {
+  const loadLib = async (): Promise<Library> => {
+    if (process.env.RECONIX_MOCK === "1") return loadLibrary();
     try {
-      library = await loadApiLibrary();
+      return await loadApiLibrary();
     } catch {
-      library = await loadLibrary();
+      return loadLibrary();
     }
-  }
+  };
+
+  // Run library loading and active model lookup concurrently instead of waiting sequentially.
+  const [library, model] = await Promise.all([
+    loadLib(),
+    // its summary only (no API key comes back); without the Core API the assistant says so
+    activeModelSummary().catch((error: unknown) => ({
+      configured: false,
+      name: "",
+      provider: "",
+      local: false,
+      reason: error instanceof Error ? error.message.slice(0, 600) : "The Core API is not running.",
+    })),
+  ]);
 
   const views = library.assessments.map(assessmentView);
   const chosen =
@@ -62,15 +73,6 @@ export default async function Home({ searchParams }: Props) {
   const overall = !chosen && views.length ? deriveOverall(views) : null;
   const items = library.assessments.map(libraryItem);
   const dir = shownDir(library.dir);
-
-  // its summary only (no API key comes back); without the Core API the assistant says so
-  const model = await activeModelSummary().catch((error: unknown) => ({
-    configured: false,
-    name: "",
-    provider: "",
-    local: false,
-    reason: error instanceof Error ? error.message.slice(0, 600) : "The Core API is not running.",
-  }));
 
   const assistant: AssistantInfo = {
     scope: scopeOf(chosen),

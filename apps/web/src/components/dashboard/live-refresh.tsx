@@ -6,7 +6,7 @@
    The refresh re-renders the server views and keeps client state, so an open conversation and
    the chosen view survive it. */
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 
 import { DEFAULT_REFRESH_MS } from "@/lib/live-refresh";
 
@@ -18,7 +18,7 @@ export function LiveRefresh({ renderedAt, dir, everyMs = DEFAULT_REFRESH_MS }: {
   useEffect(() => {
     if (!live || everyMs <= 0) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") router.refresh();
+      if (document.visibilityState === "visible") startTransition(() => router.refresh());
     }, everyMs);
     return () => window.clearInterval(timer);
   }, [live, everyMs, router]);
