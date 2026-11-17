@@ -156,9 +156,9 @@ export function deriveDashboard(v: AssessmentView): Dashboard {
   const findingCards = findingsSlice(findings);
 
   // run budget
-  const windowLimit = v.scope ? minutesLimit(v.scope.windowMinutes) : null;
+  const maxMinutes = v.scope && v.scope.windowMinutes > 0 ? v.scope.windowMinutes : null;
+  const windowLimit = maxMinutes !== null ? minutesLimit(maxMinutes) : null;
   const usedMinutes = Math.round(v.durationSec / 60);
-  const maxMinutes = v.scope ? v.scope.windowMinutes : null;
   const over = maxMinutes !== null && v.durationSec > maxMinutes * 60;
   const minutes = { used: usedMinutes, max: maxMinutes, over };
   const planSteps = { done: v.phases.filter((p) => p.status === "done").length, total: v.phases.length };

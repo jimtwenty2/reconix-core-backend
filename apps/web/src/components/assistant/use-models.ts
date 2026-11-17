@@ -27,9 +27,12 @@ export function useModels(setModel: (model: ModelSummary) => void) {
   const [state, setState] = useState<ModelsState>({ status: "idle", view: null, error: null });
   const [pending, setPending] = useState<string | null>(null);
   const busy = useRef(false);
+  const hasView = useRef(false);
+  const epochRef = useRef(0);
 
   const take = useCallback(
     (view: ModelsView) => {
+      hasView.current = true;
       setState({ status: "ready", view, error: null });
       setModel(view.summary);
     },
@@ -37,10 +40,23 @@ export function useModels(setModel: (model: ModelSummary) => void) {
   );
 
   const load = useCallback(() => {
+    const epoch = ++epochRef.current;
+    const cold = !hasView.current;
     setState((s) => ({ ...s, status: s.view ? "ready" : "loading", error: null }));
+
+    if (cold) {
+      // Phase 1: return saved providers immediately without waiting for live /models probes.
+      void api.listModels(undefined, { fast: true }).then((fast) => {
+        if (epochRef.current !== epoch) return;
+        if (fast.ok) take(fast.view);
+      });
+    }
+
+    // Phase 2: probe live model lists in the background and merge if nothing newer superseded it.
     void api.listModels().then((result) => {
+      if (epochRef.current !== epoch) return;
       if (result.ok) take(result.view);
-      else setState((s) => ({ ...s, status: "error", error: result.detail }));
+      else if (!hasView.current) setState((s) => ({ ...s, status: "error", error: result.detail }));
     });
   }, [take]);
 
@@ -50,6 +66,7 @@ export function useModels(setModel: (model: ModelSummary) => void) {
     async (label: string, call: () => Promise<api.ModelsAnswer>): Promise<string | null> => {
       if (busy.current) return "Another change is still being saved.";
       busy.current = true;
+      epochRef.current += 1;
       setPending(label);
       try {
         const result = await call();

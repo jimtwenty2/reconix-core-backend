@@ -49,6 +49,9 @@ export function Message({ m, onRetry }: { m: ChatMessage; onRetry?: () => void }
       <ReplyMark live={streaming} />
       <div className="ai-reply">
         <span className="sr-only">Reconix AI:</span>
+        <span className="ai-reply-who" aria-hidden>
+          Reconix AI
+        </span>
         {m.cards?.map((card, i) => <CardView key={i} card={card} />)}
         {m.content ? <MessageText text={m.content} /> : null}
         {m.content.trim() ? <KnowledgeUsed names={m.knowledge} /> : null}

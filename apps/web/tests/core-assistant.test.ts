@@ -341,6 +341,15 @@ describe("the model picker", () => {
     expect(after.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o", "gpt-4.1"]);
   });
 
+  it("fast=1 returns saved providers without probing live /models lists", async () => {
+    await addLocalModel();
+    core.calls.length = 0;
+    const fast = await (await models.GET(request("/api/assistant/models?fast=1", { origin: null }))).json();
+    expect(fast.providers).toHaveLength(1);
+    expect(fast.providers[0].models).toEqual(["llama3.2"]);
+    expect(core.calls.some((c) => c.path.endsWith("/models"))).toBe(false);
+  });
+
   it("lists only models that can chat: embedding models are left out", async () => {
     const { chatModels } = await import("@/lib/api/models");
     expect(chatModels(["google/gemma-4-e4b", "text-embedding-nomic-embed-text-v1.5", "bge-m3:embed", "bad name", "qwen:7b"])).toEqual(["google/gemma-4-e4b", "qwen:7b"]);
