@@ -14,6 +14,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
 
+from reconix_api.core.config import get_settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import (
     AgentRequest,
@@ -29,6 +30,7 @@ from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import AgentRun, Finding, Message, ScopeManifest, ScopeTarget
 from reconix_api.models.enums import AgentRunStatus, FindingStatus, SeverityStatus
 from reconix_api.repositories import agent_runs as agent_run_repo
+from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import assessments as assessment_repo
 from reconix_api.repositories import findings as findings_repo
 from reconix_api.repositories import messages as message_repo
@@ -37,6 +39,7 @@ from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.messages import ChatOut, MessageOut
 from reconix_api.services import agent_runs, messages
 from reconix_api.services.analysis import finding_input
+from reconix_api.services.approvals import still_open_after
 from reconix_api.services.scopes import to_chat_scope
 from reconix_api.services.stream import sse
 
@@ -44,6 +47,7 @@ logger = logging.getLogger(__name__)
 
 ASSISTANT = "assistant"  # messages.role of the agent's answer
 CHAT_ROLES = ("user", "assistant")
+MAX_CHAT_ASSESSMENTS = 10
 MAX_CHAT_FINDINGS = 50
 _SEVERITY_RANK = {
     SeverityStatus.CRITICAL: 0,
@@ -324,10 +328,25 @@ def history(db: Db, session_id: UUID) -> list[ChatMessage]:
     ]
 
 
-def plan_lines(db: Db, assessment_id: UUID | None) -> list[str]:
-    """The newest saved plan, one line a step, for questions about it."""
-    if assessment_id is None:
+def all_assessments_summary(db: Db) -> list[str]:
+    """Brief status and pending-approval summary when chat runs across All assessments."""
+    assessments = assessment_repo.list_all(db)[:MAX_CHAT_ASSESSMENTS]
+    if not assessments:
         return []
+    ttl_minutes = get_settings().approval_ttl_minutes
+    ids = [row.assessment_id for row in assessments]
+    waiting = approval_repo.count_waiting(db, ids, still_open_after(ttl_minutes))
+    return [
+        f"{row.engagement_code} ({row.name}, {row.type}): "
+        f"{row.assessment_status.value}, {waiting.get(row.assessment_id, 0)} waiting approval"
+        for row in assessments
+    ]
+
+
+def plan_lines(db: Db, assessment_id: UUID | None) -> list[str]:
+    """The newest saved plan, one line a step, or an assessment status summary when global."""
+    if assessment_id is None:
+        return all_assessments_summary(db)
     run = agent_run_repo.latest_plan(db, assessment_id)
     if run is None:
         return []
@@ -341,4 +360,7 @@ def step_line(step: dict) -> str:
     if action:
         command = " ".join([action["tool"], action["target"], *action.get("arguments", [])])
         line += f" ({command})"
+    status = step.get("status")
+    if status:
+        line += f" [{status}]"
     return line
