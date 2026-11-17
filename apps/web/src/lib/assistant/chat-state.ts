@@ -22,3 +22,12 @@ export function canRetryLast(
 export function isStaleStream(active: AbortController | null, mine: AbortController): boolean {
   return active !== mine || mine.signal.aborted;
 }
+
+export function createEpochGuard() {
+  let epoch = 0;
+  return {
+    next: () => ++epoch,
+    current: () => epoch,
+    isCurrent: (value: number) => value === epoch,
+  };
+}

@@ -56,7 +56,7 @@ export function toConversation(session: Pick<CoreSession, "session_id" | "create
       if (last?.role === "user") unanswered(last);
       out.push({ id: m.message_id, role: "user", content: content.slice(0, 4_000), at: time(m.created_at) });
       question = m.message_id;
-    } else if (m.role === "assistant" && question && last?.role === "user") {
+    } else if (m.role === "assistant" && question && last?.role === "user" && content.trim()) {
       out.push({ id: m.message_id, role: "assistant", replyTo: question, content, cards: [], state: "done", at: time(m.created_at) });
     }
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canRetryLast, isStaleStream } from "@/lib/assistant/chat-state";
+import { canRetryLast, createEpochGuard, isStaleStream } from "@/lib/assistant/chat-state";
 
 describe("chat state guards", () => {
   it("blocks retry before slicing messages when reading is active or model is unconfigured", () => {
@@ -22,5 +22,13 @@ describe("chat state guards", () => {
     expect(isStaleStream(c1, c1)).toBe(false);
     c1.abort();
     expect(isStaleStream(c1, c1)).toBe(true);
+  });
+
+  it("epoch guard invalidates in-flight history loads when a newer load or delete occurs", () => {
+    const guard = createEpochGuard();
+    const req1 = guard.next();
+    expect(guard.isCurrent(req1)).toBe(true);
+    guard.next();
+    expect(guard.isCurrent(req1)).toBe(false);
   });
 });

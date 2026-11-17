@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { pickCards } from "@/lib/assistant/cards";
 import { buildContext } from "@/lib/assistant/context";
+import { NO_ANSWER, toConversation } from "@/lib/api/assistant";
 import { type CardOf, type Frame, parseFrame } from "@/lib/assistant/protocol";
 import { COOKIE, sessionValue } from "@/lib/auth/session";
 import { type FakeCore, startFakeCore } from "./fakes/core-api-server";
@@ -172,6 +173,17 @@ describe("asking", () => {
 });
 
 describe("conversations", () => {
+  it("turns a reloaded assistant message with empty content into an unanswered error with Retry instead of a blank row", () => {
+    const conversation = toConversation(
+      { session_id: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", created_at: "2026-01-01T00:00:00Z" },
+      [
+        { message_id: "1b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", sequence_no: 1, role: "user", content_masked: "Question", created_at: "2026-01-01T00:00:01Z", session_id: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69" },
+        { message_id: "2b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", sequence_no: 2, role: "assistant", content_masked: "   ", created_at: "2026-01-01T00:00:02Z", session_id: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69" },
+      ],
+    );
+    expect(conversation.messages.at(-1)).toMatchObject({ role: "assistant", state: "error", detail: NO_ANSWER });
+  });
+
   it("lists the open web sessions that hold messages, titled by the first question", async () => {
     await addLocalModel();
     const id = (await ask({ uid: null, question: "Which hosts are in scope?" })).headers.get("x-conversation-id")!;
