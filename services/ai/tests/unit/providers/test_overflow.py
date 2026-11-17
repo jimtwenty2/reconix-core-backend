@@ -25,6 +25,15 @@ def bad_request(text: str) -> Exception:
     return litellm.exceptions.BadRequestError(text, model="m", llm_provider="openai")
 
 
+def server_error(text: str) -> Exception:
+    return litellm.exceptions.InternalServerError(text, model="m", llm_provider="openai")
+
+
+LLAMA_TEXT = (
+    "request (70000 tokens) exceeds the available context size of 65536 tokens, try increasing it"
+)
+
+
 def answer(text: str = "ok") -> litellm.ModelResponse:
     return litellm.ModelResponse(
         choices=[{"message": {"role": "assistant", "content": text}, "finish_reason": "stop"}]
@@ -67,6 +76,11 @@ def served(monkeypatch: pytest.MonkeyPatch):
         (bad_request("prompt is too long: 250000 tokens > 200000 maximum"), True),
         (bad_request("Request Entity Too Large"), True),
         (bad_request("Please reduce the length of the messages"), True),
+        (bad_request(LLAMA_TEXT), True),
+        (server_error(LLAMA_TEXT), True),
+        (server_error("maximum context length is 8192 tokens"), True),
+        (server_error("Rate limit reached: context window"), False),
+        (server_error("CUDA error: out of memory"), False),
         (bad_request("response_format json_object is not supported"), False),
         (bad_request("Rate limit reached: too many tokens per minute, context window"), False),
         (bad_request("quota exceeded, input is too long"), False),
@@ -85,6 +99,8 @@ def test_is_overflow(error: Exception, expected: bool) -> None:
         ("maximum context length is 131,072 tokens", 131_072),
         ("Your maximum context window of 4096 tokens was exceeded", 4096),
         ("max context length: 16384", 16_384),
+        (LLAMA_TEXT, 65_536),
+        ("exceeds the available context size (32768 tokens)", 32_768),
         ("prompt is too long", None),
         ("maximum context length is 12", None),  # not a window
     ],
@@ -107,6 +123,54 @@ async def test_complete_retries_once_with_the_window_the_server_names(served) ->
     next_fake = served(answer())
     await complete([Message("user", "hi")], reconix_provider())
     assert next_fake.calls[0]["max_tokens"] <= 8192 - 1_000
+
+
+async def test_a_500_overflow_recovers_after_one_retry_with_the_smaller_window(served) -> None:
+    fake = served(server_error(LLAMA_TEXT.replace("65536", "8192")), answer("fits now"))
+
+    got = await complete([Message("user", "hi")], reconix_provider())
+
+    assert got.text == "fits now"
+    assert len(fake.calls) == 2
+    assert fake.calls[1]["max_tokens"] <= 8192 - 1_000
+
+
+async def test_a_500_overflow_that_cannot_shrink_is_prompt_too_long(served) -> None:
+    # 65,536 is larger than the window in use (64,000 by default), so it is never adopted.
+    fake = served(server_error(LLAMA_TEXT))
+
+    with pytest.raises(ProviderError) as caught:
+        await complete([Message("user", "hi")], reconix_provider())
+
+    assert caught.value.code == "PROMPT_TOO_LONG"
+    assert len(fake.calls) == 1
+    assert "65536" not in caught.value.message
+    assert "request (" not in caught.value.message
+
+
+async def test_a_plain_500_is_not_retried_nor_prompt_too_long(served) -> None:
+    fake = served(server_error("CUDA error: out of memory"))
+
+    with pytest.raises(ProviderError) as caught:
+        await complete([Message("user", "hi")], reconix_provider())
+
+    assert caught.value.code == "MODEL_UNAVAILABLE"
+    assert len(fake.calls) == 1
+    assert "CUDA" not in caught.value.message
+
+
+async def test_tool_loop_500_overflow_is_retried_once_and_a_plain_500_is_not(served) -> None:
+    fake = served(server_error(LLAMA_TEXT.replace("65536", "8192")), answer("done"))
+    got = await complete_with_tools(tool_chat(["a" * 5_000]), TOOLS, reconix_provider())
+    assert got.text == "done"
+    assert len(fake.calls) == 2
+    assert fake.calls[1]["max_tokens"] <= 8192 - 1_000
+
+    plain = served(server_error("CUDA error: out of memory"))
+    with pytest.raises(ProviderError) as caught:
+        await complete_with_tools(tool_chat(["a" * 5_000]), TOOLS, reconix_provider())
+    assert caught.value.code == "MODEL_UNAVAILABLE"
+    assert len(plain.calls) == 1
 
 
 async def test_complete_without_a_learned_window_does_not_retry(served) -> None:
