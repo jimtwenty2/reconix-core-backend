@@ -611,3 +611,32 @@ async def test_the_scope_card_waits_for_the_goal_read(app, model_active, fake_ap
         await wait_until(pilot, lambda: bool(app.screen.query(ScopePanel)), what="the card")
         assert app.screen.query("#scope-suggest-ticks")
         assert not app.screen.query("#template-activity")
+
+
+async def test_step_chat_streaming_and_flush(app):
+    """StepChat mounts replies as StreamLine and flushes them on typing or explicit flush."""
+    from reconix.widgets.step_chat import StepChat, _ChatInput
+    from reconix.widgets.stream_text import StreamLine
+
+    async with app.run_test(size=SIZE) as pilot:
+        chat = StepChat("Welcome message", id="test-step-chat")
+        await app.screen.mount(chat)
+        await pilot.pause()
+
+        # The initial message is a StreamLine
+        lines = list(chat.query(StreamLine))
+        assert lines
+        assert "Welcome message" in lines[0].current_text
+
+        # Adding a reply adds a StreamLine
+        reply = chat.add_reply("Here is an AI-like message", tone="default", stream=True)
+        assert isinstance(reply, StreamLine)
+        assert "Here is an AI-like message" in reply.current_text
+
+        # Flushes on chat input typing
+        chat_input = _ChatInput()
+        await app.screen.mount(chat_input)
+        chat.add_reply("Another reply", stream=True)
+        chat.flush_streaming()
+        for sl in chat.query(StreamLine):
+            assert sl.is_finished
