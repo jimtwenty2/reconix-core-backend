@@ -42,7 +42,21 @@ class LlmMixin:
         """Offer to set a model of your own, until one is active. Without one the Core API
         has no model and refuses (503 NO_ACTIVE_PROVIDER) until you choose: Reconix never
         picks one for you."""
-        if not self.ASK_PROVIDER_ON_START or store.active_model() is not None:
+        if not self.ASK_PROVIDER_ON_START:
+            return
+        # The active model is known only after the providers are read, and that blocks.
+        self.run_worker(self._read_providers_for_start, thread=True, group="llm",
+                        exit_on_error=False)
+
+    def _read_providers_for_start(self) -> None:
+        try:
+            store.list_providers()
+        except store.StoreValidationError:
+            return  # the Core API is down: there is nothing to choose yet
+        self.from_worker(self._ask_provider_if_none)
+
+    def _ask_provider_if_none(self) -> None:
+        if store.active_model() is not None:
             return
         choices = [
             Choice(
@@ -51,9 +65,9 @@ class LlmMixin:
                 "OpenAI, Anthropic, DeepSeek, Ollama or a custom endpoint (/provider)",
             ),
             Choice(
-                "skip",
+                "reconix",
                 "Use the Core API's model",
-                "The built-in Reconix model. /provider sets its key or another provider later.",
+                "Make the built-in Reconix model active. /provider sets another one later.",
                 recommended=True,
                 separated=True,
             ),
@@ -71,6 +85,26 @@ class LlmMixin:
     def _start_provider_chosen(self, choice: Optional[str]) -> None:
         if choice == "provider":
             self.open_provider_menu()
+        elif choice == "reconix":
+            self.run_worker(self._activate_reconix, thread=True, group="llm", exit_on_error=False)
+
+    def _activate_reconix(self) -> None:
+        """The same store call /model uses; a model off this computer still asks for your OK."""
+        try:
+            models = store.get_provider("reconix").models
+            if not models:
+                raise store.StoreValidationError("Reconix is not set up. Use /provider.")
+            active = store.activate("reconix", models[0])
+        except store.StoreValidationError as exc:
+            self.from_worker(self._warn, exc)
+            return
+        self.from_worker(self._reconix_activated, active)
+
+    def _reconix_activated(self, active) -> None:
+        self.refresh_view()
+        self.notify(f"Active model: {active.label} · {active.model}", markup=False)
+        if store.core_api_needs_ok():
+            self.ask_core_api_ok("reconix", active)
 
     # --- /provider ----------------------------------------------------------------------------
     def provider_command(self, arg: Optional[str]) -> None:

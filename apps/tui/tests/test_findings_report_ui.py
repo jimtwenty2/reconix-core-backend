@@ -13,7 +13,7 @@ from reconix.screens import (
 
 from .support import (
     DEMO_REQUEST, SIZE, add_finding, decide, play_until_gate, run_to, run_ui_to, screen_text,
-    settle, show,
+    settle, show, wait_until,
 )
 
 def row_ids(app) -> list:
@@ -193,7 +193,7 @@ async def test_docx_export_with_control_characters_keeps_the_app_running(app, tm
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "report")
         await pilot.press("w")
-        await settle(pilot)
+        await wait_until(pilot, lambda: isinstance(app.screen, ChoiceScreen), what="report saved")
         assert app.is_running
         assert isinstance(app.screen, ChoiceScreen)                    # ✓ REPORT SAVED
         assert store.get_run().report_path.endswith("RCX-001.docx")
@@ -209,7 +209,11 @@ async def test_a_docx_the_writer_refuses_is_a_warning_not_a_crash(app, monkeypat
     async with app.run_test(size=SIZE) as pilot:
         await show(app, pilot, "report")
         await pilot.press("w")
-        await settle(pilot)
+        await wait_until(
+            pilot,
+            lambda: any("couldn't be written" in str(n.message) for n in app._notifications),
+            what="the refusal",
+        )
         assert app.is_running and isinstance(app.screen, ReportScreen)
         assert store.get_run().report_path == ""
         assert any("couldn't be written" in str(n.message) for n in app._notifications)

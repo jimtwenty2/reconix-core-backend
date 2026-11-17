@@ -76,21 +76,33 @@ class DialogsMixin:
     # --- report exports ------------------------------------------------------------------------
     def export_report(self, fmt: Optional[str]) -> None:
         """Write the report in `fmt`. The store refuses with its own sentence (not complete
-        yet, not installed), shown as a warning. Writing blocks (a PDF takes seconds), so a
-        "Writing…" note is drawn first and the work runs after that redraw."""
+        yet, not installed), shown as a warning. Writing blocks (a PDF takes seconds), so it
+        runs in a worker thread, behind a note that stays until it is done."""
         fmt = (fmt or "").lower()
         if not store.is_completed():
-            self._write_report(fmt)              # refused at once, with the store's reason
+            self._report_done(*self._generate(fmt))  # refused at once, with the store's reason
             return
         self.notify(f"Writing the {fmt.upper() or 'report'} report…", title="Report",
-                    timeout=3, markup=False)
-        self.call_after_refresh(self._write_report, fmt)
+                    timeout=3600, markup=False)  # cleared in _report_done
+        self.run_worker(partial(self._write_report, fmt), thread=True, group="report",
+                        exit_on_error=False)
+
+    @staticmethod
+    def _generate(fmt: str):
+        """(path, None) or (None, the store's refusal)."""
+        try:
+            return store.generate_report(fmt), None
+        except (store.StoreValidationError, OSError) as exc:
+            return None, exc
 
     def _write_report(self, fmt: str) -> None:
-        try:
-            path = store.generate_report(fmt)
-        except (store.StoreValidationError, OSError) as exc:
-            self._warn(exc)
+        """Worker thread: only the store call runs here; the screen is touched in _report_done."""
+        self.from_worker(self._report_done, *self._generate(fmt))
+
+    def _report_done(self, path: Optional[str], error: Optional[Exception]) -> None:
+        self.clear_notifications()
+        if error is not None:
+            self._warn(error)
             return
         self.refresh_view()
         self.open_dialog(ChoiceScreen(
