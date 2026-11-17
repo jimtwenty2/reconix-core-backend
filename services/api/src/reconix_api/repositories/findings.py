@@ -28,6 +28,23 @@ def count_in_assessment(db: Db, assessment_id: UUID) -> int:
     return db.scalar(query) or 0
 
 
+def list_awaiting_validation(db: Db, assessment_id: UUID) -> list[Finding]:
+    """The assessment's findings whose verdict is still open: UNCONFIRMED or INCONCLUSIVE,
+    and neither a person's false positive nor FIXED. A validation only judges these."""
+    query = (
+        select(Finding)
+        .where(
+            Finding.assessment_id == assessment_id,
+            Finding.validation_status.in_(
+                [ValidationStatus.UNCONFIRMED, ValidationStatus.INCONCLUSIVE]
+            ),
+            Finding.finding_status.not_in([FindingStatus.FALSE_POSITIVE, FindingStatus.FIXED]),
+        )
+        .order_by(Finding.created_at, Finding.code)
+    )
+    return list(db.scalars(query))
+
+
 def add_source(db: Db, finding_id: UUID, tool_run_id: UUID) -> None:
     """Link a finding to the tool run that found it, once."""
     query = select(finding_sources).where(
@@ -118,6 +135,11 @@ def tool_run_assessment(db: Db, tool_run_id: UUID) -> UUID | None:
         .where(ToolRun.tool_run_id == tool_run_id)
     )
     return db.scalar(query)
+
+
+def run_assessment(db: Db, run: ToolRun) -> UUID | None:
+    """The assessment of a saved run's action."""
+    return db.scalar(select(Action.assessment_id).where(Action.action_id == run.action_id))
 
 
 def list_matching(

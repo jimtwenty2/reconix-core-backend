@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
+from sqlalchemy.orm import sessionmaker
 
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
@@ -33,11 +34,13 @@ async def approve(
     mask: MaskSecrets,
     settings: Settings,
     operator: Operator,
+    session_factory: sessionmaker[Db],
     approval_id: UUID,
     decision: ApprovalDecision,
 ) -> ApprovalOut:
     """An approved action runs right away, inside this request, and the plan that
-    suggested it (if any) gets the decision."""
+    suggested it (if any) gets the decision. A finished validation step is judged after
+    that (plans.resume_after_decision)."""
     ttl_minutes = settings.approval_ttl_minutes
     write_audit = interfaces.write_audit
     approval = _get_pending(db, write_audit, operator, approval_id, ttl_minutes)
@@ -57,9 +60,13 @@ async def approve(
         except ApiError:
             if approval.approval_status == ApprovalStatus.EXPIRED:
                 # The second check refused it: the plan hears REJECTED, nothing ran.
-                await plans.resume_after_decision(db, interfaces, operator, approval, "REJECTED")
+                await plans.resume_after_decision(
+                    db, interfaces, mask, session_factory, operator, approval, "REJECTED"
+                )
             raise
-        await plans.resume_after_decision(db, interfaces, operator, approval, "APPROVED")
+        await plans.resume_after_decision(
+            db, interfaces, mask, session_factory, operator, approval, "APPROVED"
+        )
     elif approval.kind == "review":
         reports.approve_review(db, interfaces.write_audit, operator, approval)
     elif llm_providers.is_activation(approval):
@@ -76,6 +83,8 @@ async def approve(
 async def reject(
     db: Db,
     interfaces: Interfaces,
+    mask: MaskSecrets,
+    session_factory: sessionmaker[Db],
     operator: Operator,
     ttl_minutes: int,
     approval_id: UUID,
@@ -86,7 +95,9 @@ async def reject(
         scopes.reject_scope(db, interfaces.write_audit, operator, approval, decision.reason)
     elif approval.kind == "action":
         actions.reject_action(db, interfaces.write_audit, operator, approval, decision.reason)
-        await plans.resume_after_decision(db, interfaces, operator, approval, "REJECTED")
+        await plans.resume_after_decision(
+            db, interfaces, mask, session_factory, operator, approval, "REJECTED"
+        )
     elif approval.kind == "review":
         reports.reject_review(db, interfaces.write_audit, operator, approval, decision.reason)
     elif llm_providers.is_activation(approval):

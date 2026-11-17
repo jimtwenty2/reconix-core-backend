@@ -36,6 +36,7 @@ from reconix_api.findings import sqlmap as sqlmap_findings
 from reconix_api.findings import testssl as testssl_findings
 from reconix_api.findings.shape import NewFinding
 from reconix_api.findings.text import host_of
+from reconix_api.models import Action as ActionRow
 from reconix_api.models import Evidence, Finding, ToolRun, ValidationRun
 from reconix_api.models.enums import (
     AgentRunStatus,
@@ -264,16 +265,22 @@ async def check_finding(
     """Confirm a finding from a completed PoC tool run. The AI reads that run's real
     (masked) output and sets the verdict; the finding takes it as its validation_status.
     No person sets the verdict by hand."""
-    # Local imports: findings is imported by tool_runs, so a top-level import of these
-    # (which route back through actions -> tool_runs -> findings) would be a cycle.
-    from reconix_api.services import agent_runs, plans
-    from reconix_api.services.analysis import finding_input
-
     finding = _get_finding(db, finding_id)
-    assessment_id, code = finding.assessment_id, finding.code
-    tool_run = finding_repo.get_tool_run(db, body.tool_run_id)
+    tool_run = _checked_run(db, finding, body.tool_run_id)
+    action = action_repo.get(db, tool_run.action_id)
+    return await _judge(db, interfaces, mask, operator, finding, tool_run, action)
+
+
+def _checked_run(db: Db, finding: Finding, tool_run_id: UUID) -> ToolRun:
+    """The PoC run, if it may judge this finding: a COMPLETED run of the same assessment,
+    against a target this finding is on. Checked on every path, a person's or a step's."""
+    tool_run = finding_repo.get_tool_run(db, tool_run_id)
+    same_assessment = (
+        tool_run is not None
+        and finding_repo.tool_run_assessment(db, tool_run_id) == finding.assessment_id
+    )
     # A run from another assessment is treated as not found, so nothing leaks across them.
-    if tool_run is None or finding_repo.tool_run_assessment(db, body.tool_run_id) != assessment_id:
+    if not same_assessment:
         raise ApiError(404, "TOOL_RUN_NOT_FOUND", "No tool run with this id for this finding.")
     if tool_run.tool_run_status != ToolRunStatus.COMPLETED:
         raise ApiError(422, "TOOL_RUN_NOT_COMPLETED", "The PoC tool run has not completed.")
@@ -285,7 +292,29 @@ async def check_finding(
         raise ApiError(
             422, "POC_TARGET_MISMATCH", "The PoC tool run did not run against this finding."
         )
+    return tool_run
 
+
+async def _judge(
+    db: Db,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    operator: Operator,
+    finding: Finding,
+    tool_run: ToolRun,
+    action: ActionRow | None,
+) -> ValidationRunOut:
+    """One verdict per finding, from the AI reading the run's masked output: the newest
+    validation run, the finding's own status and one audit line. The run must already be
+    checked (_checked_run). Its own agent run is ended, so an error leaves no run RUNNING."""
+    # Local imports: findings is imported by tool_runs, so a top-level import of these
+    # (which route back through actions -> tool_runs -> findings) would be a cycle.
+    from reconix_api.services import agent_runs, plans
+    from reconix_api.services.analysis import finding_input
+
+    finding_id = finding.finding_id
+    assessment_id, code = finding.assessment_id, finding.code
+    target = action.target if action is not None else finding.target
     scope = plans.approved_scope(interfaces, assessment_id)
     run = agent_runs.new_agent_run(db, operator, assessment_id, task="VALIDATE")
     db.commit()
@@ -319,7 +348,7 @@ async def check_finding(
         reviewed_by="agent",  # the verdict is the AI's, not a person's
         reviewed_at=datetime.now(UTC),
         finding_id=finding_id,
-        tool_run_id=body.tool_run_id,
+        tool_run_id=tool_run.tool_run_id,
     )
     finding_repo.add(db, validation)
     finding.validation_status = verdict
@@ -329,7 +358,8 @@ async def check_finding(
         "validation_run_id": str(validation.validation_run_id),
         "validation_status": verdict,
         "method": POC,
-        "tool_run_id": str(body.tool_run_id),
+        "tool_run_id": str(tool_run.tool_run_id),
+        "target": mask(target)[0],
     }
     audit(interfaces.write_audit, "FINDING_CHECKED", operator, assessment_id, details)
     return ValidationRunOut.model_validate(validation, from_attributes=True)
@@ -341,6 +371,42 @@ def list_validation_runs(db: Db, finding_id: UUID) -> list[ValidationRunOut]:
         ValidationRunOut.model_validate(run, from_attributes=True)
         for run in finding_repo.list_validation_runs(db, finding_id)
     ]
+
+
+async def run_validation(
+    db: Db,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    operator: Operator,
+    run: ToolRun,
+) -> list[ValidationRunOut]:
+    """A finished step with `purpose == "validation"`: the AI judges every finding of the
+    same assessment that this run hit and that still waits for a verdict (UNCONFIRMED or
+    INCONCLUSIVE, not a person's false positive or FIXED), through the same checks a
+    person's check makes (_checked_run, then _judge). A finding the AI cannot judge keeps
+    its status; the error's type is logged and the step stays finished.
+
+    Called after the step is saved and answered (services/validation.py), never inside that
+    request: one VALIDATE call per finding takes seconds.
+    """
+    if not run.output_masked:
+        return []
+    saved: list[ValidationRunOut] = []
+    for finding in finding_repo.list_awaiting_validation(db, finding_repo.run_assessment(db, run)):
+        try:
+            _checked_run(db, finding, run.tool_run_id)
+        except ApiError:
+            continue  # this run is not against that finding's target
+        try:
+            saved.append(await _judge(db, interfaces, mask, operator, finding, run, None))
+        except Exception as error:  # noqa: BLE001 - a verdict never fails the step
+            logger.warning(
+                "Finding %s not validated by tool run %s: %s",
+                finding.code,
+                run.tool_run_id,
+                type(error).__name__,
+            )
+    return saved
 
 
 async def update_memory(memory: FindingMemory, finding: FindingOut) -> None:
