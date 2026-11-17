@@ -129,7 +129,19 @@ export function typeLabel(type: string): string {
  *  status. Read on the page and again by the view's live poll (app/api/core-assessments/route.ts). */
 export async function loadAssessmentRows(): Promise<ReportRunRow[]> {
   const listed = (await listAssessmentRows()).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-  const runs = await Promise.all(listed.map((a) => (a.assessment_status === "ACTIVE" ? readPlanRun(a).catch(() => null) : null)));
+  const agentRunsBySession = new Map<string, Promise<unknown>>();
+  const runs = await Promise.all(
+    listed.map((a) => {
+      if (a.assessment_status !== "ACTIVE") return null;
+      if (!isAssessmentId(a.assessment_id) || !isAssessmentId(a.session_id)) return null;
+      let pending = agentRunsBySession.get(a.session_id);
+      if (!pending) {
+        pending = apiGet(`/sessions/${encodeURIComponent(a.session_id)}/agent-runs`);
+        agentRunsBySession.set(a.session_id, pending);
+      }
+      return pending.then((answer) => newestPlanRun(answer, a.assessment_id)).catch(() => null);
+    }),
+  );
   return listed.map((a, i) => assessmentRunRow(a, runs[i]));
 }
 

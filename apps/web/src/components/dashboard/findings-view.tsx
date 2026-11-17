@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 
 import type { ListedFinding } from "@/components/dashboard/derive";
@@ -88,16 +88,19 @@ export function FindingsView({
   // The row a phone opened last: highlighted and focused again when Back returns to the list.
   const [lastOpened, setLastOpened] = useState<string | null>(null);
 
-  const filter = parseFindingFilter(p);
+  const filter = useMemo(() => parseFindingFilter(p), [p]);
   const active = filterActive(filter);
   // False positives are left out of every count on the dashboard, so they are listed only on
   // request (`?fp=1`): the headline and the chips then agree with the Overview and the Reports.
-  const counted = listable(findings, false);
+  const counted = useMemo(() => listable(findings, false), [findings]);
   const falsePositives = findings.length - counted.length;
-  const base = listable(findings, filter.fp);
-  const sorted = sortFindings(findings.filter((f) => findingMatches(f, filter)));
-  const page = resolveFindingsPage(sorted, findings, p.finding, p.page, filter.fp);
-  const { prev, next } = neighbours(sorted, page.index);
+  const base = useMemo(() => listable(findings, filter.fp), [findings, filter.fp]);
+  const sorted = useMemo(() => sortFindings(findings.filter((f) => findingMatches(f, filter))), [findings, filter]);
+  const page = useMemo(
+    () => resolveFindingsPage(sorted, findings, p.finding, p.page, filter.fp),
+    [sorted, findings, p.finding, p.page, filter.fp],
+  );
+  const { prev, next } = useMemo(() => neighbours(sorted, page.index), [sorted, page.index]);
   const pane = page.explicit ? "detail" : "list";
   const highlight = !page.explicit && lastOpened && page.rows.some((f) => f.key === lastOpened) ? lastOpened : page.current?.key ?? null;
 

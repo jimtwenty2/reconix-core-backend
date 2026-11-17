@@ -60,7 +60,19 @@ export const Composer = forwardRef<HTMLTextAreaElement, { label: string; disable
       <div className="ai-composer-bar">
         <ModelChip />
         <span className="ai-composer-end">
-          {!disabled && <span className="ai-composer-hint">{busy ? "Esc to stop" : "Enter to send · Shift+Enter for new line"}</span>}
+          {!disabled && (
+            <span className="ai-composer-hint">
+              {busy ? (
+                <>
+                  <kbd className="ai-picker-kbd">Esc</kbd> to stop
+                </>
+              ) : (
+                <>
+                  <kbd className="ai-picker-kbd">Enter</kbd> to send · <kbd className="ai-picker-kbd">Shift+Enter</kbd> new line
+                </>
+              )}
+            </span>
+          )}
           {length >= COUNT_FROM && (
             <span className="ai-counter" data-tone={tone} aria-live="polite">
               {length.toLocaleString("en-US")} / {MAX_QUESTION.toLocaleString("en-US")}
