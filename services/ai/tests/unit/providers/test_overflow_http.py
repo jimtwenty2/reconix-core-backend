@@ -33,6 +33,7 @@ class FakeVllm:
         self.limit = 8192  # the window the server really enforces (4 chars a token)
         self.named_window: int | None = None  # the number the 400 text names (default: limit)
         self.error_status = 400
+        self.llama_wording = False  # the llama.cpp text instead of vLLM's
         self.error_prefix = ""  # extra words in front of the 400/429 text
         self.hang_models = threading.Event()  # set: /v1/models never answers (until released)
         self.release = threading.Event()
@@ -51,6 +52,12 @@ class FakeVllm:
 
     def overflow_body(self, prompt: int, max_tokens: int) -> dict[str, Any]:
         named = self.named_window or self.limit
+        if self.llama_wording:
+            text = (
+                f"request ({prompt + max_tokens} tokens) exceeds the available context size "
+                f"of {named} tokens, try increasing it. {SERVER_TEXT}"
+            )
+            return {"error": {"code": self.error_status, "message": text, "type": "server_error"}}
         message = (
             f"{self.error_prefix}This model's maximum context length is {named} tokens. "
             f"However, you requested {prompt + max_tokens} tokens ({prompt} in the messages, "
@@ -335,3 +342,33 @@ async def test_a_hanging_models_endpoint_costs_only_the_probe_timeout(
     await complete(user("again"), config(vllm))
     assert time.monotonic() - started < 1.0  # not asked again for 5 minutes
     assert [p for m, p, _ in vllm.requests if m == "GET"] == ["/v1/models"]
+
+
+async def test_a_500_with_the_llama_cpp_overflow_text_gets_one_retry(vllm: FakeVllm) -> None:
+    vllm.limit = 4096
+    vllm.error_status = 500
+    vllm.llama_wording = True
+
+    got = await complete(user("hello"), config(vllm))
+
+    assert got.text == "all good"
+    # The OpenAI client itself repeats a 500 twice, so count the sizes asked for, not requests:
+    # the first size, then one smaller retry built from the window the 500 named.
+    sizes = [body["max_tokens"] for body in vllm.chats]
+    assert len(set(sizes)) == 2 and sizes[-1] < sizes[0] and sizes[-1] <= 4096 - 1_000
+    assert list(window._remembered.values()) == [4096]
+
+
+async def test_a_500_overflow_that_cannot_fit_is_prompt_too_long_without_server_text(
+    vllm: FakeVllm,
+) -> None:
+    vllm.limit = 4096
+    vllm.error_status = 500
+    vllm.llama_wording = True
+
+    with pytest.raises(ProviderError) as caught:
+        await complete(user("x" * 40_000), config(vllm))
+
+    assert caught.value.code == "PROMPT_TOO_LONG"
+    assert len({body["max_tokens"] for body in vllm.chats}) <= 2  # at most our one retry
+    assert SERVER_TEXT not in caught.value.message

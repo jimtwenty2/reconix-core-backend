@@ -26,11 +26,14 @@ OVERFLOW_PHRASES = (
     "too many tokens",
     "token limit exceeded",
     "request entity too large",
+    "exceeds the available context size",  # llama.cpp
 )
-# "maximum context length is 8192", "context window of 4,096 tokens", "max context length: 8192"
+# "maximum context length is 8192", "context window of 4,096 tokens", "max context length: 8192",
+# and llama.cpp's "exceeds the available context size of 65536 tokens"
 WINDOW_PATTERN = re.compile(
-    r"(?:maximum|max)\s+(?:model\s+)?(?:context|input)\s+(?:length|window|size)"
-    r"\s*(?:is|of|:|=)?\s*(\d[\d,]*)",
+    r"(?:(?:maximum|max)\s+(?:model\s+)?(?:context|input)\s+(?:length|window|size)"
+    r"|available\s+context\s+size)"
+    r"\s*(?:is|of|:|=)?\s*\(?(\d[\d,]*)",
     re.IGNORECASE,
 )
 MIN_LEARNED_WINDOW = 1_000  # a smaller number is some other figure in the message
@@ -42,7 +45,8 @@ def is_overflow(error: Exception) -> bool:
 
     if isinstance(error, litellm.exceptions.ContextWindowExceededError):
         return True
-    if not isinstance(error, openai.BadRequestError):
+    # Some servers (llama.cpp) answer an over-long prompt with a 500 after a long wait.
+    if not isinstance(error, openai.BadRequestError | openai.InternalServerError):
         return False
     text = str(error).lower()
     if any(phrase in text for phrase in RATE_LIMIT_PHRASES):
