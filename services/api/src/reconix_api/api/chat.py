@@ -39,7 +39,9 @@ async def chat(
     - Requires a valid session token.
     - Secrets in the message are masked before it is saved.
     """
-    return await chat_service.chat(db, interfaces, mask, operator, session_id, body.content)
+    return await chat_service.chat(
+        db, interfaces, mask, operator, session_id, body.content, assessment_id=body.assessment_id
+    )
 
 
 @router.post(
@@ -74,7 +76,9 @@ async def chat_stream(
     Security:
     - Requires a valid session token.
     """
-    started = chat_service.start(db, interfaces, mask, operator, session_id, body.content)
+    started = chat_service.start(
+        db, interfaces, mask, operator, session_id, body.content, assessment_id=body.assessment_id
+    )
     ask = chat_service.ask_in_background(db, interfaces, mask, operator, started)
     events = chat_service.stream_events(ask)
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}

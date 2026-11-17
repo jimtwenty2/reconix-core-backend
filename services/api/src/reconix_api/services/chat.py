@@ -20,20 +20,23 @@ from reconix_api.core.interfaces import (
     AgentTask,
     ChatMessage,
     ChatScope,
+    FindingInput,
     Interfaces,
     OnPiece,
     Operator,
 )
 from reconix_api.core.masking import MaskSecrets
-from reconix_api.models import AgentRun, Message
-from reconix_api.models.enums import AgentRunStatus
+from reconix_api.models import AgentRun, Finding, Message, ScopeManifest, ScopeTarget
+from reconix_api.models.enums import AgentRunStatus, FindingStatus, SeverityStatus
 from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import assessments as assessment_repo
+from reconix_api.repositories import findings as findings_repo
 from reconix_api.repositories import messages as message_repo
 from reconix_api.repositories import scopes as scope_repo
 from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.messages import ChatOut, MessageOut
 from reconix_api.services import agent_runs, messages
+from reconix_api.services.analysis import finding_input
 from reconix_api.services.scopes import to_chat_scope
 from reconix_api.services.stream import sse
 
@@ -41,6 +44,15 @@ logger = logging.getLogger(__name__)
 
 ASSISTANT = "assistant"  # messages.role of the agent's answer
 CHAT_ROLES = ("user", "assistant")
+MAX_CHAT_FINDINGS = 50
+_SEVERITY_RANK = {
+    SeverityStatus.CRITICAL: 0,
+    SeverityStatus.HIGH: 1,
+    SeverityStatus.MEDIUM: 2,
+    SeverityStatus.LOW: 3,
+    SeverityStatus.NONE: 4,
+    SeverityStatus.UNKNOWN: 5,
+}
 
 # Streamed asks still running: kept here so one is never dropped half way when its
 # client leaves (the answer is still saved and the run still ends).
@@ -61,9 +73,12 @@ async def chat(
     operator: Operator,
     session_id: UUID,
     content: str,
+    assessment_id: UUID | None = None,
 ) -> ChatOut:
     """Saves the message, asks the agent and saves its answer (see start and finish)."""
-    started = start(db, interfaces, mask, operator, session_id, content)
+    started = start(
+        db, interfaces, mask, operator, session_id, content, assessment_id=assessment_id
+    )
     return await finish(db, interfaces, mask, operator, started)
 
 
@@ -74,6 +89,7 @@ def start(
     operator: Operator,
     session_id: UUID,
     content: str,
+    assessment_id: UUID | None = None,
 ) -> StartedChat:
     """The message is saved first, so it is kept even when the agent fails. One chat per
     session asks the agent at a time: 409 CHAT_IN_PROGRESS, and the refused message is not
@@ -84,11 +100,10 @@ def start(
         db.rollback()
         raise ApiError(409, "CHAT_IN_PROGRESS", "The agent is still answering. Try again soon.")
     chat_scope = session_scope(db, session_id, mask)
-    assessment_id = chat_scope.assessment_id if chat_scope else None
-    if assessment_id is None:
-        assessment = assessment_repo.get_by_session(db, session_id)
-        assessment_id = assessment.assessment_id if assessment else None
-    run = agent_runs.new_agent_run(db, operator, assessment_id, task="CHAT")
+    resolved_id = resolve_assessment_id(db, session_id, chat_scope, assessment_id)
+    if chat_scope is None and resolved_id is not None:
+        chat_scope = assessment_scope(db, resolved_id, mask)
+    run = agent_runs.new_agent_run(db, operator, resolved_id, task="CHAT")
     db.commit()
     messages.audit_message(interfaces.write_audit, operator, saved, hidden)
     message = MessageOut.model_validate(saved, from_attributes=True)
@@ -196,6 +211,7 @@ async def answer(
     on_piece: OnPiece | None = None,
 ) -> ChatOut:
     provider, model = agent_runs.agent_provider(db, run)
+    scope = chat_scope or assessment_scope(db, run.assessment_id, mask)
     request = AgentRequest(
         task=AgentTask.CHAT,
         assessment_id=run.assessment_id,
@@ -203,8 +219,9 @@ async def answer(
         provider=provider,
         model=model,
         messages=history(db, run.session_id),
-        chat_scope=chat_scope,
+        chat_scope=scope,
         plan=plan_lines(db, run.assessment_id),
+        findings=chat_findings(db, run.assessment_id),
     )
     response = await agent_runs.ask_agent(db, interfaces, request, on_piece)
     session_repo.get_for_update(db, run.session_id)  # the next sequence_no is this one's
@@ -236,6 +253,34 @@ async def answer(
     )
 
 
+def resolve_assessment_id(
+    db: Db, session_id: UUID, chat_scope: ChatScope | None, requested: UUID | None
+) -> UUID | None:
+    """Resolve the assessment for a CHAT run, validating any explicit id from a web session."""
+    own_id = chat_scope.assessment_id if chat_scope else None
+    if own_id is None:
+        assessment = assessment_repo.get_by_session(db, session_id)
+        own_id = assessment.assessment_id if assessment else None
+    if requested is None:
+        return own_id
+    if assessment_repo.get(db, requested) is None:
+        db.rollback()
+        raise ApiError(404, "ASSESSMENT_NOT_FOUND", "The assessment does not exist.")
+    if own_id is not None and own_id != requested:
+        db.rollback()
+        raise ApiError(409, "ASSESSMENT_MISMATCH", "This session belongs to another assessment.")
+    return requested
+
+
+def mask_scope_targets(
+    manifest: ScopeManifest, targets: list[ScopeTarget], mask: MaskSecrets
+) -> ChatScope:
+    scope = to_chat_scope(manifest, targets)
+    lists = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_targets")
+    masked = {name: [mask(value)[0] for value in getattr(scope, name)] for name in lists}
+    return scope.model_copy(update=masked)
+
+
 def session_scope(db: Db, session_id: UUID, mask: MaskSecrets) -> ChatScope | None:
     """The session's newest scope, approved or a draft, or None before there is one.
     A draft can hold anything half written (a URL with a password in it), so every
@@ -243,10 +288,30 @@ def session_scope(db: Db, session_id: UUID, mask: MaskSecrets) -> ChatScope | No
     manifest = scope_repo.latest_in_session(db, session_id)
     if manifest is None:
         return None
-    scope = to_chat_scope(manifest, scope_repo.list_targets(db, manifest.manifest_id))
-    lists = ("ip_ranges", "domains", "url_prefixes", "repo_paths", "excluded_targets")
-    masked = {name: [mask(value)[0] for value in getattr(scope, name)] for name in lists}
-    return scope.model_copy(update=masked)
+    return mask_scope_targets(manifest, scope_repo.list_targets(db, manifest.manifest_id), mask)
+
+
+def assessment_scope(db: Db, assessment_id: UUID | None, mask: MaskSecrets) -> ChatScope | None:
+    """The assessment's scope manifest for cross-session web chat, with masked targets (S8)."""
+    if assessment_id is None:
+        return None
+    manifest = scope_repo.get_by_assessment(db, assessment_id)
+    if manifest is None:
+        return None
+    return mask_scope_targets(manifest, scope_repo.list_targets(db, manifest.manifest_id), mask)
+
+
+def rank_chat_findings(rows: list[Finding]) -> list[Finding]:
+    """Exclude false positives, rank worst severity first, and cap at MAX_CHAT_FINDINGS."""
+    kept = [row for row in rows if row.finding_status != FindingStatus.FALSE_POSITIVE]
+    kept.sort(key=lambda row: _SEVERITY_RANK.get(row.severity_status, 99))
+    return kept[:MAX_CHAT_FINDINGS]
+
+
+def chat_findings(db: Db, assessment_id: UUID | None) -> list[FindingInput]:
+    """The findings for CHAT context: one assessment's or all saved assessments' non-FP findings."""
+    rows = findings_repo.list_matching(db, assessment_id=assessment_id)
+    return [finding_input(db, row) for row in rank_chat_findings(rows)]
 
 
 def history(db: Db, session_id: UUID) -> list[ChatMessage]:
