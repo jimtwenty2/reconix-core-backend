@@ -74,8 +74,13 @@ JSON_FORMAT_OPTIONAL = {ProviderType.OPENAI_API_COMPATIBLE, ProviderType.RECONIX
 # Fitting a call into the model's window. The prompt is estimated at 3 characters a token
 # (code and JSON run denser than prose's 4, and too high is the safe side).
 CHARS_PER_TOKEN = 3
+# Dense text (ids, hex, base64, scan output) measured about 1.8 characters a token.
+DENSE_CHARS_PER_TOKEN = 1.7
+DENSE_SHARE = 0.1  # symbols and digits above this share of a text make it dense
+MIN_SPACE_SHARE = 0.05  # base64 and long ids have almost no spaces
 WINDOW_MARGIN_TOKENS = 1_000  # the estimate's error and the chat template's own tokens
 MIN_ANSWER_TOKENS = 1_024
+CUT_TOKEN_SLACK = 8  # Ollama's cut prompt counts window // 2 + 2; allow a few more
 # A tool loop whose prompt is above window - ANSWER_RESERVE_TOKENS has its older tool
 # results cut to their first TOOL_RESULT_HEAD_CHARS and last TOOL_RESULT_TAIL_CHARS (as Pi
 # keeps 16,384 for the answer). After a "prompt too long" error every result is cut.
@@ -132,6 +137,8 @@ async def complete(
     masked_messages, masked_count = mask_messages(messages)
     info = cloud_info(model, config)
     window = await context_window(config, model, base_url, info)
+    estimate = estimated_tokens(masked_messages)
+    check_ollama_fit(config, window, estimate)
     request = {
         "model": model,
         "messages": masked_messages,
@@ -201,6 +208,7 @@ async def complete(
     usage = getattr(response, "usage", None)
     prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
     completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+    check_ollama_cut(config, window, estimate, prompt_tokens)
     return Completion(
         text=text,
         provider_type=config.provider_type,
@@ -270,6 +278,10 @@ async def complete_with_tools(
         return await streamed(request, on_piece, on_thinking)
 
     request = build_request(window, force=False)
+    if config.provider_type == ProviderType.OLLAMA:
+        if estimated_tokens(request["messages"], tools) > prompt_room(window):
+            request = build_request(window, force=True)
+        check_ollama_fit(config, window, estimated_tokens(request["messages"], tools))
     failure = None
     try:
         try:
@@ -309,10 +321,12 @@ async def complete_with_tools(
             )
         raise ProviderError("EMPTY_RESPONSE", "The model sent back an empty answer.")
     usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    check_ollama_cut(config, window, estimated_tokens(masked_messages, tools), prompt_tokens)
     return ToolReply(
         text=text,
         tool_calls=calls,
-        prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+        prompt_tokens=prompt_tokens,
         completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
         masked_count=masked_count + answer_count,
     )
@@ -399,15 +413,46 @@ def ollama_options(config: ProviderConfig, window: int) -> dict[str, int]:
     return {"num_ctx": window} if config.provider_type == ProviderType.OLLAMA else {}
 
 
+def text_tokens(text: str) -> float:
+    """One text's tokens: prose at CHARS_PER_TOKEN, dense text (many digits and symbols, or
+    hardly any spaces) at DENSE_CHARS_PER_TOKEN, since it tokenizes into far more pieces."""
+    if not text:
+        return 0
+    spaces = text.count(" ")
+    other = sum(1 for char in text if not char.isalpha() and char != " ")
+    dense = other > DENSE_SHARE * len(text) or spaces < MIN_SPACE_SHARE * len(text)
+    return len(text) / (DENSE_CHARS_PER_TOKEN if dense else CHARS_PER_TOKEN)
+
+
 def estimated_tokens(
     messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
 ) -> int:
     """A prompt's tokens, estimated high enough to fit a call into the window."""
-    chars = len(json.dumps(tools)) if tools else 0
+    total = text_tokens(json.dumps(tools)) if tools else 0
     for message in messages:
-        chars += len(str(message.get("content") or ""))
-        chars += len(json.dumps(message["tool_calls"])) if message.get("tool_calls") else 0
-    return chars // CHARS_PER_TOKEN
+        total += text_tokens(str(message.get("content") or ""))
+        if message.get("tool_calls"):
+            total += text_tokens(json.dumps(message["tool_calls"]))
+    return int(total)
+
+
+def prompt_room(window: int) -> int:
+    """The prompt tokens Ollama can take whole: the window less the margin and the answer."""
+    return window - WINDOW_MARGIN_TOKENS - MIN_ANSWER_TOKENS
+
+
+def check_ollama_fit(config: ProviderConfig, window: int, estimate: int) -> None:
+    """Ollama cuts a too-long prompt silently (no error to retry on), so refuse it here."""
+    if config.provider_type == ProviderType.OLLAMA and estimate > prompt_room(window):
+        raise ProviderError("PROMPT_TOO_LONG", "The prompt is longer than the model's window.")
+
+
+def check_ollama_cut(config: ProviderConfig, window: int, estimate: int, used: int) -> None:
+    """Ollama keeps window // 2 + 2 tokens of a too-long prompt and answers anyway: a count
+    that low while we sent far more means the middle was dropped, so the answer is wrong."""
+    cut_size = window // 2 + CUT_TOKEN_SLACK
+    if config.provider_type == ProviderType.OLLAMA and estimate > window and used <= cut_size:
+        raise ProviderError("PROMPT_TOO_LONG", "The prompt is longer than the model's window.")
 
 
 def fitted_tool_results(
