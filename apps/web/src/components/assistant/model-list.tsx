@@ -26,7 +26,7 @@ import { ConfirmDialog } from "./confirm-dialog";
 import { type Preset, type PresetId, PRESET_IDS, PRESETS, presetOf } from "@/lib/assistant/models/presets";
 import { NEEDS_APPROVAL, type ProviderView } from "@/lib/assistant/models/view";
 import { rememberedTab, rememberTab } from "./model-tab";
-import { type ModelRow, modelRows, presetFor, removeRequest, savedName } from "./model-picker-rules";
+import { type ModelRow, badgeLabel, endpointHost, modelRows, presetFor, removeRequest, savedName } from "./model-picker-rules";
 import { kindLabel, ProviderAvatar, shortLabel } from "./provider-look";
 import { choiceKey, type Models } from "./use-models";
 import { useRoving } from "./use-roving";
@@ -210,10 +210,13 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
     );
   }
 
-  const modelList = (items: ModelRow[], q: string) => (
-    <ul key={tab} aria-label="Your models" onKeyDown={roving.onKeyDown} className="ai-picker-list">
+  const providerBadge = new Map(view.providers.map((p) => [p.id, badgeLabel(p)]));
+
+  const modelList = (items: ModelRow[], q: string, { compact = false, listLabel = "Your models" }: { compact?: boolean; listLabel?: string } = {}) => (
+    <ul key={compact ? listLabel : tab} aria-label={listLabel} onKeyDown={roving.onKeyDown} className="ai-picker-list">
       {items.map((row, i) => {
         const busy = models.pending === choiceKey(row.providerId, row.model);
+        const badge = providerBadge.get(row.providerId) ?? row.provider;
         return (
           <li key={row.key} className="ai-picker-row" style={{ "--i": Math.min(i, 10) } as React.CSSProperties}>
             <button
@@ -221,24 +224,26 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
               aria-current={row.checked ? "true" : undefined}
               title={row.checked ? "Answers your next question" : `Use ${row.model}`}
               onClick={() => void pick(row)}
-              className="ai-picker-model"
+              className={compact ? "ai-picker-model is-compact" : "ai-picker-model"}
               data-first={q.trim() && i === 0 ? "true" : undefined}
               data-pending={busy ? "true" : undefined}
               {...roving.item(`row:${row.key}`)}
             >
-              <ProviderAvatar preset={row.preset} />
+              {!compact && <ProviderAvatar preset={row.preset} />}
               <span className="ai-picker-text">
                 <span className="ai-picker-model-name">
                   <Marked text={row.model} query={q} />
                 </span>
-                <span className="ai-picker-badges">
-                  <span className="ai-picker-badge">
-                    <Marked text={row.provider} query={q} />
+                {!compact && (
+                  <span className="ai-picker-badges">
+                    <span className="ai-picker-badge">
+                      <Marked text={badge} query={q} />
+                    </span>
+                    <span className="ai-picker-badge" data-where={row.where}>
+                      {row.where}
+                    </span>
                   </span>
-                  <span className="ai-picker-badge" data-where={row.where}>
-                    {row.where}
-                  </span>
-                </span>
+                )}
               </span>
               <span className="ai-picker-tick" aria-hidden>
                 {busy ? (
@@ -251,12 +256,12 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
               </span>
             </button>
             {waiting === row.key && (
-              <div role="status" className="ai-picker-waiting">
+              <div role="status" className={compact ? "ai-picker-waiting is-compact" : "ai-picker-waiting"}>
                 <Hourglass className="ai-picker-waiting-icon" aria-hidden />
                 <div className="min-w-0">
                   <p className="ai-picker-waiting-title">Approve {row.model} in the TUI first</p>
                   <p className="ai-picker-waiting-text">
-                    It runs off this computer ({row.provider}), so the Core API asks a person before sending it your scope, plans and chat. In the TUI, run{" "}
+                    It runs off this computer ({badge}), so the Core API asks a person before sending it your scope, plans and chat. In the TUI, run{" "}
                     <code className="ai-picker-code">/model</code>, pick <span className="text-foreground">{row.model}</span> and answer <span className="text-foreground">Approve</span>.
                   </p>
                   <button type="button" onClick={() => void pick(row)} disabled={models.pending !== null} className="ai-btn ai-btn-small ai-btn-outline mt-2">
@@ -273,20 +278,22 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
 
   return (
     <div ref={root} className="ai-picker-form">
-      {/* Models | Providers: what the list shows (a provider's page belongs to Providers) */}
-      <div role="tablist" aria-label="Show" className="ai-picker-switch">
-        {(["models", "providers"] as const).map((t) => {
-          const on = t === "models" ? tab === "models" : tab !== "models";
-          return (
-            <button key={t} type="button" role="tab" aria-selected={on} onClick={() => go(t, t === "models" ? SEARCH : FIRST)} className="ai-picker-switch-btn">
-              {t === "models" ? "Models" : "Providers"}
-              <span className="ai-picker-pill-count" aria-hidden>
-                {t === "models" ? rows.length : `${setUp}/${providers.length}`}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Models | Providers: hidden when drilled into one provider's page */}
+      {!page && (
+        <div role="tablist" aria-label="Show" className="ai-picker-switch">
+          {(["models", "providers"] as const).map((t) => {
+            const on = t === "models" ? tab === "models" : tab !== "models";
+            return (
+              <button key={t} type="button" role="tab" aria-selected={on} onClick={() => go(t, t === "models" ? SEARCH : FIRST)} className="ai-picker-switch-btn">
+                {t === "models" ? "Models" : "Providers"}
+                <span className="ai-picker-pill-count" aria-hidden>
+                  {t === "models" ? rows.length : `${setUp}/${providers.length}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {tab === "models" && rows.length > 0 && (
         <div className="ai-picker-search">
@@ -412,64 +419,85 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
             </button>
           </div>
         )}
-        {page &&
-          saved.map((p) => (
-            <div key={p.id} className="ai-picker-provider">
-              <span className="ai-picker-meta">
-                {savedName(p)} · {p.local ? "on this computer" : "off this computer"}
-                {p.keySaved ? " · key saved" : ""}
-              </span>
-              {page.kind !== "reconix" && (
-                <span className="flex items-center gap-1">
-                  <button type="button" onClick={() => onAdd(page.id)} className="ai-btn ai-btn-small ai-btn-outline ai-page-action">
-                    <Pencil className="size-3" aria-hidden />
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    data-remove={p.id}
-                    onClick={() => {
-                      setError(null);
-                      setConfirm(p.id);
-                    }}
-                    className="ai-btn ai-btn-small ai-btn-outline ai-page-action ai-page-action-danger"
-                  >
-                    <Trash2 className="size-3" aria-hidden />
-                    Remove
-                  </button>
-                </span>
-              )}
-              {confirm === p.id &&
-                (view.active?.providerId === p.id ? (
-                  // in use: the API keeps the active provider, so say what to do instead
-                  <ConfirmDialog
-                    tone="info"
-                    title={`${savedName(p)} is in use`}
-                    cancelLabel="OK"
-                    confirmLabel="Choose another model"
-                    onCancel={() => keep(p.id)}
-                    onConfirm={() => go("models", SEARCH)}
-                  >
-                    It answers your questions now. Choose another model first, then you can remove it.
-                  </ConfirmDialog>
-                ) : (
-                  <ConfirmDialog
-                    tone="danger"
-                    title={`Remove ${savedName(p)}?`}
-                    cancelLabel="Cancel"
-                    confirmLabel="Remove"
-                    busy={models.pending === `remove:${p.id}`}
-                    error={error}
-                    onCancel={() => keep(p.id)}
-                    onConfirm={() => void remove(p.id)}
-                  >
-                    Its {p.models.length === 1 ? "model" : `${p.models.length} models`}
-                    {p.keySaved ? " and saved API key" : ""} {p.models.length === 1 && !p.keySaved ? "goes" : "go"} with it. You can set it up again later.
-                  </ConfirmDialog>
-                ))}
-            </div>
-          ))}
-        {page && list.length > 0 && modelList(list, "")}
+        {page && saved.length > 0 && (
+          <div className="ai-picker-endpoints">
+            {saved.map((p) => {
+              const host = endpointHost(p.baseUrl, savedName(p));
+              const endpointModels = list.filter((r) => r.providerId === p.id);
+              const inUse = view.active?.providerId === p.id;
+              return (
+                <section key={p.id} aria-label={host} className="ai-picker-endpoint-card" data-active={inUse ? "true" : undefined}>
+                  <header className="ai-picker-endpoint-head">
+                    <div className="ai-picker-endpoint-info">
+                      <div className="ai-picker-endpoint-host-row">
+                        <span className="ai-picker-endpoint-host" title={p.baseUrl || savedName(p)}>
+                          {host}
+                        </span>
+                        {inUse && <span className="ai-picker-pill-dot" aria-label="in use" />}
+                      </div>
+                      <div className="ai-picker-endpoint-tags">
+                        <span className="ai-picker-badge" data-where={p.local ? "local" : "remote"}>
+                          {p.local ? "local" : "remote"}
+                        </span>
+                        {p.keySaved && <span className="ai-picker-badge">key saved</span>}
+                        {inUse && <span className="ai-picker-meta">in use</span>}
+                      </div>
+                    </div>
+                    {page.kind !== "reconix" && (
+                      <div className="ai-picker-endpoint-actions">
+                        <button type="button" onClick={() => onAdd(page.id)} className="ai-btn ai-btn-small ai-btn-outline ai-page-action">
+                          <Pencil className="size-3" aria-hidden />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          data-remove={p.id}
+                          onClick={() => {
+                            setError(null);
+                            setConfirm(p.id);
+                          }}
+                          className="ai-btn ai-btn-small ai-btn-outline ai-page-action ai-page-action-danger"
+                        >
+                          <Trash2 className="size-3" aria-hidden />
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </header>
+                  {endpointModels.length > 0 && modelList(endpointModels, "", { compact: true, listLabel: `${host} models` })}
+                  {confirm === p.id &&
+                    (inUse ? (
+                      // in use: the API keeps the active provider, so say what to do instead
+                      <ConfirmDialog
+                        tone="info"
+                        title={`${savedName(p)} is in use`}
+                        cancelLabel="OK"
+                        confirmLabel="Choose another model"
+                        onCancel={() => keep(p.id)}
+                        onConfirm={() => go("models", SEARCH)}
+                      >
+                        It answers your questions now. Choose another model first, then you can remove it.
+                      </ConfirmDialog>
+                    ) : (
+                      <ConfirmDialog
+                        tone="danger"
+                        title={`Remove ${savedName(p)}?`}
+                        cancelLabel="Cancel"
+                        confirmLabel="Remove"
+                        busy={models.pending === `remove:${p.id}`}
+                        error={error}
+                        onCancel={() => keep(p.id)}
+                        onConfirm={() => void remove(p.id)}
+                      >
+                        Its {p.models.length === 1 ? "model" : `${p.models.length} models`}
+                        {p.keySaved ? " and saved API key" : ""} {p.models.length === 1 && !p.keySaved ? "goes" : "go"} with it. You can set it up again later.
+                      </ConfirmDialog>
+                    ))}
+                </section>
+              );
+            })}
+          </div>
+        )}
 
         {error && confirm === null && (
           <p className="ai-error-text ai-picker-error" role="alert">
