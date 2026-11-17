@@ -1,6 +1,6 @@
 """The VS Code chat: a message that asks for a chat function is answered at once, without
-the agent; anything else is a question for the agent, through the same CHAT as the
-other apps (services/chat.py, unchanged).
+the agent; anything else is evaluated by the model with tools, and falls back to CHAT
+as the other apps (services/chat.py, unchanged).
 
 Only an open vscode session may use it, so VS Code only ever sees its own messages.
 Chat functions that run here only read, so the person's message is saved after the
@@ -8,28 +8,45 @@ function has run without anything having changed if saving fails.
 """
 
 import json
+import logging
+from collections.abc import Callable
 from functools import cache
 from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy.orm import Session as Db
 
+from reconix_ai.providers import complete_with_tools
+from reconix_api.core.agent import provider_config
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
 from reconix_api.core.interfaces import Interfaces, Operator
 from reconix_api.core.masking import MaskSecrets, mask_json
 from reconix_api.models import Message
-from reconix_api.models.enums import SessionStatus
+from reconix_api.models.enums import FindingStatus, SessionStatus
+from reconix_api.repositories import agent_runs as agent_run_repo
 from reconix_api.repositories import llm_providers as provider_repo
 from reconix_api.repositories import messages as message_repo
 from reconix_api.repositories import sessions as session_repo
 from reconix_api.schemas.code import CodeFindingOut
 from reconix_api.schemas.messages import MessageOut
-from reconix_api.schemas.vscode_chat import FunctionCall, FunctionSpec, VscodeChatOut
+from reconix_api.schemas.vscode_chat import (
+    CancelScanArgs,
+    ExplainFindingArgs,
+    FunctionCall,
+    FunctionName,
+    FunctionSpec,
+    ListFindingsArgs,
+    MAX_FIX_FINDINGS,
+    NoArgs,
+    ProposeFixArgs,
+    StartScanArgs,
+    VscodeChatOut,
+)
 from reconix_api.services import chat, code_scans, messages
 from reconix_api.services.audit import audit
 from reconix_api.services.chat import ASSISTANT
-from reconix_api.services.chat_chooser import ProviderWords, choose, provider_words
+from reconix_api.services.chat_chooser import ProviderWords, choose, fix_targets, provider_words
 from reconix_api.services.chat_functions import (
     FUNCTIONS,
     FunctionContext,
@@ -39,7 +56,98 @@ from reconix_api.services.chat_functions import (
     spec,
 )
 
+logger = logging.getLogger(__name__)
+
 VSCODE = "vscode"  # sessions.interface of a VS Code session (schemas.sessions.Interface)
+
+MODEL_SYSTEM_PROMPT = (
+    "You are the Reconix AI security assistant in VS Code. "
+    "The user communicates with you in natural language chat.\n"
+    "Understand the user's intent and choose the appropriate tool if they ask for an action:\n"
+    "- If the user asks to scan, check, analyze, audit, or inspect their code, repository, or workspace for vulnerabilities or secrets (e.g. 'this source code, please scan', 'check my project for bugs', 'audit code'), call START_SCAN.\n"
+    "- If the user asks to fix, patch, repair, or remediate vulnerabilities or findings in their code, call PROPOSE_FIX.\n"
+    "- If the user asks for a summary or overview of findings or scan results, call SUMMARIZE_FINDINGS.\n"
+    "- If the user asks to list or show findings, call LIST_FINDINGS.\n"
+    "- If the user asks to explain a specific finding in full, call EXPLAIN_FINDING.\n"
+    "- If the user asks to stop, cancel, or abort a running scan, call CANCEL_SCAN.\n"
+    "- If the user asks about the scan status or whether it is still running, call SCAN_STATUS.\n"
+    "- If the user asks a general question, advice, or asks how to fix something manually, DO NOT call any tool; instead, provide a direct, helpful explanation in markdown text."
+)
+
+
+def model_tool_definitions() -> list[dict]:
+    """OpenAI/LiteLLM tool definitions derived from chat functions."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": func.name.value,
+                "description": func.description,
+                "parameters": func.arguments.model_json_schema(),
+            },
+        }
+        for func in FUNCTIONS.values()
+    ]
+
+
+async def choose_with_model(
+    db: Db,
+    settings: Settings,
+    content: str,
+    load_findings: Callable[[], list[CodeFindingOut]],
+) -> tuple[FunctionCall | None, str | None]:
+    """Uses the active LLM provider with tools to understand user intent."""
+    provider_row = agent_run_repo.active_provider(db)
+    if provider_row is None:
+        return None, None
+
+    config = provider_config(settings, provider_row, provider_row.model_name)
+    tools = model_tool_definitions()
+    messages_payload = [
+        {"role": "system", "content": MODEL_SYSTEM_PROMPT},
+        {"role": "user", "content": content},
+    ]
+
+    try:
+        reply = await complete_with_tools(messages_payload, tools, config)
+    except Exception as err:
+        logger.warning(f"choose_with_model failed: {err}")
+        return None, None
+
+    if reply.tool_calls:
+        tool_call = reply.tool_calls[0]
+        name_upper = (tool_call.name or "").upper()
+        if name_upper in FunctionName.__members__:
+            func_name = FunctionName(name_upper)
+            raw_args = tool_call.arguments
+            if isinstance(raw_args, str):
+                try:
+                    args = json.loads(raw_args) if raw_args.strip() else {}
+                except Exception:
+                    args = {}
+            elif isinstance(raw_args, dict):
+                args = dict(raw_args)
+            else:
+                args = {}
+
+            if not isinstance(args, dict):
+                args = {}
+
+            if func_name == FunctionName.PROPOSE_FIX and not args.get("finding_ids"):
+                findings = load_findings()
+                targets = fix_targets(content, findings)
+                if targets:
+                    args["finding_ids"] = [str(f.finding_id) for f in targets]
+                elif findings:
+                    open_f = [f for f in findings if f.finding_status == FindingStatus.OPEN]
+                    args["finding_ids"] = [str(f.finding_id) for f in open_f[:MAX_FIX_FINDINGS]]
+
+            return FunctionCall(name=func_name, arguments=args), reply.text or None
+
+    if reply.text and reply.text.strip():
+        return None, reply.text.strip()
+
+    return None, None
 
 
 def list_functions() -> list[FunctionSpec]:
@@ -67,6 +175,38 @@ async def chat_in_vscode(
     )
     call = choose(content, context.findings, lambda: providers(db))
     outcome = run_call(context, call) if call else None
+
+    # If fast keyword chooser didn't match, ask the LLM with tool definitions
+    if call is None or outcome is None:
+        try:
+            model_call, direct_text = await choose_with_model(
+                db, settings, content, context.findings
+            )
+        except Exception as err:
+            logger.warning(f"choose_with_model unhandled error: {err}")
+            model_call, direct_text = None, None
+        if model_call is not None:
+            model_outcome = run_call(context, model_call)
+            if model_outcome is not None:
+                call = model_call
+                outcome = model_outcome
+                if direct_text and not outcome.text:
+                    outcome = Outcome(direct_text, outcome.arguments, outcome.result)
+        elif direct_text is not None:
+            message = messages.add_message(
+                db, interfaces.write_audit, mask, operator, session_id, content
+            )
+            reply = add_reply(db, mask, session_id, direct_text, None)
+            return VscodeChatOut(
+                message=message,
+                reply=reply,
+                agent_run_id=None,
+                function_call=None,
+                runs_on=None,
+                confirm=False,
+                result=None,
+            )
+
     if call is None or outcome is None:
         answered = await chat.chat(db, interfaces, mask, operator, session_id, content)
         return VscodeChatOut(

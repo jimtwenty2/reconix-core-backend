@@ -67,6 +67,7 @@ def make_audit_writer(path: str | Path) -> Callable[[AuditRecord], None]:
                             errno.EOPNOTSUPP,
                             errno.ENOSYS,
                             errno.EINVAL,
+                            errno.EPERM,
                         ):
                             raise
             except BaseException:
