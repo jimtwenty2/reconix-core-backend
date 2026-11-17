@@ -173,3 +173,49 @@ async def test_tool_results_that_fit_are_sent_whole(model: FakeModel) -> None:
 
     sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
     assert sent == ["a" * 3_000, "b" * 3_000]
+
+
+OLLAMA = ProviderConfig(ProviderType.OLLAMA, "llama3.1:8b")
+
+
+async def test_an_ollama_tool_call_that_fits_only_after_the_cut_is_sent_cut(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    # ~30,000 estimated tokens in a 32,000 window: over the room, so even the newest is cut.
+    chat = tool_chat(["word " * 18_000])
+
+    await complete_with_tools(chat, TOOLS, OLLAMA)
+
+    sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
+    assert client.CUT_MARKER in sent[0]
+
+
+async def test_an_ollama_tool_call_that_cannot_fit_is_refused_without_a_request(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    chat = [{"role": "user", "content": "word " * 20_000}]  # the user turn is never cut
+
+    with pytest.raises(ProviderError) as error:
+        await complete_with_tools(chat, TOOLS, OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"
+    assert model.calls == []
+
+
+async def test_an_ollama_tool_answer_to_a_cut_prompt_is_refused(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    monkeypatch.setattr(client, "estimated_tokens", lambda *_: 40_000)
+    monkeypatch.setattr(client, "prompt_room", lambda window: window * 2)
+    model.answer = litellm.ModelResponse(
+        choices=[{"message": {"role": "assistant", "content": "wrong"}, "finish_reason": "stop"}],
+        usage={"prompt_tokens": 16_002, "completion_tokens": 3, "total_tokens": 16_005},
+    )
+
+    with pytest.raises(ProviderError) as error:
+        await complete_with_tools([{"role": "user", "content": "q"}], TOOLS, OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"

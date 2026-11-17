@@ -95,7 +95,7 @@ async def test_json_answer_asks_for_a_json_object(model: FakeModel) -> None:
     assert model.calls[1]["response_format"] == {"type": "json_object"}
 
 
-QUESTION_TOKENS = len(QUESTION[0].content) // client.CHARS_PER_TOKEN
+QUESTION_TOKENS = client.estimated_tokens([{"content": QUESTION[0].content}])
 
 
 async def test_every_call_caps_the_answer_length_within_the_window(model: FakeModel) -> None:
@@ -699,3 +699,89 @@ async def test_a_content_answer_ignores_the_reasoning(
     completion = await complete(QUESTION, reconix_provider())
 
     assert completion.text == "Port 3000 is open."
+
+
+# Ollama answers a too-long prompt with 200 OK after cutting its middle (live: 11,730 real
+# tokens in an 8,192 window came back as 4,098), so the call must not rely on an error.
+OLLAMA = ProviderConfig(ProviderType.OLLAMA, "llama3.1:8b")
+OLLAMA_WINDOW = 32_000  # the baseline, as the probe finds nothing in these tests
+PROSE = "word " * 20_000  # ~33k estimated tokens
+
+
+def chars_per_estimated_token(text: str) -> float:
+    return len(text) / client.estimated_tokens([{"content": text}])
+
+
+def test_prose_is_estimated_high_but_not_wildly() -> None:
+    sample = "The scanner reported that the service was running an older version. " * 50
+
+    # Real prose runs about 3.5 characters a token: the estimate stays 10-30% above it.
+    assert 2.7 <= chars_per_estimated_token(sample) <= 3.2
+
+
+def test_dense_text_is_not_estimated_below_its_real_size() -> None:
+    ids = " ".join(f"x{n:03d}k2-q{n * 7 % 100:02d}" for n in range(300))
+    hexdump = "\n".join(
+        f"{n * 16:08x}  " + " ".join(f"{(n * k) % 256:02x}" for k in range(16)) for n in range(60)
+    )
+    nmap = "\n".join(
+        f"{n}/tcp open ssh OpenSSH 8.{n}p1 Ubuntu {n}ubuntu0.5 (protocol 2.0)" for n in range(40)
+    )
+    base64ish = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo0MTIzNDU2Nzg5/+=" * 20
+
+    # Real dense text runs about 1.8 characters a token or more: never below it.
+    for sample in (ids, hexdump, nmap, base64ish):
+        assert chars_per_estimated_token(sample) <= 1.8
+
+
+async def test_ollama_refuses_a_prompt_over_the_window_without_a_request(
+    model: FakeModel,
+) -> None:
+    with pytest.raises(ProviderError) as error:
+        await complete([Message("user", PROSE)], OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"
+    assert PROSE[:20] not in error.value.message
+    assert model.calls == []
+
+
+async def test_a_non_ollama_provider_is_not_prechecked(model: FakeModel) -> None:
+    openai_like = ProviderConfig(ProviderType.RECONIX, "reconix", RECONIX_URL)
+
+    await complete([Message("user", "word " * 40_000)], openai_like)  # 64k window, ~67k est.
+
+    assert len(model.calls) == 1
+
+
+async def test_a_normal_ollama_answer_is_unaffected(model: FakeModel) -> None:
+    got = await complete(QUESTION, OLLAMA)
+
+    assert got.text == "Port 3000 is open."
+
+
+async def test_an_ollama_answer_to_a_cut_prompt_is_refused(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Estimated just inside the room, so only the answer's token count shows the cut.
+    prompt = [Message("user", "word " * 14_000)]
+    monkeypatch.setattr(client, "estimated_tokens", lambda *_: OLLAMA_WINDOW + 5_000)
+    monkeypatch.setattr(client, "prompt_room", lambda window: window * 2)
+    model.answer = "A wrong answer."
+
+    class Cut:
+        prompt_tokens = OLLAMA_WINDOW // 2 + 2
+        completion_tokens = 5
+
+    real = client.send
+
+    async def send_cut(request: dict, on_piece: object) -> litellm.ModelResponse:
+        response = await real(request, on_piece)
+        response.usage = Cut()
+        return response
+
+    monkeypatch.setattr(client, "send", send_cut)
+
+    with pytest.raises(ProviderError) as error:
+        await complete(prompt, OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"
