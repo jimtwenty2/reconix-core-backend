@@ -79,7 +79,8 @@ def active_provider_of(provider: LlmProvider) -> LlmProvider:
     """Only the active row is locked against edits, and a cloud row becomes active only
     through an approval of its exact settings. A row that is no longer active may have
     been changed since, with no approval, so its settings are never used. The built-in
-    RECONIX row can never be changed and never gives its settings."""
+    RECONIX row never gives its settings: its address and model come from RECONIX_MODEL_*
+    and only its key can be changed."""
     if provider.provider_type != ProviderType.RECONIX and not provider.is_active:
         raise ApiError(
             409,

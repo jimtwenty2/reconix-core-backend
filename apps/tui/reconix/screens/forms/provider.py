@@ -1,9 +1,10 @@
 """PROVIDER — add or update one LLM provider (API key, base URL, model(s)).
 
 Which fields appear depends on the provider: Reconix only takes an API key (its base URL
-and model come from .env, shown read-only); frontier providers take a comma-separated list
-of models; the rest take exactly one. A blank API key on update keeps the saved key. The
-key field is masked and cleared on close, like the target-login form.
+and model are the server's); frontier providers take a comma-separated list
+of models; the rest take exactly one. A blank API key on update keeps the saved key, except
+for Reconix: there a blank key unsets its key. The key field is masked and cleared on close,
+like the target-login form.
 """
 
 from typing import Dict, List, Optional
@@ -12,6 +13,13 @@ from rich.text import Text
 
 from ... import store, theme
 from .base import FormField, FormScreen
+
+
+def _reconix_key_hint(view) -> str:
+    """What a blank Reconix key field means right now."""
+    if view.api_key_hint:
+        return f"saved key {view.api_key_hint} · leave blank to remove it"
+    return "no key set · sk-…"
 
 
 class ProviderForm(FormScreen):
@@ -29,7 +37,11 @@ class ProviderForm(FormScreen):
     def fields(self) -> List[FormField]:
         view = self._view
         fields: List[FormField] = []
-        if view.shows_key_field:
+        if view.shows_key_field and view.base_mode == "readonly":  # Reconix
+            fields.append(FormField("api_key", "API key",
+                                    placeholder=_reconix_key_hint(view),
+                                    secret=True, max_length=4096))
+        elif view.shows_key_field:
             label = "API key" + ("" if view.needs_key else "  (optional)")
             hint = f"leave blank to keep {view.api_key_hint}" if view.api_key_hint else "sk-…"
             fields.append(FormField("api_key", label, placeholder=hint,
@@ -44,12 +56,6 @@ class ProviderForm(FormScreen):
         return fields
 
     def note(self) -> Optional[Text]:
-        if self._view.base_mode == "readonly":        # Reconix: base + model from .env
-            model = self._view.models[0] if self._view.models else "(from .env)"
-            return Text.assemble(
-                ("Base URL and model come from .env (read-only):\n", theme.MUTED),
-                (f"  {self._view.base_url}\n  {model}", theme.DIM),
-            )
         if self._view.kind == "frontier":             # cloud: just the key, models are known
             return Text.assemble(
                 ("Just the API key — this provider's models are built in:\n", theme.MUTED),

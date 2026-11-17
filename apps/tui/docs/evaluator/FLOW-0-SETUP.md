@@ -6,8 +6,8 @@ Back to the guide: [README.md](README.md) · all cases: [TEST-CASES.md](TEST-CAS
 
 ## 0 Set provider (first screen)
 
-Reconix needs the Core API running (./deploy/dev.sh). Every plan, step, finding and chat answer comes from it; the AI it uses is the one in .env (RECONIX_MODEL_*), unless you set your own with /provider.
-While no model of your own is set, Reconix asks first: "Which AI model should Reconix use?". Use the Core API's model keeps the one in .env; Set a provider… opens /provider.
+Reconix needs the Core API running (./deploy/dev.sh). Every plan, step, finding and chat answer comes from it; the AI it uses is the built-in Reconix model, unless you set your own with /provider.
+While no model of your own is set, Reconix asks first: "Which AI model should Reconix use?". Use the Core API's model keeps the built-in Reconix model; Set a provider… opens /provider.
 Start Reconix with the run-eval script (README-<your OS>.md §2). To see the first screen again: quit (Ctrl+Q), then start it with --reset (Windows: -Reset). That only clears ~/.reconix-eval, never your own ~/.reconix; export your /tests results first.
 
 #### PROV-01 · Use the Core API's model

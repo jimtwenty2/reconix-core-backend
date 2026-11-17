@@ -67,8 +67,9 @@ uv run --package reconix-api alembic -c services/api/alembic.ini upgrade head
 uv run --package reconix-api python -m reconix_api.main      # http://127.0.0.1:8000/docs
 ```
 
-The AI Service reads `RECONIX_MODEL_URL` and `RECONIX_MODEL_API_KEY` from the environment, not
-from `.env`, so export them in this shell to use the RECONIX model. Stop the Docker `api` service first (`docker compose -f deploy/docker-compose.yml --env-file .env stop api`), since both use port 8000. Remove the
+The AI Service reads `RECONIX_MODEL_URL` from the environment, not from `.env`, so export it in
+this shell to use the RECONIX model. Its API key is set from the apps (`/provider` in the TUI),
+not from `RECONIX_MODEL_API_KEY`. Stop the Docker `api` service first (`docker compose -f deploy/docker-compose.yml --env-file .env stop api`), since both use port 8000. Remove the
 database when you are done: `docker rm -f reconix-dev-db`.
 
 ## Use it
