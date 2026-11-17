@@ -1,4 +1,4 @@
-"""Database access for tool_runs: the run an agent run waited on, and its action."""
+"""Database access for tool_runs: the run a finished step left, and its action."""
 
 from uuid import UUID
 
@@ -9,18 +9,15 @@ from reconix_api.models import Action, ToolRun
 from reconix_api.models.enums import ActionStatus, ToolRunStatus
 
 
-def latest_finished(db: Db, agent_run_id: UUID) -> tuple[ToolRun, Action] | None:
-    """The newest tool run of the actions of one agent run, with its action: the step a
-    plan run finished. None when that run has started no tool run."""
+def latest_completed_run(db: Db, action_id: UUID) -> ToolRun | None:
+    """The newest COMPLETED tool run of one action: the run a finished step left."""
     query = (
-        select(ToolRun, Action)
-        .join(Action, Action.action_id == ToolRun.action_id)
-        .where(Action.agent_run_id == agent_run_id)
+        select(ToolRun)
+        .where(ToolRun.action_id == action_id, ToolRun.tool_run_status == ToolRunStatus.COMPLETED)
         .order_by(ToolRun.started_at.desc(), ToolRun.tool_run_id.desc())
         .limit(1)
     )
-    row = db.execute(query).first()
-    return (row[0], row[1]) if row is not None else None
+    return db.scalar(query)
 
 
 def completed_step(db: Db, tool_run_id: UUID) -> tuple[ToolRun, Action] | None:

@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import partial
+from urllib.parse import parse_qsl, urlsplit
 from uuid import UUID
 
 from sqlalchemy.orm import Session as Db
@@ -254,6 +255,22 @@ def _poc_targets_finding(poc_target: str, finding_target: str) -> bool:
     return long.startswith(short) and not long[len(short)].isalnum()
 
 
+def _same_target(step_target: str, finding_target: str) -> bool:
+    """Both URLs are one address: scheme and host in any case, no trailing slash, the same
+    path and the same query parameters in any order."""
+
+    def parts(url: str) -> tuple[str, str, str, list[tuple[str, str]]]:
+        split = urlsplit(url.strip())
+        return (
+            split.scheme.lower(),
+            split.netloc.lower(),
+            split.path.rstrip("/"),
+            sorted(parse_qsl(split.query, keep_blank_values=True)),
+        )
+
+    return parts(step_target) == parts(finding_target)
+
+
 async def check_finding(
     db: Db,
     interfaces: Interfaces,
@@ -392,14 +409,22 @@ async def run_validation(
     if not run.output_masked:
         return []
     saved: list[ValidationRunOut] = []
+    step = action_repo.get(db, run.action_id)
+    produced = set(finding_repo.source_finding_ids(db, run.tool_run_id))
     for finding in finding_repo.list_awaiting_validation(db, finding_repo.run_assessment(db, run)):
+        # Which findings the step is about: an Action row keeps no finding reference, so
+        # the step's target must be the finding's exactly, or the run itself produced it.
+        if finding.finding_id not in produced and not (
+            step is not None and _same_target(step.target, finding.target)
+        ):
+            continue
         try:
             _checked_run(db, finding, run.tool_run_id)
         except ApiError:
             continue  # this run is not against that finding's target
         try:
             saved.append(await _judge(db, interfaces, mask, operator, finding, run, None))
-        except Exception as error:  # noqa: BLE001 - a verdict never fails the step
+        except Exception as error:  # a verdict never fails the step
             logger.warning(
                 "Finding %s not validated by tool run %s: %s",
                 finding.code,

@@ -54,6 +54,12 @@ def add_source(db: Db, finding_id: UUID, tool_run_id: UUID) -> None:
         db.execute(insert(finding_sources).values(finding_id=finding_id, tool_run_id=tool_run_id))
 
 
+def source_finding_ids(db: Db, tool_run_id: UUID) -> list[UUID]:
+    """The findings this tool run is a source of."""
+    query = select(finding_sources.c.finding_id).where(finding_sources.c.tool_run_id == tool_run_id)
+    return list(db.scalars(query))
+
+
 def list_by_agent_run(db: Db, agent_run_id: UUID) -> list[Finding]:
     """The findings the tool runs of one agent run found, in the order they were found."""
     found_by_run = (

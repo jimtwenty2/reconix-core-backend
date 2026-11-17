@@ -222,7 +222,6 @@ def finish_send(
     plan: list[PlanStep],
     blocked: list[BlockedStep],
     action: ActionOut | None,
-    filed_under: UUID | None = None,
 ) -> PlanOut:
     """After the first step was sent: wait for its approval, or end the run."""
     if action is not None and action.approval_id is not None:
@@ -235,7 +234,10 @@ def finish_send(
         )
     # The plan has let go of the step; a finished validation step is judged from here
     # (services/validation.py). After this function the request may answer a slow model nothing.
-    validation.start_validations(db, session_factory, interfaces, mask, operator, filed_under)
+    if action is not None and action.approval_id is None:  # it ran without an approval
+        validation.start_validation(
+            db, session_factory, interfaces, mask, operator, action.action_id, action.purpose
+        )
     return PlanOut(
         agent_run=agent_runs.agent_run_out(run),
         text=run.plan["text"],
@@ -496,7 +498,9 @@ async def resume_claimed(
     agent_runs.end(db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"decision": decision})
     # The approved step has run; if it was a validation step, it is judged from here
     # (services/validation.py), outside the person's request.
-    validation.start_validations(db, session_factory, interfaces, mask, operator, run.agent_run_id)
+    validation.start_validation(
+        db, session_factory, interfaces, mask, operator, row.action_id, row.purpose
+    )
 
 
 def cancel_run(

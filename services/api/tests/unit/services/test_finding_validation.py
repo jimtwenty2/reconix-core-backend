@@ -1,6 +1,7 @@
 """A finished validation step judges the finding it hit: the verdict is the AI's, the step
 stays COMPLETED whatever the model does, and there is one audit line per verdict."""
 
+import asyncio
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -9,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from reconix_api.core.errors import ApiError
-from reconix_api.core.interfaces import AgentTask, ApprovedScope, Operator
+from reconix_api.core.interfaces import Action, AgentTask, ApprovedScope, Operator
 from reconix_api.findings.shape import NewFinding, dedupe_key
 from reconix_api.models import AgentRun as AgentRunRow
 from reconix_api.models import Finding, LlmProvider, ValidationRun
@@ -38,6 +39,12 @@ class _Db:
 
     def __init__(self, committed: list[int] | None = None) -> None:
         self.committed = committed if committed is not None else []
+
+    def __enter__(self) -> "_Db":
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        pass
 
     def commit(self) -> None:
         self.committed.append(1)
@@ -138,13 +145,14 @@ def interfaces():
     return fake, parts
 
 
-def wire(monkeypatch, run, awaiting: list[Finding], step=None) -> SimpleNamespace:
+def wire(monkeypatch, run, awaiting: list[Finding], step=None, produced=None) -> SimpleNamespace:
     """The run's assessment, the findings still waiting for a verdict, and its action."""
     action = step or a_step(run)
     repo = findings_service.finding_repo
     monkeypatch.setattr(repo, "run_assessment", lambda db, r: ASSESSMENT)
     monkeypatch.setattr(repo, "list_awaiting_validation", lambda db, aid: list(awaiting))
     monkeypatch.setattr(repo, "tool_run_assessment", lambda db, rid: ASSESSMENT)
+    monkeypatch.setattr(repo, "source_finding_ids", lambda db, rid: produced or [])
     monkeypatch.setattr(repo, "get_tool_run", lambda db, rid: run)
     monkeypatch.setattr(
         repo,
@@ -271,6 +279,155 @@ async def test_a_model_that_is_down_leaves_the_step_completed(monkeypatch, saved
     assert run.tool_run_status == "COMPLETED"
     assert finding.validation_status == ValidationStatus.UNCONFIRMED
     assert saved.validations == []
+
+
+# ---------------------------------------------------------------------------
+# The real paths that start a validation, and which findings it judges
+# ---------------------------------------------------------------------------
+
+
+def _validation_wired(monkeypatch, run, step, finding):
+    """A finished step's tool run is found, and the background judges it with the fakes."""
+    wire(monkeypatch, run, [finding], step)
+    monkeypatch.setattr(
+        validation.tool_repo,
+        "latest_completed_run",
+        lambda db, action_id: run if action_id == step.action_id else None,
+    )
+    monkeypatch.setattr(validation.tool_repo, "completed_step", lambda db, rid: (run, step))
+
+
+async def _await_started() -> None:
+    await asyncio.gather(*validation._tasks)
+
+
+async def _resume(monkeypatch, interfaces, step, session_factory=_Db) -> None:
+    fake, parts = interfaces
+    parts["agent"].verdict = "CONFIRMED"
+    monkeypatch.setattr(plans.agent_runs, "agent_provider", lambda db, run: ("RECONIX", None))
+
+    ask = plans.agent_runs.ask_agent
+
+    async def answer(db, interfaces, request):
+        if request.task == AgentTask.VALIDATE:  # the verdict is the real path with the fake AI
+            return await ask(db, interfaces, request)
+        return SimpleNamespace(checkpoint_id=None)  # the resume has nothing to do here
+
+    def fail(db, interfaces, operator, run, error):
+        raise error  # a resume that fails must not look like one that finished
+
+    monkeypatch.setattr(plans.agent_runs, "ask_agent", answer)
+    monkeypatch.setattr(plans.agent_runs, "fail", fail)
+    monkeypatch.setattr(plans.agent_runs, "end", lambda *args, **kwargs: None)
+    monkeypatch.setattr(plans.actions, "to_action", lambda row: Action(tool="DALFOX", target="t"))
+    run = SimpleNamespace(
+        plan={"task": "PLAN"}, assessment_id=ASSESSMENT, agent_run_id=uuid4(), checkpoint_id=None
+    )
+    approval = SimpleNamespace(approval_id=uuid4())
+    await plans.resume_claimed(
+        _Db(), fake, fake_mask_secrets, session_factory, OPERATOR, run, step, approval, "APPROVED"
+    )
+
+
+async def test_an_approved_validation_step_validates_its_finding(monkeypatch, saved, interfaces):
+    finding = a_finding()
+    run = a_run()
+    step = a_step(run)
+    _validation_wired(monkeypatch, run, step, finding)
+
+    await _resume(monkeypatch, interfaces, step)
+    await _await_started()
+
+    [row] = saved.validations
+    assert (row.finding_id, row.tool_run_id) == (finding.finding_id, run.tool_run_id)
+    assert finding.validation_status == ValidationStatus.CONFIRMED
+
+
+async def test_an_approved_scan_step_validates_nothing(monkeypatch, saved, interfaces):
+    run = a_run()
+    step = a_step(run, purpose="scan")
+    _validation_wired(monkeypatch, run, step, a_finding())
+
+    await _resume(monkeypatch, interfaces, step)
+    await _await_started()
+
+    assert saved.validations == []
+
+
+def _finish(monkeypatch, interfaces, step) -> None:
+    fake, _ = interfaces
+    monkeypatch.setattr(plans.agent_runs, "end", lambda *args, **kwargs: None)
+    monkeypatch.setattr(plans.agent_runs, "agent_run_out", lambda run: None)
+    monkeypatch.setattr(plans, "PlanOut", lambda **kwargs: kwargs)
+    action = SimpleNamespace(
+        action_id=step.action_id, approval_id=None, purpose=step.purpose, action_status="COMPLETED"
+    )
+    plans.finish_send(
+        _Db(),
+        fake,
+        fake_mask_secrets,
+        OPERATOR,
+        _Db,
+        SimpleNamespace(plan={"text": ""}),
+        [],
+        [],
+        action,
+    )
+
+
+async def test_an_auto_run_validation_step_validates_its_finding(monkeypatch, saved, interfaces):
+    finding = a_finding()
+    run = a_run()
+    step = a_step(run)
+    _validation_wired(monkeypatch, run, step, finding)
+    interfaces[1]["agent"].verdict = "CONFIRMED"
+
+    _finish(monkeypatch, interfaces, step)
+    await _await_started()
+
+    [row] = saved.validations
+    assert row.finding_id == finding.finding_id
+
+
+async def test_an_auto_run_scan_step_validates_nothing(monkeypatch, saved, interfaces):
+    run = a_run()
+    step = a_step(run, purpose="scan")
+    _validation_wired(monkeypatch, run, step, a_finding())
+
+    _finish(monkeypatch, interfaces, step)
+    await _await_started()
+
+    assert saved.validations == []
+
+
+async def test_a_dalfox_run_does_not_judge_a_headers_finding_on_the_same_host(
+    monkeypatch, saved, interfaces
+):
+    xss = a_finding()
+    headers = a_finding(
+        "RCX-010", target="http://juice-shop:3000", title="Missing Security Headers"
+    )
+    run = a_run()
+    wire(monkeypatch, run, [headers, xss])
+    fake, parts = interfaces
+    parts["agent"].verdict = "CONFIRMED"
+
+    results = await findings_service.run_validation(_Db(), fake, fake_mask_secrets, OPERATOR, run)
+
+    assert [r.finding_id for r in results] == [xss.finding_id]
+    assert headers.validation_status == ValidationStatus.UNCONFIRMED
+    assert len(parts["agent"].requests) == 1
+
+
+async def test_a_finding_the_run_produced_is_judged(monkeypatch, saved, interfaces):
+    own = a_finding("RCX-011", target="http://juice-shop:3000/other")
+    run = a_run()
+    wire(monkeypatch, run, [own], produced=[own.finding_id])
+    fake, _ = interfaces
+
+    results = await findings_service.run_validation(_Db(), fake, fake_mask_secrets, OPERATOR, run)
+
+    assert len(results) == 1
 
 
 # ---------------------------------------------------------------------------
