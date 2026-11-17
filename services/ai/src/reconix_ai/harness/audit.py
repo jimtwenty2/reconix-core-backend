@@ -54,7 +54,10 @@ def make_audit_writer(path: str | Path) -> Callable[[AuditRecord], None]:
             # O_NOFOLLOW: never write through a symlink planted at the log path.
             flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW
             descriptor = os.open(path, flags, 0o600)
-            os.fchmod(descriptor, 0o600)  # also fixes a file made earlier with other rights
+            try:
+                os.fchmod(descriptor, 0o600)  # also fixes a file made earlier with other rights
+            except OSError:
+                pass  # Filesystems that do not support POSIX chmod (e.g. Windows host mounts in Docker)
             with os.fdopen(descriptor, "a", encoding="utf-8") as file:
                 file.write(line + "\n")
 
