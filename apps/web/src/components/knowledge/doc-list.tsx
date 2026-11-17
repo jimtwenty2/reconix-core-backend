@@ -63,6 +63,7 @@ export function DocList({ items, links, focusId, onPick, onRemove }: Props) {
                     <button
                       type="button"
                       autoFocus
+                      disabled={busy}
                       onClick={() => {
                         setAsking(null);
                         setError(null);
