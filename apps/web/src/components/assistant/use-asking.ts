@@ -13,6 +13,7 @@ import { AUTO_TITLE, cleanTitle } from "@/lib/assistant/history-schema";
 import { MAX_CARDS } from "@/lib/assistant/protocol";
 import { redact } from "@/lib/assistant/redact";
 import { MAX_QUESTION } from "@/lib/assistant/request";
+import { canRetryLast, canStartAsk, isStaleStream } from "@/lib/assistant/chat-state";
 import type { AssistantInfo, ChatMessage } from "./types";
 import { useLatest } from "./use-latest";
 import type { Slot } from "./slot";
@@ -42,11 +43,12 @@ export function useAsking({
   const [busy, setBusy] = useState(false);
   const latest = useLatest({ info, opened: open.opened, messages: open.messages });
   const { patch, setMessages, setOpened, setNotice, isReading } = open;
+  const clearBusy = useCallback(() => setBusy(false), []);
 
   const send = useCallback(
     (question: string, retry: boolean): boolean => {
       const { info: now, opened } = latest.current;
-      if (!question || stream.get() || isReading() || !now.model.configured) return false;
+      if (!canStartAsk({ question, hasStream: stream.get() !== null, reading: isReading(), configured: now.model.configured })) return false;
       const asked: ChatMessage = { id: newId(), role: "user", content: question };
       const reply: ChatMessage = { id: newId(), role: "assistant", content: "", cards: [], state: "streaming", question };
       setMessages((list) => [...list, asked, reply]);
@@ -62,7 +64,7 @@ export function useAsking({
             { conversationId: opened?.id ?? undefined, uid: now.scope.uid, question, retry },
             controller.signal,
             (frame) => {
-              if (controller.signal.aborted) return;
+              if (isStaleStream(stream.get(), controller)) return;
               if (frame.t === "meta") {
                 setOpened({ id: frame.conversationId, title: frame.title, scope: frame.scope });
                 const used = frame.knowledge;
@@ -78,7 +80,7 @@ export function useAsking({
               if (!controller.signal.aborted) setOpened((o) => (o?.id === id ? o : { id, title: o?.title || cleanTitle(question, AUTO_TITLE), scope }));
             },
           );
-          if (controller.signal.aborted) return;
+          if (isStaleStream(stream.get(), controller)) return;
           if (!result.ok) {
             patch(reply.id, (m) => ({ ...m, state: "error", detail: result.detail }));
             if (result.status === 404 && opened?.id) setOpened(null); // gone: Retry starts a new conversation
@@ -88,10 +90,12 @@ export function useAsking({
             m.state === "error" ? m : result.complete ? { ...m, state: undefined } : { ...m, state: "error", detail: "The answer broke off before it ended." },
           );
         } catch {
+          if (stream.get() !== controller) return;
           patch(reply.id, (m) => (controller.signal.aborted ? { ...m, state: "stopped" } : { ...m, state: "error", detail: "The connection to the assistant broke off." }));
         } finally {
-          if (stream.get() === controller) stream.set(null);
-          if (!stream.get()) setBusy(false);
+          if (stream.get() !== controller) return;
+          stream.set(null);
+          setBusy(false);
           refreshHistory();
         }
       })();
@@ -110,14 +114,19 @@ export function useAsking({
   );
 
   const retry = useCallback(() => {
-    const last = latest.current.messages.at(-1);
-    if (!last || last.role !== "assistant" || last.state !== "error" || !last.question || stream.get()) return;
+    const last = canRetryLast(latest.current.messages, {
+      hasStream: stream.get() !== null,
+      reading: isReading(),
+      configured: latest.current.info.model.configured,
+    });
+    if (!last) return;
     const question = last.question;
+    if (!question) return;
     setMessages((list) => list.slice(0, -2)); // the failed question and its error
     send(question, true);
-  }, [latest, stream, setMessages, send]);
+  }, [latest, stream, isReading, setMessages, send]);
 
   const stop = useCallback(() => stream.get()?.abort(), [stream]);
 
-  return { busy, ask, retry, stop };
+  return { busy, ask, retry, stop, clearBusy };
 }
