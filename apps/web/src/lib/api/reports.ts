@@ -5,6 +5,7 @@
    subset of the contract until `gen-api-types` is set up; switch to the generated types then. */
 import "server-only";
 
+import { cache } from "react";
 import { z } from "zod";
 
 import { requireSignedIn } from "../auth/guard";
@@ -58,16 +59,16 @@ function assessmentPath(id: string): string {
 }
 
 /** GET /assessments/{id}/reports: its reports newest first, then the combined ones covering it. */
-export async function listReports(assessmentId: string): Promise<ApiReport[]> {
+export const listReports = cache(async (assessmentId: string): Promise<ApiReport[]> => {
   await requireSignedIn();
   return parse(z.array(ReportOut), await apiGet(`${assessmentPath(assessmentId)}/reports`), "reports");
-}
+});
 
 /** GET /assessments/{id}/overview: the counts the summary strip shows. */
-export async function readOverview(assessmentId: string): Promise<ApiOverview> {
+export const readOverview = cache(async (assessmentId: string): Promise<ApiOverview> => {
   await requireSignedIn();
   return parse(Overview, await apiGet(`${assessmentPath(assessmentId)}/overview`), "overview");
-}
+});
 
 /** GET /reports/{id}/download?format=: the file of a READY, signed-off report. */
 export async function downloadReport(reportId: string, format: ReportFormat): Promise<ApiFile> {

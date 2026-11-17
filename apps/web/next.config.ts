@@ -19,6 +19,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   turbopack: { root: process.cwd() },
   experimental: {
+    optimizePackageImports: ["lucide-react"],
     agentUpgrade: "security",
     /* src/proxy.ts runs before every route, so Next.js keeps a copy of each request body for it,
        cut silently past this size (10 MB by default). The Security knowledge upload takes up to
