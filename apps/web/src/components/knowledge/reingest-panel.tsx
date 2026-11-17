@@ -66,7 +66,7 @@ export function ReingestButton({ job, starting, error, documents, waiting, onSta
 /** The job's progress, under the header, while it runs and once it ended (until dismissed). */
 export function ReingestProgress({ job }: { job: Reingest | null }) {
   const [hidden, setHidden] = useState<string | null>(null);
-  if (!job || job.status === "IDLE" || (job.status !== "RUNNING" && hidden === job.finished_at)) return null;
+  if (!job || job.status === "IDLE" || (job.status !== "RUNNING" && job.finished_at !== null && hidden === job.finished_at)) return null;
   const running = job.status === "RUNNING";
   const all = job.scope === "ALL";
   const second = job.step === "ADD_ONS";

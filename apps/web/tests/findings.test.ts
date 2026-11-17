@@ -162,4 +162,11 @@ describe("safeFindingKey", () => {
     expect(safeFindingKey("20261005-140300-9f76_RCX-DEMO-002~F-001")).toBe(true);
     for (const bad of ["", "<script>", "F-001 ", "a~b~c", "x".repeat(49), "F-001?x=1", "run~F-001\n"]) expect(safeFindingKey(bad)).toBe(false);
   });
+
+  it("sorts unrecognized severities last instead of before CRITICAL", () => {
+    const weird = { ...many[0], key: "weird", severity: "WEIRD" as unknown as (typeof many)[0]["severity"] };
+    const low = { ...many[0], key: "low", severity: "LOW" as const };
+    const crit = { ...many[0], key: "crit", severity: "CRITICAL" as const };
+    expect(sortFindings([weird, low, crit]).map((f) => f.key)).toEqual(["crit", "low", "weird"]);
+  });
 });

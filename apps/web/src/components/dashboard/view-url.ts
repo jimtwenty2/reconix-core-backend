@@ -165,6 +165,7 @@ export const runFindingHref = (uid: string, findingId: string): string =>
 let assistantPushed = false; // this page pushed the entry the assistant sits on
 let ownEntryLength = -1; // history.length right after that push (Forward lands on it again)
 let afterBack: View | null = null; // the view to open once that Back has landed
+let waitingBack = false; // history.back() is in flight, popstate hasn't landed yet
 
 const viewNow = (): View => parseView(new URLSearchParams(window.location.search).get("view"));
 
@@ -182,8 +183,13 @@ export function openAssistant(): void {
 /** Leave the assistant for `target`, or (no target) for wherever it was opened from. */
 export function leaveAssistant(target?: View): void {
   if (viewNow() !== "assistant") return showView(target ?? "overview");
+  if (waitingBack) {
+    afterBack = target ?? null;
+    return;
+  }
   if (assistantPushed) {
     assistantPushed = false;
+    waitingBack = true;
     afterBack = target ?? null;
     window.history.back();
     return;
@@ -195,6 +201,7 @@ export function leaveAssistant(target?: View): void {
 export function watchHistory(): () => void {
   const onPop = () => {
     const now = viewNow();
+    waitingBack = false;
     // Forward onto the entry this page pushed: leaving it may go Back again
     assistantPushed = now === "assistant" && window.history.length === ownEntryLength;
     const target = afterBack;

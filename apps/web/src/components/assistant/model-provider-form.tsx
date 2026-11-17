@@ -45,6 +45,8 @@ interface Props {
   onDone: () => void;
   /** The provider the form starts on (a provider picked in the list), else Reconix. */
   start?: PresetId;
+  /** Exact endpoint address when opening from an endpoint card's Edit button. */
+  startBaseUrl?: string;
 }
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "host.docker.internal"]);
@@ -65,24 +67,31 @@ function listOf(preset: ReturnType<typeof presetOf>, saved: ProviderView | null)
 
 const firstOf = (list: ListState) => (list.status === "ready" ? (list.models[0] ?? NO_MODEL_YET) : NO_MODEL_YET);
 
-export function ModelProviderForm({ view, models, onCancel, onDone, start }: Props) {
+export function ModelProviderForm({ view, models, onCancel, onDone, start, startBaseUrl }: Props) {
   const first = start ? presetOf(start) : firstPreset();
+  const initialUrl = startBaseUrl || first.baseUrl;
+  const initialSaved = savedFor(view, first, addressOf(first, { baseUrl: initialUrl }));
   const id = useId();
   const ids = { provider: `${id}-provider`, providerHint: `${id}-provider-hint`, url: `${id}-url`, urlHint: `${id}-url-hint`, key: `${id}-key`, model: `${id}-model` };
   const providerField = useRef<HTMLDivElement>(null);
   const keyField = useRef<HTMLInputElement>(null);
   const [presetId, setPresetId] = useState<PresetId>(() => first.id);
-  const [baseUrl, setBaseUrl] = useState<string>(() => first.baseUrl);
+  const [baseUrl, setBaseUrl] = useState<string>(() => initialUrl);
   const [removeKey, setRemoveKey] = useState(false);
   const [keyTyped, setKeyTyped] = useState(false);
-  const [list, setList] = useState<ListState>(() => listOf(first, savedFor(view, first, first.baseUrl)));
-  const [choice, setChoice] = useState(() => firstOf(listOf(first, savedFor(view, first, first.baseUrl))));
+  const [list, setList] = useState<ListState>(() => listOf(first, initialSaved));
+  const [choice, setChoice] = useState(() => firstOf(listOf(first, initialSaved)));
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tested, setTested] = useState<string | null>(null); // a passed test, in words
   const [error, setError] = useState<string | null>(null);
   const created = useRef<string | null>(null); // a provider Test connection saved, not added yet
+  const discardRef = useRef(models.discard);
   const alive = useRef(true);
+
+  useEffect(() => {
+    discardRef.current = models.discard;
+  }, [models.discard]);
 
   const preset = presetOf(presetId);
   const address = addressOf(preset, { baseUrl });
@@ -97,7 +106,10 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start }: Pro
     providerField.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true }); // the form's first control
     alive.current = true;
     return () => {
-      alive.current = false; // gone (Cancel, Escape, closed) while asking: the answer is dropped
+      alive.current = false; // gone (Cancel, Escape, Back, Close, outside click): drop any unsaved test row
+      const leftover = created.current;
+      created.current = null;
+      if (leftover) void discardRef.current(leftover);
     };
   }, []);
 
@@ -171,7 +183,12 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start }: Pro
   const add = async () => {
     if (saving) return;
     if (!saved || list.status !== "ready" || choice === NO_MODEL_YET) return setError("Test connection first, then choose one of the models it finds.");
-    const built = requestsForAdd(preset, saved, view, { baseUrl, apiKey: "", removeKey: false }, choice);
+    const c = credentials();
+    if (c.apiKey.trim()) {
+      const problem = credentialsProblem(preset, saved, c);
+      if (problem) return setError(problem);
+    }
+    const built = requestsForAdd(preset, saved, view, c, choice);
     if (!built.ok) return setError(built.problem);
     setSaving(true);
     setError(null);

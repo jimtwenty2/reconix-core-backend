@@ -33,7 +33,8 @@ export function ApiReportList({ reports }: { reports: ReportRow[] }) {
       if (!ticket.mine()) return;
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
-        if (ticket.mine()) setState({ kind: "failed", text: body?.message ? `${body.message} (${body.code})` : `The dashboard answered ${res.status}.` });
+        const msg = body?.message ? (body.code ? `${body.message} (${body.code})` : body.message) : `The dashboard answered ${res.status}.`;
+        if (ticket.mine()) setState({ kind: "failed", text: msg });
         return;
       }
       const blob = await res.blob();

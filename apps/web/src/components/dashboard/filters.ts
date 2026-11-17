@@ -92,7 +92,10 @@ export function findingMatches(f: ListedFinding, { sev, val, q, fp }: FindingFil
 
 /** Highest severity first, then the highest CVSS. */
 export function sortFindings<T extends ListedFinding>(findings: T[]): T[] {
-  const rank = (s: string) => SEVERITY_ORDER.indexOf(s as FindingSeverity);
+  const rank = (s: string) => {
+    const i = SEVERITY_ORDER.indexOf(s as FindingSeverity);
+    return i < 0 ? SEVERITY_ORDER.length : i;
+  };
   return [...findings].sort((a, b) => rank(a.severity) - rank(b.severity) || (b.score ?? 0) - (a.score ?? 0));
 }
 

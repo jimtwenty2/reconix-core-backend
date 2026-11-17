@@ -66,7 +66,11 @@ export async function coreFetch(
 export async function coreJson<T>(path: string, options: Parameters<typeof coreFetch>[1] = {}): Promise<T> {
   const response = await coreFetch(path, options);
   if (response.status === 204) return null as T;
-  return (await response.json()) as T;
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new CoreError(response.status, "BAD_RESPONSE", "The Core API sent an unreadable answer.");
+  }
 }
 
 /** The API's error shape as a CoreError (never the raw body). */

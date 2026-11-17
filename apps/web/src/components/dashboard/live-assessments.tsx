@@ -45,7 +45,7 @@ export function LiveAssessments({ initial, everyMs }: { initial: ReportRunRow[];
   useEffect(() => {
     if (everyMs <= 0) return;
     let busy = false;
-    const timer = window.setInterval(async () => {
+    const refresh = async () => {
       // a hidden pane (another view is open) has no offsetParent
       if (busy || document.visibilityState !== "visible" || !box.current?.offsetParent) return;
       busy = true;
@@ -57,14 +57,24 @@ export function LiveAssessments({ initial, everyMs }: { initial: ReportRunRow[];
       } finally {
         busy = false;
       }
-    }, everyMs);
-    return () => window.clearInterval(timer);
+    };
+    const timer = window.setInterval(() => void refresh(), everyMs);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [everyMs]);
 
   const note = failed ? (
-    <p role="status" className="mb-3 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
-      Live update failed, showing the last rows: {failed}
-    </p>
+    <div className="dash-view pt-3 pb-0">
+      <p role="status" className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+        Live update failed, showing the last rows: {failed}
+      </p>
+    </div>
   ) : null;
 
   return (

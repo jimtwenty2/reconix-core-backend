@@ -25,6 +25,7 @@ import { KnowledgeView } from "@/components/knowledge/knowledge-view";
 import { isAssessmentId } from "@/lib/api/findings";
 import { loadApiLibrary } from "@/lib/api/library";
 import { activeModelSummary } from "@/lib/api/models";
+import { requireSignedIn } from "@/lib/auth/guard";
 import { runRef, scopedViews, scopeOf } from "@/lib/assistant/insights";
 import { welcomePrompts } from "@/lib/assistant/prompts";
 import { assessmentView, libraryItem } from "@/lib/data/adapt";
@@ -35,6 +36,7 @@ import { liveRefreshMs } from "@/lib/live-refresh";
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export default async function Home({ searchParams }: Props) {
+  await requireSignedIn();
   const params = await searchParams;
   const wanted = typeof params.uid === "string" && UID.test(params.uid) ? params.uid : null;
   const apiAssessment = isAssessmentId(params.assessment) ? params.assessment : null;

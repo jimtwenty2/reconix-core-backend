@@ -74,7 +74,7 @@ export function PhaseRows({ data }: { data: Phases }) {
                   onMouseLeave={hide}
                   onFocus={(e) => {
                     nav.setCurrent(s.key);
-                    show(e.currentTarget, s.title, [s.steps === 1 ? "1 tool step" : `${s.steps} tool steps`]);
+                    show(e.currentTarget, s.title, [s.live ? "Running now" : s.steps === 1 ? "1 tool step" : `${s.steps} tool steps`]);
                   }}
                   onBlur={hide}
                 >

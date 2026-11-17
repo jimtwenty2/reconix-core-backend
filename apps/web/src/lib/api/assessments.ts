@@ -154,7 +154,7 @@ export function assessmentRunRow(a: ApiAssessmentRow, run: PlanRun): ReportRunRo
     uid,
     id: a.name || a.engagement_code,
     template: typeLabel(a.type),
-    target: redact(a.targets.join(", ")),
+    target: redact(a.targets.join(", ")) || "—",
     status: liveStatus(a, run),
     when: Number.isNaN(ms) ? "—" : `${shortDay(ms)} ${hourMinute(ms)}`,
     waiting: waiting ? `${waiting} approval${waiting === 1 ? "" : "s"}` : "",
