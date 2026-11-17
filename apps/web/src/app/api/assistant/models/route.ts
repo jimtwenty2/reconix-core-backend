@@ -16,8 +16,9 @@ import { readBody } from "@/lib/assistant/models/respond";
 export async function GET(request: Request) {
   const refused = await refuse(request, { change: false });
   if (refused) return refused;
+  const fast = new URL(request.url).searchParams.get("fast") === "1";
   try {
-    return NextResponse.json({ ...(await modelsView()), presets: PRESETS }, { headers: NO_STORE });
+    return NextResponse.json({ ...(await modelsView({ probe: !fast })), presets: PRESETS }, { headers: NO_STORE });
   } catch (error) {
     return coreFailure(error, "The models could not be read.");
   }
