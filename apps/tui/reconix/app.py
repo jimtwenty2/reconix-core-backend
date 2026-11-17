@@ -102,6 +102,9 @@ class ReconixApp(
             self.poll_core_api()
             if self.CORE_API_POLL_SECONDS > 0:
                 self.set_interval(self.CORE_API_POLL_SECONDS, self.poll_core_api)
+            if self.KALI_POLL_SECONDS > 0:
+                self.set_interval(self.KALI_POLL_SECONDS, self.poll_kali)
+            self.poll_kali()  # fill the chip now, not only after the first interval
 
     def poll_core_api(self) -> None:
         """Check the Core API's health in the background and show it in the header."""
@@ -112,6 +115,19 @@ class ReconixApp(
             self.from_worker(self._core_api_status, client.health())
 
         self.run_worker(work, thread=True, group="core-api-health", exit_on_error=False)
+
+    def poll_kali(self) -> None:
+        """Refresh the Kali MCP status off the UI thread; a failed poll just gives UNKNOWN."""
+
+        def work() -> None:
+            store.refresh_kali()  # never raises (Core API down -> UNKNOWN)
+            self.from_worker(self._refresh_session_bars)
+
+        self.run_worker(work, thread=True, group="kali", exclusive=True, exit_on_error=False)
+
+    def _refresh_session_bars(self) -> None:
+        for bar in self.screen.query(SessionBar):
+            bar.refresh_line()
 
     def _core_api_status(self, online: bool) -> None:
         if store.api_online() == online:
