@@ -42,12 +42,14 @@ export async function POST(request: Request) {
     // makes one. Picked before asking, so the API's answer is read as soon as it starts
     let cards: ReturnType<typeof pickCards> = [];
     let scope = ALL_RUNS;
+    let assessmentId: string | undefined;
     try {
       const library = await loadApiLibrary();
       cards = pickCards(library.assessments, uid, question);
       if (uid) {
         const chosen = library.assessments.find((a) => a.uid === uid);
         scope = chosen ? scopeOf(assessmentView(chosen)) : { uid, label: uid };
+        assessmentId = chosen?.core_id || undefined;
       }
     } catch {
       cards = [];
@@ -66,7 +68,7 @@ export async function POST(request: Request) {
         id = existing.id;
         title = existing.title;
       } else id = await openChat();
-      answer = await askStream(id, question, abort.signal);
+      answer = await askStream(id, question, abort.signal, assessmentId);
     } catch (error) {
       return coreFailure(error, "The assistant could not answer.");
     }
