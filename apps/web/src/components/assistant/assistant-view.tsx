@@ -109,11 +109,6 @@ export const AssistantView = forwardRef<HTMLTextAreaElement, { onMinimize: () =>
                 What the model sees
               </Link>
             </Reason>
-          ) : model.configured && !model.local ? (
-            <Reason tone="info">
-              {model.name}
-              {model.provider ? ` (${model.provider})` : ""} runs off this computer: the Core API sends it your questions and the session data they need. Switch anytime with the model chip below.
-            </Reason>
           ) : elsewhere ? (
             <Reason tone="info">
               This conversation is about {conversation.scope.label}; the dashboard shows {info.scope.label}.{" "}
