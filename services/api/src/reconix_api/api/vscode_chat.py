@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import StreamingResponse
 
 from reconix_api.core.config import Settings, get_settings
 from reconix_api.core.db import Db
@@ -37,6 +38,28 @@ async def chat_in_vscode(
     return await vscode_chat.chat_in_vscode(
         db, interfaces, mask, settings, operator, session_id, body.content
     )
+
+
+@router.post(
+    "/sessions/{session_id}/vscode-chat/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def chat_in_vscode_stream(
+    session_id: UUID,
+    body: MessageCreate,
+    db: Db,
+    operator: CurrentOperator,
+    interfaces: CurrentInterfaces,
+    mask: CurrentMask,
+    settings: CurrentSettings,
+) -> StreamingResponse:
+    """Streams the VS Code chat answer or function call as Server-Sent Events."""
+    events = vscode_chat.stream_vscode_chat(
+        db, interfaces, mask, settings, operator, session_id, body.content
+    )
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(events, media_type="text/event-stream", headers=headers)
 
 
 @router.get("/vscode-chat/functions")
