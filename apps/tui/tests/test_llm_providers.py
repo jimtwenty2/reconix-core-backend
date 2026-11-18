@@ -109,6 +109,24 @@ def test_test_provider_marks_reachable(fake_api):
     assert store.test_provider("openai").status == "UNREACHABLE"
 
 
+def test_test_provider_tests_the_row_just_saved_not_the_first(fake_api):
+    """Two OpenAI-compatible rows: saving the second, then testing, tested the first (a dead
+    tunnel), so the TUI said the new address did not resolve."""
+    store.set_provider("openai_compatible", base_url="https://old.example/v1", models=["old-m"])
+    store.set_provider("openai_compatible", base_url="https://new.example/v1", models=["new-m"])
+    old, new = (r["llm_provider_id"] for r in api.fetch_rows())
+    store.set_provider(
+        "openai_compatible",
+        api_key=SECRET_KEY,
+        base_url="https://new.example/v1",
+        models=["new-m"],
+    )
+    view = store.test_provider("openai_compatible")
+    assert fake_api.paths()[-2:] == [f"POST /llm-providers/{new}/test", "GET /llm-providers"]
+    assert f"POST /llm-providers/{old}/test" not in fake_api.paths()
+    assert view.base_url == "https://new.example/v1"
+
+
 # --- activation -------------------------------------------------------------------------------
 
 
