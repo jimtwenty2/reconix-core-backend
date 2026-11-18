@@ -14,8 +14,16 @@ const pages = Math.max(1, Math.ceil(all.length / PER_PAGE));
 test.beforeAll(() => expect(all.length, "the sample data needs more than one page of runs").toBeGreaterThan(PER_PAGE));
 const results = `${all.length} ${all.length === 1 ? "result" : "results"}`;
 
-/** The saved file's template name (support.ts types only what the other specs read). */
-const templateOf = (a: ReturnType<typeof sample>[number]) => (a as unknown as { template: { name: string } }).template.name;
+/** The template label the Assessments view derives from `core-api-stub.mjs` (`typeLabel(row.type)`). */
+const ACRONYMS = new Set(["api", "tls", "ssl", "dns", "http", "ssh", "url", "ip"]);
+const templateOf = (a: ReturnType<typeof sample>[number]) => {
+  const raw = (a as unknown as { target_kind?: string; template?: { id?: string } }).target_kind || (a as unknown as { template?: { id?: string } }).template?.id || "WEB";
+  return raw
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((w) => (ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1).toLowerCase()))
+    .join(" ");
+};
 
 const rows = (page: Page) => page.getByRole("list", { name: "Saved assessments" }).getByRole("listitem");
 const pager = (page: Page) => page.getByRole("navigation", { name: "Assessment pages" });
