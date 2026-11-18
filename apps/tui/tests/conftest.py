@@ -149,10 +149,12 @@ def web_launches(monkeypatch) -> List[object]:
         return calls[-1]
 
     monkeypatch.setattr(web_server, "install", lambda: calls.append("install") or True)
+    monkeypatch.setattr(web_server, "build", lambda: calls.append("build") or True)
     monkeypatch.setattr(web_server, "start", start)
     monkeypatch.setattr(web_server, "stop", lambda process: setattr(process, "stopped", True))
     monkeypatch.setattr(web_server, "problem", lambda: "")
     monkeypatch.setattr(web_server, "needs_install", lambda: False)
+    monkeypatch.setattr(web_server, "needs_build", lambda: False)
     return calls
 
 

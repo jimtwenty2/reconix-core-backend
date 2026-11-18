@@ -1,9 +1,10 @@
 """/web: open the web dashboard, starting it first if it isn't running.
 
-The first /web of a session starts `npm run dev` in web/ in the background (and installs
-its packages if they're missing or not the versions its lockfile names); the dashboard
-opens the browser itself once it's ready. Later /web calls just open it. A dashboard this
-TUI started stops when it quits.
+The first /web of a session builds (`npm run build`) and starts (`npm start`, falling
+back to `npm run dev` if build fails) web/ in the background (installing packages first
+if they're missing or not the versions its lockfile names); the dashboard opens the
+browser itself once it's ready. Later /web calls just open it. A dashboard this TUI
+started stops when it quits.
 """
 
 import threading
@@ -42,8 +43,12 @@ class WebDashboardMixin:
             how = " Install Node.js (nodejs.org), then type /web again." if has_folder else ""
             self._web_note(f"{why}{how}", severity="warning")
             return
-        first = " Its packages are installed (or updated) first: that takes a few minutes." \
-            if web_server.needs_install() else ""
+        if web_server.needs_install():
+            first = " Its packages are installed (or updated) first: that takes a few minutes."
+        elif web_server.needs_build():
+            first = " Building it first: that takes a moment."
+        else:
+            first = ""
         self._web_note(f"Starting the web dashboard… it opens in your browser when it's "
                        f"ready.{first}")
         self._web_starting = True
@@ -64,10 +69,19 @@ class WebDashboardMixin:
             self._web_starting = False
 
     def _launch_and_wait(self) -> Optional[Note]:
-        """Install if needed, start it, wait until it answers. Returns what to tell the user."""
+        """Install and build if needed, start it, wait until it answers."""
         log = web_server.LOG_FILE
         if web_server.needs_install() and not web_server.install():
             return f"Couldn't install the web dashboard's packages. Details: {log}", "error"
+        if self._web_quit.is_set():
+            return None
+        if web_server.needs_build() and not web_server.build():
+            if self._web_quit.is_set():
+                return None
+            self._web_note_later((
+                f"Couldn't build the web dashboard; starting in dev mode instead. Details: {log}",
+                "warning",
+            ))
         if self._web_quit.is_set():
             return None
         log_from = web_server.log_size()      # read this start's lines, not an older one's
