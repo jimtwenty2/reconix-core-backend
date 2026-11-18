@@ -38,11 +38,11 @@ test.describe("axe", () => {
     });
   }
 
-  // the panel opened, with a run open: its name is the first link
+  // the panel opened, with a run open
   test("the assessment switcher has no violations", async ({ page }) => {
     await show(page, `/?uid=${RUN}`);
     await page.getByRole("button", { name: "Choose an assessment" }).click();
-    await expect(page.getByRole("link", { name: /^Open the overview of / })).toBeVisible();
+    await expect(page.locator('[role="dialog"] a[aria-current="true"]')).toBeVisible();
     await axe(page, "the assessment switcher");
   });
 

@@ -184,6 +184,16 @@ describe("conversations", () => {
     expect(conversation.messages.at(-1)).toMatchObject({ role: "assistant", state: "error", detail: NO_ANSWER });
   });
 
+  it("rebuilds the findings card when a saved conversation is reloaded", async () => {
+    seedAssessment();
+    await addLocalModel();
+    const id = (await ask({ uid: null, question: "Analyze the current findings" })).headers.get("x-conversation-id")!;
+    const read = await (await one.GET(request(`/api/assistant/conversations/${id}`, { origin: null }), ctx(id))).json();
+    const reply = read.conversation.messages.at(-1);
+    expect(reply.cards).toHaveLength(1);
+    expect(reply.cards[0]).toMatchObject({ kind: "findings", total: 1 });
+  });
+
   it("lists the open web sessions that hold messages, titled by the first question", async () => {
     await addLocalModel();
     const id = (await ask({ uid: null, question: "Which hosts are in scope?" })).headers.get("x-conversation-id")!;

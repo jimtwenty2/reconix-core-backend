@@ -178,29 +178,24 @@ test("the switcher opens another assessment and keeps the view", async ({ page }
   await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, sample().flatMap(counted).length));
 });
 
-test("the Findings view's own picker opens one Core API assessment's findings", async ({ page }) => {
+test("the Findings view has no inline assessment picker and still filters by ?assessment=", async ({ page }) => {
   await signIn(page);
-  await page.click(view("Findings"));
   const other = sample().find((a) => counted(a).length > 1)!;
-  await page.getByRole("combobox", { name: "Assessment" }).selectOption(apiId(other.uid));
-  await expect(page).toHaveURL(new RegExp(`assessment=${apiId(other.uid)}`));
-  await expect(page).toHaveURL(/view=findings/);
+  await page.goto(`/?view=findings&assessment=${apiId(other.uid)}`);
+  const pane = page.locator('[data-view-pane="findings"]');
+  await expect(pane.getByRole("combobox", { name: "Assessment" })).toHaveCount(0);
   await expect(findingRows(page)).toHaveCount(counted(other).length);
-  await page.getByRole("combobox", { name: "Assessment" }).selectOption("");
-  await expect(page).not.toHaveURL(/assessment=/);
 });
 
-test("an assessment id the Core API doesn't know keeps the picker", async ({ page }) => {
+test("an assessment id the Core API doesn't know shows the not-found note without a picker", async ({ page }) => {
   await signIn(page);
   await page.goto("/?view=findings&assessment=99999999-9999-4999-8999-999999999999");
   const pane = page.locator('[data-view-pane="findings"]'); // the Report pane says it too, hidden
   await expect(pane.getByText("The Core API has no assessment with that id. Pick another one.")).toBeVisible();
-  const picker = pane.getByRole("combobox", { name: "Assessment" });
-  await picker.selectOption(apiId(newest().uid));
-  await expect(findingRows(page)).toHaveCount(Math.min(PER_PAGE, counted(newest()).length));
+  await expect(pane.getByRole("combobox", { name: "Assessment" })).toHaveCount(0);
 });
 
-test("the switcher is just the list, and the open run's name opens its Overview", async ({ page }) => {
+test("the switcher is just the list with no extra title above it", async ({ page }) => {
   await signIn(page);
   const all = sample();
   const trigger = page.getByRole("button", { name: "Choose an assessment" });
@@ -216,21 +211,16 @@ test("the switcher is just the list, and the open run's name opens its Overview"
   expect(await panelExtras(page)).toBe("");
   await page.keyboard.press("Escape");
 
-  // one run: its name first, a link to its Overview (the open view and filters are not carried)
+  // one run: still just the list, with the active run marked current
   const a = all.find((x) => counted(x).length > 1)!;
   await page.goto(`/?uid=${a.uid}&view=findings&sev=HIGH`);
   await hydrated(page);
   await trigger.click();
-  await expect(title).toHaveCount(1);
-  await expect(title).toHaveAttribute("href", `/?uid=${a.uid}`);
+  await expect(title).toHaveCount(0);
+  await expect(panel.locator('a[aria-current="true"]')).toHaveAttribute("href", `/?view=findings&sev=HIGH&uid=${a.uid}`);
   await expect(panel.locator("li a")).toHaveCount(all.length + 1);
   await expect(panel.getByText(gone)).toHaveCount(0);
   expect(await panelExtras(page)).toBe("");
-  await title.click();
-  await page.waitForURL((url) => url.pathname === "/" && url.search === `?uid=${a.uid}`);
-  await expect(panel).toHaveCount(0); // the link closes the panel
-  await expect(page.getByRole("heading", { name: "Assessment Operations Center" })).toBeVisible();
-  await expect(trigger).toContainText(a.label);
 });
 
 test("a waiting run shows its pending approval", async ({ page }) => {
@@ -285,21 +275,22 @@ test("a card's help icon opens its documentation", async ({ page }) => {
   expect((await page.request.get(page.url())).status()).toBe(200);
 });
 
-test("the removed Audit log and Scope addresses open the Overview", async ({ page }) => {
-  for (const [param, label] of [["audit", "Audit log"], ["scope", "Scope"]]) {
+test("the removed Audit log, Scope and Run log addresses open the Overview", async ({ page }) => {
+  for (const [param, label] of [["audit", "Audit log"], ["scope", "Scope"], ["log", "Run log"]]) {
     await page.goto(`/?view=${param}`);
     await expect(page.getByRole("heading", { name: "Assessment Operations Center" })).toBeVisible();
     await expect(page.locator('nav[aria-label="Views"] button[aria-label="Overview"]')).toHaveAttribute("aria-current", "page");
     await expect(page.locator(`nav[aria-label="Views"] [aria-label="${label}"]`)).toHaveCount(0);
   }
   await expect(page.locator('[data-view-pane="scope"]')).toHaveCount(0);
+  await expect(page.locator('[data-view-pane="log"]')).toHaveCount(0);
 });
 
 /* A stale or hand-typed ?uid= used to show every run with nothing to say the one asked for was
    not there (QA-LOCAL-WEB-REPORT, QAL-003), on any view. */
 test("an unknown assessment says so on every view and opens every run, and an unknown page is a 404", async ({ page }) => {
   const notice = page.getByText("That assessment isn't in this folder");
-  for (const view of ["", "&view=findings", "&view=log", "&view=reports", "&view=assessments"]) {
+  for (const view of ["", "&view=findings", "&view=reports", "&view=assessments"]) {
     await page.goto(`/?uid=20200101-000000-dead_NOPE-1${view}`);
     await expect(notice).toBeVisible();
   }
@@ -382,32 +373,4 @@ test("the switcher searches every saved run", async ({ page }) => {
   await page.getByRole("button", { name: "Choose an assessment" }).click();
   const list = page.locator('[role="dialog"] li a');
   await expect(list).toHaveCount(sample().length + 1); // "All assessments", then every run
-});
-
-test("the Run log folds the work between messages and opens one block at a time", async ({ page }) => {
-  const a = sample().find((s) => s.status === "Completed")!;
-  await signIn(page);
-  await page.goto(`/?uid=${a.uid}&view=log`);
-  await hydrated(page);
-  const pane = page.locator('[data-view-pane="log"]');
-  await expect(pane.getByRole("heading", { name: "Run log" })).toBeVisible();
-  await expect(page.locator(view("Run log"))).toHaveAttribute("aria-current", "page");
-  const titles = pane.locator(".dash-think-title");
-  expect(await titles.count()).toBeGreaterThan(0);
-  await expect(pane.locator(".dash-think-steps:visible")).toHaveCount(0); // all folded
-  const first = titles.first();
-  await expect(first).toHaveAttribute("aria-expanded", "false");
-  await first.click();
-  await expect(first).toHaveAttribute("aria-expanded", "true");
-  await expect(pane.locator(".dash-think-steps:visible")).toHaveCount(1);
-  await expect(pane.locator(".dash-think-steps:visible .dash-think-step").first()).toBeVisible();
-  // messages carry a glyph, never a name, in front
-  await expect(pane.locator(".dash-runlog-msg").first()).not.toHaveText(/^(you|reconix)\b/);
-});
-
-test("with every run shown, the Run log asks for one run", async ({ page }) => {
-  await signIn(page);
-  await page.goto("/?view=log");
-  await hydrated(page);
-  await expect(page.locator('[data-view-pane="log"]')).toContainText("Open one run");
 });

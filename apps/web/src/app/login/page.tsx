@@ -12,7 +12,7 @@ export default async function LoginPage() {
   await connection();
   return (
     <main className="dash-page grid min-h-screen place-items-center p-6">
-      <div className="dash-card flex w-full max-w-[460px] flex-col items-center gap-4 px-7 py-9 text-center">
+      <div className="dash-card dash-login-card flex w-full max-w-[460px] flex-col items-center gap-4 px-7 py-9 text-center">
         <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">Reconix · sign-in</p>
         <SignIn />
       </div>

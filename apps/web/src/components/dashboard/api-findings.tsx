@@ -1,12 +1,11 @@
-/* The Findings view, from the Core API (server component): GET /assessments for the picker and
-   GET /findings for one assessment (`?assessment=<uuid>`) or every one. When the API is down
+/* The Findings view, from the Core API (server component): GET /assessments for assessment names
+   and GET /findings for one assessment (`?assessment=<uuid>`) or every one. When the API is down
    or refuses, the person sees what it said; nothing falls back to the saved files. A saved
    run (`?uid=`, from the Overview's links) has no Core API id, so it gets a note saying so and
    the list of every assessment. */
-import { ApiAssessmentPicker } from "@/components/dashboard/api-assessment-picker";
 import { FindingsView } from "@/components/dashboard/findings-view";
 import { EmptyNote } from "@/components/ui/empty-note";
-import { apiFindingRows, pickerItems } from "@/lib/api/adapt";
+import { apiFindingRows } from "@/lib/api/adapt";
 import { CoreApiError } from "@/lib/api/client";
 import { type ApiAssessment, type ApiFinding, listAssessments, listFindings } from "@/lib/api/findings";
 
@@ -40,8 +39,6 @@ export async function ApiFindings({ assessmentId, savedRun = null }: { assessmen
     );
   }
 
-  const items = pickerItems(assessments);
-  const picker = <ApiAssessmentPicker items={items} current={assessmentId} view="findings" />;
   const known = assessmentId === null || assessments.some((a) => a.assessment_id === assessmentId);
 
   let findings: ApiFinding[] = [];
@@ -55,16 +52,10 @@ export async function ApiFindings({ assessmentId, savedRun = null }: { assessmen
     }
   }
   if (!known || failed?.code === "ASSESSMENT_NOT_FOUND")
-    return (
-      <Shell>
-        {picker}
-        {NOT_FOUND}
-      </Shell>
-    );
+    return <Shell>{NOT_FOUND}</Shell>;
   if (failed)
     return (
       <Shell>
-        {picker}
         <ApiErrorNote e={failed} />
       </Shell>
     );
@@ -72,7 +63,7 @@ export async function ApiFindings({ assessmentId, savedRun = null }: { assessmen
   const notice = savedRun ? (
     <p role="status" className="dash-findings-saved-run mb-3 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
       Findings come from the Core API, which doesn&apos;t know the saved run <span className="font-mono text-foreground">{savedRun}</span>: showing every
-      Core API assessment. Pick one below.
+      Core API assessment.
     </p>
   ) : null;
   return (
@@ -80,12 +71,7 @@ export async function ApiFindings({ assessmentId, savedRun = null }: { assessmen
       key={assessmentId ?? "all"}
       findings={apiFindingRows(findings, assessmentId ? null : assessments)}
       across={assessmentId ? null : assessments.length}
-      picker={
-        <>
-          {notice}
-          {picker}
-        </>
-      }
+      picker={notice}
       linkedFromSavedRun={savedRun !== null}
     />
   );

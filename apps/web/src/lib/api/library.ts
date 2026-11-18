@@ -300,7 +300,7 @@ async function liveOf(
 
 const LIBRARY_CONCURRENCY = 8;
 
-async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
   let next = 0;
   const worker = async () => {
@@ -327,9 +327,13 @@ function problemOf(error: unknown): string {
 /** Every assessment the Core API has (newest first, at most MAX_ASSESSMENTS), as runs. */
 export const loadApiLibrary = cache(async (): Promise<Library> => {
   const get = <T>(path: string) => asMain((token) => coreJson<T>(path, { token }));
-  const rows = (await get<Row[]>("/assessments")).slice(0, MAX_ASSESSMENTS);
+  const [allRows, ...approvalSets] = await Promise.all([
+    get<Row[]>("/assessments"),
+    ...["PENDING", "APPROVED", "REJECTED"].map((s) => get<CoreApproval[]>(`/approvals?status=${s}`).catch(() => [])),
+  ]);
+  const rows = allRows.slice(0, MAX_ASSESSMENTS);
   if (rows.length === 0) return { dir: "Core API", readAt: Date.now(), assessments: [], problems: [] };
-  const approvals = (await Promise.all(["PENDING", "APPROVED", "REJECTED"].map((s) => get<CoreApproval[]>(`/approvals?status=${s}`).catch(() => [])))).flat();
+  const approvals = approvalSets.flat();
   const agentRunsBySession = new Map<string, Promise<unknown>>();
   const problems: Library["problems"] = [];
   const runs = await mapLimit(rows, LIBRARY_CONCURRENCY, async (row) => {

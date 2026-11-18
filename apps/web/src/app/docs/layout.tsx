@@ -1,3 +1,4 @@
+import { CardCursorLight } from "@/components/dashboard/card-cursor-light";
 import { HydratedMark } from "@/components/dashboard/hydrated-mark";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { DocsTopBar } from "@/components/docs-top-bar";
@@ -19,6 +20,7 @@ export default async function DocsLayout({ children }: { children: React.ReactNo
   return (
     <div className="dash-page" data-docs="">
       <HydratedMark />
+      <CardCursorLight />
       <div className="dash-frame">
         <Sidebar active={null} />
         <DocsTopBar />

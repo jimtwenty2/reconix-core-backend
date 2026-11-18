@@ -1,6 +1,7 @@
 /* The Findings view from the Core API (components/dashboard/api-findings.tsx), rendered to
-   markup against the fake API: the picker survives an unknown id and a refused findings call,
-   a saved run's link gets its note, and UNKNOWN and NONE severities are listed and sorted last. */
+   markup against the fake API: no assessment picker is rendered inside the view, unknown ids
+   skip /findings, a refused findings call shows the error, a saved run's link gets its note, and
+   UNKNOWN and NONE severities are listed and sorted last. */
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,16 +27,15 @@ const render = async (assessmentId: string | null, savedRun: string | null = nul
 const OTHER = "99999999-9999-4999-8999-999999999999";
 
 describe("ApiFindings", () => {
-  it("lists the findings under the picker", async () => {
+  it("lists the findings without an inline assessment picker", async () => {
     const html = await render(ASSESSMENT_ID);
-    expect(html).toContain("<select");
-    expect(html).toContain("Juice Shop web · 2");
+    expect(html).not.toContain("<select");
     expect(html).toContain("SQL injection in search");
   });
 
-  it("keeps the picker for an id the API doesn't know, without asking for its findings", async () => {
+  it("skips asking for findings for an id the API doesn't know", async () => {
     const html = await render(OTHER);
-    expect(html).toContain("<select");
+    expect(html).not.toContain("<select");
     expect(html).toContain("The Core API has no assessment with that id.");
     expect(api.calls.some((c) => c.path.startsWith("/findings"))).toBe(false);
   });
@@ -43,14 +43,14 @@ describe("ApiFindings", () => {
   it("treats the API's 404 ASSESSMENT_NOT_FOUND the same way (deleted in between)", async () => {
     api.answers.set(`/findings?assessment_id=${ASSESSMENT_ID}`, [{ status: 404, body: { code: "ASSESSMENT_NOT_FOUND", message: "No assessment with this id.", details: {} } }]);
     const html = await render(ASSESSMENT_ID);
-    expect(html).toContain("<select");
+    expect(html).not.toContain("<select");
     expect(html).toContain("The Core API has no assessment with that id.");
   });
 
-  it("shows another refusal of the findings under the picker, as the API said it", async () => {
+  it("shows a refusal of the findings as the API said it", async () => {
     api.answers.set("/findings", [{ status: 429, body: { code: "RATE_LIMITED", message: "Too many requests.", details: {} } }]);
     const html = await render(null);
-    expect(html).toContain("<select");
+    expect(html).not.toContain("<select");
     expect(html).toContain("Too many requests.");
     expect(html).toContain("RATE_LIMITED");
   });

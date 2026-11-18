@@ -1,10 +1,10 @@
 "use client";
 
-/* The Assessment chip: just the list. With a run open the panel starts with its name, a link to
-   that run's Overview; then a search over every saved run (past six), "All assessments" (the
-   default, the Overview totals every saved run), one row per run, and the files that were
-   skipped (a warning, so a broken file is never silently missing). Opening another run keeps the
-   current view but drops the selected finding (it belongs to the old run). */
+/* The Assessment chip: just the list — a search over every saved run (past six), "All
+   assessments" (the default, the Overview totals every saved run), one row per run, and the
+   files that were skipped (a warning, so a broken file is never silently missing). Opening
+   another run keeps the current view but drops the selected finding (it belongs to the old
+   run). */
 import { useState } from "react";
 import Link from "next/link";
 import { Check, ChevronDown, Layers, TriangleAlert } from "lucide-react";
@@ -13,7 +13,7 @@ import { SearchField } from "@/components/dashboard/filter-bar";
 import { Popover } from "@/components/dashboard/popover";
 import { runMatches } from "@/components/dashboard/filters";
 import { RunRow } from "@/components/dashboard/run-row";
-import { runOverviewHref, useRunHref } from "@/components/dashboard/view-url";
+import { useRunHref } from "@/components/dashboard/view-url";
 import type { LibraryItem, SkippedFile } from "@/lib/data/view-types";
 
 export const CHIP =
@@ -68,18 +68,6 @@ export function AssessmentSwitcher({
     >
       {(close) => (
         <>
-          {current && (
-            <div className="border-b border-border px-1.5 pb-2 pt-1">
-              <Link
-                href={runOverviewHref(current.uid)}
-                onClick={close}
-                aria-label={`Open the overview of ${current.name}`}
-                className="rounded-sm text-[13px] font-medium text-primary underline-offset-2 [overflow-wrap:anywhere] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {current.name}
-              </Link>
-            </div>
-          )}
           {items.length > SEARCH_AFTER && (
             <div className="px-1.5 pb-1.5 pt-2">
               <SearchField label="Search saved assessments" placeholder="ID, template, target, status…" value={query} onChange={setQuery} />

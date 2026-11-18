@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     let answer: ReadableStream<Uint8Array>;
     try {
       if (conversationId) {
-        const existing = await readConversation(conversationId);
+        const existing = await readConversation(conversationId, { withCards: false });
         if (!existing) return fail(GONE, 404);
         id = existing.id;
         title = existing.title;

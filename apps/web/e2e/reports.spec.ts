@@ -79,20 +79,20 @@ test("a download the API refuses says what it said, and saves nothing", async ({
   expect(downloads).toBe(0);
 });
 
-test("an assessment id the Core API doesn't know keeps the picker", async ({ page }) => {
+test("an assessment id the Core API doesn't know shows the not-found note without a picker", async ({ page }) => {
   await signIn(page);
   await page.goto("/?view=reports&assessment=99999999-9999-4999-8999-999999999999");
   await expect(page.locator('[data-view-pane="reports"]').getByText("The Core API has no assessment with that id. Pick another one.")).toBeVisible();
-  await expect(picker(page)).toBeVisible();
+  await expect(picker(page)).toHaveCount(0);
 });
 
-test("the picker's choice is shared with the Findings view", async ({ page }) => {
+test("picking an assessment in Reports shares ?assessment= with the Findings view", async ({ page }) => {
   await openReport(page, null);
   const a = runs().find((x) => x.status === "Completed" && shown(x).length > 0)!;
-  await picker(page).selectOption(apiId(a.uid));
+  await page.getByRole("table", { name: "Core API assessments" }).locator(`a[href*="assessment=${apiId(a.uid)}"]`).click();
   await expect(page).toHaveURL(new RegExp(`assessment=${apiId(a.uid)}`));
   await expect(versions(page)).toHaveCount(1);
   await page.click('nav[aria-label="Views"] button[aria-label^="Findings"]');
   await expect(page).toHaveURL(new RegExp(`view=findings.*assessment=${apiId(a.uid)}|assessment=${apiId(a.uid)}.*view=findings`));
-  await expect(page.locator('[data-view-pane="findings"]').getByRole("combobox", { name: "Assessment" })).toHaveValue(apiId(a.uid));
+  await expect(page.locator('[data-view-pane="findings"] ul.dash-findings-rows > li')).toHaveCount(shown(a).length);
 });
