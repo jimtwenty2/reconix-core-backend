@@ -8,7 +8,7 @@ from reconix.screens import ChoiceScreen, FindingsListScreen
 from reconix.screens.report import ReportScreen
 from reconix.widgets.chrome import SessionBar
 
-from .support import DEMO_REQUEST, decide, play_until_gate, run_to, settle, show
+from .support import DEMO_REQUEST, decide, play_until_gate, run_to, settle, show, wait_until
 
 FAKE_KEY = "sk-1234"  # noqa: S105 - a fake
 
@@ -52,9 +52,8 @@ async def test_an_export_shows_a_busy_note_then_saves(app):
     async with app.run_test(size=(80, 24)) as pilot:
         await show(app, pilot, "report")
         await pilot.press("j")
-        await settle(pilot)
-        assert "Writing the JSON report" in _messages(app)
-        assert isinstance(app.screen, ChoiceScreen)  # ✓ REPORT SAVED
+        await wait_until(pilot, lambda: isinstance(app.screen, ChoiceScreen), what="report saved")
+        assert "Writing the JSON report" not in _messages(app)  # the busy note is cleared
         assert store.get_run().report_path.endswith(".json")
 
 

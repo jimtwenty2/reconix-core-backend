@@ -4,9 +4,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session, sessionmaker
 
 from reconix_api.core.config import Settings, get_settings
-from reconix_api.core.db import Db
+from reconix_api.core.db import Db, get_session_factory
 from reconix_api.core.interfaces import AgentTask
 from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
@@ -16,6 +17,7 @@ from reconix_api.services import plans
 router = APIRouter(tags=["plans"])
 
 CurrentSettings = Annotated[Settings, Depends(get_settings)]
+CurrentSessionFactory = Annotated[sessionmaker[Session], Depends(get_session_factory)]
 
 
 @router.post("/assessments/{assessment_id}/plan", status_code=status.HTTP_201_CREATED)
@@ -26,6 +28,7 @@ async def start_plan(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
+    session_factory: CurrentSessionFactory,
     draft: bool = False,
 ) -> PlanOut:
     """Asks the agent to plan the test and suggest one step.
@@ -46,7 +49,7 @@ async def start_plan(
     - Requires a valid session token.
     """
     return await plans.start_plan(
-        db, interfaces, mask, settings, operator, assessment_id, draft=draft
+        db, interfaces, mask, settings, operator, session_factory, assessment_id, draft=draft
     )
 
 
@@ -58,6 +61,7 @@ async def suggest_next_step(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
+    session_factory: CurrentSessionFactory,
 ) -> PlanOut:
     """Asks the agent for the next step after a step has run.
 
@@ -75,7 +79,14 @@ async def suggest_next_step(
     - Requires a valid session token.
     """
     return await plans.start_plan(
-        db, interfaces, mask, settings, operator, assessment_id, task=AgentTask.SUGGEST
+        db,
+        interfaces,
+        mask,
+        settings,
+        operator,
+        session_factory,
+        assessment_id,
+        task=AgentTask.SUGGEST,
     )
 
 
@@ -87,6 +98,7 @@ async def send_plan(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
+    session_factory: CurrentSessionFactory,
 ) -> PlanOut:
     """Sends the first step of a drafted plan.
 
@@ -99,4 +111,6 @@ async def send_plan(
     Security:
     - Requires a valid session token.
     """
-    return await plans.send_draft(db, interfaces, mask, settings, operator, agent_run_id)
+    return await plans.send_draft(
+        db, interfaces, mask, settings, operator, session_factory, agent_run_id
+    )

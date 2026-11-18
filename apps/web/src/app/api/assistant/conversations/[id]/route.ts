@@ -41,7 +41,7 @@ export async function DELETE(request: Request, ctx: Context) {
   const { id } = await ctx.params;
   if (!isConversationId(id)) return fail(BAD_ID, 400);
   try {
-    if (!(await readConversation(id))) return fail(GONE, 404);
+    if (!(await readConversation(id, { withCards: false }))) return fail(GONE, 404);
     await closeConversation(id);
     return NextResponse.json({ deleted: 1 }, { headers: NO_STORE });
   } catch (error) {

@@ -118,7 +118,7 @@ export function overviewStats(o: ApiOverview): Stat[] {
       link: null,
     },
     { label: "Tool runs", icon: "runs", value: String(o.tool_run_count), format: "int", unit: null, badges: [], meter: null, note: o.duration_seconds ? `${duration(o.duration_seconds)} from the first tool run to the last` : "No tool has run yet", link: null },
-    { label: "Masked evidence", icon: "masked", value: String(o.masked_count), format: "int", unit: null, badges: [], meter: null, note: "Values the Core API masked before saving", link: null },
+    { label: "Masked evidence", icon: "masked", value: String(o.masked_count), format: "int", unit: null, badges: [], meter: null, note: o.masked_count > 0 ? "Values the Core API masked before saving" : "Nothing needed masking", link: null },
   ];
 }
 

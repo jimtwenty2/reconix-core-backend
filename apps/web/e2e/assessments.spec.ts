@@ -125,9 +125,9 @@ test("a row opens that run's Overview: its uid in the address, no view", async (
   await expect(page).not.toHaveURL(/view=/);
   await expect(page.getByRole("heading", { name: "Assessment Operations Center" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose an assessment" })).toContainText(a.label);
-  // the switcher now starts with that run's name, a link back to this same Overview
+  // the switcher opens with this run marked as current
   await page.getByRole("button", { name: "Choose an assessment" }).click();
-  await expect(page.getByRole("link", { name: /^Open the overview of / })).toHaveAttribute("href", `/?uid=${a.uid}`);
+  await expect(page.locator('[role="dialog"] a[aria-current="true"]')).toHaveAttribute("href", `/?uid=${a.uid}`);
 });
 
 /** How far the page and the content area scroll sideways (both must be 0). */

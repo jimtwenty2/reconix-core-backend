@@ -31,6 +31,9 @@ def test_topics_come_from_plain_words():
     ids = {r.ref_id for r in references(["Found an SSRF and a path traversal (../etc/passwd)."])}
     assert {"server-side-request-forgery", "path-traversal"} <= ids
 
+    overlap = {r.ref_id for r in references(["Remove default credentials before launch."])}
+    assert {"security-misconfiguration", "secrets-in-code"} <= overlap
+
 
 def test_nothing_found_is_empty_and_the_list_is_capped():
     assert references(["Rotate the staging keys on Friday."]) == []

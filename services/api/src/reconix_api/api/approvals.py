@@ -4,9 +4,10 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session, sessionmaker
 
 from reconix_api.core.config import Settings, get_settings
-from reconix_api.core.db import Db
+from reconix_api.core.db import Db, get_session_factory
 from reconix_api.core.masking import CurrentMask
 from reconix_api.core.security import CurrentInterfaces, CurrentOperator
 from reconix_api.models.enums import ApprovalStatus
@@ -16,6 +17,7 @@ from reconix_api.services import decisions
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 CurrentSettings = Annotated[Settings, Depends(get_settings)]
+CurrentSessionFactory = Annotated[sessionmaker[Session], Depends(get_session_factory)]
 
 
 @router.get("")
@@ -61,6 +63,7 @@ async def approve(
     interfaces: CurrentInterfaces,
     mask: CurrentMask,
     settings: CurrentSettings,
+    session_factory: CurrentSessionFactory,
 ) -> ApprovalOut:
     """Approves a waiting approval request.
 
@@ -73,7 +76,9 @@ async def approve(
     Security:
     - Requires a valid session token.
     """
-    return await decisions.approve(db, interfaces, mask, settings, operator, approval_id, body)
+    return await decisions.approve(
+        db, interfaces, mask, settings, operator, session_factory, approval_id, body
+    )
 
 
 @router.post("/{approval_id}/reject")
@@ -83,7 +88,9 @@ async def reject(
     db: Db,
     operator: CurrentOperator,
     interfaces: CurrentInterfaces,
+    mask: CurrentMask,
     settings: CurrentSettings,
+    session_factory: CurrentSessionFactory,
 ) -> ApprovalOut:
     """Rejects a waiting approval request.
 
@@ -100,5 +107,12 @@ async def reject(
     - Requires a valid session token.
     """
     return await decisions.reject(
-        db, interfaces, operator, settings.approval_ttl_minutes, approval_id, body
+        db,
+        interfaces,
+        mask,
+        session_factory,
+        operator,
+        settings.approval_ttl_minutes,
+        approval_id,
+        body,
     )
