@@ -275,6 +275,7 @@ test("text never moves: once a conversation shows, the panel, the card and every
     const all = [...new Set([...chain, ...textful, ...layers])];
     const name = (el: Element) => `${el.tagName.toLowerCase()}.${el.className && typeof el.className === "string" ? el.className.split(" ")[0] : ""}`;
     const moving = (el: Element) => {
+      if (!el.isConnected) return null;
       const cs = getComputedStyle(el);
       const t = cs.transform;
       const still = t === "none" || new DOMMatrixReadOnly(t).isIdentity;
