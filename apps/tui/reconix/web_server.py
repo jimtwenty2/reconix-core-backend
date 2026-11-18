@@ -1,9 +1,10 @@
-"""Start the read-only web dashboard (web/) for /web, so nobody has to `cd web && npm run dev`.
+"""Start the read-only web dashboard (web/) for /web, so nobody has to `cd web && npm start`.
 
-The dashboard's own launcher (`npm run dev` → web/scripts/serve.mjs) binds to 127.0.0.1,
-makes a fresh sign-in token, writes the sign-in link where the TUI looks for it, and opens
-the browser when it's ready. This module only finds the folder, installs its packages the
-first time, and starts or stops that launcher quietly: its output goes to a log file,
+The dashboard's own launcher (`npm start` / `npm run dev` → web/scripts/serve.mjs) binds
+to 127.0.0.1, makes a fresh sign-in token, writes the sign-in link where the TUI looks for
+it, and opens the browser when it's ready. This module finds the folder, installs its
+packages, builds it (`npm run build`) when needed, and starts (`npm start`, falling back to
+`npm run dev` if build fails) or stops that launcher quietly: its output goes to a log file,
 never to the terminal the TUI draws on.
 """
 
@@ -60,12 +61,11 @@ def needs_install() -> bool:
     versions (e.g. next 16.3.8 installed, 16.4.1 locked)."""
     try:
         manifest = json.loads((WEB_DIR / "package.json").read_text(encoding="utf-8"))
-        names = list(manifest["dependencies"])
-        direct = names + list(manifest.get("devDependencies") or {})
+        direct = list(manifest["dependencies"]) + list(manifest.get("devDependencies") or {})
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        names = direct = ["next"]
+        direct = ["next"]
     modules = WEB_DIR / "node_modules"
-    if not all((modules / name / "package.json").is_file() for name in names):
+    if not all((modules / name / "package.json").is_file() for name in direct):
         return True
     wanted = _locked(WEB_DIR / "package-lock.json")
     have = {**_locked(modules / ".package-lock.json"), **_installed(modules, direct)}
@@ -121,12 +121,67 @@ def install() -> bool:
     return result.returncode == 0
 
 
+_BUILD_INPUT_FILES = (
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "next.config.ts",
+    "next.config.mjs",
+    "next.config.js",
+    "postcss.config.mjs",
+    "postcss.config.js",
+)
+_BUILD_INPUT_DIRS = ("src", "public")
+
+
+def needs_build() -> bool:
+    """`npm run build` is due when `.next/BUILD_ID` is missing or older than web inputs."""
+    build_id = WEB_DIR / ".next" / "BUILD_ID"
+    try:
+        built_at = build_id.stat().st_mtime
+    except OSError:
+        return True
+    for rel in _BUILD_INPUT_FILES:
+        try:
+            if (WEB_DIR / rel).stat().st_mtime > built_at:
+                return True
+        except OSError:
+            continue
+    for folder in _BUILD_INPUT_DIRS:
+        root = WEB_DIR / folder
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*"):
+            try:
+                if path.is_file() and path.stat().st_mtime > built_at:
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def build() -> bool:
+    """`npm run build` before starting, so `/web` serves the production build."""
+    (WEB_DIR / ".next" / "BUILD_ID").unlink(missing_ok=True)
+    with _log() as out:
+        result = subprocess.run(
+            [shutil.which("npm") or "npm", "run", "build"],
+            cwd=WEB_DIR,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+    return result.returncode == 0
+
+
 def start(data_dir: Path, url_file: Path) -> subprocess.Popen:
-    """`npm run dev` in the background, reading `data_dir` and writing its link to `url_file`
-    (the places the TUI saves to and reads from). It opens the browser when it's ready.
-    Its Security knowledge page runs the knowledge CLI with this same Python
-    (RECONIX_PYTHON). It signs in to the Core API with a one-time code from this app's
-    session (RECONIX_WEB_SIGN_IN_CODE, never a token), traded as the server starts."""
+    """Start the dashboard (`npm start` when built, else `npm run dev`) in the background,
+    reading `data_dir` and writing its link to `url_file` (the places the TUI saves to and
+    reads from). It opens the browser when it's ready. Its Security knowledge page runs the
+    knowledge CLI with this same Python (RECONIX_PYTHON). It signs in to the Core API with
+    a one-time code from this app's session (RECONIX_WEB_SIGN_IN_CODE, never a token), traded
+    as the server starts."""
     from .core_api.connect import web_sign_in_code   # lazy: the launcher works without the API
 
     env = {**os.environ, "RECONIX_DATA_DIR": str(data_dir),
@@ -135,9 +190,12 @@ def start(data_dir: Path, url_file: Path) -> subprocess.Popen:
     if code:
         env["RECONIX_WEB_SIGN_IN_CODE"] = code
     url_file.unlink(missing_ok=True)      # a link left by a dashboard that died is stale
+    cmd = ["start", "--silent"] if (WEB_DIR / ".next" / "BUILD_ID").is_file() else [
+        "run", "dev", "--silent"
+    ]
     with _log() as out:
         return subprocess.Popen(
-            [shutil.which("npm") or "npm", "run", "dev", "--silent"], cwd=WEB_DIR, env=env,
+            [shutil.which("npm") or "npm", *cmd], cwd=WEB_DIR, env=env,
             stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
             **_own_group())               # stopped as one, never ^C'd with the TUI
 

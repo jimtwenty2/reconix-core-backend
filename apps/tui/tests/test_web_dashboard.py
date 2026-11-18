@@ -11,6 +11,8 @@ from reconix import browser, web_server
 from reconix.browser import open_url as real_open_url      # before conftest stubs it
 from reconix.shell import web as web_shell
 from reconix.store import persist
+from reconix.web_server import build as real_build
+from reconix.web_server import needs_build as real_needs_build
 from reconix.web_server import needs_install as real_needs_install
 from reconix.web_server import problem as real_problem     # before conftest stubs it
 from reconix.web_server import start as real_start
@@ -247,6 +249,109 @@ def test_an_outdated_dev_package_counts_too(monkeypatch, tmp_path):
                    {"next": "16.4.1", "vitest": "3.2.7"})
     monkeypatch.setattr(web_server, "WEB_DIR", web)
     assert real_needs_install()
+
+
+def test_a_missing_dev_package_triggers_an_install(monkeypatch, tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"dependencies": {"next": "1"}, "devDependencies": {"tailwindcss": "4"}}'
+    )
+    (tmp_path / "node_modules" / "next").mkdir(parents=True)
+    (tmp_path / "node_modules" / "next" / "package.json").write_text("{}")
+    monkeypatch.setattr(web_server, "WEB_DIR", tmp_path)
+    assert real_needs_install()
+    (tmp_path / "node_modules" / "tailwindcss").mkdir(parents=True)
+    (tmp_path / "node_modules" / "tailwindcss" / "package.json").write_text("{}")
+    assert not real_needs_install()
+
+
+async def test_when_a_build_is_needed_it_builds_before_starting(app, web_launches, monkeypatch):
+    monkeypatch.setattr(web_server, "needs_build", lambda: True)
+    async with app.run_test(size=SIZE) as pilot:
+        app.run_command_line("/web")
+        await settle(pilot)
+        assert web_launches[0] == "build" and len(web_launches) == 2
+        assert "Building it first" in _notes(app)
+
+
+async def test_when_build_fails_it_falls_back_to_dev_mode(app, web_launches, monkeypatch):
+    monkeypatch.setattr(web_shell, "POLL_EVERY", 0.01)
+    monkeypatch.setattr(web_server, "needs_build", lambda: True)
+    monkeypatch.setattr(web_server, "build", lambda: False)
+    monkeypatch.setattr(web_server, "is_listening", lambda url: bool(url))
+    async with app.run_test(size=SIZE) as pilot:
+        app.run_command_line("/web")
+        persist.WEB_URL_FILE.write_text(LINK)
+        await app.workers.wait_for_complete()
+        await settle(pilot)
+        assert len(web_launches) == 1
+        assert "starting in dev mode instead" in _notes(app)
+
+
+def test_start_runs_npm_start_when_built_and_dev_without_build(monkeypatch, tmp_path):
+    seen = []
+
+    class Popen:
+        def __init__(self, args, **kwargs):
+            seen.append(list(args))
+
+    monkeypatch.setattr(web_server, "WEB_DIR", tmp_path)
+    monkeypatch.setattr(web_server, "LOG_FILE", tmp_path / "web.log")
+    monkeypatch.setattr(web_server.shutil, "which", lambda cmd: cmd)
+    monkeypatch.setattr(web_server.subprocess, "Popen", Popen)
+
+    real_start(tmp_path / "data", tmp_path / "web.url")
+    (tmp_path / ".next").mkdir()
+    (tmp_path / ".next" / "BUILD_ID").write_text("build-1")
+    real_start(tmp_path / "data", tmp_path / "web.url")
+
+    assert seen == [
+        ["npm", "run", "dev", "--silent"],
+        ["npm", "start", "--silent"],
+    ]
+
+
+def test_needs_build_detects_missing_and_stale_builds(monkeypatch, tmp_path):
+    (tmp_path / "src").mkdir()
+    src_file = tmp_path / "src" / "page.tsx"
+    src_file.write_text("old")
+    monkeypatch.setattr(web_server, "WEB_DIR", tmp_path)
+    assert real_needs_build()
+
+    (tmp_path / ".next").mkdir()
+    build_id = tmp_path / ".next" / "BUILD_ID"
+    build_id.write_text("id")
+    os.utime(src_file, (1000, 1000))
+    os.utime(build_id, (2000, 2000))
+    assert not real_needs_build()
+
+    os.utime(src_file, (3000, 3000))
+    assert real_needs_build()
+
+
+def test_build_clears_stale_build_id_on_failure(monkeypatch, tmp_path):
+    (tmp_path / ".next").mkdir()
+    build_id = tmp_path / ".next" / "BUILD_ID"
+    build_id.write_text("stale")
+    seen = []
+
+    class Done:
+        def __init__(self, rc):
+            self.returncode = rc
+
+    monkeypatch.setattr(web_server, "WEB_DIR", tmp_path)
+    monkeypatch.setattr(web_server, "LOG_FILE", tmp_path / "web.log")
+    monkeypatch.setattr(web_server.shutil, "which", lambda cmd: cmd)
+    monkeypatch.setattr(
+        web_server.subprocess, "run", lambda args, **kw: seen.append(list(args)) or Done(1)
+    )
+    assert not real_build()
+    assert not build_id.exists()
+
+    monkeypatch.setattr(
+        web_server.subprocess, "run", lambda args, **kw: seen.append(list(args)) or Done(0)
+    )
+    assert real_build()
+    assert seen == [["npm", "run", "build"], ["npm", "run", "build"]]
 
 
 # --- the sign-in token never reaches a command line or the screen ---------------------------
