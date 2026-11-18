@@ -15,7 +15,7 @@ import { ExternalLink, Loader, X } from "lucide-react";
 
 import * as api from "@/lib/knowledge/client";
 import { documentsOf, type Graph, type GraphNode, TYPE_LABEL } from "@/lib/knowledge/graph";
-import { partsOf, type Span, snippetOf } from "@/lib/knowledge/highlight";
+import { matchedRanges, partsOf, type Span, snippetOf, splitHighlightSegments } from "@/lib/knowledge/highlight";
 
 import type { Passages } from "./use-passages";
 
@@ -24,6 +24,8 @@ interface Props {
   node: GraphNode;
   onFocus: (id: string | null) => void;
   passages: Passages;
+  initialPart?: number | null;
+  highlightAnswer?: string | null;
 }
 
 type Tab = "overview" | "content" | "about" | "mentions";
@@ -31,25 +33,50 @@ type Tab = "overview" | "content" | "about" | "mentions";
 const docKey = (n: GraphNode) => n.id.slice(4); // "doc:<id>"
 const refOf = (n: GraphNode) => ({ type: n.type, refId: n.id.slice(n.type.length + 1) });
 
-/** Text with its references marked; a mark moves the focus there. */
-function Marked({ text, spans, onFocus, current }: { text: string; spans: readonly Span[]; onFocus: (id: string) => void; current?: string }) {
+/** Text with its references marked (and optionally sentences matched to an AI answer highlighted). */
+function Marked({
+  text,
+  spans,
+  onFocus,
+  current,
+  highlightAnswer,
+}: {
+  text: string;
+  spans: readonly Span[];
+  onFocus: (id: string) => void;
+  current?: string;
+  highlightAnswer?: string | null;
+}) {
+  const renderParts = (parts: ReturnType<typeof partsOf>) =>
+    parts.map((p, i) =>
+      p.span ? (
+        <button
+          key={i}
+          type="button"
+          className="kn-mark"
+          data-type={p.span.type}
+          data-current={current === `${p.span.type}:${p.span.ref_id}` ? "" : undefined}
+          onClick={() => onFocus(`${p.span!.type}:${p.span!.ref_id}`)}
+          title={`${TYPE_LABEL[p.span.type as keyof typeof TYPE_LABEL] ?? p.span.type}: ${p.span.ref_id}`}
+        >
+          {p.text}
+        </button>
+      ) : (
+        <span key={i}>{p.text}</span>
+      ),
+    );
+
+  if (!highlightAnswer) return <>{renderParts(partsOf(text, spans))}</>;
+  const segments = splitHighlightSegments(text, spans, matchedRanges(text, highlightAnswer));
   return (
     <>
-      {partsOf(text, spans).map((p, i) =>
-        p.span ? (
-          <button
-            key={i}
-            type="button"
-            className="kn-mark"
-            data-type={p.span.type}
-            data-current={current === `${p.span.type}:${p.span.ref_id}` ? "" : undefined}
-            onClick={() => onFocus(`${p.span!.type}:${p.span!.ref_id}`)}
-            title={`${TYPE_LABEL[p.span.type as keyof typeof TYPE_LABEL] ?? p.span.type}: ${p.span.ref_id}`}
-          >
-            {p.text}
-          </button>
+      {segments.map((seg, idx) =>
+        seg.highlighted ? (
+          <mark key={idx} className="kn-used">
+            {renderParts(seg.parts)}
+          </mark>
         ) : (
-          <span key={i}>{p.text}</span>
+          <span key={idx}>{renderParts(seg.parts)}</span>
         ),
       )}
     </>
@@ -97,41 +124,60 @@ function About({ node }: { node: GraphNode }) {
   );
 }
 
-export function GraphDetails({ graph, node, onFocus, passages }: Props) {
+export function GraphDetails({ graph, node, onFocus, passages, initialPart = null, highlightAnswer = null }: Props) {
   const doc = node.type === "DOC";
-  const [tab, setTab] = useState<Tab>(doc ? "overview" : "about");
+  const [tab, setTab] = useState<Tab>(doc ? (initialPart !== null ? "content" : "overview") : "about");
   const [scrollTo, setScrollTo] = useState<number | null>(null); // a mention picked: its passage
-  const [target, setTarget] = useState<number | null>(null); // the passage to scroll to here
+  const [target, setTarget] = useState<number | null>(doc ? initialPart : null); // the passage to scroll to here
   const scrolled = useRef<string | null>(null);
   const body = useRef<HTMLDivElement>(null);
   const linked = [...(graph.neighbours.get(node.id) ?? [])].map((id) => graph.byId.get(id)!).sort((a, b) => b.weight - a.weight);
   const docs = useMemo(() => (doc ? [] : documentsOf(graph, node.id)), [doc, graph, node.id]);
 
-  // a new node: its first tab (or Content, when a mention opened it)
-  const [shownFor, setShownFor] = useState(node.id);
-  if (shownFor !== node.id) {
-    setShownFor(node.id);
-    setTab(doc ? (scrollTo !== null ? "content" : "overview") : "about");
-    setTarget(doc ? scrollTo : null);
+  // a new node (or a deep-linked passage): its first tab (or Content, when a mention/source opened it)
+  const shownKey = `${node.id}:${initialPart ?? ""}`;
+  const [shownFor, setShownFor] = useState(shownKey);
+  if (shownFor !== shownKey) {
+    setShownFor(shownKey);
+    const nextTarget = scrollTo ?? initialPart;
+    setTab(doc ? (nextTarget !== null ? "content" : "overview") : "about");
+    setTarget(doc ? nextTarget : null);
     setScrollTo(null);
   }
 
   // read what the tab shows
-  const { load, all } = passages;
+  const { load, all, ensure } = passages;
   useEffect(() => {
-    if (tab === "content" && doc) load(docKey(node));
+    if (tab === "content" && doc) {
+      if (target !== null) ensure(docKey(node), target);
+      else load(docKey(node));
+    }
     if (tab === "mentions") for (const d of docs) all(docKey(d));
-  }, [tab, node, doc, docs, load, all]);
+  }, [tab, node, doc, docs, target, load, all, ensure]);
 
-  // a mention opened this document at one passage: scroll it into view once it is there
+  // a mention or source opened this document at one passage: scroll it into view once visible
   const mine = doc ? passages.content[docKey(node)] : undefined;
   useEffect(() => {
     const key = `${node.id}#${target}`;
     if (target === null || tab !== "content" || scrolled.current === key || !mine?.passages.some((p) => p.index === target)) return;
-    scrolled.current = key;
     const el = body.current?.querySelector<HTMLElement>(`[data-index="${target}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-    el?.classList.add("is-found");
+    if (!el) return;
+    const scroll = () => {
+      scrolled.current = key;
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+    const hiddenPane = el.closest<HTMLElement>("[hidden]");
+    if (!hiddenPane) {
+      scroll();
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (hiddenPane.hasAttribute("hidden")) return;
+      observer.disconnect();
+      requestAnimationFrame(scroll);
+    });
+    observer.observe(hiddenPane, { attributes: true, attributeFilter: ["hidden"] });
+    return () => observer.disconnect();
   }, [target, tab, mine, node.id]);
 
   const tabs: { id: Tab; label: string }[] = doc
@@ -208,10 +254,15 @@ export function GraphDetails({ graph, node, onFocus, passages }: Props) {
               {mine.error && <p className="kn-error">{mine.error}</p>}
               <ol className="kn-passages">
                 {mine.passages.map((p) => (
-                  <li key={p.index} data-index={p.index} className="kn-passage">
+                  <li key={p.index} data-index={p.index} className={p.index === target ? "kn-passage is-found" : "kn-passage"}>
                     <span className="kn-passage-index">Part {p.index + 1}</span>
                     <p className="kn-passage-text">
-                      <Marked text={p.text} spans={p.spans} onFocus={onFocus} />
+                      <Marked
+                        text={p.text}
+                        spans={p.spans}
+                        onFocus={onFocus}
+                        highlightAnswer={p.index === target ? highlightAnswer : null}
+                      />
                     </p>
                   </li>
                 ))}

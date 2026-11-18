@@ -10,6 +10,7 @@ import { forwardRef, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Info, Loader, ShieldAlert } from "lucide-react";
 import { contentMark } from "@/lib/scroll/stick-rules";
+import { scrollTriggerKey, viewSessionKey } from "@/lib/assistant/chat-state";
 import { useAssistant } from "./assistant-provider";
 import { AssistantHeader } from "./assistant-header";
 import { Composer } from "./composer";
@@ -37,9 +38,10 @@ export const AssistantView = forwardRef<HTMLTextAreaElement, { onMinimize: () =>
   // what the reader has seen: kept up to date while they follow; scrolled up, anything newer
   // turns the ↓ button into "New messages"
   const mark = contentMark(messages);
-  const [seen, setSeen] = useState(mark);
-  if (atBottom && seen !== mark) setSeen(mark);
-  const fresh = !atBottom && seen !== mark;
+  const chatKey = viewSessionKey(messages, conversation.id);
+  const [seenFor, setSeenFor] = useState({ key: chatKey, mark });
+  if (seenFor.key !== chatKey || (atBottom && seenFor.mark !== mark)) setSeenFor({ key: chatKey, mark });
+  const fresh = !atBottom && seenFor.mark !== mark;
   // "New messages" goes away once used: carry on where the next question is typed
   const toLatest = () => {
     scrollToBottom();
@@ -48,10 +50,10 @@ export const AssistantView = forwardRef<HTMLTextAreaElement, { onMinimize: () =>
 
   // a question just asked (the operator's own message stays in view), or another conversation
   // opened: show its end
-  const lastUser = [...messages].reverse().find((m) => m.role === "user")?.id;
+  const scrollKey = scrollTriggerKey(messages);
   useEffect(() => {
-    if (lastUser) scrollToBottom();
-  }, [lastUser, conversation.id, scrollToBottom]);
+    if (scrollKey) scrollToBottom();
+  }, [scrollKey, scrollToBottom]);
   // the welcome reads from the top, and stays there when the stage opens later (on phones it
   // gets its height only then): stop following until a question is asked
   const welcome = messages.length === 0 && !opening;

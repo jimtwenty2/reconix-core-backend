@@ -10,6 +10,10 @@ from reconix_api.core.interfaces import SourceRef
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=20000)  # masked before it is saved
+    assessment_id: UUID | None = Field(
+        default=None,
+        description="Optional assessment id when chatting from a separate web session.",
+    )
 
     @field_validator("content")
     @classmethod

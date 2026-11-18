@@ -13,7 +13,7 @@
    question carries only the open conversation's id and the question, never the conversation
    so far. A conversation stays about the run it was started on; once the dashboard shows another
    run, the assistant asks whether to keep it or start a new chat about that run (use-switch-ask). */
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { MAX_QUESTION } from "@/lib/assistant/request";
 import { liveSwitch, type Switched, switchOver } from "./model-switch";
@@ -83,10 +83,15 @@ export function AssistantProvider({ info: page, children }: { info: AssistantInf
   const setDraft = useCallback((text: string) => setDraftState(text.slice(0, MAX_QUESTION)), []);
   const clearDraft = useCallback(() => setDraftState(""), []);
   const [stream] = useState(() => createSlot<AbortController>()); // the reply being streamed
+  const onHaltRef = useRef<() => void>(() => {});
 
+  const onHalt = useCallback(() => onHaltRef.current(), []);
   const list = useHistoryList();
-  const open = useOpenConversation(page, stream, list.forget);
+  const open = useOpenConversation(page, stream, list.forget, onHalt);
   const asking = useAsking({ info, open, stream, draft, clearDraft, refreshHistory: list.refreshHistory });
+  useEffect(() => {
+    onHaltRef.current = asking.clearBusy;
+  }, [asking.clearBusy]);
   const changes = useConversationChanges(list, open);
   const switchChoice = useSwitchAsk({ info, open, ask: asking.ask, setDraft });
   useTabMemory(page, open, draft, setDraft);

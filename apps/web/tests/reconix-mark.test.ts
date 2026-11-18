@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ReconixMark, type ReconixMarkProps } from "@/components/ui/reconix-mark";
+import { Message } from "@/components/assistant/message";
 
 const mark = (props: ReconixMarkProps) => renderToStaticMarkup(createElement(ReconixMark, props));
 const favicon = readFileSync(path.join(__dirname, "../src/app/icon.svg"), "utf8");
@@ -64,5 +65,32 @@ describe("the Reconix mark", () => {
     expect(attr(svg, "svg", "style")).toBe("animation-delay:-1200ms");
     expect(attr(svg, "svg", "data-live")).toBe("");
     expect(mark({ size: 26 })).not.toContain("data-live");
+  });
+
+  it("renders the initial letter 'R' on the brand tile when char='R' is requested", () => {
+    const svg = mark({ size: 26, char: "R" });
+    expect(attr(svg, "svg", "viewBox")).toBe("0 0 32 32");
+    expect(attr(svg, "rect", "class")).toBe("fill-surface");
+    expect(attr(svg, "path", "class")).toBe("fill-globe-glow");
+    expect(attr(svg, "path", "fill-rule")).toBe("evenodd");
+    expect(attr(svg, "path", "d")).toContain("M 9.75 8.5");
+  });
+
+  it("renders the robot profile icon on the brand tile when variant='bot' is requested", () => {
+    const svg = mark({ size: 26, variant: "bot" });
+    expect(attr(svg, "svg", "viewBox")).toBe("0 0 32 32");
+    expect(attr(svg, "rect", "class")).toBe("fill-surface");
+    expect(attr(svg, "path", "class")).toBe("fill-globe-glow");
+    expect(attr(svg, "path", "fill-rule")).toBe("evenodd");
+    expect(attr(svg, "path", "d")).toContain("M 14.25 4.5");
+  });
+
+  it("uses the same robot profile icon on assistant reply messages", () => {
+    const html = renderToStaticMarkup(
+      createElement(Message, { m: { id: "m1", role: "assistant", content: "Hello" } }),
+    );
+    expect(attr(html, "svg", "class")).toBe("ai-avatar");
+    expect(attr(html, "path", "fill-rule")).toBe("evenodd");
+    expect(attr(html, "path", "d")).toContain("M 14.25 4.5");
   });
 });
