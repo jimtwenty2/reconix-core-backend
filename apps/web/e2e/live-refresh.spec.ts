@@ -41,9 +41,9 @@ test.describe("with live refresh on (every second)", () => {
     await hydrated(page);
     await expect(pill(page)).toHaveAttribute("data-live-refresh", "on");
     await expect(pill(page)).toHaveAttribute("aria-pressed", "true");
-    const stamp = (await pill(page).textContent())!;
-    // the time it shows is when the server rendered: a refresh changes it
-    await expect.poll(async () => pill(page).textContent(), { timeout: 15_000, message: "the page re-read the saved files" }).not.toBe(stamp);
+    const stamp = await pill(page).getAttribute("data-rendered-at");
+    // data-rendered-at records when the server rendered: a refresh changes it
+    await expect.poll(async () => pill(page).getAttribute("data-rendered-at"), { timeout: 15_000, message: "the page re-read the saved files" }).not.toBe(stamp);
     await expect(pill(page)).toHaveAttribute("data-live-refresh", "on"); // and client state survived it
     await pill(page).click();
     await expect(pill(page)).toHaveAttribute("data-live-refresh", "paused");
@@ -52,14 +52,14 @@ test.describe("with live refresh on (every second)", () => {
     await expect.poll(() => inflight, { message: "the refresh asked for before the pause has landed" }).toBe(0);
     // paused: two intervals go by (the one deliberate wait: nothing happening cannot be polled for)
     // and the server is not asked again
-    const paused = (await pill(page).textContent())!;
+    const paused = await pill(page).getAttribute("data-rendered-at");
     let asked = 0;
     page.on("request", (r) => {
       if (isRefresh(r)) asked += 1;
     });
     await page.waitForTimeout(2200);
     expect(asked, "no refresh while paused").toBe(0);
-    expect(await pill(page).textContent(), "paused: the time stays").toBe(paused);
+    expect(await pill(page).getAttribute("data-rendered-at"), "paused: the render stamp stays").toBe(paused);
     await pill(page).click();
     await expect(pill(page)).toHaveAttribute("data-live-refresh", "on");
   });

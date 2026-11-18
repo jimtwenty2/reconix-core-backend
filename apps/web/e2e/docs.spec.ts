@@ -29,13 +29,12 @@ test("the docs open in the dashboard's frame, with Documentation marked and no C
   const views = page.getByRole("navigation", { name: "Views" });
   await expect(views.getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/");
   await expect(views.getByRole("link", { name: "Findings" })).toHaveAttribute("href", "/?view=findings");
-  // the dashboard's views, without the removed Scope and Terminal views
+  // the dashboard's views, without the removed Scope, Run log and Terminal views
   expect(await views.getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("data-view")))).toEqual([
     "overview",
     "assistant",
     "assessments",
     "findings",
-    "log",
     "reports",
   ]);
   await expect(views.getByRole("link", { name: "Scope" })).toHaveCount(0);

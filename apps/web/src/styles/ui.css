@@ -25,14 +25,32 @@
 
 /* ---- A row in a list: a card-like, selectable surface (findings-list.tsx, assessments-rows.tsx) ---- */
 .ui-row {
+  position: relative;
+  isolation: isolate;
   width: 100%;
   text-align: left;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: linear-gradient(180deg, var(--card), var(--card-2));
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
 }
-.ui-row:hover { border-color: color-mix(in oklab, var(--primary) 30%, var(--border)); }
+.ui-row::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklab, var(--primary) 12%, transparent), transparent 72%);
+  transition: opacity 0.22s ease;
+}
+.ui-row:hover {
+  border-color: color-mix(in oklab, var(--primary) 36%, var(--border));
+  box-shadow: 0 8px 20px -16px color-mix(in oklab, var(--primary) 45%, transparent);
+}
+.ui-row:hover::before { opacity: 1; }
 .ui-row[aria-current="true"] {
   border-color: color-mix(in oklab, var(--primary) 45%, var(--border));
   background: color-mix(in oklab, var(--primary) 6%, var(--card));
@@ -111,6 +129,7 @@
   color: var(--foreground);
   box-shadow: 0 24px 60px color-mix(in oklab, var(--background) 70%, transparent);
 }
+.ui-dialog.ui-dialog-wide { width: min(760px, calc(100vw - 32px)); }
 .ui-dialog:focus { outline: none; } /* focused itself (focusSelf): a frame, not a control */
 .ui-dialog::backdrop { background: color-mix(in oklab, var(--background) 72%, transparent); }
 .ui-dialog-body { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 18px; }

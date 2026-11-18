@@ -5,7 +5,7 @@
    awaited, then that one blob downloads. A redirect is never followed (it would be the sign-in
    page, saved under the report's name). One request at a time per owner: a new one aborts the
    one in flight, and answers to an older request are dropped. */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Save a fetched file under `name` (one click on a temporary link to the blob). */
 export function saveBlob(blob: Blob, name: string) {
@@ -60,4 +60,45 @@ export function useOneRequest() {
   }, [abort]);
 
   return { begin, abort };
+}
+
+const TIMEOUT_MS = 60_000;
+export type ReportDownloadState = { kind: "idle" } | { kind: "busy" | "done" | "failed"; text: string };
+
+/** Download a Core API report file by id/version/format and track busy, saved and error status. */
+export function useReportDownload() {
+  const { begin } = useOneRequest();
+  const [state, setState] = useState<ReportDownloadState>({ kind: "idle" });
+
+  const download = useCallback(
+    async (reportId: string, version: number, format: string) => {
+      const ticket = begin();
+      const what = `version ${version} as ${format}`;
+      setState({ kind: "busy", text: `Downloading ${what} from the Core API…` });
+      try {
+        const res = await fetchWithin(`/api/core-reports/${encodeURIComponent(reportId)}/download?format=${format}`, TIMEOUT_MS, ticket.signal, "*/*");
+        if (!ticket.mine()) return;
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { code?: string; message?: string } | null;
+          const msg = body?.message ? (body.code ? `${body.message} (${body.code})` : body.message) : `The dashboard answered ${res.status}.`;
+          if (ticket.mine()) setState({ kind: "failed", text: msg });
+          return;
+        }
+        const blob = await res.blob();
+        if (!ticket.mine()) return;
+        const name = fileNameOf(res.headers.get("content-disposition")) ?? `report-v${version}.${format.toLowerCase()}`;
+        saveBlob(blob, name);
+        setState({ kind: "done", text: `Saved ${name}.` });
+      } catch (error) {
+        if (!ticket.mine()) return;
+        const timedOut = error instanceof DOMException && error.name === "TimeoutError";
+        setState({ kind: "failed", text: timedOut ? "The download took too long." : "The dashboard could not be reached." });
+      } finally {
+        ticket.done();
+      }
+    },
+    [begin],
+  );
+
+  return { state, download };
 }

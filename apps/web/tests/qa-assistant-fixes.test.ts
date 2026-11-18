@@ -29,8 +29,9 @@ describe("explain finding 001", () => {
 
 describe("view names", () => {
   it.each([
-    ["runlog", "log"],
-    ["Run-Log", "log"],
+    ["runlog", "overview"],
+    ["Run-Log", "overview"],
+    ["log", "overview"],
     ["report", "reports"],
     ["findings", "findings"],
     ["audit", "overview"],

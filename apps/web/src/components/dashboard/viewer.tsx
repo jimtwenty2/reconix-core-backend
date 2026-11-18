@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AssistantProvider } from "@/components/assistant/assistant-provider";
 import { AssistantStage } from "@/components/assistant/assistant-stage";
 import type { AssistantInfo } from "@/components/assistant/types";
@@ -16,7 +16,7 @@ export type { View };
 
 /**
  * Local Assessment Viewer shell: sidebar + top bar around a content area that switches between
- * the Overview dashboard, Assessments, Findings (list + evidence), the Run log, Reports and
+ * the Overview dashboard, Assessments, Findings (list + evidence), Reports and
  * Security knowledge (opened from the assistant's header), plus the AI Assistant,
  * which opens over the top bar and content (AssistantStage). The views are
  * server-rendered and passed in as props; all stay mounted and are toggled with `hidden` so the
@@ -36,7 +36,6 @@ export function Viewer({
   overview,
   assessments,
   findings,
-  log,
   reports,
   knowledge,
   assistant,
@@ -47,21 +46,34 @@ export function Viewer({
   overview: React.ReactNode;
   assessments: React.ReactNode;
   findings: React.ReactNode;
-  /** One run's log, read like a conversation (or a note asking for a run). */
-  log: React.ReactNode;
   reports: React.ReactNode;
   /** The Security knowledge page. */
   knowledge: React.ReactNode;
   assistant: AssistantInfo;
 }) {
+  const router = useRouter();
   const frameRef = useRef<HTMLDivElement>(null);
+  const overviewRef = useRef<HTMLDivElement>(null);
   const view = parseView(useSearchParams().get("view"));
   const [shown, setShown] = useState<View>(view);
+  const prevShownRef = useRef<View>(shown);
   const [knowledgeOpened, setKnowledgeOpened] = useState(view === "knowledge");
   if (view === "knowledge" && !knowledgeOpened) setKnowledgeOpened(true); // first visit: read the list
   const backdrop = shown === "assistant"; // the Overview under the open assistant
 
   useEffect(() => watchHistory(), []);
+  useEffect(() => {
+    const prev = prevShownRef.current;
+    prevShownRef.current = shown;
+    const el = overviewRef.current;
+    if (!el) return;
+    if (shown === "overview" && prev !== "overview" && prev !== "assistant") {
+      el.setAttribute("data-reenter", "");
+      const id = window.setTimeout(() => el.removeAttribute("data-reenter"), 460);
+      return () => window.clearTimeout(id);
+    }
+    el.removeAttribute("data-reenter");
+  }, [shown]);
   useEffect(() => {
     const bar = frameRef.current?.querySelector<HTMLElement>(".dash-topbar");
     if (bar) bar.inert = backdrop;
@@ -72,11 +84,15 @@ export function Viewer({
   }, [shown, backdrop]);
 
   // The sidebar: the assistant gets its own history entry; leaving it goes back that entry. It
-  // reads the address, not this render's `view`, which can lag a quick click behind.
+  // reads the address, not this render's `view`, which can lag a quick click behind. Switching to
+  // the Assessments list with a run selected clears the run on the server too, so the top bar
+  // resets to All assessments.
   const select = (target: View) => {
-    const now = parseView(new URLSearchParams(window.location.search).get("view"));
+    const params = new URLSearchParams(window.location.search);
+    const now = parseView(params.get("view"));
     if (target === "assistant") openAssistant();
     else if (now === "assistant") leaveAssistant(target);
+    else if (target === "assessments" && (params.has("uid") || params.has("assessment"))) router.replace("/?view=assessments");
     else showView(target);
   };
 
@@ -95,6 +111,7 @@ export function Viewer({
           <main className="dash-content" tabIndex={-1} data-under-assistant={backdrop ? "" : undefined}>
             {notice}
             <div
+              ref={overviewRef}
               data-view-pane="overview"
               hidden={shown !== "overview" && !backdrop}
               data-assistant-backdrop={backdrop ? "" : undefined}
@@ -105,7 +122,6 @@ export function Viewer({
             </div>
             <div data-view-pane="assessments" hidden={shown !== "assessments"}>{assessments}</div>
             <div data-view-pane="findings" hidden={shown !== "findings"}>{findings}</div>
-            <div data-view-pane="log" hidden={shown !== "log"}>{log}</div>
             <div data-view-pane="reports" hidden={shown !== "reports"}>{reports}</div>
             <div data-view-pane="knowledge" hidden={shown !== "knowledge"}>{knowledgeOpened && knowledge}</div>
           </main>

@@ -82,10 +82,11 @@
   z-index: -1;
   border-radius: inherit;
   opacity: 0;
-  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklab, var(--primary) 7%, transparent), transparent 70%);
-  transition: opacity 0.3s var(--ease-out-quart);
+  pointer-events: none;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklab, var(--primary) 13%, transparent), transparent 72%);
+  transition: opacity 0.25s var(--ease-out-quart);
 }
-.dash-card:hover { border-color: color-mix(in oklab, var(--primary) 22%, var(--border)); }
+.dash-card:hover { border-color: color-mix(in oklab, var(--primary) 28%, var(--border)); }
 .dash-card:hover::before { opacity: 1; }
 
 /* Glass variant: what sits over the globe (the Ask bar). */
@@ -377,8 +378,22 @@
 }
 .tabnums { font-variant-numeric: tabular-nums; }
 
-/* The "live" dot of the refresh pill. */
+/* The "live" dot and text of the refresh pill. */
 .dash-livedot { background: var(--primary); box-shadow: 0 0 8px color-mix(in oklab, var(--primary) 70%, transparent); }
+.dash-livetext {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 68%, var(--foreground)) 0%,
+    var(--foreground) 45%,
+    var(--primary) 65%,
+    color-mix(in oklab, var(--primary) 68%, var(--foreground)) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: dash-live-shimmer 2.4s linear infinite;
+}
 
 /* Popovers / search dropdowns */
 .dash-pop {
@@ -413,6 +428,10 @@
   70%, 100% { box-shadow: 0 0 0 6px transparent; }
 }
 .dash-livedot { animation: dash-ping 1.6s ease-out infinite; }
+@keyframes dash-live-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: 0% 0; }
+}
 @keyframes dash-gate { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
 @keyframes dash-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 
@@ -592,8 +611,9 @@
 
 /* ---- Reduced motion: the dashboard's loops and enter animations off, nothing hidden ---- */
 @media (prefers-reduced-motion: reduce) {
-  .dash-livedot, .dash-mark[data-pending], .dash-seg[data-live], .dash-gate-mark,
+  .dash-livedot, .dash-livetext, .dash-mark[data-pending], .dash-seg[data-live], .dash-gate-mark,
   .dash-pop, .dash-details, .dash-think-spin { animation: none; }
+  .dash-livetext { background: none; color: var(--primary); }
   .dash-think-chevron { transition: none; }
   /* inherit, not visible: under a hidden parent (the top bar beneath the open assistant) the
      controls must stay hidden and out of the tab order */

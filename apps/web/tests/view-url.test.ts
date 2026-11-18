@@ -7,9 +7,11 @@ import { parseView, runHref, VIEWS, viewSearch } from "@/components/dashboard/vi
 const params = (s: string) => Object.fromEntries(new URLSearchParams(s));
 
 describe("viewSearch", () => {
-  it("keeps the chosen run and drops the view left behind's own filters, including page", () => {
-    const left = viewSearch("uid=run-1&view=findings&sev=HIGH&q=sql&page=3&finding=F-002", "assessments");
-    expect(params(left)).toEqual({ uid: "run-1", view: "assessments" });
+  it("keeps the chosen run except when opening Assessments, and drops the view left behind's filters", () => {
+    const toReports = viewSearch("uid=run-1&view=findings&sev=HIGH&q=sql&page=3&finding=F-002", "reports");
+    expect(params(toReports)).toEqual({ uid: "run-1", view: "reports" });
+    const toAssessments = viewSearch("uid=run-1&assessment=uuid-1&view=findings&sev=HIGH&page=3&finding=F-002", "assessments");
+    expect(params(toAssessments)).toEqual({ view: "assessments" });
     const back = viewSearch("uid=run-1&view=assessments&q=demo&status=Completed&page=2", "findings");
     expect(params(back)).toEqual({ uid: "run-1", view: "findings" });
     const leftKnowledge = viewSearch("view=knowledge&doc=d10f0984-d24e-439f-a78b-a23995bae172&part=31", "assistant");
@@ -43,5 +45,10 @@ describe("runHref", () => {
     expect(runHref("uid=run-1&view=findings&q=sql&page=2", null)).toBe("/?view=findings&q=sql");
     expect(runHref("", null)).toBe("/");
     expect(runHref("uid=run-1", "run-2")).toBe("/?uid=run-2");
+  });
+
+  it("returns to Overview when selecting a specific assessment from the Assessments view", () => {
+    expect(runHref("view=assessments&q=demo&status=Completed&template=API&page=2", "run-1")).toBe("/?uid=run-1");
+    expect(runHref("uid=run-1&view=assessments", null)).toBe("/?view=assessments");
   });
 });

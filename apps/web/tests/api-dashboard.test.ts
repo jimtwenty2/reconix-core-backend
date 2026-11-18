@@ -223,13 +223,9 @@ describe("Home page data source", () => {
     expect(page.props.overview.props.cards.mode).toBe("run");
     const topBar = page.props.topBar;
     expect(topBar.props.dash.assessment.target).toBe("https://api.target.example");
-
-    // Run log receives the chosen run's log data
-    expect(page.props.log.props.data).not.toBeNull();
-    expect(page.props.log.props.data.tag).toBe("ENG-API-001 · https://api.target.example");
   });
 
-  it("selects assessment by UID (?uid=<uid>)", async () => {
+  it("selects assessment by UID (?uid=<uid>) and scopes Findings and Reports to its Core API UUID", async () => {
     seedCoreAssessment();
     const lib = await loadApiLibrary();
     const uid = lib.assessments[0].uid;
@@ -241,6 +237,33 @@ describe("Home page data source", () => {
     expect(page.props.overview.props.cards.mode).toBe("run");
     const topBar = page.props.topBar;
     expect(topBar.props.dash.assessment.target).toBe("https://api.target.example");
+    expect(page.props.findings.props.children.props.assessmentId).toBe(ASSESSMENT_UUID);
+    expect(page.props.findings.props.children.props.savedRun).toBeNull();
+    expect(page.props.reports.props.children.props.assessmentId).toBe(ASSESSMENT_UUID);
+  });
+
+  it("keeps Findings and Reports unscoped when a local-only saved run has no Core API UUID", async () => {
+    process.env.RECONIX_MOCK = "1";
+    const page = await Home({
+      searchParams: Promise.resolve({ uid: "20261003-101500-3ceb_RCX-DEMO-001" }),
+    });
+
+    expect(page.props.findings.props.children.props.assessmentId).toBeNull();
+    expect(page.props.findings.props.children.props.savedRun).toBe("20261003-101500-3ceb_RCX-DEMO-001");
+    expect(page.props.reports.props.children.props.assessmentId).toBeNull();
+  });
+
+  it("defaults to All assessments in the header when opening the Assessments view", async () => {
+    seedCoreAssessment();
+    const lib = await loadApiLibrary();
+    const uid = lib.assessments[0].uid;
+
+    const page = await Home({
+      searchParams: Promise.resolve({ view: "assessments", uid }),
+    });
+
+    expect(page.props.topBar.props.dash).toBeNull();
+    expect(page.props.topBar.props.overall).not.toBeNull();
   });
 
   it("falls back to local files when RECONIX_MOCK=1", async () => {

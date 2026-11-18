@@ -1,5 +1,5 @@
 /* The Local Assessment Viewer at `/`: with the Core API running, Overview, Assessments,
-   Findings, Run log and Reports read real assessments from the Core API (lib/api/library.ts).
+   Findings and Reports read real assessments from the Core API (lib/api/library.ts).
    When the Core API is unreachable or in mock mode (RECONIX_MOCK=1), it falls back to the
    assessments saved on disk (lib/data/store.ts).
    With no run chosen the Overview totals every run (derive-overall.ts); choosing one opens that run
@@ -12,14 +12,13 @@ import type { AssistantInfo } from "@/components/assistant/types";
 import { deriveDashboard } from "@/components/dashboard/derive";
 import { deriveOverall } from "@/components/dashboard/derive-overall";
 import { runRow } from "@/components/dashboard/derive-report";
-import { runLogData } from "@/components/dashboard/derive-run-log";
 import { ApiFindings, FindingsLoading } from "@/components/dashboard/api-findings";
 import { ApiReports, ReportsLoading } from "@/components/dashboard/api-reports";
 import { EmptyView } from "@/components/dashboard/empty-view";
 import { LiveAssessments } from "@/components/dashboard/live-assessments";
 import { OverviewView } from "@/components/dashboard/overview-view";
-import { RunLogView } from "@/components/dashboard/run-log-view";
 import { TopBar } from "@/components/dashboard/top-bar";
+import { parseView } from "@/components/dashboard/view-name";
 import { Viewer } from "@/components/dashboard/viewer";
 import { KnowledgeView } from "@/components/knowledge/knowledge-view";
 import { isAssessmentId } from "@/lib/api/findings";
@@ -64,15 +63,18 @@ export default async function Home({ searchParams }: Props) {
   ]);
 
   const views = library.assessments.map(assessmentView);
-  const chosen =
+  const onAssessments = parseView(typeof params.view === "string" ? params.view : undefined) === "assessments";
+  const matched =
     views.find(
       (v) =>
         (wanted && v.uid === wanted) ||
         (apiAssessment && (v.coreId === apiAssessment || v.uid === apiAssessment)),
     ) ?? null;
+  const chosen = onAssessments ? null : matched;
 
   const dash = chosen ? deriveDashboard(chosen) : null;
   const overall = !chosen && views.length ? deriveOverall(views) : null;
+  const selectedAssessment = onAssessments ? null : (apiAssessment ?? (chosen?.coreId && isAssessmentId(chosen.coreId) ? chosen.coreId : null));
   const items = library.assessments.map(libraryItem);
   const dir = shownDir(library.dir);
 
@@ -85,7 +87,7 @@ export default async function Home({ searchParams }: Props) {
   };
 
   const empty = <EmptyView dir={dir} problems={library.problems} compact />;
-  const missing = Boolean((wanted || apiAssessment) && !chosen && views.length > 0);
+  const missing = Boolean((wanted || apiAssessment) && !matched && views.length > 0);
   const runs = views.map(runRow);
   const every = liveRefreshMs();
 
@@ -128,13 +130,12 @@ export default async function Home({ searchParams }: Props) {
         // streamed: the other views never wait on the API (a view switch is client-side only, so
         // every pane is rendered with the page)
         <Suspense fallback={<FindingsLoading />}>
-          <ApiFindings assessmentId={apiAssessment} savedRun={apiAssessment ? null : wanted} />
+          <ApiFindings assessmentId={selectedAssessment} savedRun={selectedAssessment ? null : wanted} />
         </Suspense>
       }
-      log={views.length ? <RunLogView key={chosen?.uid ?? "all"} data={chosen ? runLogData(chosen) : null} /> : empty}
       reports={
         <Suspense fallback={<ReportsLoading />}>
-          <ApiReports assessmentId={apiAssessment} />
+          <ApiReports assessmentId={selectedAssessment} />
         </Suspense>
       }
       knowledge={<KnowledgeView />}

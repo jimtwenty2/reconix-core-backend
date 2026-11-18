@@ -5,11 +5,9 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
-// (no "audit", "scope" or "terminal": the Audit log, Scope and Terminal views were removed; old
-// ?view=audit, ?view=scope and ?view=terminal links open the Overview). "knowledge" is the Security knowledge page, opened from
-// the AI Assistant's header (no sidebar item).
-export const VIEWS = ["overview", "assessments", "findings", "log", "reports", "assistant", "knowledge"] as const;
-export type View = (typeof VIEWS)[number];
+import { parseView, VIEWS, type View } from "@/components/dashboard/view-name";
+
+export { parseView, VIEWS, type View };
 
 /** The Assessments view's own address parameters (its filters, its page). */
 export const ASSESSMENT_KEYS = ["q", "status", "template", "page"] as const;
@@ -26,23 +24,6 @@ export const VIEW_FILTERS: Partial<Record<View, readonly string[]>> = {
 };
 
 export type ViewParams = Record<string, string | undefined>;
-
-/** Spellings a person may type for a view ("Run log" is `log`): they open that view, not the
-    Overview. */
-const VIEW_ALIASES: Record<string, View> = {
-  runlog: "log",
-  "run-log": "log",
-  logs: "log",
-  report: "reports",
-  finding: "findings",
-  assessment: "assessments",
-};
-
-export const parseView = (value: string | null | undefined): View => {
-  const name = (value ?? "").trim().toLowerCase();
-  if ((VIEWS as readonly string[]).includes(name)) return name as View;
-  return VIEW_ALIASES[name] ?? "overview";
-};
 
 /** Whether the page is interactive: viewer.tsx marks `html[data-hydrated]` once React has taken
     over. A click React replays from before that would change the address before the router
@@ -93,7 +74,8 @@ const write = (params: URLSearchParams): void => {
 };
 
 /** The address after opening `view` from the one `search` holds (pure; showView's rule). The
-    chosen assessment stays. Changing view drops the view left behind's own filters (and the
+    chosen assessment stays except when opening the Assessments list (`assessments`), which
+    defaults to All assessments. Changing view drops the view left behind's own filters (and the
     selected finding), so a `page` or `q` never leaks into another view that uses the same key.
     With `filters`, the opened view's old filters are replaced by these (a drill-down); without,
     they stay as they were (back to where you left). */
@@ -103,6 +85,10 @@ export function viewSearch(search: string, view: View, filters?: ViewParams): st
   if (from !== view) {
     for (const key of VIEW_FILTERS[from] ?? []) params.delete(key);
     params.delete("finding");
+  }
+  if (view === "assessments") {
+    params.delete("uid");
+    params.delete("assessment");
   }
   if (view === "overview") params.delete("view");
   else params.set("view", view);
@@ -134,8 +120,9 @@ export function useQueryParams<K extends string>(keys: readonly K[]): [Record<K,
 }
 
 /** The link that opens one saved run (`uid`), or every run (`null`), from the address `search`
-    (pure): the open view and its filters stay, but not the selected finding or a page (they
-    belong to what was left behind: another run has other findings and fewer or more pages). */
+    (pure): the open view and its filters stay, except when picking a specific run from the
+    Assessments list (`view=assessments`), which returns to that run's Overview. The selected
+    finding or page is dropped (they belong to what was left behind). */
 export function runHref(search: string, uid: string | null): string {
   const next = new URLSearchParams(search);
   if (uid) next.set("uid", uid);
@@ -143,6 +130,10 @@ export function runHref(search: string, uid: string | null): string {
   next.delete("finding");
   next.delete("page");
   next.delete("assessment");
+  if (uid && parseView(next.get("view")) === "assessments") {
+    next.delete("view");
+    for (const key of ASSESSMENT_KEYS) next.delete(key);
+  }
   const query = next.toString();
   return query ? `/?${query}` : "/";
 }
