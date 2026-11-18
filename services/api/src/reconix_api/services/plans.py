@@ -26,6 +26,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy.orm import Session as Db
+from sqlalchemy.orm import sessionmaker
 
 from reconix_api.core.config import Settings
 from reconix_api.core.errors import ApiError
@@ -54,7 +55,7 @@ from reconix_api.repositories import findings as finding_repo
 from reconix_api.repositories import messages as message_repo
 from reconix_api.schemas.actions import ActionIn, ActionOut
 from reconix_api.schemas.agent_runs import AgentRunOut, PlanOut
-from reconix_api.services import actions, agent_runs
+from reconix_api.services import actions, agent_runs, validation
 from reconix_api.services.approvals import expires_at
 from reconix_api.services.audit import audit
 
@@ -97,6 +98,7 @@ async def start_plan(
     mask: MaskSecrets,
     settings: Settings,
     operator: Operator,
+    session_factory: sessionmaker[Db],
     assessment_id: UUID,
     task: AgentTask = AgentTask.PLAN,
     draft: bool = False,
@@ -109,12 +111,24 @@ async def start_plan(
         raise ApiError(
             409, "NO_TOOL_RESULTS", "No tool has run yet. Ask for a plan, or run a step first."
         )
-    await settle_waiting_run(db, interfaces, operator, assessment_id, settings)
+    await settle_waiting_run(
+        db, interfaces, mask, session_factory, operator, assessment_id, settings
+    )
     scope = approved_scope(interfaces, assessment_id)
     run = open_plan_run(db, interfaces, operator, assessment_id, task)
     try:
         return await plan_and_send(
-            db, interfaces, mask, settings, operator, run, scope, task, tool_results, draft
+            db,
+            interfaces,
+            mask,
+            settings,
+            operator,
+            session_factory,
+            run,
+            scope,
+            task,
+            tool_results,
+            draft,
         )
     except Exception as error:
         agent_runs.fail(db, interfaces, operator, run, error)
@@ -127,6 +141,7 @@ async def plan_and_send(
     mask: MaskSecrets,
     settings: Settings,
     operator: Operator,
+    session_factory: sessionmaker[Db],
     run: AgentRun,
     scope: ApprovedScope,
     task: AgentTask = AgentTask.PLAN,
@@ -192,13 +207,17 @@ async def plan_and_send(
     action = None
     if step is not None:
         action = await send_suggested_step(db, interfaces, mask, settings, operator, run, step)
-    return finish_send(db, interfaces, operator, run, plan, response.blocked, action)
+    return finish_send(
+        db, interfaces, mask, operator, session_factory, run, plan, response.blocked, action
+    )
 
 
 def finish_send(
     db: Db,
     interfaces: Interfaces,
+    mask: MaskSecrets,
     operator: Operator,
+    session_factory: sessionmaker[Db],
     run: AgentRun,
     plan: list[PlanStep],
     blocked: list[BlockedStep],
@@ -212,6 +231,12 @@ def finish_send(
         # Nothing to decide: no step, the API blocked it, or it was LOW and ran.
         agent_runs.end(
             db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"step": step_note(action)}
+        )
+    # The plan has let go of the step; a finished validation step is judged from here
+    # (services/validation.py). After this function the request may answer a slow model nothing.
+    if action is not None and action.approval_id is None:  # it ran without an approval
+        validation.start_validation(
+            db, session_factory, interfaces, mask, operator, action.action_id, action.purpose
         )
     return PlanOut(
         agent_run=agent_runs.agent_run_out(run),
@@ -241,6 +266,7 @@ async def send_draft(
     mask: MaskSecrets,
     settings: Settings,
     operator: Operator,
+    session_factory: sessionmaker[Db],
     agent_run_id: UUID,
 ) -> PlanOut:
     """A person sends a drafted plan's first step. It goes through send_action like any
@@ -263,7 +289,9 @@ async def send_draft(
         action = await send_suggested_step(db, interfaces, mask, settings, operator, run, step)
         plan = [PlanStep(**row) for row in run.plan["steps"]]
         blocked = [BlockedStep(**row) for row in run.plan["blocked"]]
-        return finish_send(db, interfaces, operator, run, plan, blocked, action)
+        return finish_send(
+            db, interfaces, mask, operator, session_factory, run, plan, blocked, action
+        )
     except Exception as error:
         agent_runs.fail(db, interfaces, operator, run, error)
         raise
@@ -289,6 +317,7 @@ async def send_suggested_step(
     run: AgentRun,
     step: Action,
 ) -> ActionOut:
+    """Sends the run's next step. A refused one is kept as BLOCKED, as a person's is."""
     try:
         body = ActionIn(
             tool=step.tool,
@@ -301,7 +330,7 @@ async def send_suggested_step(
             422, "INVALID_STEP", "The agent suggested a step that is not valid."
         ) from error
     try:
-        return await actions.send_action(
+        action, _ = await actions.send_action(
             db,
             interfaces,
             mask,
@@ -316,6 +345,7 @@ async def send_suggested_step(
         if error.code == "ACTION_BLOCKED":  # the API's own check refused it: keep the record
             return actions.read_action(db, UUID(error.details["action_id"]), mask)
         raise
+    return action
 
 
 def open_plan_run(
@@ -350,7 +380,13 @@ def open_plan_run(
 
 
 async def settle_waiting_run(
-    db: Db, interfaces: Interfaces, operator: Operator, assessment_id: UUID, settings: Settings
+    db: Db,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    session_factory: sessionmaker[Db],
+    operator: Operator,
+    assessment_id: UUID,
+    settings: Settings,
 ) -> None:
     """A waiting plan whose approval is already decided or has expired (no request ever
     came to hand that back) is resumed now, so a new plan can start. One whose
@@ -385,7 +421,9 @@ async def settle_waiting_run(
                 {"action_id": str(row.action_id), "approval_id": str(approval.approval_id)},
             )
         decided = "APPROVED" if approval.approval_status == ApprovalStatus.APPROVED else "REJECTED"
-        await resume_claimed(db, interfaces, operator, run, row, approval, decided)
+        await resume_claimed(
+            db, interfaces, mask, session_factory, operator, run, row, approval, decided
+        )
 
 
 def step_still_running(row: ActionRow, approval: Approval) -> bool:
@@ -401,7 +439,13 @@ def step_still_running(row: ActionRow, approval: Approval) -> bool:
 
 
 async def resume_after_decision(
-    db: Db, interfaces: Interfaces, operator: Operator, approval: Approval, decision: Decision
+    db: Db,
+    interfaces: Interfaces,
+    mask: MaskSecrets,
+    session_factory: sessionmaker[Db],
+    operator: Operator,
+    approval: Approval,
+    decision: Decision,
 ) -> None:
     """Hand a person's decision on an action back to the plan that suggested it."""
     row = action_repo.get(db, approval.action_id) if approval.action_id else None
@@ -410,12 +454,16 @@ async def resume_after_decision(
     if not agent_run_repo.claim_waiting(db, row.agent_run_id):
         return  # not a waiting plan, or another request already handed the decision back
     run = agent_run_repo.get(db, row.agent_run_id)
-    await resume_claimed(db, interfaces, operator, run, row, approval, decision)
+    await resume_claimed(
+        db, interfaces, mask, session_factory, operator, run, row, approval, decision
+    )
 
 
 async def resume_claimed(
     db: Db,
     interfaces: Interfaces,
+    mask: MaskSecrets,
+    session_factory: sessionmaker[Db],
     operator: Operator,
     run: AgentRun,
     row: ActionRow,
@@ -448,6 +496,11 @@ async def resume_claimed(
         return
     run.checkpoint_id = response.checkpoint_id
     agent_runs.end(db, interfaces, operator, run, AgentRunStatus.COMPLETED, {"decision": decision})
+    # The approved step has run; if it was a validation step, it is judged from here
+    # (services/validation.py), outside the person's request.
+    validation.start_validation(
+        db, session_factory, interfaces, mask, operator, row.action_id, row.purpose
+    )
 
 
 def cancel_run(

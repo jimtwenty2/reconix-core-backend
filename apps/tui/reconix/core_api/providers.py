@@ -25,7 +25,7 @@ TYPE_FOR_ID = {
 }
 ID_FOR_TYPE = {api_type: app_id for app_id, api_type in TYPE_FOR_ID.items()}
 
-# Caches, all per app run (cleared when the API session is opened again).
+# Caches, per app run. Rows and tests survive a new API session; `_pending` does not.
 _rows: Optional[List[dict]] = None  # None: not fetched yet
 _reach: Dict[str, Tuple[str, str]] = {}  # llm_provider_id -> (status, detail)
 # A model off this computer that is waiting for your OK: (approval_id, app_id, model).
@@ -40,7 +40,14 @@ def reset() -> None:
     _pending.clear()
 
 
-on_new_session.append(reset)
+def _new_session() -> None:
+    """A new API session keeps the rows and test results (the API's providers are global, not
+    per session, so the model chip must not go "off"); only an approval waiting for the
+    old session is dropped."""
+    _pending.clear()
+
+
+on_new_session.append(_new_session)
 
 
 # --- rows -------------------------------------------------------------------------------------

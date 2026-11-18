@@ -46,6 +46,8 @@ AGENT_ERROR_STATUS = {
     "RUN_NOT_WAITING": 409,
     "STEP_LIMIT": 422,  # the run stopped itself
     "TOKEN_BUDGET": 422,
+    # The prompt does not fit the model's context window, even after cutting: ask less at once.
+    "PROMPT_TOO_LONG": 422,
     "SCOPE_MISSING": 422,
     "BAD_SCOPE_STATUS": 422,
     "MODEL_UNAVAILABLE": 503,  # the model is down: try again later

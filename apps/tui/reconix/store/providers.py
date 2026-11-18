@@ -125,7 +125,7 @@ def _view(entry: catalog.Provider, rows: List[dict], active: Optional[dict]) -> 
             models=(),
             **facts,
         )
-    first = group[0]
+    first = _current(group)
     return ProviderView(
         id=entry.id,
         label=entry.label,
@@ -139,6 +139,14 @@ def _view(entry: catalog.Provider, rows: List[dict], active: Optional[dict]) -> 
         active_model=active["model_name"] if active_here else "",
         **facts,
     )
+
+
+def _current(group: List[dict]) -> dict:
+    """The row a provider stands for: its active row, else the one saved last. Never simply
+    the first row: with two rows of one type (an old address and a new one), that showed and
+    tested the old row right after the person saved the new one."""
+    active = next((r for r in group if r.get("is_active")), None)
+    return active or max(group, key=lambda r: r.get("updated_at") or "")
 
 
 def _default_base(entry: catalog.Provider) -> str:
@@ -274,7 +282,7 @@ def test_provider(provider_id: str, model: Optional[str] = None) -> ProviderView
     if not group:
         raise StoreValidationError(f"{entry.label} is not configured.")
     model = (model or "").strip()
-    row = next((r for r in group if r["model_name"] == model), group[0])
+    row = next((r for r in group if r["model_name"] == model), None) or _current(group)
     try:
         result = api.test(row["llm_provider_id"])
     except CoreApiError as exc:

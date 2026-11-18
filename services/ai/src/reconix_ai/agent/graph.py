@@ -19,6 +19,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from reconix_ai.agent import nodes
+from reconix_ai.agent.chat_summary import AGENT_SPEAKERS, chat_memory
 from reconix_ai.agent.nodes import AgentDeps, AgentError
 from reconix_ai.agent.state import (
     MAX_MESSAGES,
@@ -141,7 +142,12 @@ async def ask_agent(
         raise AgentError("RUN_IS_WAITING", "This run is waiting for a person to decide.")
     check_chat(list(request.messages)[-MAX_MESSAGES:])
 
-    messages, masked_in_messages = masked_texts(list(request.messages), MAX_MESSAGES)
+    memory = None
+    if task == "CHAT":
+        memory = await chat_memory(list(request.messages), str(request.assessment_id or ""), deps)
+    keep = len(memory.kept) if memory else MAX_MESSAGES
+    check_chat(list(request.messages)[-keep:])
+    messages, masked_in_messages = masked_texts(list(request.messages), keep)
     results, masked_in_results = masked_texts(list(request.tool_results), MAX_TOOL_RESULTS)
     findings, masked_in_findings = masked_findings(list(request.findings))
     reasoning, masked_in_reasoning = masked_texts(
@@ -194,6 +200,11 @@ async def ask_agent(
         start["plan_lines"] = plan
         start["masked_count"] += masked_in_plan
         start["queries"] = [messages[-1][:MAX_CHAT_QUERY_CHARS]] if messages else []
+        if memory:
+            start["chat_summary"] = memory.summary
+            start["masked_count"] += memory.masked_count
+            start["prompt_tokens"] = memory.prompt_tokens
+            start["completion_tokens"] = memory.completion_tokens
     await run_graph(graph, start, config, deps)
     return await answer_for(graph, run_id)
 
@@ -277,7 +288,6 @@ def analyze_queries(findings: list[dict[str, Any]]) -> list[str]:
 
 # A CHAT's own earlier answers, as the API names them. They are not the person's
 # words: an answer that says it "can't skip the safety checks" must not block the chat.
-AGENT_SPEAKERS = ("Reconix: ", "Reconix note: ")
 
 
 def check_chat(messages: list[str]) -> None:

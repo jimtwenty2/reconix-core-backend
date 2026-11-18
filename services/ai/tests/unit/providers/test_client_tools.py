@@ -141,3 +141,81 @@ async def test_a_cloud_model_gets_at_most_its_own_output_limit(model: FakeModel)
     await complete_with_tools([{"role": "user", "content": "x"}], TOOLS, config)
 
     assert model.calls[0]["max_tokens"] == 16_384  # gpt-4o's own limit, not the 128k default
+
+
+def tool_chat(results: list[str]) -> list[dict]:
+    """A fix-loop chat: the task, then one tool call and its result per entry."""
+    chat: list[dict] = [{"role": "system", "content": "fix"}, {"role": "user", "content": "task"}]
+    for n, result in enumerate(results):
+        call = {"id": f"c{n}", "type": "function", "function": {"name": "read", "arguments": "{}"}}
+        chat.append({"role": "assistant", "content": "", "tool_calls": [call]})
+        chat.append({"role": "tool", "tool_call_id": f"c{n}", "content": result})
+    return chat
+
+
+async def test_older_tool_results_are_cut_when_the_window_fills(model: FakeModel) -> None:
+    # The Reconix model holds 64,000: six 30,000-character results (~60,000 tokens) do not fit.
+    chat = tool_chat([f"{n}" * 30_000 for n in range(6)])
+
+    await complete_with_tools(chat, TOOLS, reconix_provider())
+
+    sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
+    assert all(text == text[:300] + client.CUT_MARKER + text[-100:] for text in sent[:-1])
+    assert sent[-1] == "5" * 30_000  # the newest is kept whole
+    assert [m["content"] for m in chat if m["role"] == "tool"][0] == "0" * 30_000  # not changed
+    assert model.calls[0]["max_tokens"] > client.MIN_ANSWER_TOKENS
+
+
+async def test_tool_results_that_fit_are_sent_whole(model: FakeModel) -> None:
+    chat = tool_chat(["a" * 3_000, "b" * 3_000])
+
+    await complete_with_tools(chat, TOOLS, reconix_provider())
+
+    sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
+    assert sent == ["a" * 3_000, "b" * 3_000]
+
+
+OLLAMA = ProviderConfig(ProviderType.OLLAMA, "llama3.1:8b")
+
+
+async def test_an_ollama_tool_call_that_fits_only_after_the_cut_is_sent_cut(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    # ~30,000 estimated tokens in a 32,000 window: over the room, so even the newest is cut.
+    chat = tool_chat(["word " * 18_000])
+
+    await complete_with_tools(chat, TOOLS, OLLAMA)
+
+    sent = [m["content"] for m in model.calls[0]["messages"] if m["role"] == "tool"]
+    assert client.CUT_MARKER in sent[0]
+
+
+async def test_an_ollama_tool_call_that_cannot_fit_is_refused_without_a_request(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    chat = [{"role": "user", "content": "word " * 20_000}]  # the user turn is never cut
+
+    with pytest.raises(ProviderError) as error:
+        await complete_with_tools(chat, TOOLS, OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"
+    assert model.calls == []
+
+
+async def test_an_ollama_tool_answer_to_a_cut_prompt_is_refused(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("RECONIX_OLLAMA_URL", raising=False)
+    monkeypatch.setattr(client, "estimated_tokens", lambda *_: 40_000)
+    monkeypatch.setattr(client, "prompt_room", lambda window: window * 2)
+    model.answer = litellm.ModelResponse(
+        choices=[{"message": {"role": "assistant", "content": "wrong"}, "finish_reason": "stop"}],
+        usage={"prompt_tokens": 16_002, "completion_tokens": 3, "total_tokens": 16_005},
+    )
+
+    with pytest.raises(ProviderError) as error:
+        await complete_with_tools([{"role": "user", "content": "q"}], TOOLS, OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"

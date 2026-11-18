@@ -249,6 +249,7 @@ async def test_a_blocked_chat_is_a_422_and_never_reaches_the_model():
         ("PROVIDER_AUTH_FAILED", 502),
         ("PROVIDER_KEY_MISSING", 422),
         ("PROVIDER_URL_NOT_ALLOWED", 422),
+        ("PROMPT_TOO_LONG", 422),  # the prompt does not fit, not the model failing
         ("BAD_MODEL_ANSWER", 502),
     ],
 )

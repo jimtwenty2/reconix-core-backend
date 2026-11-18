@@ -38,7 +38,7 @@ from reconix_api.api import (
 from reconix_api.api.code_mcp import add_code_mcp
 from reconix_api.core.agent import prepare_checkpoints
 from reconix_api.core.config import Settings, get_settings
-from reconix_api.core.db import get_session_factory
+from reconix_api.core.db import get_session_factory, raise_thread_limit
 from reconix_api.core.errors import add_error_handlers
 from reconix_api.core.finding_memory import FindingMemory, ai_finding_memory
 from reconix_api.core.interfaces import Interfaces
@@ -166,6 +166,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        raise_thread_limit()
         if startup is not None:
             await startup()
         async with code_mcp_server.session_manager.run():

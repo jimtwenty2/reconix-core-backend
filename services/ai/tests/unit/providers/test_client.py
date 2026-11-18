@@ -4,6 +4,7 @@ import os
 import pytest
 
 from reconix_ai.providers import client
+from reconix_ai.providers import window as client_window
 from reconix_ai.providers.client import Message, ProviderError, complete
 from reconix_ai.providers.settings import ProviderConfig, ProviderType, reconix_provider
 
@@ -94,14 +95,76 @@ async def test_json_answer_asks_for_a_json_object(model: FakeModel) -> None:
     assert model.calls[1]["response_format"] == {"type": "json_object"}
 
 
-async def test_every_call_caps_the_answer_length(model: FakeModel) -> None:
+QUESTION_TOKENS = client.estimated_tokens([{"content": QUESTION[0].content}])
+
+
+async def test_every_call_caps_the_answer_length_within_the_window(model: FakeModel) -> None:
     short = ProviderConfig(ProviderType.RECONIX, "reconix", RECONIX_URL, max_tokens=300)
 
     await complete(QUESTION, reconix_provider())
     await complete(QUESTION, short)
 
-    assert model.calls[0]["max_tokens"] == 128_000
+    # 128,000 asked, but the Reconix model holds 64,000: the answer gets what the prompt leaves.
+    assert model.calls[0]["max_tokens"] == 64_000 - QUESTION_TOKENS - client.WINDOW_MARGIN_TOKENS
     assert model.calls[1]["max_tokens"] == 300
+
+
+async def test_the_reconix_window_comes_from_the_environment(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RECONIX_CONTEXT_WINDOW", "200000")
+
+    await complete(QUESTION, reconix_provider())
+
+    assert model.calls[0]["max_tokens"] == 128_000
+
+
+@pytest.mark.parametrize("value", ["lots", "10"])
+async def test_a_bad_reconix_window_fails_loudly(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("RECONIX_CONTEXT_WINDOW", value)
+
+    with pytest.raises(ValueError, match="RECONIX_CONTEXT_WINDOW"):
+        await complete(QUESTION, reconix_provider())
+    assert model.calls == []
+
+
+async def test_a_prompt_that_fills_the_window_still_asks_for_a_short_answer(
+    model: FakeModel,
+) -> None:
+    huge = [Message("user", "x" * 64_000 * client.CHARS_PER_TOKEN)]
+
+    await complete(huge, reconix_provider())
+
+    assert model.calls[0]["max_tokens"] == client.MIN_ANSWER_TOKENS
+
+
+async def test_ollama_is_sent_its_window_as_num_ctx(model: FakeModel) -> None:
+    await complete(QUESTION, ProviderConfig(ProviderType.OLLAMA, "llama3.1:8b"))
+    await complete(QUESTION, reconix_provider())
+
+    assert model.calls[0]["num_ctx"] == 32_000  # the baseline: the probe found nothing
+    assert "num_ctx" not in model.calls[1]
+
+
+async def test_a_probed_window_is_used_and_asked_only_once(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked = []
+
+    async def server_says(config: ProviderConfig, base_url: str) -> int:
+        asked.append(base_url)
+        return 8_192
+
+    monkeypatch.setattr(client_window, "probe", server_says)
+    config = ProviderConfig(ProviderType.OPENAI_API_COMPATIBLE, "qwen3", "http://127.0.0.1:1234/v1")
+
+    await complete(QUESTION, config)
+    await complete(QUESTION, config)
+
+    assert asked == ["http://127.0.0.1:1234/v1"]
+    assert model.calls[1]["max_tokens"] == 8_192 - QUESTION_TOKENS - client.WINDOW_MARGIN_TOKENS
 
 
 @pytest.mark.parametrize(
@@ -129,7 +192,8 @@ def test_a_max_output_tokens_that_is_not_a_number_fails_loudly(
     [
         (ProviderType.ANTHROPIC, "claude-sonnet-5-5", 128_000),  # its own limit is 128,000
         (ProviderType.OPENAI, "gpt-4o", 16_384),  # lowered to its own limit
-        (ProviderType.OPENAI, "not-a-known-model", 128_000),  # unknown: as set
+        # unknown: as set, within the baseline window
+        (ProviderType.OPENAI, "not-a-known-model", 32_000 - QUESTION_TOKENS - 1_000),
     ],
 )
 async def test_a_cloud_model_gets_at_most_its_own_output_limit(
@@ -353,7 +417,8 @@ async def test_an_answer_cut_off_by_the_length_says_so(
         await complete(QUESTION, reconix_provider())
 
     assert raised.value.code == "ANSWER_CUT_OFF"
-    assert "128000" in raised.value.message
+    fitted = 64_000 - QUESTION_TOKENS - client.WINDOW_MARGIN_TOKENS
+    assert f"{fitted}-token limit" in raised.value.message
 
 
 @pytest.mark.parametrize(
@@ -634,3 +699,89 @@ async def test_a_content_answer_ignores_the_reasoning(
     completion = await complete(QUESTION, reconix_provider())
 
     assert completion.text == "Port 3000 is open."
+
+
+# Ollama answers a too-long prompt with 200 OK after cutting its middle (live: 11,730 real
+# tokens in an 8,192 window came back as 4,098), so the call must not rely on an error.
+OLLAMA = ProviderConfig(ProviderType.OLLAMA, "llama3.1:8b")
+OLLAMA_WINDOW = 32_000  # the baseline, as the probe finds nothing in these tests
+PROSE = "word " * 20_000  # ~33k estimated tokens
+
+
+def chars_per_estimated_token(text: str) -> float:
+    return len(text) / client.estimated_tokens([{"content": text}])
+
+
+def test_prose_is_estimated_high_but_not_wildly() -> None:
+    sample = "The scanner reported that the service was running an older version. " * 50
+
+    # Real prose runs about 3.5 characters a token: the estimate stays 10-30% above it.
+    assert 2.7 <= chars_per_estimated_token(sample) <= 3.2
+
+
+def test_dense_text_is_not_estimated_below_its_real_size() -> None:
+    ids = " ".join(f"x{n:03d}k2-q{n * 7 % 100:02d}" for n in range(300))
+    hexdump = "\n".join(
+        f"{n * 16:08x}  " + " ".join(f"{(n * k) % 256:02x}" for k in range(16)) for n in range(60)
+    )
+    nmap = "\n".join(
+        f"{n}/tcp open ssh OpenSSH 8.{n}p1 Ubuntu {n}ubuntu0.5 (protocol 2.0)" for n in range(40)
+    )
+    base64ish = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo0MTIzNDU2Nzg5/+=" * 20
+
+    # Real dense text runs about 1.8 characters a token or more: never below it.
+    for sample in (ids, hexdump, nmap, base64ish):
+        assert chars_per_estimated_token(sample) <= 1.8
+
+
+async def test_ollama_refuses_a_prompt_over_the_window_without_a_request(
+    model: FakeModel,
+) -> None:
+    with pytest.raises(ProviderError) as error:
+        await complete([Message("user", PROSE)], OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"
+    assert PROSE[:20] not in error.value.message
+    assert model.calls == []
+
+
+async def test_a_non_ollama_provider_is_not_prechecked(model: FakeModel) -> None:
+    openai_like = ProviderConfig(ProviderType.RECONIX, "reconix", RECONIX_URL)
+
+    await complete([Message("user", "word " * 40_000)], openai_like)  # 64k window, ~67k est.
+
+    assert len(model.calls) == 1
+
+
+async def test_a_normal_ollama_answer_is_unaffected(model: FakeModel) -> None:
+    got = await complete(QUESTION, OLLAMA)
+
+    assert got.text == "Port 3000 is open."
+
+
+async def test_an_ollama_answer_to_a_cut_prompt_is_refused(
+    model: FakeModel, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Estimated just inside the room, so only the answer's token count shows the cut.
+    prompt = [Message("user", "word " * 14_000)]
+    monkeypatch.setattr(client, "estimated_tokens", lambda *_: OLLAMA_WINDOW + 5_000)
+    monkeypatch.setattr(client, "prompt_room", lambda window: window * 2)
+    model.answer = "A wrong answer."
+
+    class Cut:
+        prompt_tokens = OLLAMA_WINDOW // 2 + 2
+        completion_tokens = 5
+
+    real = client.send
+
+    async def send_cut(request: dict, on_piece: object) -> litellm.ModelResponse:
+        response = await real(request, on_piece)
+        response.usage = Cut()
+        return response
+
+    monkeypatch.setattr(client, "send", send_cut)
+
+    with pytest.raises(ProviderError) as error:
+        await complete(prompt, OLLAMA)
+
+    assert error.value.code == "PROMPT_TOO_LONG"
