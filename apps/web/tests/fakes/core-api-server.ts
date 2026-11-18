@@ -232,7 +232,6 @@ export async function startFakeCore(): Promise<FakeCore> {
         return res.end();
       }
       if (m === "POST" && rest === "/activate") {
-        if (!row.is_local) return send(res, 200, { llm_provider: row, approval: { approval_id: randomUUID() } });
         for (const p of fake.providers) p.is_active = p === row;
         return send(res, 200, { llm_provider: row, approval: null });
       }
@@ -241,6 +240,9 @@ export async function startFakeCore(): Promise<FakeCore> {
         if (fake.listFails) return refuse(res, 503, "MODEL_UNAVAILABLE", "The server did not answer with its models.");
         // a cloud service lists everything it has for the key, chat or not (as OpenAI does)
         if (["OPENAI", "ANTHROPIC", "DEEPSEEK"].includes(row.provider_type)) return send(res, 200, { models: CLOUD_MODELS });
+        if (row.provider_type === "OPENAI_API_COMPATIBLE" && !row.is_local) {
+          return refuse(res, 422, "MODEL_LIST_NOT_SUPPORTED", "Only Ollama, a cloud service or an OpenAI-compatible server on this computer can list its models.");
+        }
         return send(res, 200, { models: ["llama3.2", "qwen:7b"] });
       }
     }

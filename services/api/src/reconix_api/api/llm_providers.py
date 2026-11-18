@@ -137,12 +137,10 @@ def activate_provider(
     """Sets an LLM provider as the active one.
 
     Business Rules:
-    - A provider on this computer becomes active immediately.
-    - Any other provider returns a `configuration` approval and becomes active once a person
-      approves it.
+    - Any configured provider becomes active immediately.
 
     State Changes:
-    - Sets the provider active, or creates a configuration approval request.
+    - Sets the provider active and clears any prior pending activation approval for it.
 
     Security:
     - Requires a valid session token.

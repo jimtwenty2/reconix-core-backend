@@ -97,9 +97,9 @@ export function toModelsView(rows: CoreProvider[], found: ReadonlyMap<string, re
   };
 }
 
-/** The names a model list holds that can chat: valid names, embedding models left out
-    (LM Studio and Ollama list theirs too, e.g. text-embedding-nomic-embed-text-v1.5). */
-export const chatModels = (names: readonly string[]): string[] => names.filter((m) => /^[\w.:/@+-]{1,128}$/.test(m) && !/embed/i.test(m)).slice(0, 200);
+/** The names a model list holds that can chat: valid names within the Core API's 100-char limit,
+    embedding models left out (LM Studio and Ollama list theirs too, e.g. text-embedding-nomic-embed-text-v1.5). */
+export const chatModels = (names: readonly string[]): string[] => names.filter((m) => /^[\w.:/@+-]{1,100}$/.test(m) && !/embed/i.test(m)).slice(0, 200);
 
 /** What a cloud service lists that is not for chat (OpenAI lists its image, audio and
     moderation models too). */
@@ -311,10 +311,32 @@ export async function connect(body: { preset: string; baseUrl: string; apiKey?: 
     let models: string[];
     let detail: string;
     if (preset.kind === "cloud" || preset.kind === "reconix") {
+      let testedModel = row.model_name;
+      let listed: readonly string[] = [];
+      if (preset.kind === "cloud") {
+        listed = await cloudModelsOf(id, preset);
+        if (created && listed.length && !listed.includes(testedModel)) {
+          testedModel = listed[0];
+          await asMain((token) => coreJson(`/llm-providers/${id}`, { method: "PATCH", token, body: { model_name: testedModel } }));
+        }
+      }
       const out = await asMain((token) => coreJson<TestOut>(`/llm-providers/${id}/test`, { method: "POST", token }));
       if (!out.ok) throw new CoreError(422, out.code ?? "MODEL_UNAVAILABLE", (out.message ?? "It did not answer.").slice(0, 400));
-      models = preset.kind === "cloud" ? [...new Set([row.model_name, ...(await cloudModelsOf(id, preset))])] : [row.model_name];
-      detail = `Connected: ${row.model_name} answered in ${out.latency_ms} ms.`;
+      models = preset.kind === "cloud" ? [...new Set([testedModel, ...listed])] : [testedModel];
+      detail = `Connected: ${testedModel} answered in ${out.latency_ms} ms.`;
+    } else if (preset.kind === "custom" && !row.is_local) {
+      if (row.model_name !== PLACEHOLDER_MODEL) {
+        const out = await asMain((token) => coreJson<TestOut>(`/llm-providers/${id}/test`, { method: "POST", token }));
+        if (!out.ok) throw new CoreError(422, out.code ?? "MODEL_UNAVAILABLE", (out.message ?? "It did not answer.").slice(0, 400));
+        models = [row.model_name];
+        detail = `Connected: ${row.model_name} answered in ${out.latency_ms} ms.`;
+      } else {
+        if (created) await asMain((token) => coreJson(`/llm-providers/${id}`, { method: "DELETE", token })).catch(() => undefined);
+        created = false;
+        models = [];
+        detail = "Remote OpenAI-compatible servers don't list models automatically. Type a model name below to add it.";
+        return { view: await modelsView({ probe: false }), providerId: id, models, detail, created };
+      }
     } else {
       const out = await asMain((token) => coreJson<{ models: string[] }>(`/llm-providers/${id}/models`, { token }));
       models = chatModels(out.models);

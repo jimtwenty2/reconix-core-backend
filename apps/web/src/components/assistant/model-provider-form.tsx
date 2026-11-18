@@ -16,8 +16,9 @@ import { toast } from "@/components/ui/toast";
 import * as api from "@/lib/assistant/client";
 import { type PresetId, presetOf } from "@/lib/assistant/models/presets";
 import { MAX_URL } from "@/lib/assistant/models/schema";
-import type { ModelsView, ProviderView } from "@/lib/assistant/models/view";
+import { NEEDS_APPROVAL, type ModelsView, type ProviderView } from "@/lib/assistant/models/view";
 import { ModelKeyField, NOT_A_LOGIN } from "./model-key-field";
+import { nameProblem } from "./model-name-rules";
 import { ProviderTiles } from "./provider-tiles";
 import { type ListState, ModelNameField } from "./model-name-field";
 import {
@@ -100,16 +101,33 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
   const providerName = saved ? savedName(saved) : preset.label;
   const host = hostOf(address);
   const remote = host !== null && !LOOPBACK.has(host);
-  const ready = list.status === "ready" && list.models.length > 0; // a model to add: tested, or saved before
+  const manual = list.status === "ready" && list.models.length === 0;
+  const ready = list.status === "ready" && (list.models.length > 0 || manual); // a model to add: tested, manual, or saved before
+
+  // Sync Phase 2 auto-loaded models into an open form if the user opened it before probing finished.
+  const savedKey = saved ? `${saved.id}:${saved.models.join("\0")}` : "";
+  const [syncedKey, setSyncedKey] = useState(savedKey);
+  if (savedKey !== syncedKey) {
+    setSyncedKey(savedKey);
+    if (!testing && !tested && saved) {
+      const nextList = listOf(preset, saved);
+      setList(nextList);
+      setChoice((was) => (nextList.status === "ready" && nextList.models.includes(was) ? was : firstOf(nextList)));
+    }
+  }
+
+  const discardCreated = () => {
+    const leftover = created.current;
+    created.current = null;
+    if (leftover) void discardRef.current(leftover);
+  };
 
   useEffect(() => {
     providerField.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true }); // the form's first control
     alive.current = true;
     return () => {
       alive.current = false; // gone (Cancel, Escape, Back, Close, outside click): drop any unsaved test row
-      const leftover = created.current;
-      created.current = null;
-      if (leftover) void discardRef.current(leftover);
+      discardCreated();
     };
   }, []);
 
@@ -126,6 +144,7 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
 
   const choosePreset = (next: PresetId) => {
     const p = presetOf(next);
+    discardCreated();
     if (keyField.current) keyField.current.value = ""; // a key typed for one provider never goes to another
     setKeyTyped(false);
     setPresetId(next);
@@ -141,6 +160,7 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
     const problem = credentialsProblem(preset, saved, c);
     if (problem) return setError(problem);
     const key = c.apiKey.trim();
+    if (!saved) discardCreated();
     setTesting(true);
     setTested(null);
     setError(null);
@@ -174,36 +194,49 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
     setKeyTyped(false);
     setRemoveKey(false);
     const now = answer.view.providers.find((p) => p.id === answer.providerId) ?? null;
-    setList({ status: "ready", sig: "", next: "list", models: answer.models, note: null, verify: false });
-    setChoice((was) => (answer.models.includes(was) ? was : (initialChoice(answer.models, now, answer.view) ?? NO_MODEL_YET)));
+    if (answer.models.length === 0) {
+      setList({ status: "ready", sig: "", next: "list", models: [], note: answer.detail, verify: true });
+      setChoice((was) => (was && !nameProblem(was) ? was : ""));
+    } else {
+      setList({ status: "ready", sig: "", next: "list", models: answer.models, note: null, verify: false });
+      setChoice((was) => (answer.models.includes(was) ? was : (initialChoice(answer.models, now, answer.view) ?? NO_MODEL_YET)));
+    }
     setTested(answer.detail);
     toast(`${providerName}: ${answer.detail}`);
   };
 
   const add = async () => {
     if (saving) return;
-    if (!saved || list.status !== "ready" || choice === NO_MODEL_YET) return setError("Test connection first, then choose one of the models it finds.");
+    const chosenModel = manual ? choice.trim() : choice;
+    if (manual) {
+      const problem = nameProblem(chosenModel);
+      if (problem) return setError(problem);
+      if (chosenModel.length > 100) return setError("Model names can be at most 100 characters.");
+    } else if (!saved || list.status !== "ready" || chosenModel === NO_MODEL_YET) {
+      return setError("Test connection first, then choose one of the models it finds.");
+    }
     const c = credentials();
     if (c.apiKey.trim()) {
       const problem = credentialsProblem(preset, saved, c);
       if (problem) return setError(problem);
     }
-    const built = requestsForAdd(preset, saved, view, c, choice);
+    const built = requestsForAdd(preset, saved, view, c, chosenModel);
     if (!built.ok) return setError(built.problem);
     setSaving(true);
     setError(null);
     const refused = await models.save(built.requests);
     if (!alive.current) return;
     setSaving(false);
-    if (refused) return setError(refused);
+    if (refused) {
+      if (refused === NEEDS_APPROVAL) created.current = null; // saved and waiting for TUI approval
+      return setError(refused);
+    }
     created.current = null; // added: it stays
     onDone();
   };
 
   const cancel = () => {
-    const leftover = created.current;
-    created.current = null;
-    if (leftover) void models.discard(leftover); // saved by Test connection, never added
+    discardCreated(); // saved by Test connection, never added
     onCancel();
   };
 
@@ -244,8 +277,11 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
               id={ids.url}
               value={baseUrl}
               onChange={(e) => {
-                setBaseUrl(e.target.value);
-                reset(preset, savedFor(view, preset, addressOf(preset, { baseUrl: e.target.value })));
+                const nextUrl = e.target.value;
+                setBaseUrl(nextUrl);
+                const nextSaved = savedFor(view, preset, addressOf(preset, { baseUrl: nextUrl }));
+                if (created.current && nextSaved?.id !== created.current) discardCreated();
+                reset(preset, nextSaved);
               }}
               onKeyDown={testOnEnter}
               maxLength={MAX_URL}
@@ -309,7 +345,7 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
             </p>
           </div>
         )}
-        {list.status === "ready" && list.models.length > 0 && (
+        {list.status === "ready" && (list.models.length > 0 || manual) && (
           <ModelNameField
             id={ids.model}
             list={list}
@@ -336,7 +372,7 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
               {testing ? <Loader className="size-3.5 animate-spin" aria-hidden /> : <RefreshCw className="size-3.5" aria-hidden />}
               Test again
             </button>
-            <button type="button" onClick={() => void add()} disabled={saving || testing || choice === NO_MODEL_YET} className="ai-btn ai-btn-small ai-btn-primary ai-btn-go">
+            <button type="button" onClick={() => void add()} disabled={saving || testing || (manual ? !choice.trim() : choice === NO_MODEL_YET)} className="ai-btn ai-btn-small ai-btn-primary ai-btn-go">
               {saving ? <Loader className="size-3.5 animate-spin" aria-hidden /> : <Plus className="size-3.5" aria-hidden />}
               Add model
             </button>

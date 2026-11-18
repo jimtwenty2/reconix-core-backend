@@ -355,7 +355,6 @@ async function provider(req, res, url, body, rest, row) {
     return res.end();
   }
   if (m === "POST" && rest === "/activate") {
-    if (!row.is_local) return send(res, 200, { llm_provider: row, approval: { approval_id: randomUUID() } });
     for (const p of providers) p.is_active = p === row;
     return send(res, 200, { llm_provider: row, approval: null });
   }

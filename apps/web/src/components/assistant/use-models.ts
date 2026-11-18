@@ -73,7 +73,7 @@ export function useModels(setModel: (model: ModelSummary) => void) {
       try {
         const result = await call();
         if (!result.ok) {
-          if (result.status === 404) load();
+          if (result.status === 404 || result.status === 409) load();
           return result.detail;
         }
         take(result.view);

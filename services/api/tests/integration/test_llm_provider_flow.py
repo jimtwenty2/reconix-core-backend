@@ -12,6 +12,7 @@ from reconix_api.core import provider_keys
 from reconix_api.core.config import get_settings
 from reconix_api.core.errors import ApiError
 from reconix_api.models import AgentRun, Approval, LlmProvider
+from reconix_api.services import llm_providers
 from reconix_api.services.agent_runs import make_provider_for_run
 from tests.integration.test_action_flow import active_assessment, event_types
 from tests.integration.test_plan_flow import plan, runs
@@ -147,7 +148,7 @@ def test_the_model_call_gets_the_runs_provider_and_its_key(db_client, db_app, se
     headers = open_session(db_client)
     openai = add(db_client, headers, OPENAI)
     activation = activate(db_client, headers, openai["llm_provider_id"])
-    assert approve(db_client, headers, activation["approval"]["approval_id"]).status_code == 200
+    assert activation["approval"] is None
     assessment_id = active_assessment(db_client, headers)
     assert plan(db_client, headers, assessment_id).status_code == 201
     run_id = UUID(runs(db_client, headers)[0]["agent_run_id"])
@@ -194,55 +195,73 @@ def test_the_built_in_provider_asks_the_agent_for_its_own_model(db_client, db_ap
     assert (request.provider, request.model) == ("RECONIX", None)
 
 
-def test_a_cloud_service_on_this_computer_still_needs_an_approval(db_client):
-    """A local address for OpenAI is a proxy or a tunnel: the key and the prompts still
-    leave this computer."""
-    headers = open_session(db_client)
-    proxy = add(db_client, headers, {**OPENAI, "base_url": "http://127.0.0.1:4000"})
-
-    activation = activate(db_client, headers, proxy["llm_provider_id"])
-
-    assert proxy["is_local"] is False
-    assert activation["approval"]["kind"] == "configuration"
-    assert active(db_client, headers) == ["RECONIX"]
+def seed_activation_approval(session_factory, provider_id: str) -> dict:
+    with session_factory() as db:
+        provider = db.get(LlmProvider, provider_id)
+        approval = llm_providers._activation_approval(provider)
+        db.add(approval)
+        db.commit()
+        return {"approval_id": str(approval.approval_id)}
 
 
-def test_a_cloud_provider_is_active_only_after_its_approval(db_client, db_app):
+def test_a_cloud_service_activates_immediately(db_client, db_app):
+    """Any configured provider, including cloud services and remote custom endpoints,
+    activates immediately without requiring a configuration approval."""
     headers = open_session(db_client)
     openai = add(db_client, headers, OPENAI)
 
     activation = activate(db_client, headers, openai["llm_provider_id"])
 
-    approval = activation["approval"]
-    assert approval["kind"] == "configuration"
-    assert approval["approval_status"] == "PENDING"
-    assert approval["config_change"] == {
-        "change": "ACTIVATE_LLM_PROVIDER",
-        "llm_provider_id": openai["llm_provider_id"],
-    }
-    assert approval["subject_snapshot"]["api_key_last4"] == "wxyz"
-    assert FAKE_API_KEY not in json.dumps(approval)
-    assert activation["llm_provider"]["is_active"] is False
-    assert active(db_client, headers) == ["RECONIX"]  # nothing changed yet
-    waiting = db_client.get("/approvals?kind=configuration", headers=headers).json()
-    assert [a["approval_id"] for a in waiting] == [approval["approval_id"]]
-
-    approved = approve(db_client, headers, approval["approval_id"])
-
-    assert approved.status_code == 200, approved.json()
-    assert approved.json()["consumed_at"] is not None
+    assert activation["approval"] is None
+    assert activation["llm_provider"]["is_active"] is True
     assert active(db_client, headers) == ["OPENAI"]
-    assert event_types(db_app)[-2:] == ["APPROVAL_REQUESTED", "APPROVAL_GRANTED"]
-    # Single use: the same approval cannot switch the provider again.
-    assert approve(db_client, headers, approval["approval_id"]).json()["code"] == (
-        "APPROVAL_ALREADY_DECIDED"
+    assert event_types(db_app)[-1] == "LLM_PROVIDER_ACTIVATED"
+
+
+def test_a_remote_openai_compatible_provider_activates_immediately(db_client, db_app):
+    headers = open_session(db_client)
+    remote = add(
+        db_client,
+        headers,
+        {
+            "provider_type": "OPENAI_API_COMPATIBLE",
+            "display_name": "Remote LLM",
+            "model_name": "reconix-model",
+            "base_url": "https://llm.example.com/v1",
+            "api_key": FAKE_API_KEY,
+        },
     )
 
+    activation = activate(db_client, headers, remote["llm_provider_id"])
 
-def test_rejecting_keeps_the_active_provider(db_client, db_app):
+    assert remote["is_local"] is False
+    assert activation["approval"] is None
+    assert activation["llm_provider"]["is_active"] is True
+    assert active(db_client, headers) == ["OPENAI_API_COMPATIBLE"]
+    assert event_types(db_app)[-1] == "LLM_PROVIDER_ACTIVATED"
+
+
+def test_activating_closes_any_prior_pending_activation_approval(
+    db_client, db_app, session_factory
+):
     headers = open_session(db_client)
     openai = add(db_client, headers, OPENAI)
-    approval = activate(db_client, headers, openai["llm_provider_id"])["approval"]
+    stale = seed_activation_approval(session_factory, openai["llm_provider_id"])
+
+    activation = activate(db_client, headers, openai["llm_provider_id"])
+
+    assert activation["approval"] is None
+    assert activation["llm_provider"]["is_active"] is True
+    assert active(db_client, headers) == ["OPENAI"]
+    closed = db_client.get(f"/approvals/{stale['approval_id']}", headers=headers).json()
+    assert closed["approval_status"] == "EXPIRED"
+    assert event_types(db_app)[-2:] == ["APPROVAL_EXPIRED", "LLM_PROVIDER_ACTIVATED"]
+
+
+def test_rejecting_keeps_the_active_provider(db_client, db_app, session_factory):
+    headers = open_session(db_client)
+    openai = add(db_client, headers, OPENAI)
+    approval = seed_activation_approval(session_factory, openai["llm_provider_id"])
 
     rejected = db_client.post(
         f"/approvals/{approval['approval_id']}/reject",
@@ -256,11 +275,11 @@ def test_rejecting_keeps_the_active_provider(db_client, db_app):
     assert event_types(db_app)[-1] == "APPROVAL_REJECTED"
 
 
-def test_a_provider_changed_after_the_request_is_refused(db_client, db_app):
+def test_a_provider_changed_after_the_request_is_refused(db_client, db_app, session_factory):
     headers = open_session(db_client)
     openai = add(db_client, headers, OPENAI)
     provider_id = openai["llm_provider_id"]
-    first = activate(db_client, headers, provider_id)["approval"]
+    first = seed_activation_approval(session_factory, provider_id)
     # A new address needs its key typed again: the old one is never sent elsewhere.
     changed = db_client.patch(
         f"/llm-providers/{provider_id}",
@@ -278,30 +297,12 @@ def test_a_provider_changed_after_the_request_is_refused(db_client, db_app):
     old = db_client.get(f"/approvals/{first['approval_id']}", headers=headers).json()
     assert (old["approval_status"], old["reason"]) == ("EXPIRED", "PROVIDER_CHANGED")
     assert event_types(db_app)[-1] == "APPROVAL_EXPIRED"
-    # Asking again closes the old approval and opens one for the new settings.
-    second = activate(db_client, headers, provider_id)["approval"]
-    assert second["subject_snapshot"]["base_url"] == "https://llm.example.com"
-    old = db_client.get(f"/approvals/{first['approval_id']}", headers=headers).json()
-    assert old["approval_status"] == "EXPIRED"
-    assert approve(db_client, headers, second["approval_id"]).status_code == 200
-
-
-def test_one_open_approval_per_provider(db_client):
-    headers = open_session(db_client)
-    openai = add(db_client, headers, OPENAI)
-    first = activate(db_client, headers, openai["llm_provider_id"])["approval"]
-
-    again = db_client.post(f"/llm-providers/{openai['llm_provider_id']}/activate", headers=headers)
-
-    assert again.status_code == 409
-    assert again.json()["code"] == "APPROVAL_PENDING"
-    assert again.json()["details"] == {"approval_id": first["approval_id"]}
 
 
 def test_an_expired_activation_cannot_be_approved(db_client, session_factory):
     headers = open_session(db_client)
     openai = add(db_client, headers, OPENAI)
-    approval = activate(db_client, headers, openai["llm_provider_id"])["approval"]
+    approval = seed_activation_approval(session_factory, openai["llm_provider_id"])
     with session_factory() as db:
         db.execute(
             update(Approval)
@@ -418,10 +419,10 @@ def test_an_unused_provider_can_be_removed(db_client, db_app):
     assert event_types(db_app)[-1] == "LLM_PROVIDER_REMOVED"
 
 
-def test_removing_a_provider_closes_its_open_approval(db_client, db_app):
+def test_removing_a_provider_closes_its_open_approval(db_client, db_app, session_factory):
     headers = open_session(db_client)
     provider_id = add(db_client, headers, OPENAI)["llm_provider_id"]
-    approval = activate(db_client, headers, provider_id)["approval"]
+    approval = seed_activation_approval(session_factory, provider_id)
 
     removed = db_client.delete(f"/llm-providers/{provider_id}", headers=headers)
 

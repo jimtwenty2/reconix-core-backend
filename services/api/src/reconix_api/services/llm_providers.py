@@ -1,9 +1,7 @@
 """AI providers: the model settings the agent uses. Only one is active at a time.
 
 An API key is encrypted with Fernet before it is saved, and only its last 4 characters
-are ever shown. A provider on this computer becomes active at once. One that runs
-anywhere else would send prompts and findings off this computer, so a person approves
-it first with a `configuration` approval, for exactly the settings they saw.
+are ever shown. Any configured provider becomes active at once when activated.
 
 The built-in RECONIX provider comes from the migration. Its address and model are always
 RECONIX_MODEL_URL and RECONIX_MODEL_NAME; its key is only the one saved from the apps
@@ -31,7 +29,6 @@ from reconix_api.core.interfaces import Operator, WriteAudit
 from reconix_api.core.masking import MaskSecrets
 from reconix_api.models import Approval, LlmProvider
 from reconix_api.models.enums import ApprovalStatus, ProviderType
-from reconix_api.repositories import approvals as approval_repo
 from reconix_api.repositories import llm_providers as provider_repo
 from reconix_api.schemas.llm_providers import (
     LlmProviderIn,
@@ -40,7 +37,7 @@ from reconix_api.schemas.llm_providers import (
     LlmProviderTestOut,
     LlmProviderUpdate,
 )
-from reconix_api.services.approvals import expires_at, snapshot_hash
+from reconix_api.services.approvals import snapshot_hash
 from reconix_api.services.audit import audit
 
 ACTIVATE = "ACTIVATE_LLM_PROVIDER"  # config_change["change"] of an activation approval
@@ -171,35 +168,18 @@ def delete_provider(
 def activate(
     db: Db, write_audit: WriteAudit, operator: Operator, llm_provider_id: UUID, ttl_minutes: int
 ) -> tuple[LlmProviderOut, Approval | None]:
-    """A provider on this computer, and the built-in RECONIX provider, are active at once.
-    Any other one gets a `configuration` approval and stays inactive until a person
-    approves it. RECONIX's address is set in .env by whoever installs Reconix and can never
-    be changed through the API, so there is no edited address for an approval to guard.
-
-    One open approval per provider: one that lapsed, or that is for settings the
-    provider no longer has, is closed as EXPIRED first."""
+    """Activate this provider immediately without requiring a configuration approval."""
+    del ttl_minutes
     open_approval = provider_repo.activation_approval(db, llm_provider_id, ACTIVATE, lock=True)
     provider = _get(db, llm_provider_id, lock=True)
     if provider.is_active:
         raise ApiError(409, "PROVIDER_ALREADY_ACTIVE", "This provider is already active.")
-    local = provider.provider_type == ProviderType.RECONIX or is_local(
-        provider.provider_type, provider.base_url
-    )
-    if not local:
-        _refuse_if_waiting(provider, open_approval, ttl_minutes)
     expired = _expire(open_approval)
-    approval = None
-    if local:
-        _make_active(db, provider)
-    else:
-        approval = approval_repo.add(db, _activation_approval(provider))
+    _make_active(db, provider)
     db.commit()
     _audit_expired(write_audit, operator, provider, expired)
-    if local:
-        _audit(write_audit, "LLM_PROVIDER_ACTIVATED", operator, provider)
-    else:
-        _audit(write_audit, "APPROVAL_REQUESTED", operator, provider, approval)
-    return provider_out(provider), approval
+    _audit(write_audit, "LLM_PROVIDER_ACTIVATED", operator, provider)
+    return provider_out(provider), None
 
 
 # ---------------------------------------------------------------------------
@@ -288,22 +268,6 @@ def _activation_approval(provider: LlmProvider) -> Approval:
         subject_hash=activation_hash(provider),
         config_change={"change": ACTIVATE, "llm_provider_id": str(provider.llm_provider_id)},
     )
-
-
-def _refuse_if_waiting(
-    provider: LlmProvider, open_approval: Approval | None, ttl_minutes: int
-) -> None:
-    """409 while an approval for these exact settings still waits."""
-    if open_approval is None or open_approval.approval_status != ApprovalStatus.PENDING:
-        return
-    lapsed = datetime.now(UTC) >= expires_at(open_approval.requested_at, ttl_minutes)
-    if not lapsed and open_approval.subject_hash == activation_hash(provider):
-        raise ApiError(
-            409,
-            "APPROVAL_PENDING",
-            "This provider already waits for an approval.",
-            {"approval_id": str(open_approval.approval_id)},
-        )
 
 
 def _expire(approval: Approval | None) -> Approval | None:

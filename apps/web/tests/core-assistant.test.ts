@@ -260,7 +260,7 @@ describe("the model picker", () => {
     expect(view.summary).toMatchObject({ configured: true, name: "llama3.2" });
   });
 
-  it("never returns the key, and a cloud model waits for its approval (409)", async () => {
+  it("never returns the key, and activates a cloud model immediately without TUI approval", async () => {
     const res = await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", models: ["gpt-4o"], apiKey: "sk-test-0123456789abcdef" }) }));
     const view = await res.json();
     expect(JSON.stringify(view)).not.toContain("0123456789abcdef");
@@ -269,9 +269,8 @@ describe("the model picker", () => {
 
     const id = view.providers[0].id;
     const chosen = await active.PUT(request("/api/assistant/models/active", { method: "PUT", body: JSON.stringify({ providerId: id, model: "gpt-4o" }) }));
-    expect(chosen.status).toBe(409);
-    expect((await chosen.json()).detail).toMatch(/^Approve this model in the TUI first/);
-    expect(core.providers[0].is_active).toBe(false);
+    expect(chosen.status).toBe(200);
+    expect(core.providers[0].is_active).toBe(true);
   });
 
   it("changes, tests, lists and removes a saved provider", async () => {
@@ -354,10 +353,11 @@ describe("the model picker", () => {
     const added = core.calls.find((c) => c.path === "/llm-providers" && c.method === "POST")!;
     expect(added.body).toMatchObject({ provider_type: "OPENAI", model_name: "gpt-4o", copy_key_from: id });
     expect(added.body).not.toHaveProperty("api_key"); // the key is never sent again
-    expect(res.status).toBe(409); // a cloud model waits for its own approval
+    expect(res.status).toBe(200);
     const after = await (await models.GET(request("/api/assistant/models", { origin: null }))).json();
     expect(after.providers).toHaveLength(1); // still one provider, with both models saved
     expect(after.providers[0].models).toEqual(["gpt-4o-mini", "gpt-4o", "gpt-4.1"]);
+    expect(after.summary).toMatchObject({ configured: true, name: "gpt-4o" });
   });
 
   it("fast=1 returns saved providers without probing live /models lists", async () => {
@@ -369,9 +369,30 @@ describe("the model picker", () => {
     expect(core.calls.some((c) => c.path.endsWith("/models"))).toBe(false);
   });
 
-  it("lists only models that can chat: embedding models are left out", async () => {
+  it("a cloud service fetches models before testing so a non-existent preset default is replaced", async () => {
+    const out = await (await connect({ name: "Anthropic", preset: "anthropic", baseUrl: "https://api.anthropic.com/v1", apiKey: "sk-ant-0123456789abcdef" })).json();
+    expect(out.models).toEqual(["gpt-4o-mini", "gpt-4o", "gpt-4.1"]);
+    expect(out.models).not.toContain("claude-sonnet-5-5");
+    expect(out.detail).toMatch(/^Connected: gpt-4o-mini answered in \d+ ms\.$/);
+    const testCall = core.calls.find((c) => c.path.endsWith("/test"))!;
+    const modelsCall = core.calls.find((c) => c.path.endsWith("/models"))!;
+    expect(core.calls.indexOf(modelsCall)).toBeLessThan(core.calls.indexOf(testCall));
+    expect(core.providers[0].model_name).toBe("gpt-4o-mini");
+  });
+
+  it("a remote custom OpenAI-compatible server returns an empty list for manual entry instead of failing with MODEL_LIST_NOT_SUPPORTED", async () => {
+    const res = await connect({ name: "Custom OpenAI-compatible", preset: "custom", baseUrl: "https://openrouter.ai/api/v1", apiKey: "sk-or-0123456789abcdef" });
+    expect(res.status).toBe(200);
+    const out = await res.json();
+    expect(out).toMatchObject({ models: [], created: false });
+    expect(out.detail).toMatch(/Type a model name/);
+    expect(core.providers).toHaveLength(0);
+  });
+
+  it("lists only models that can chat within the API's 100-char limit: embedding and oversized names are left out", async () => {
     const { chatModels } = await import("@/lib/api/models");
-    expect(chatModels(["google/gemma-4-e4b", "text-embedding-nomic-embed-text-v1.5", "bge-m3:embed", "bad name", "qwen:7b"])).toEqual(["google/gemma-4-e4b", "qwen:7b"]);
+    const tooLong = "a".repeat(101);
+    expect(chatModels(["google/gemma-4-e4b", "text-embedding-nomic-embed-text-v1.5", "bge-m3:embed", "bad name", tooLong, "qwen:7b"])).toEqual(["google/gemma-4-e4b", "qwen:7b"]);
   });
 
   it("removing a provider removes every model it has", async () => {
