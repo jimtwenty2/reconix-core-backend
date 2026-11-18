@@ -7964,7 +7964,7 @@
     },
     "/api/v1/llm-providers/{llm_provider_id}/activate": {
       "post": {
-        "description": "Sets an LLM provider as the active one.\n\nBusiness Rules:\n- A provider on this computer becomes active immediately.\n- Any other provider returns a `configuration` approval and becomes active once a person\n  approves it.\n\nState Changes:\n- Sets the provider active, or creates a configuration approval request.\n\nSecurity:\n- Requires a valid session token.",
+        "description": "Sets an LLM provider as the active one.\n\nBusiness Rules:\n- Any configured provider becomes active immediately.\n\nState Changes:\n- Sets the provider active and clears any prior pending activation approval for it.\n\nSecurity:\n- Requires a valid session token.",
         "operationId": "activate_provider_api_v1_llm_providers__llm_provider_id__activate_post",
         "parameters": [
           {
