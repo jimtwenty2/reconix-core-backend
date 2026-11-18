@@ -76,38 +76,36 @@ CSS_TOKENS: Dict[str, str] = {
     "violet-bg": VIOLET_BG,
 }
 
-# Web dashboard (web/) — the dark Security-Operations-Center console from the reconix-web-ui
-# site (globe dashboard). Teal `primary` for active states, chart fills and rings; amber
-# `accent` for approval gates / MEDIUM; green `success` for pass / LOW; red `danger` for
-# CRITICAL / HIGH; `page` is the backdrop behind the near-black app frame (`background`).
-# Dark only. scripts/export_tokens.py writes them to web/src/styles/tokens.css; the web code
-# uses only those variables. The browser terminal uses the TUI's own colors.
+# Web dashboard (web/) — follows the TUI palette above (TEAL primary / CYAN hover & glow,
+# MEDIUM amber for approval gates, GREEN for pass / LOW, CRITICAL_WEB for danger / CRITICAL so
+# 13 % tinted badges still pass 4.5:1 contrast on RAISED). Dark only. scripts/export_tokens.py
+# writes them to web/src/styles/tokens.css; the web code uses only those variables.
 WEB_TOKENS: Dict[str, Dict[str, str]] = {
     "dark": {
-        "page": "#0B1315",
-        "page-glow": "#1D3A3E",
-        "background": "#030607",
-        "foreground": "#E6EEEE",
-        "card": "#101516",
-        "card-2": "#0B0F10",
-        "card-foreground": "#E6EEEE",
-        "surface": "#171D1E",
-        "muted": "#141A1B",
-        "muted-foreground": "#7D8A8B",
-        "border": "#1B2224",
-        "primary": "#46E0D4",
-        "primary-strong": "#7AF0EC",
-        "primary-dim": "#2C7F7C",
-        "primary-foreground": "#032A27",
-        "accent": "#E7C183",
-        "success": "#5EE6A8",
-        "danger": "#F87171",
-        "ring": "#46E0D4",
-        "globe-dot": "#3CC8D2",
+        "page": BG,
+        "page-glow": CYAN_BG,
+        "background": BG,
+        "foreground": TEXT,
+        "card": SURFACE,
+        "card-2": SURFACE2,
+        "card-foreground": TEXT,
+        "surface": RAISED,
+        "muted": SURFACE,
+        "muted-foreground": MUTED,
+        "border": BORDER,
+        "primary": TEAL,
+        "primary-strong": CYAN,
+        "primary-dim": CYAN_DIM,
+        "primary-foreground": BG,
+        "accent": MEDIUM,
+        "success": GREEN,
+        "danger": CRITICAL_WEB,
+        "ring": TEAL,
+        "globe-dot": TEAL,
         "globe-glow": CYAN,
         # meanings (web/src/lib/status.ts): amber `warning` = waiting / needs review, slate
         # `info` = informational; the severity scale is the TUI's own (SEVERITY below)
-        "warning": "#E7C183",
+        "warning": MEDIUM,
         "info": INFO,
         "sev-critical": CRITICAL_WEB,
         "sev-high": HIGH,
