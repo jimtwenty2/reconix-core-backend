@@ -432,6 +432,16 @@ describe("the model picker", () => {
       expect(core.calls.find((c) => c.path === "/llm-providers" && c.method === "POST")!.body).toMatchObject({ provider_type: type, base_url: base });
     }
   });
+
+  it("refuses short or oversized API keys, 101-char model names, and malformed base URLs before calling the Core API", async () => {
+    core.calls.length = 0;
+    expect((await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", models: ["gpt-4o"], apiKey: "sk-short" }) }))).status).toBe(400);
+    expect((await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "OpenAI", preset: "openai", baseUrl: "https://api.openai.com/v1", models: ["gpt-4o"], apiKey: "k".repeat(501) }) }))).status).toBe(400);
+    expect((await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "Custom", preset: "custom", baseUrl: "http://127.0.0.1:1234/v1", models: ["a".repeat(101)] }) }))).status).toBe(400);
+    expect((await models.POST(request("/api/assistant/models", { method: "POST", body: JSON.stringify({ name: "Custom", preset: "custom", baseUrl: "localhost:1234/v1", models: ["m-1"] }) }))).status).toBe(400);
+    expect((await connect({ name: "Custom", preset: "custom", baseUrl: "https://user:pass@example.com/v1" })).status).toBe(400);
+    expect(core.calls).toEqual([]);
+  });
 });
 
 // --- real assessments from the Core API ----------------------------------------------------

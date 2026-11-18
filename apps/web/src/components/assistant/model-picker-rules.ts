@@ -10,7 +10,7 @@
    A cloud preset's name only goes with the cloud's own address. Pure: browser and tests. */
 import { fitsPreset, type Preset, presetOf, PRESETS } from "@/lib/assistant/models/presets";
 import type { AddProvider, Probe, SetActive, UpdateProvider } from "@/lib/assistant/models/requests";
-import { API_KEY, MAX_MODELS, MAX_NAME } from "@/lib/assistant/models/schema";
+import { API_KEY_CHARS, baseUrlProblem, MAX_KEY, MAX_MODELS, MAX_NAME, MIN_KEY } from "@/lib/assistant/models/schema";
 import type { FetchResult, ModelsView, ProviderView } from "@/lib/assistant/models/view";
 import { nameProblem } from "./model-name-rules";
 import type { ModelSummary } from "./types";
@@ -193,8 +193,12 @@ const nameOf = (preset: Preset, saved: ProviderView | null) => (saved ? savedNam
 /** Why a fetch or Add model can't ask yet, or null (the server checks everything again). */
 export function credentialsProblem(preset: Preset, saved: ProviderView | null, c: Credentials): string | null {
   const key = c.apiKey.trim();
-  if (showsUrl(preset) && !c.baseUrl.trim()) return "Give the base URL (it usually ends in /v1).";
-  if (key && !API_KEY.test(key)) return "An API key is printable characters without spaces.";
+  if (showsUrl(preset)) {
+    const urlProblem = baseUrlProblem(c.baseUrl);
+    if (urlProblem) return urlProblem;
+  }
+  if (key && !API_KEY_CHARS.test(key)) return "An API key is printable characters without spaces.";
+  if (key && (key.length < MIN_KEY || key.length > MAX_KEY)) return `An API key must be ${MIN_KEY} to ${MAX_KEY} characters.`;
   const keyKept = Boolean(saved?.keySaved) && !c.removeKey;
   if (preset.key === "required" && !key && !keyKept) return `${nameOf(preset, saved)} needs an API key.`;
   return null;

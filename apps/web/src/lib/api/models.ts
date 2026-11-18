@@ -9,7 +9,7 @@ import "server-only";
 
 import { type Preset, presetOf } from "../assistant/models/presets";
 import type { AddProvider, Probe, SetActive, UpdateProvider } from "../assistant/models/requests";
-import { PROVIDER_ID } from "../assistant/models/schema";
+import { MODEL_NAME, PROVIDER_ID } from "../assistant/models/schema";
 import { type FetchResult, type ModelsView, NEEDS_APPROVAL, type ProbeResult, type ProviderView } from "../assistant/models/view";
 import { coreJson, CoreError } from "./core";
 import { asMain } from "./sessions";
@@ -270,7 +270,7 @@ export async function testModel(probe: Probe): Promise<ProbeResult> {
 export async function fetchModels(probe: Probe): Promise<FetchResult> {
   if (!("providerId" in probe)) return { listed: false, detail: "Type the model's name: the Core API lists models once the provider is added." };
   const out = await asMain((token) => coreJson<{ models: string[] }>(`/llm-providers/${probe.providerId}/models`, { token }));
-  const models = out.models.filter((m) => /^[\w.:/@+-]{1,128}$/.test(m)).slice(0, 200);
+  const models = out.models.filter((m) => MODEL_NAME.test(m)).slice(0, 200);
   return models.length ? { models } : { listed: false, detail: "The model's server listed no models." };
 }
 

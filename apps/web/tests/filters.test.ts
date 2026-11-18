@@ -2,8 +2,9 @@
 import { describe, expect, it } from "vitest";
 
 import { deriveDashboard } from "@/components/dashboard/derive";
-import { SEVERITY_ORDER, countBy, findingMatches, list, reviewLabel, runMatches, sortFindings, validationOf } from "@/components/dashboard/filters";
+import { SEVERITY_ORDER, countBy, findingMatches, list, parseFindingFilter, reviewLabel, runMatches, sortFindings, validationOf } from "@/components/dashboard/filters";
 import { assessmentView, libraryItem } from "@/lib/data/adapt";
+import { cleanSearchQuery, MAX_SEARCH_QUERY } from "@/lib/search";
 
 import { sampleAssessments } from "./fixtures";
 
@@ -104,5 +105,18 @@ describe("runMatches", () => {
     expect(items.filter((i) => runMatches(i, "waiting for you")).every((i) => i.status === "Awaiting input")).toBe(true);
     expect(runMatches(waiting, "")).toBe(true);
     expect(runMatches(waiting, "no-such-run-zzz")).toBe(false);
+  });
+});
+
+describe("cleanSearchQuery and parseFindingFilter", () => {
+  it("strips ASCII control characters and caps length at MAX_SEARCH_QUERY", () => {
+    const raw = `\x00sql\n\t${"x".repeat(MAX_SEARCH_QUERY + 50)}\x7f`;
+    const cleaned = cleanSearchQuery(raw);
+    expect(cleaned).toBe(`sql${"x".repeat(MAX_SEARCH_QUERY - 3)}`);
+    expect(cleaned.length).toBe(MAX_SEARCH_QUERY);
+    expect(cleanSearchQuery("CVE-2024-1234 <script>")).toBe("CVE-2024-1234 <script>");
+
+    const parsed = parseFindingFilter({ sev: "", val: "", q: raw });
+    expect(parsed.q).toBe(cleaned);
   });
 });

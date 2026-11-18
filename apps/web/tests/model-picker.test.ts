@@ -156,9 +156,16 @@ describe("Set the provider", () => {
   });
   it("says what is missing before anything is sent", () => {
     expect(credentialsProblem(custom, null, none)).toBe("Give the base URL (it usually ends in /v1).");
+    expect(credentialsProblem(custom, null, { ...none, baseUrl: "localhost:1234/v1" })).toContain("http:// or https://");
+    expect(credentialsProblem(custom, null, { ...none, baseUrl: "ftp://example.com" })).toContain("http:// or https://");
+    expect(credentialsProblem(custom, null, { ...none, baseUrl: "https://user:pass@example.com/v1" })).toContain("key field");
+    expect(credentialsProblem(custom, null, { ...none, baseUrl: "https://example.com/v1?key=1" })).toContain("query string");
     expect(credentialsProblem(custom, null, { ...none, baseUrl: STUB })).toBeNull(); // a key is optional
     expect(credentialsProblem(anthropic, null, none)).toBe("Anthropic needs an API key.");
     expect(credentialsProblem(anthropic, null, { ...none, apiKey: "sk ant" })).toBe("An API key is printable characters without spaces.");
+    expect(credentialsProblem(anthropic, null, { ...none, apiKey: "sk-too-short" })).toBe("An API key must be 16 to 500 characters.");
+    expect(credentialsProblem(anthropic, null, { ...none, apiKey: "k".repeat(501) })).toBe("An API key must be 16 to 500 characters.");
+    expect(credentialsProblem(anthropic, null, { ...none, apiKey: "sk-ant-0123456789" })).toBeNull();
     const kept = provider({ name: "Anthropic", preset: "anthropic", baseUrl: anthropic.baseUrl, keySaved: true, local: false });
     expect(credentialsProblem(anthropic, kept, none)).toBeNull(); // the saved key is kept
     expect(credentialsProblem(anthropic, kept, { ...none, removeKey: true })).toBe("Anthropic needs an API key.");
@@ -209,7 +216,8 @@ describe("Fetch models", () => {
     expect(choiceProblem("stub-model", "")).toBeNull();
     expect(nameProblem("  qwen:7b@q4 ")).toBeNull();
     expect(nameProblem("   ")).toBe("Type a model name.");
-    expect(nameProblem("x".repeat(129))).toContain("at most 128");
+    expect(nameProblem("x".repeat(100))).toBeNull();
+    expect(nameProblem("x".repeat(101))).toContain("at most 100");
   });
 });
 

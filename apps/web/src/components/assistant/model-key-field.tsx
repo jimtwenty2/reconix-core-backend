@@ -12,6 +12,7 @@
 import { useLayoutEffect } from "react";
 
 import { Checkbox } from "@/components/ui/checkbox";
+import { MAX_KEY } from "@/lib/assistant/models/schema";
 
 /** What keeps password managers off a field (1Password, LastPass, Bitwarden). */
 export const NOT_A_LOGIN = { autoComplete: "off", "data-1p-ignore": true, "data-lpignore": "true", "data-bwignore": true } as const;
@@ -50,6 +51,7 @@ export function ModelKeyField({ id, inputRef, provider, required, keySaved, remo
         ref={inputRef}
         id={id}
         type="password"
+        maxLength={MAX_KEY}
         onChange={(e) => onTyped(e.target.value !== "")}
         onKeyDown={onKeyDown}
         onBlur={onBlur}

@@ -7,6 +7,7 @@ import { runRow } from "@/components/dashboard/derive-report";
 import { runOverviewHref, VIEW_FILTERS } from "@/components/dashboard/view-url";
 import { assessmentView } from "@/lib/data/adapt";
 import { paginate, PER_PAGE, slicePage } from "@/lib/paging";
+import { MAX_SEARCH_QUERY } from "@/lib/search";
 import { RUN_STATUS } from "@/lib/status";
 
 import { sampleAssessments } from "./fixtures";
@@ -24,6 +25,12 @@ describe("parseRunFilter", () => {
   it("is off with nothing in the address, or only blanks", () => {
     expect(runFilterActive(parseRunFilter(none, rows))).toBe(false);
     expect(runFilterActive(parseRunFilter({ q: "   ", status: ",", template: "" }, rows))).toBe(false);
+  });
+  it("strips ASCII control characters and bounds q to MAX_SEARCH_QUERY", () => {
+    const raw = `\x00sql\n\t${"a".repeat(MAX_SEARCH_QUERY + 50)}`;
+    const f = parseRunFilter({ q: raw, status: "", template: "" }, rows);
+    expect(f.q).toBe(`sql${"a".repeat(MAX_SEARCH_QUERY - 3)}`);
+    expect(f.q.length).toBe(MAX_SEARCH_QUERY);
   });
 });
 

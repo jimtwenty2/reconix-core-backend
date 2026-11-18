@@ -8,6 +8,7 @@ import { Search, X } from "lucide-react";
 
 import { plural } from "@/components/dashboard/derive-shared";
 import type { ChipOption } from "@/components/dashboard/filters";
+import { cleanSearchQuery, MAX_SEARCH_QUERY } from "@/lib/search";
 import { toneColor } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
@@ -69,8 +70,9 @@ export function SearchField({ value, onChange, placeholder, label }: { value: st
         type="search"
         aria-label={label}
         value={value}
+        maxLength={MAX_SEARCH_QUERY}
         placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(cleanSearchQuery(e.target.value))}
         className="w-full min-w-0 bg-transparent text-foreground placeholder:text-muted-foreground focus-visible:outline-none"
       />
     </label>

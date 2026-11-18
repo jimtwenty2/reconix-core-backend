@@ -5,6 +5,7 @@ import type { ListedFinding } from "@/components/dashboard/derive";
 import { FINDING_SEVERITIES } from "@/lib/data/schema";
 import type { FindingSeverity, LibraryItem } from "@/lib/data/view-types";
 import { type Paging, pageOf, paginate, slicePage } from "@/lib/paging";
+import { cleanSearchQuery } from "@/lib/search";
 import { FINDING_REVIEW, RUN_STATUS, SEVERITY_META, toneColor } from "@/lib/status";
 
 import { plural } from "./derive-shared";
@@ -69,7 +70,7 @@ export function parseFindingFilter(p: { sev: string; val: string; q: string; fp?
   return {
     sev: list(p.sev).filter((s) => (SEVERITY_ORDER as readonly string[]).includes(s)),
     val: (VALIDATION as readonly string[]).includes(p.val) ? p.val : "",
-    q: p.q,
+    q: cleanSearchQuery(p.q),
     fp: p.fp === SHOW_FALSE_POSITIVES,
   };
 }

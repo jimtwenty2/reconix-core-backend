@@ -9,6 +9,7 @@ import { Loader, Search, Trash2 } from "lucide-react";
 
 import { addedAtLabel, humanSize, matchName } from "@/lib/knowledge/format";
 import type { KnowledgeItem } from "@/lib/knowledge/types";
+import { cleanSearchQuery, MAX_SEARCH_QUERY } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
 import { KindIcon } from "./kind-icon";
@@ -40,10 +41,18 @@ export function DocList({ items, links, focusId, onPick, onRemove }: Props) {
     <div className="kn-docs">
       <label className="kn-docs-search">
         <Search aria-hidden />
-        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search documents" aria-label="Search documents by name" spellCheck={false} />
+        <input
+          type="search"
+          value={query}
+          maxLength={MAX_SEARCH_QUERY}
+          onChange={(e) => setQuery(cleanSearchQuery(e.target.value))}
+          placeholder="Search documents"
+          aria-label="Search documents by name"
+          spellCheck={false}
+        />
       </label>
       {shown.length === 0 ? (
-        <p className="kn-docs-empty">{query ? `No document has “${query.trim()}” in its name.` : "No documents yet."}</p>
+        <p className="kn-docs-empty">{query.trim() ? `No document has “${query.trim()}” in its name.` : "No documents yet."}</p>
       ) : (
         <ul className="kn-docs-list" aria-label="Ingested documents">
           {shown.map((item, i) => {
