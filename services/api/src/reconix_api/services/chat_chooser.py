@@ -52,9 +52,10 @@ QUESTION = re.compile(
 )
 RESCAN = re.compile(r"^re-?scan\b", re.I)
 SCAN = re.compile(r"^(please\s+|can you\s+|could you\s+)?(scan|analy[sz]e)\b", re.I)
+SCAN_VERB = re.compile(r"\b(scan|analy[sz]e)\b", re.I)
 # What a whole-workspace scan names; "analyze this function" names none of these.
 SCAN_OBJECT = re.compile(
-    r"\b(project|workspace|folder|repo|repository|codebase|everything|again|it)\b", re.I
+    r"\b(project|workspace|folder|repo|repository|codebase|source code|everything|again|it)\b", re.I
 )
 FULL = re.compile(r"\bfrom scratch\b|\bfull\b|\beverything again\b|\ball files\b", re.I)
 ABOUT_FINDINGS = re.compile(r"\b(finding|findings|result|results)\b", re.I)
@@ -124,6 +125,9 @@ def choose(
     if ABOUT_FINDINGS.search(text) or FINDING_REF.search(text):
         return None
     if SCAN.match(text) and SCAN_OBJECT.search(text):
+        arguments = {"full": True} if FULL.search(text) else {}
+        return FunctionCall(name=FunctionName.START_SCAN, arguments=arguments)
+    if SCAN_VERB.search(text) and SCAN_OBJECT.search(text):
         arguments = {"full": True} if FULL.search(text) else {}
         return FunctionCall(name=FunctionName.START_SCAN, arguments=arguments)
     return None
