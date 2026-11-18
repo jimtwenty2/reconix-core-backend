@@ -7,6 +7,7 @@ import { useAssistant } from "@/components/assistant/assistant-provider";
 import type { OverviewCards } from "@/components/dashboard/derive";
 import { TypedPlaceholder } from "@/components/dashboard/typed-placeholder";
 import { openAssistant } from "@/components/dashboard/view-url";
+import { MAX_QUESTION } from "@/lib/assistant/request";
 import { DOCS } from "@/lib/docs-nav";
 
 // Ask bar: the AI Assistant's entry, at the foot of the Overview's hero. A click anywhere on it
@@ -21,9 +22,11 @@ export function AskBar({ data }: { data: OverviewCards["ask"] }) {
   const { draft, setDraft, ask } = useAssistant();
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const empty = !draft.trim();
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (draft.trim()) ask();
+    if (empty) return;
+    ask();
     openAssistant();
   };
   const openFrom = (e: React.MouseEvent) => {
@@ -39,6 +42,7 @@ export function AskBar({ data }: { data: OverviewCards["ask"] }) {
             ref={inputRef}
             type="text"
             value={draft}
+            maxLength={MAX_QUESTION}
             onChange={(e) => setDraft(e.target.value)}
             aria-label={data.label}
             className="w-full bg-transparent text-sm text-foreground focus-visible:outline-none"
@@ -57,7 +61,9 @@ export function AskBar({ data }: { data: OverviewCards["ask"] }) {
         <button
           type="submit"
           aria-label="Send"
-          className="grid size-[34px] shrink-0 place-items-center rounded-lg transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={empty ? "Type a question first" : "Send"}
+          disabled={empty}
+          className="grid size-[34px] shrink-0 place-items-center rounded-lg transition-transform active:scale-95 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           style={{ background: "var(--primary-strong)", color: "var(--primary-foreground)" }}
         >
           <Send className="size-[16px]" strokeWidth={1.8} aria-hidden />

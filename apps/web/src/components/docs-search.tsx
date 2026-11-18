@@ -4,12 +4,13 @@ import { useId, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import type { DocsSearchEntry } from "@/lib/docs-search-index";
 import { revealTop } from "@/lib/scroll";
+import { cleanSearchQuery, MAX_SEARCH_QUERY } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
 /** One result: the page, and the anchor on this page it jumps to (the page's, or a section's). */
 type Hit = { entry: DocsSearchEntry; anchor: string; heading?: string; score: number };
 
-const normalise = (s: string) => s.trim().toLowerCase();
+const normalise = (s: string) => cleanSearchQuery(s).trim().toLowerCase();
 
 /** Rank one page against the query: the title first, then a command alias, a heading, the description. */
 function match(entry: DocsSearchEntry, q: string): Hit | null {
@@ -99,9 +100,10 @@ export function DocsSearch({ index }: { index: DocsSearchEntry[] }) {
       <input
         type="search"
         value={q}
+        maxLength={MAX_SEARCH_QUERY}
         onChange={(e) => {
           keepOpen();
-          setQ(e.target.value);
+          setQ(cleanSearchQuery(e.target.value));
           setActive(0);
           setOpen(true);
         }}

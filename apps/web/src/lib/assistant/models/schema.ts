@@ -12,12 +12,13 @@ export const MAX_PROVIDERS = 20;
 export const MAX_MODELS = 50; // model names per provider
 export const MAX_NAME = 60; // a provider's name
 export const MAX_URL = 2_048;
-export const MAX_KEY = 4_096;
-const MAX_MODEL_NAME = 128;
-const MAX_SEALED = 8_000; // a sealed key's base64 ciphertext (a 4 096-byte key takes 5 464)
+export const MIN_KEY = 16;
+export const MAX_KEY = 500;
+const MAX_MODEL_NAME = 100;
+const MAX_SEALED = 8_000; // a sealed key's base64 ciphertext (a 500-byte key fits easily)
 
 /** A model name: the characters model ids use (llama3.2, openai/gpt-4o-mini, qwen:7b@q4). */
-export const MODEL_NAME = /^[\w.:/@+-]{1,128}$/;
+export const MODEL_NAME = /^[\w.:/@+-]{1,100}$/;
 
 /** The most one saved provider takes in models.json, every field at the schema's maximum: a
     character of the name or the address at its widest in JSON (\uXXXX: 6 bytes), each model
@@ -28,8 +29,30 @@ export const MAX_PROVIDER_BYTES = 36 + 6 * MAX_NAME + 16 + 6 * MAX_URL + MAX_MOD
 export const MAX_FILE_BYTES = MAX_PROVIDERS * MAX_PROVIDER_BYTES + 16_384;
 /** A provider's id: a random (v4) UUID, lower case. */
 export const PROVIDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-/** An API key: printable ASCII without spaces (it goes into an Authorization header). */
-export const API_KEY = /^[\x21-\x7e]{1,4096}$/;
+/** Printable ASCII without spaces (characters allowed in an Authorization header). */
+export const API_KEY_CHARS = /^[\x21-\x7e]+$/;
+/** An API key: printable ASCII without spaces, matching the Core API's 16..500-char rule. */
+export const API_KEY = /^[\x21-\x7e]{16,500}$/;
+
+/** Why `url` cannot be used as a provider base URL, or null. Matches the Core API's URL shape rules. */
+export function baseUrlProblem(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return "Give the base URL (it usually ends in /v1).";
+  if (trimmed.length > MAX_URL) return `The base URL can be at most ${MAX_URL} characters.`;
+  if (/\s/.test(trimmed)) return "The base URL cannot contain spaces.";
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return "Enter a valid http:// or https:// base URL.";
+  }
+  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || !parsed.hostname) {
+    return "The base URL must start with http:// or https://.";
+  }
+  if (parsed.username || parsed.password) return "Put the API key in the key field, not in the base URL.";
+  if (parsed.search || parsed.hash) return "The base URL cannot include a query string or fragment.";
+  return null;
+}
 
 export const isProviderId = (value: unknown): value is string => typeof value === "string" && PROVIDER_ID.test(value);
 

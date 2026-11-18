@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { DOCS_ENTRIES } from "@/lib/docs-nav";
+import { cleanSearchQuery, MAX_SEARCH_QUERY } from "@/lib/search";
 
 /** Top-bar search: filters the docs entries by title + description, keyboard-navigable; a query
     that matches nothing says so. */
@@ -43,8 +44,9 @@ export function DocsSearch() {
       <input
         type="search"
         value={q}
+        maxLength={MAX_SEARCH_QUERY}
         onChange={(e) => {
-          setQ(e.target.value);
+          setQ(cleanSearchQuery(e.target.value));
           setActive(0);
           setOpen(true);
         }}

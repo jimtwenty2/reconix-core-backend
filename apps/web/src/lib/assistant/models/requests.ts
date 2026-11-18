@@ -4,12 +4,17 @@
    Pure: browser and server. */
 import { z } from "zod";
 
-import { API_KEY, MAX_URL, ModelListSchema, ModelNameSchema, PresetSchema, ProviderIdSchema } from "./schema";
+import { API_KEY, baseUrlProblem, MAX_URL, ModelListSchema, ModelNameSchema, PresetSchema, ProviderIdSchema } from "./schema";
 
 export const MAX_MODELS_BODY = 24_000; // bytes of one request
 
 const Name = z.string().max(400); // cleaned to MAX_NAME by the store
-const BaseUrl = z.string().trim().min(1).max(MAX_URL);
+const BaseUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_URL)
+  .refine((u) => baseUrlProblem(u) === null, "Invalid base URL.");
 const ApiKey = z.string().trim().regex(API_KEY);
 
 /** POST /api/assistant/models: a new provider; `activate` makes its first model the active one. */
@@ -41,6 +46,16 @@ export type Probe = z.infer<typeof ProbeSchema>;
 /** POST /api/assistant/models/connect ("Test connection"): the form's values, or a saved
     provider by its id. No model: the models come back. */
 export const ConnectSchema = z
-  .object({ name: Name, preset: PresetSchema, baseUrl: z.string().trim().max(MAX_URL), apiKey: ApiKey.optional(), providerId: ProviderIdSchema.optional() })
+  .object({
+    name: Name,
+    preset: PresetSchema,
+    baseUrl: z
+      .string()
+      .trim()
+      .max(MAX_URL)
+      .refine((u) => !u || baseUrlProblem(u) === null, "Invalid base URL."),
+    apiKey: ApiKey.optional(),
+    providerId: ProviderIdSchema.optional(),
+  })
   .strict();
 export type Connect = z.infer<typeof ConnectSchema>;

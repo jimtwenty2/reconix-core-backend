@@ -211,7 +211,6 @@ export function ModelProviderForm({ view, models, onCancel, onDone, start, start
     if (manual) {
       const problem = nameProblem(chosenModel);
       if (problem) return setError(problem);
-      if (chosenModel.length > 100) return setError("Model names can be at most 100 characters.");
     } else if (!saved || list.status !== "ready" || chosenModel === NO_MODEL_YET) {
       return setError("Test connection first, then choose one of the models it finds.");
     }

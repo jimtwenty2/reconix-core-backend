@@ -25,6 +25,7 @@ import { toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "./confirm-dialog";
 import { type Preset, type PresetId, PRESET_IDS, PRESETS, presetOf } from "@/lib/assistant/models/presets";
 import { NEEDS_APPROVAL, type ProviderView } from "@/lib/assistant/models/view";
+import { cleanSearchQuery, MAX_SEARCH_QUERY } from "@/lib/search";
 import { rememberedTab, rememberTab } from "./model-tab";
 import { type ModelRow, badgeLabel, endpointHost, modelRows, presetFor, removeRequest, savedName } from "./model-picker-rules";
 import { kindLabel, ProviderAvatar, shortLabel } from "./provider-look";
@@ -302,7 +303,8 @@ export function ModelList({ models, fromForm, onChosen, onAdd }: Props) {
             type="search"
             data-focus="search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            maxLength={MAX_SEARCH_QUERY}
+            onChange={(e) => setQuery(cleanSearchQuery(e.target.value))}
             onKeyDown={(e) => {
               if (e.key === "Enter" && list[0]) {
                 e.preventDefault();
