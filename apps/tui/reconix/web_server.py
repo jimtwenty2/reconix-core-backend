@@ -60,12 +60,11 @@ def needs_install() -> bool:
     versions (e.g. next 16.3.8 installed, 16.4.1 locked)."""
     try:
         manifest = json.loads((WEB_DIR / "package.json").read_text(encoding="utf-8"))
-        names = list(manifest["dependencies"])
-        direct = names + list(manifest.get("devDependencies") or {})
+        direct = list(manifest["dependencies"]) + list(manifest.get("devDependencies") or {})
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        names = direct = ["next"]
+        direct = ["next"]
     modules = WEB_DIR / "node_modules"
-    if not all((modules / name / "package.json").is_file() for name in names):
+    if not all((modules / name / "package.json").is_file() for name in direct):
         return True
     wanted = _locked(WEB_DIR / "package-lock.json")
     have = {**_locked(modules / ".package-lock.json"), **_installed(modules, direct)}

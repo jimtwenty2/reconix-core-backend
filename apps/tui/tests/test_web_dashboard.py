@@ -249,6 +249,19 @@ def test_an_outdated_dev_package_counts_too(monkeypatch, tmp_path):
     assert real_needs_install()
 
 
+def test_a_missing_dev_package_triggers_an_install(monkeypatch, tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"dependencies": {"next": "1"}, "devDependencies": {"tailwindcss": "4"}}'
+    )
+    (tmp_path / "node_modules" / "next").mkdir(parents=True)
+    (tmp_path / "node_modules" / "next" / "package.json").write_text("{}")
+    monkeypatch.setattr(web_server, "WEB_DIR", tmp_path)
+    assert real_needs_install()
+    (tmp_path / "node_modules" / "tailwindcss").mkdir(parents=True)
+    (tmp_path / "node_modules" / "tailwindcss" / "package.json").write_text("{}")
+    assert not real_needs_install()
+
+
 # --- the sign-in token never reaches a command line or the screen ---------------------------
 def _recording_opener(monkeypatch):
     seen = []
