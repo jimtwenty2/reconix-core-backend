@@ -13,6 +13,8 @@ from reconix_api.services import agent_runs
 from reconix_api.services import chat as chat_service
 from tests.fakes import fake_mask_secrets
 from tests.integration.test_action_flow import active_assessment, event_types
+from tests.integration.test_findings_flow import findings as assessment_findings
+from tests.integration.test_findings_flow import run_nmap
 from tests.integration.test_plan_flow import plan, runs
 from tests.integration.test_scope_flow import DRAFT, open_session, scopes_path
 
@@ -316,3 +318,129 @@ async def test_a_cancelled_ask_ends_its_run_failed(db_client, db_app, session_fa
     [run] = runs(db_client, headers)
     assert run["agent_runs_status"] == "FAILED"
     assert event_types(db_app)[-1] == "AGENT_RUN_FAILED"
+
+
+def test_web_chat_passes_findings_scope_and_plan_for_requested_assessment(db_client, db_app):
+    headers_a = open_session(db_client)
+    aid = active_assessment(db_client, headers_a)
+    plan(db_client, headers_a, aid)
+    run_nmap(db_client, headers_a, aid)
+    listed = assessment_findings(db_client, headers_a, aid)
+    assert [f["code"] for f in listed] == ["RCX-001", "RCX-002"]
+    db_client.patch(
+        f"/findings/{listed[1]['finding_id']}",
+        json={"finding_status": "FALSE_POSITIVE"},
+        headers=headers_a,
+    )
+
+    headers_b = open_session(db_client)
+    sid_b = session_id(db_client, headers_b)
+    response = db_client.post(
+        f"/sessions/{sid_b}/chat",
+        json={"content": "Analyze the current findings", "assessment_id": aid},
+        headers=headers_b,
+    )
+
+    assert response.status_code == 201, response.json()
+    req = last_request(db_app)
+    assert req.assessment_id == UUID(aid)
+    assert req.chat_scope is not None
+    assert req.plan != []
+    assert [f.code for f in req.findings] == ["RCX-001"]
+
+
+def test_web_chat_without_assessment_id_passes_all_open_findings(db_client, db_app):
+    headers_a = open_session(db_client)
+    aid = active_assessment(db_client, headers_a)
+    run_nmap(db_client, headers_a, aid)
+
+    headers_b = open_session(db_client)
+    sid_b = session_id(db_client, headers_b)
+    response = db_client.post(
+        f"/sessions/{sid_b}/chat",
+        json={"content": "Analyze the current findings"},
+        headers=headers_b,
+    )
+
+    assert response.status_code == 201, response.json()
+    req = last_request(db_app)
+    assert req.assessment_id is None
+    assert {f.code for f in req.findings} >= {"RCX-001", "RCX-002"}
+
+
+def test_chat_with_unknown_assessment_id_returns_404(db_client):
+    headers = open_session(db_client)
+    sid = session_id(db_client, headers)
+    res = db_client.post(
+        f"/sessions/{sid}/chat",
+        json={"content": "hi", "assessment_id": "00000000-0000-4000-8000-000000000999"},
+        headers=headers,
+    )
+    assert res.status_code == 404
+    assert res.json()["code"] == "ASSESSMENT_NOT_FOUND"
+
+
+def test_chat_on_assessment_session_with_mismatched_assessment_id_returns_409(db_client):
+    headers_1 = open_session(db_client)
+    active_assessment(db_client, headers_1)
+    headers_2 = open_session(db_client)
+    aid_2 = active_assessment(db_client, headers_2)
+
+    sid_1 = session_id(db_client, headers_1)
+    res = db_client.post(
+        f"/sessions/{sid_1}/chat",
+        json={"content": "hi", "assessment_id": aid_2},
+        headers=headers_1,
+    )
+    assert res.status_code == 409
+    assert res.json()["code"] == "ASSESSMENT_MISMATCH"
+
+
+def test_web_chat_stream_passes_requested_assessment_context(db_client, db_app):
+    headers_a = open_session(db_client)
+    aid = active_assessment(db_client, headers_a)
+    plan(db_client, headers_a, aid)
+    run_nmap(db_client, headers_a, aid)
+
+    headers_b = open_session(db_client)
+    sid_b = session_id(db_client, headers_b)
+    with db_client.stream(
+        "POST",
+        f"/sessions/{sid_b}/chat/stream",
+        json={"content": "Summarize scan status", "assessment_id": aid},
+        headers=headers_b,
+    ) as stream:
+        assert stream.status_code == 200
+        text = "".join(stream.iter_text())
+
+    assert "event: DONE" in text
+    req = last_request(db_app)
+    assert req.assessment_id == UUID(aid)
+    assert any("RCX-" in line for line in req.plan)
+    assert any("COMPLETED" in line for line in req.plan)
+    assert [f.code for f in req.findings] == ["RCX-001", "RCX-002"]
+
+
+def test_global_chat_masks_assessment_names_in_plan_summary(db_client, db_app):
+    secret = "FAKE_SECRET_NAME_1234567890"
+    headers_a = open_session(db_client)
+    aid = active_assessment(db_client, headers_a)
+    db_client.patch(
+        f"/assessments/{aid}",
+        json={"name": f"Target token={secret} lab"},
+        headers=headers_a,
+    )
+
+    headers_b = open_session(db_client)
+    sid_b = session_id(db_client, headers_b)
+    res = db_client.post(
+        f"/sessions/{sid_b}/chat",
+        json={"content": "What assessments exist?"},
+        headers=headers_b,
+    )
+    assert res.status_code == 201
+    req = last_request(db_app)
+    assert req.assessment_id is None
+    assert req.plan != []
+    assert all(secret not in line for line in req.plan)
+    assert any("[MASKED:secret]" in line for line in req.plan)

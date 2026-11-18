@@ -12,6 +12,8 @@ describe("viewSearch", () => {
     expect(params(left)).toEqual({ uid: "run-1", view: "assessments" });
     const back = viewSearch("uid=run-1&view=assessments&q=demo&status=Completed&page=2", "findings");
     expect(params(back)).toEqual({ uid: "run-1", view: "findings" });
+    const leftKnowledge = viewSearch("view=knowledge&doc=d10f0984-d24e-439f-a78b-a23995bae172&part=31", "assistant");
+    expect(params(leftKnowledge)).toEqual({ view: "assistant" });
   });
 
   it("keeps a view's filters while it stays open, and replaces them on a drill-down", () => {

@@ -14,6 +14,7 @@ import { ViewHeader } from "@/components/dashboard/view-header";
 import { openAssistant, parseView } from "@/components/dashboard/view-url";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { getCitedAnswer } from "@/lib/assistant/cited-answer";
 import { buildGraph, type RefType, REF_TYPES } from "@/lib/knowledge/graph";
 import { MAX_UPLOAD_LABEL, UPLOAD_TYPES } from "@/lib/knowledge/rules";
 import type { KnowledgeItem } from "@/lib/knowledge/types";
@@ -33,7 +34,13 @@ export const KNOWLEDGE_ABOUT = "The documents the AI Assistant searches, and how
 const docNode = (id: string) => `doc:${id}`;
 
 export function KnowledgeView() {
-  const shown = parseView(useSearchParams().get("view")) === "knowledge";
+  const search = useSearchParams();
+  const shown = parseView(search.get("view")) === "knowledge";
+  const docParam = shown ? search.get("doc") : null;
+  const partParam = shown ? search.get("part") : null;
+  const parsedPart = partParam && /^[1-9]\d*$/.test(partParam) ? Number(partParam) - 1 : null;
+  const urlKey = docParam ? `${docParam}:${partParam ?? ""}` : null;
+
   const { state, reload, remove, added } = useKnowledgeGraph(shown);
   const passages = usePassages();
   const afterReingest = useCallback(() => {
@@ -42,7 +49,14 @@ export function KnowledgeView() {
   }, [passages, reload]);
   const reingest = useReingest(shown, afterReingest);
   const [uploading, setUploading] = useState(false);
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(docParam ? docNode(docParam) : null);
+  const [initialPart, setInitialPart] = useState<number | null>(docParam ? parsedPart : null);
+  const [urlSync, setUrlSync] = useState<string | null>(urlKey);
+  if (urlSync !== urlKey) {
+    setUrlSync(urlKey);
+    setFocusId(docParam ? docNode(docParam) : null);
+    setInitialPart(docParam ? parsedPart : null);
+  }
   const [types, setTypes] = useState<ReadonlySet<RefType>>(() => new Set(REF_TYPES));
   const [sharedOnly, setSharedOnly] = useState(false);
   const [expanded, setExpanded] = useState(false); // the graph takes the whole stage; the list folds away
@@ -75,10 +89,23 @@ export function KnowledgeView() {
   const links = useMemo(() => Object.fromEntries(items.map((i) => [i.id, graph.neighbours.get(docNode(i.id))?.size ?? 0])), [items, graph]);
   const focusNode = focusId ? (graph.byId.get(focusId) ?? null) : null;
   const focusDoc = focusNode?.type === "DOC" ? focusNode.id.slice(4) : null;
+  const highlightAnswer =
+    focusDoc && focusDoc === docParam && initialPart === parsedPart
+      ? getCitedAnswer(docParam, parsedPart !== null ? parsedPart + 1 : null)
+      : null;
   const refCount = graph.nodes.length - items.length;
 
-  const onFocus = useCallback((id: string | null) => setFocusId(id), []);
-  const pick = (item: KnowledgeItem) => setFocusId((f) => (f === docNode(item.id) ? null : docNode(item.id)));
+  const onFocus = useCallback(
+    (id: string | null) => {
+      setFocusId(id);
+      setInitialPart(null);
+    },
+    [setFocusId, setInitialPart],
+  );
+  const pick = (item: KnowledgeItem) => {
+    setFocusId((f) => (f === docNode(item.id) ? null : docNode(item.id)));
+    setInitialPart(null);
+  };
   const toggle = (t: RefType) =>
     setTypes((s) => {
       const next = new Set(s);
@@ -90,7 +117,10 @@ export function KnowledgeView() {
     const problem = await remove(item);
     if (!problem) {
       passages.forget(item.id);
-      if (focusId === docNode(item.id)) setFocusId(null);
+      if (focusId === docNode(item.id)) {
+        setFocusId(null);
+        setInitialPart(null);
+      }
       toast(`Removed “${item.name}”. The AI Assistant no longer uses it.`);
     }
     return problem;
@@ -103,6 +133,7 @@ export function KnowledgeView() {
     );
     added();
     setFocusId(docNode(item.id));
+    setInitialPart(null);
   };
 
   return (
@@ -191,7 +222,14 @@ export function KnowledgeView() {
               label={`Knowledge graph: ${items.length} documents linked to ${refCount} references and topics. The list beside it names every document.`}
             />
             {focusNode ? (
-              <GraphDetails graph={graph} node={focusNode} onFocus={onFocus} passages={passages} />
+              <GraphDetails
+                graph={graph}
+                node={focusNode}
+                onFocus={onFocus}
+                passages={passages}
+                initialPart={initialPart}
+                highlightAnswer={highlightAnswer}
+              />
             ) : (
               <p className="kn-graph-hint">Click a node to explore it · drag to move · scroll to zoom · double-click to fit</p>
             )}

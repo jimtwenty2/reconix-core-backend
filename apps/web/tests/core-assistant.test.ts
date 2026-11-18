@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { pickCards } from "@/lib/assistant/cards";
 import { buildContext } from "@/lib/assistant/context";
+import { NO_ANSWER, toConversation } from "@/lib/api/assistant";
 import { type CardOf, type Frame, parseFrame } from "@/lib/assistant/protocol";
 import { COOKIE, sessionValue } from "@/lib/auth/session";
 import { type FakeCore, startFakeCore } from "./fakes/core-api-server";
@@ -172,6 +173,17 @@ describe("asking", () => {
 });
 
 describe("conversations", () => {
+  it("turns a reloaded assistant message with empty content into an unanswered error with Retry instead of a blank row", () => {
+    const conversation = toConversation(
+      { session_id: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", created_at: "2026-01-01T00:00:00Z" },
+      [
+        { message_id: "1b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", sequence_no: 1, role: "user", content_masked: "Question", created_at: "2026-01-01T00:00:01Z", session_id: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69" },
+        { message_id: "2b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69", sequence_no: 2, role: "assistant", content_masked: "   ", created_at: "2026-01-01T00:00:02Z", session_id: "0b0e2d55-1c5a-4b1e-9b8c-2f1d3c4b5a69" },
+      ],
+    );
+    expect(conversation.messages.at(-1)).toMatchObject({ role: "assistant", state: "error", detail: NO_ANSWER });
+  });
+
   it("lists the open web sessions that hold messages, titled by the first question", async () => {
     await addLocalModel();
     const id = (await ask({ uid: null, question: "Which hosts are in scope?" })).headers.get("x-conversation-id")!;
@@ -498,5 +510,17 @@ describe("the assistant's data comes from the Core API", () => {
     const [t1, t2] = await Promise.all([mainToken(), mainToken()]);
     expect(t1).toBe(t2);
     expect(core.calls.filter((c) => c.path === "/sessions/web-sign-in" || (c.path === "/sessions" && c.method === "POST"))).toHaveLength(1);
+  });
+
+  it("forwards the selected run's core_id as assessment_id to POST /sessions/{id}/chat/stream when uid is chosen, and omits it for All assessments", async () => {
+    seedAssessment();
+    await addLocalModel();
+    await ask({ uid: "20261105-093015-7d1c_RCX-2026-0042", question: "Analyze the current findings" });
+    const scopedCall = core.calls.filter((c) => c.path.endsWith("/chat/stream")).at(-1);
+    expect(scopedCall?.body).toEqual({ content: "Analyze the current findings", assessment_id: ASSESSMENT });
+
+    await ask({ uid: null, question: "Analyze the current findings" });
+    const allCall = core.calls.filter((c) => c.path.endsWith("/chat/stream")).at(-1);
+    expect(allCall?.body).toEqual({ content: "Analyze the current findings" });
   });
 });

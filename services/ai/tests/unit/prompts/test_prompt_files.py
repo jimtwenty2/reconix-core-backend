@@ -69,3 +69,11 @@ def test_every_task_is_told_it_changes_nothing() -> None:
 
     assert "You change nothing." in text
     assert "does not change it" in text
+
+
+def test_chat_prompt_explains_tui_workflow() -> None:
+    text = read_markdown(PROMPTS_DIR / "chat.md")
+
+    assert "Reconix TUI" in text
+    assert "tangential" in text
+    assert "only cite" in text.lower()

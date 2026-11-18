@@ -388,6 +388,15 @@
 .kn-mark:hover { background: color-mix(in oklab, var(--kn-c) 30%, transparent); }
 .kn-mark[data-current] { color: var(--foreground); background: color-mix(in oklab, var(--kn-c) 38%, transparent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--kn-c) 70%, transparent), 0 0 12px color-mix(in oklab, var(--kn-c) 45%, transparent); }
 .kn-mark:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+/* text inside a passage that matched the AI reply that cited it (warm amber highlight, distinct from cyan DOC chrome) */
+.kn-used {
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--sev-medium) 26%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--sev-medium) 65%, transparent);
+  box-decoration-break: clone;
+}
 
 /* Content: the passages */
 .kn-passages { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
@@ -432,10 +441,20 @@
   .kn-details-body, .kn-passage { animation: none; }
   .kn-skeleton span { animation: none; }
 }
-/* the passage a mention opened: a brief glow */
-.kn-passage.is-found { animation: kn-found 1.6s ease both; }
+/* the passage a mention or cited source opened: highlighted border & tint, plus an initial glow */
+.kn-passage.is-found {
+  border-color: color-mix(in oklab, var(--primary) 65%, var(--border));
+  background: color-mix(in oklab, var(--primary) 10%, var(--card-2));
+  animation: kn-found 1.6s ease both;
+}
 @keyframes kn-found { 0%, 40% { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary), 0 0 22px color-mix(in oklab, var(--primary) 40%, transparent); } 100% { box-shadow: none; } }
-@media (prefers-reduced-motion: reduce) { .kn-passage.is-found { animation: none; border-color: var(--primary); } }
+@media (prefers-reduced-motion: reduce) {
+  .kn-passage.is-found {
+    animation: none;
+    border-color: var(--primary);
+    background: color-mix(in oklab, var(--primary) 10%, var(--card-2));
+  }
+}
 
 /* ---- re-ingest ---- */
 .kn-reingest-ask {

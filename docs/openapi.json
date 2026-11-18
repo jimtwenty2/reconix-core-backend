@@ -3311,6 +3311,19 @@
       },
       "MessageCreate": {
         "properties": {
+          "assessment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional assessment id when chatting from a separate web session.",
+            "title": "Assessment Id"
+          },
           "content": {
             "maxLength": 20000,
             "minLength": 1,
